@@ -167,8 +167,13 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
   onEmpty?: () => void;                                    // 떼거나 보내서 탭이 0개가 됨
 }) {
   const t = useT();
-  const [tabs, setTabs] = useState<Tab[]>(() => (initial.urls.length ? initial.urls : [""]).map((url) => ({ id: ++tabSeq, url, title: "" })));
-  const [activeId, setActiveId] = useState(() => tabs[Math.min(Math.max(initial.active, 0), tabs.length - 1)].id);
+  // 탭 목록과 활성 탭은 한 state — 지우기·추가가 둘을 같이 바꿔서, 따로 두면 업데이트 순서에 기대게 됨(#1034 리뷰).
+  const [st, setSt] = useState<{ tabs: Tab[]; activeId: number }>(() => {
+    const tabs = (initial.urls.length ? initial.urls : [""]).map((url) => ({ id: ++tabSeq, url, title: "" }));
+    return { tabs, activeId: tabs[Math.min(Math.max(initial.active, 0), tabs.length - 1)].id };
+  });
+  const { tabs, activeId } = st;
+  const setActiveId = (id: number) => setSt((p) => ({ ...p, activeId: id }));
   const [ports, setPorts] = useState<number[]>([]);
 
   // main에 "브라우저 포커스 중에도 앱이 가져갈 조합" 알림 — 설정에서 단축키 바꾸면 다시 보냄(#1034 리뷰).
@@ -191,11 +196,11 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
 
   const onTabsChangeRef = useRef(onTabsChange);
   useEffect(() => { onTabsChangeRef.current = onTabsChange; });
-  const urlsKey = tabs.map((x) => x.url).join("\n");
+  const urlsKey = JSON.stringify(tabs.map((x) => x.url)); // [""]와 []도 구분
   const activeIdx = Math.max(0, tabs.findIndex((x) => x.id === activeId));
   useEffect(() => { onTabsChangeRef.current?.(tabs.map((x) => x.url), activeIdx); }, [urlsKey, activeIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const addTab = (url = "") => { const tab = { id: ++tabSeq, url, title: "" }; setTabs((prev) => [...prev, tab]); setActiveId(tab.id); };
+  const addTab = (url = "") => { const tab = { id: ++tabSeq, url, title: "" }; setSt((p) => ({ tabs: [...p.tabs, tab], activeId: tab.id })); };
   const lastIncoming = useRef(0);
   useEffect(() => {
     if (!incoming || incoming.n === lastIncoming.current) return;
@@ -205,22 +210,22 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
 
   // 탭 제거 — 함수형 업데이트(창 분리는 await 뒤에 불려서, 그 사이 바뀐 탭·제목을 덮어쓰면 안 됨, #1034 리뷰).
   // 활성 탭이면 옆 탭으로. 옮겨서 0개가 되면 [] → 아래 이펙트가 저장([])·onEmpty. 그냥 닫아서 0개면 빈 탭 하나.
-  const nextActive = useRef(0);
+  const blankId = () => ++tabSeq; // 업데이트 함수 밖에서 뽑음(StrictMode 이중 호출에도 순수)
   const removeTab = (id: number, viaMove = false) => {
-    setTabs((prev) => {
-      const idx = prev.findIndex((x) => x.id === id);
-      if (idx < 0) return prev;
-      const rest = prev.filter((x) => x.id !== id);
-      if (!rest.length && !(viaMove && onEmpty)) rest.push({ id: ++tabSeq, url: "", title: "" });
-      nextActive.current = rest.length ? rest[Math.min(idx, rest.length - 1)].id : 0;
-      return rest;
+    const fresh = blankId();
+    setSt((p) => {
+      const idx = p.tabs.findIndex((x) => x.id === id);
+      if (idx < 0) return p;
+      const rest = p.tabs.filter((x) => x.id !== id);
+      if (!rest.length && !(viaMove && onEmpty)) rest.push({ id: fresh, url: "", title: "" });
+      const activeId = p.activeId !== id ? p.activeId : rest.length ? rest[Math.min(idx, rest.length - 1)].id : 0;
+      return { tabs: rest, activeId };
     });
-    setActiveId((cur) => (cur === id ? nextActive.current : cur)); // tabs 업데이트 다음에 처리됨(훅 순서)
   };
   const onEmptyRef = useRef(onEmpty);
   useEffect(() => { onEmptyRef.current = onEmpty; });
   useEffect(() => { if (!tabs.length) onEmptyRef.current?.(); }, [tabs.length]);
-  const patch = (id: number, p: Partial<Tab>) => setTabs((prev) => prev.map((x) => (x.id === id ? { ...x, ...p } : x)));
+  const patch = (id: number, d: Partial<Tab>) => setSt((p) => ({ ...p, tabs: p.tabs.map((x) => (x.id === id ? { ...x, ...d } : x)) }));
 
   return (
     <div className="flex h-full min-h-0 flex-col">
