@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { IconGripVertical } from "@tabler/icons-react";
 
-export type PanelId = "terminal" | "code" | "doc" | "flow";
+export type PanelId = "terminal" | "code" | "doc" | "flow" | "browser";
 export type DockNode =
   | { t: "leaf"; panel: PanelId }
   | { t: "split"; dir: "row" | "col"; a: DockNode; b: DockNode; ratio: number }; // row=좌우, col=상하. ratio=a 자식 비율(0~1)
@@ -21,6 +21,7 @@ export function defaultTree(has: Record<PanelId, boolean>): DockNode {
   let base: DockNode = right ? { t: "split", dir: "row", a: term, b: right, ratio: 0.58 } : term;
   // 플로우 패널(#743)은 열려 있을 때 오른쪽 컬럼으로. 기본 3패널엔 미포함.
   if (has.flow) base = { t: "split", dir: "row", a: base, b: { t: "leaf", panel: "flow" }, ratio: 0.66 };
+  if (has.browser) base = { t: "split", dir: "row", a: base, b: { t: "leaf", panel: "browser" }, ratio: 0.5 }; // 인앱 브라우저(#1034) 오른쪽 절반
   return base;
 }
 
@@ -28,7 +29,7 @@ export function defaultTree(has: Record<PanelId, boolean>): DockNode {
 export function isDockNode(x: unknown): x is DockNode {
   if (!x || typeof x !== "object") return false;
   const n = x as Record<string, unknown>;
-  if (n.t === "leaf") return n.panel === "terminal" || n.panel === "code" || n.panel === "doc" || n.panel === "flow";
+  if (n.t === "leaf") return n.panel === "terminal" || n.panel === "code" || n.panel === "doc" || n.panel === "flow" || n.panel === "browser";
   if (n.t === "split") return (n.dir === "row" || n.dir === "col") && typeof n.ratio === "number" && isDockNode(n.a) && isDockNode(n.b);
   return false;
 }
