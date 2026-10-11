@@ -3,7 +3,7 @@
 // prod: .next/standalone/server.js를 동적 포트로 spawn 후 그 localhost 로드.
 // #981 다른 require·spawn보다 먼저 — 이후 모든 자식(데몬·서버·SNA)이 정리된 env를 상속.
 require("./claude-env.cjs").stripParentClaudeEnv(process.env);
-const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents } = require("electron");
 const { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, cpSync } = require("node:fs");
 const {
   startSnaServer,
@@ -348,6 +348,24 @@ ipcMain.handle("browser-window:open", (_e, payload) => {
   return { ok: true };
 });
 // 인앱 브라우저 포커스 중 앱이 가져갈 단축키 조합(#1034) — 렌더러가 설정 반영해 보냄.
+// 개발자 도구를 같은 화면 안 webview에 띄움(#1034) — 별도 창 대신. 두 id 모두 보낸 창이 품은 webview여야 함
+// (렌더러가 아무 id나 보내 다른 창·앱 UI의 devtools를 여는 것 방지).
+function ownGuest(sender, id) {
+  const wc = webContents.fromId(Number(id));
+  return wc && !wc.isDestroyed() && wc.getType() === "webview" && wc.hostWebContents === sender ? wc : null;
+}
+ipcMain.handle("browser:devtools-open", (e, { guestId, devtoolsId } = {}) => {
+  const guest = ownGuest(e.sender, guestId), dt = ownGuest(e.sender, devtoolsId);
+  if (!guest || !dt || guest === dt) return { ok: false };
+  guest.setDevToolsWebContents(dt);
+  guest.openDevTools();
+  return { ok: true };
+});
+ipcMain.handle("browser:devtools-close", (e, { guestId } = {}) => {
+  const guest = ownGuest(e.sender, guestId);
+  if (guest?.isDevToolsOpened()) guest.closeDevTools();
+  return { ok: true };
+});
 ipcMain.on("browser:set-chords", (e, list) => { trackChordHost(e.sender); setAppChords(e.sender.id, list); });
 // 탭 쪽 모드 점유/해제/조회(#789) — 메인 창 렌더러가 모드 탭 추가·닫기·복원 시 호출.
 ipcMain.handle("mode:claim", (_e, kind) => ({ ok: claimMode(kind, "tab") }));

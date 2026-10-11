@@ -36,7 +36,11 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach, onDock }
   const [loading, setLoading] = useState(false);
   const [nav, setNav] = useState({ back: false, fwd: false });
   const [ports, setPorts] = useState<number[]>([]);
-  const [ready, setReady] = useState(false); // guest 붙기 전엔 loadURL·reload 등이 예외를 던짐(#1034 리뷰)
+  const [ready, setReady] = useState(false);
+  const [devtools, setDevtools] = useState(false); // 같은 화면 안 개발자 도구(별도 창 X)
+  const [wide, setWide] = useState(true);           // 넓으면 오른쪽, 좁으면 아래
+  const areaRef = useRef<HTMLDivElement>(null);
+  const dtHostRef = useRef<HTMLDivElement>(null); // guest 붙기 전엔 loadURL·reload 등이 예외를 던짐(#1034 리뷰)
   const editingRef = useRef(false); // 주소창 입력 중엔 페이지 이동으로 덮어쓰지 않음
   useEffect(() => { editingRef.current = editing; }, [editing]);
   const onUrlChangeRef = useRef(onUrlChange);
@@ -86,9 +90,34 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach, onDock }
     return () => { wv.remove(); viewRef.current = null; setReady(false); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 만들 때의 주소만 씀(이후는 loadURL)
   }, [hasPage]);
+  // 페이지+개발자도구 영역 폭으로 배치 결정 — 방향만 CSS로 바꿔 webview를 옮기지 않음(옮기면 페이지가 죽음).
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { if (el.clientWidth) setWide(el.clientWidth >= 760); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // 개발자 도구 — 빈 webview를 하나 더 만들어 main이 그 안에 devtools를 띄움(setDevToolsWebContents).
+  // 끌 때·페이지가 사라질 때 닫고 그 webview를 지움(닫아도 자동으로 안 지워짐).
+  useEffect(() => {
+    const page = viewRef.current, host = dtHostRef.current, api = window.nunopiDesktop?.browser;
+    if (!devtools || !ready || !page || !host || !api) return;
+    const pageId = page.getWebContentsId();
+    const dt = document.createElement("webview") as WebviewTag;
+    dt.setAttribute("partition", PARTITION);
+    dt.setAttribute("src", "about:blank");
+    dt.style.width = "100%"; dt.style.height = "100%";
+    let attached = false; // dom-ready는 devtools 화면이 뜰 때 또 올 수 있음 — 처음 한 번만 연결
+    dt.addEventListener("dom-ready", () => { if (attached) return; attached = true; void api.openDevTools(pageId, dt.getWebContentsId()); });
+    host.appendChild(dt);
+    return () => { void api.closeDevTools(pageId); dt.remove(); };
+  }, [devtools, ready]);
+
   const go = (raw: string) => {
     // 빈 주소로 Enter = 페이지 닫고 처음 빈 화면으로(webview 제거, 저장 주소도 비움).
-    if (!raw.trim()) { setCurrent(""); setDraft(""); setEditing(false); setNav({ back: false, fwd: false }); setLoading(false); onUrlChangeRef.current?.(""); return; }
+    if (!raw.trim()) { setDevtools(false); setCurrent(""); setDraft(""); setEditing(false); setNav({ back: false, fwd: false }); setLoading(false); onUrlChangeRef.current?.(""); return; }
     const u = normalizeBrowserUrl(raw);
     if (!u) return;
     setDraft(u); setEditing(false);
@@ -118,17 +147,21 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach, onDock }
           <button key={p} type="button" onClick={() => go(`:${p}`)} title={`localhost:${p}`}
             className="shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[10px] text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100">:{p}</button>
         ))}
-        <button type="button" className={btn} disabled={!ready} onClick={() => viewRef.current?.openDevTools()} title={t("browser.devtools")} aria-label={t("browser.devtools")}><IconCode size={14} stroke={2} aria-hidden /></button>
+        <button type="button" className={`${btn} ${devtools ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : ""}`} disabled={!ready} aria-pressed={devtools} onClick={() => setDevtools((v) => !v)} title={t("browser.devtools")} aria-label={t("browser.devtools")}><IconCode size={14} stroke={2} aria-hidden /></button>
         {onDock && <button type="button" className={btn} onClick={() => onDock(current)} title={t("browser.dock")} aria-label={t("browser.dock")}><IconArrowsMinimize size={14} stroke={2} aria-hidden /></button>}
         {onDetach && <button type="button" className={btn} onClick={() => onDetach(current)} title={t("browser.detach")} aria-label={t("browser.detach")}><IconAppWindow size={14} stroke={2} aria-hidden /></button>}
       </div>
-      <div ref={hostRef} className="relative min-h-0 flex-1 bg-white">
-        {!hasPage && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white text-[12px] text-zinc-400 dark:bg-[var(--s-pane)] dark:text-zinc-500">
-            <IconWorld size={22} stroke={1.5} aria-hidden />
-            <span>{ports.length ? t("browser.emptyPorts") : t("browser.empty")}</span>
-          </div>
-        )}
+      <div ref={areaRef} className={`flex min-h-0 flex-1 ${wide ? "flex-row" : "flex-col"}`}>
+        <div ref={hostRef} className="relative min-h-0 min-w-0 flex-1 bg-white">
+          {!hasPage && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white text-[12px] text-zinc-400 dark:bg-[var(--s-pane)] dark:text-zinc-500">
+              <IconWorld size={22} stroke={1.5} aria-hidden />
+              <span>{ports.length ? t("browser.emptyPorts") : t("browser.empty")}</span>
+            </div>
+          )}
+        </div>
+        {/* ponytail: 45% 고정 — 경계 드래그 리사이즈는 필요해지면 */}
+        {devtools && ready && <div ref={dtHostRef} className={`shrink-0 border-zinc-200 dark:border-zinc-800 ${wide ? "w-[45%] border-l" : "h-[45%] border-t"}`} />}
       </div>
     </div>
   );

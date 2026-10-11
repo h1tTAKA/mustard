@@ -110,6 +110,8 @@ interface NunopiDesktopApi {
   browser?: {
     openWindow(payload: { url?: string; repo?: string }): Promise<{ ok: boolean; reason?: string }>;
     setAppChords(list: string[]): void;
+    openDevTools(guestId: number, devtoolsId: number): Promise<{ ok: boolean }>;
+    closeDevTools(guestId: number): Promise<{ ok: boolean }>;
     onKey(cb: (k: { code: string; key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }) => void): () => void;
   };
   ports: {
