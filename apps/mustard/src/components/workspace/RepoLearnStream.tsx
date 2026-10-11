@@ -295,16 +295,16 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         </div>
       )}
       <div ref={listRef} className="nunopi-scroll min-h-0 flex-1 overflow-y-auto">
-        {viewDay && dayItems === null ? (
+        {viewDay && dayItems === null && filter !== "terms" ? (
           <div className="flex justify-center py-6"><IconLoader2 size={14} stroke={2} className="animate-spin text-zinc-400" aria-hidden /></div>
-        ) : viewDay && !shown.length ? (
+        ) : viewDay && !shown.length && filter !== "terms" ? ( /* 용어집은 날짜 무관 — 지난 날 보기여도 용어 필터면 용어집 */
           <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.dayEmpty")}</p>
         ) : !loaded && !concepts.length ? null : !concepts.length && !(showTerms && terms.length) ? (
           <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.empty")}</p>
         ) : (
           <>
             {/* 용어집 — 이해에 필요한 용어 누적(중복 없음) */}
-            {showTerms && terms.length > 0 && !viewDay && (filter === "all" || filter === "terms") && ( /* 용어집은 날짜 무관 누적 → 지난 날 보기에선 숨김(#996) */
+            {showTerms && terms.length > 0 && (filter === "terms" || (filter === "all" && !viewDay)) && ( /* 용어집은 날짜 무관 누적 → 지난 날 보기에선 숨김(#996) */
               <div className="border-b border-zinc-100 dark:border-zinc-800/70">
                 <button type="button" onClick={() => setTermsOpen((v) => !v)} className="flex w-full items-center gap-1.5 px-3 py-2 text-left">
                   <IconBook2 size={13} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
