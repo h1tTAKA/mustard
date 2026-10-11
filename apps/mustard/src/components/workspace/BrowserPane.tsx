@@ -4,7 +4,7 @@
 // <webview>는 React 속성 대신 직접 만든다 — allowpopups·partition은 붙기 전에 있어야 하고, src를 React가 바꾸면 매번 새로 이동해서.
 import { useEffect, useRef, useState } from "react";
 import type { WebviewTag } from "electron";
-import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld, IconArrowsMinimize } from "@tabler/icons-react";
+import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld, IconArrowsMinimize, IconPlus } from "@tabler/icons-react";
 import { useT, useSetting, appChords, SHORTCUT_OVERRIDES_KEY, type ShortcutOverrides } from "@mustard/core";
 import { normalizeBrowserUrl } from "@/lib/browser/url";
 
@@ -20,10 +20,13 @@ function subscribeGuestKeys() {
   return () => { if (--keySubs === 0) { keyOff?.(); keyOff = null; } };
 }
 
-export default function BrowserPane({ repo, url, onUrlChange, onDetach, onDock }: {
-  repo: string;
+// 탭 하나 — 주소창·뒤/앞/새로고침·개발자 도구·webview. 안 보이는 탭도 언마운트하지 않음(페이지 유지).
+function BrowserPage({ url, visible, ports, onUrlChange, onTitle, onDetach, onDock }: {
   url: string;                          // 처음 열 주소("" = 빈 화면)
-  onUrlChange?: (url: string) => void;  // 실제 이동한 주소(레포별 저장용)
+  visible: boolean;
+  ports: number[];
+  onUrlChange: (url: string) => void;
+  onTitle: (title: string) => void;
   onDetach?: (url: string) => void;     // 별도 창으로 떼기(분리 창 자신엔 없음)
   onDock?: (url: string) => void;       // 분리 창 → 앱 안으로 되돌리기(분리 창에만)
 }) {
@@ -35,34 +38,16 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach, onDock }
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [nav, setNav] = useState({ back: false, fwd: false });
-  const [ports, setPorts] = useState<number[]>([]);
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(false); // guest 붙기 전엔 loadURL·reload 등이 예외를 던짐(#1034 리뷰)
   const [devtools, setDevtools] = useState(false); // 같은 화면 안 개발자 도구(별도 창 X)
   const [wide, setWide] = useState(true);           // 넓으면 오른쪽, 좁으면 아래
   const areaRef = useRef<HTMLDivElement>(null);
-  const dtHostRef = useRef<HTMLDivElement>(null); // guest 붙기 전엔 loadURL·reload 등이 예외를 던짐(#1034 리뷰)
+  const dtHostRef = useRef<HTMLDivElement>(null);
   const editingRef = useRef(false); // 주소창 입력 중엔 페이지 이동으로 덮어쓰지 않음
   useEffect(() => { editingRef.current = editing; }, [editing]);
   const onUrlChangeRef = useRef(onUrlChange);
-  useEffect(() => { onUrlChangeRef.current = onUrlChange; }, [onUrlChange]);
-
-  // main에 "브라우저 포커스 중에도 앱이 가져갈 조합" 알림 — 설정에서 단축키 바꾸면 다시 보냄(#1034 리뷰).
-  // dock(메인 창)에서만 — 분리 창엔 단축키 처리기가 없어서 가로채면 키가 그냥 사라짐.
-  const docked = !!onDetach;
-  const overrides = useSetting<ShortcutOverrides>(SHORTCUT_OVERRIDES_KEY, {});
-  useEffect(() => { if (docked) return subscribeGuestKeys(); }, [docked]);
-  useEffect(() => { if (docked) window.nunopiDesktop?.browser?.setAppChords(appChords(overrides)); }, [docked, overrides]);
-
-  // 이 레포 터미널에서 뜬 dev 서버 포트(#880 감지 재사용) — 10초마다.
-  useEffect(() => {
-    const api = window.nunopiDesktop?.ports;
-    if (!api || !repo) return;
-    let alive = true;
-    const load = () => { void api.list(repo).then((ps) => { if (alive) setPorts(ps.map((p) => p.port)); }).catch(() => {}); };
-    load();
-    const id = setInterval(load, 10000);
-    return () => { alive = false; clearInterval(id); };
-  }, [repo]);
+  const onTitleRef = useRef(onTitle);
+  useEffect(() => { onUrlChangeRef.current = onUrlChange; onTitleRef.current = onTitle; });
 
   // webview는 주소가 처음 생길 때 한 번 만든다. 이후 이동은 loadURL.
   const hasPage = !!current;
@@ -78,13 +63,14 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach, onDock }
       const u = wv.getURL();
       setCurrent(u); if (!editingRef.current) setDraft(u);
       setNav({ back: wv.canGoBack(), fwd: wv.canGoForward() });
-      onUrlChangeRef.current?.(u);
+      onUrlChangeRef.current(u);
     };
     wv.addEventListener("did-navigate", sync);
     wv.addEventListener("did-navigate-in-page", sync);
     wv.addEventListener("did-start-loading", () => setLoading(true));
     wv.addEventListener("did-stop-loading", () => setLoading(false));
     wv.addEventListener("dom-ready", () => setReady(true));
+    wv.addEventListener("page-title-updated", (e) => onTitleRef.current((e as unknown as { title: string }).title));
     host.appendChild(wv);
     viewRef.current = wv;
     return () => { wv.remove(); viewRef.current = null; setReady(false); };
@@ -117,7 +103,7 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach, onDock }
 
   const go = (raw: string) => {
     // 빈 주소로 Enter = 페이지 닫고 처음 빈 화면으로(webview 제거, 저장 주소도 비움).
-    if (!raw.trim()) { setDevtools(false); setCurrent(""); setDraft(""); setEditing(false); setNav({ back: false, fwd: false }); setLoading(false); onUrlChangeRef.current?.(""); return; }
+    if (!raw.trim()) { setDevtools(false); setCurrent(""); setDraft(""); setEditing(false); setNav({ back: false, fwd: false }); setLoading(false); onUrlChangeRef.current(""); onTitleRef.current(""); return; }
     const u = normalizeBrowserUrl(raw);
     if (!u) return;
     setDraft(u); setEditing(false);
@@ -129,9 +115,8 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach, onDock }
 
   const btn = "flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-800 disabled:pointer-events-none disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100";
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {/* 탭바와 같은 높이·색. pr-[17px]: dock 이동 그립 자리(#716). */}
-      <div className="flex shrink-0 items-center gap-0.5 border-b border-zinc-200 bg-zinc-100/70 py-1 pl-1.5 pr-[17px] dark:border-zinc-800 dark:bg-[var(--s-bar)]">
+    <div className={visible ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+      <div className="flex shrink-0 items-center gap-0.5 border-b border-zinc-200 bg-white py-1 pl-1.5 pr-1.5 dark:border-zinc-800 dark:bg-[var(--s-pane)]">
         <button type="button" className={btn} disabled={!ready || !nav.back} onClick={() => viewRef.current?.goBack()} title={t("browser.back")} aria-label={t("browser.back")}><IconArrowLeft size={14} stroke={2} aria-hidden /></button>
         <button type="button" className={btn} disabled={!ready || !nav.fwd} onClick={() => viewRef.current?.goForward()} title={t("browser.forward")} aria-label={t("browser.forward")}><IconArrowRight size={14} stroke={2} aria-hidden /></button>
         <button type="button" className={btn} disabled={!ready} onClick={() => (loading ? viewRef.current?.stop() : viewRef.current?.reload())} title={loading ? t("browser.stop") : t("browser.reload")} aria-label={loading ? t("browser.stop") : t("browser.reload")}>
@@ -163,6 +148,102 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach, onDock }
         {/* ponytail: 45% 고정 — 경계 드래그 리사이즈는 필요해지면 */}
         {devtools && ready && <div ref={dtHostRef} className={`shrink-0 border-zinc-200 dark:border-zinc-800 ${wide ? "w-[45%] border-l" : "h-[45%] border-t"}`} />}
       </div>
+    </div>
+  );
+}
+
+// 탭 묶음(#1034) — dock·분리 창 공용. 탭 줄은 코드 탭바와 같은 모양, pr-[17px]은 dock 이동 그립 자리(#716).
+type Tab = { id: number; url: string; title: string };
+let tabSeq = 0;
+const hostOf = (u: string) => { try { return new URL(u).host; } catch { return u; } };
+
+export default function BrowserPane({ repo, initial, incoming, onTabsChange, onDetach, onDock, onEmpty }: {
+  repo: string;
+  initial: { urls: string[]; active: number };            // 처음 탭들(레포별 저장분)
+  incoming?: { url: string; n: number } | null;            // 바깥에서 새 탭 밀어넣기(분리 창 → 앱으로). n이 바뀔 때마다 추가
+  onTabsChange?: (urls: string[], active: number) => void; // 저장용
+  onDetach?: (url: string) => Promise<boolean>;            // 활성 탭을 별도 창으로(성공하면 이 탭은 닫음)
+  onDock?: (url: string) => void;                          // 분리 창: 활성 탭을 앱 안으로
+  onEmpty?: () => void;                                    // 떼거나 보내서 탭이 0개가 됨
+}) {
+  const t = useT();
+  const [tabs, setTabs] = useState<Tab[]>(() => (initial.urls.length ? initial.urls : [""]).map((url) => ({ id: ++tabSeq, url, title: "" })));
+  const [activeId, setActiveId] = useState(() => tabs[Math.min(Math.max(initial.active, 0), tabs.length - 1)].id);
+  const [ports, setPorts] = useState<number[]>([]);
+
+  // main에 "브라우저 포커스 중에도 앱이 가져갈 조합" 알림 — 설정에서 단축키 바꾸면 다시 보냄(#1034 리뷰).
+  // dock(메인 창)에서만 — 분리 창엔 단축키 처리기가 없어서 가로채면 키가 그냥 사라짐.
+  const docked = !!onDetach;
+  const overrides = useSetting<ShortcutOverrides>(SHORTCUT_OVERRIDES_KEY, {});
+  useEffect(() => { if (docked) return subscribeGuestKeys(); }, [docked]);
+  useEffect(() => { if (docked) window.nunopiDesktop?.browser?.setAppChords(appChords(overrides)); }, [docked, overrides]);
+
+  // 이 레포 터미널에서 뜬 dev 서버 포트(#880 감지 재사용) — 10초마다, 탭들이 공유.
+  useEffect(() => {
+    const api = window.nunopiDesktop?.ports;
+    if (!api || !repo) return;
+    let alive = true;
+    const load = () => { void api.list(repo).then((ps) => { if (alive) setPorts(ps.map((p) => p.port)); }).catch(() => {}); };
+    load();
+    const id = setInterval(load, 10000);
+    return () => { alive = false; clearInterval(id); };
+  }, [repo]);
+
+  const onTabsChangeRef = useRef(onTabsChange);
+  useEffect(() => { onTabsChangeRef.current = onTabsChange; });
+  const urlsKey = tabs.map((x) => x.url).join("\n");
+  const activeIdx = Math.max(0, tabs.findIndex((x) => x.id === activeId));
+  useEffect(() => { onTabsChangeRef.current?.(tabs.map((x) => x.url), activeIdx); }, [urlsKey, activeIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addTab = (url = "") => { const tab = { id: ++tabSeq, url, title: "" }; setTabs((prev) => [...prev, tab]); setActiveId(tab.id); };
+  const lastIncoming = useRef(0);
+  useEffect(() => {
+    if (!incoming || incoming.n === lastIncoming.current) return;
+    lastIncoming.current = incoming.n;
+    addTab(incoming.url); // 바깥 신호(n 변경)로 탭 추가
+  }, [incoming]);
+
+  // 탭 제거 — 활성 탭이면 옆 탭으로. 0개가 되면 onEmpty(없으면 빈 탭 하나 남김).
+  const removeTab = (id: number, viaMove = false) => {
+    const idx = tabs.findIndex((x) => x.id === id);
+    const rest = tabs.filter((x) => x.id !== id);
+    if (!rest.length) { if (viaMove && onEmpty) { onEmpty(); return; } const blank = { id: ++tabSeq, url: "", title: "" }; setTabs([blank]); setActiveId(blank.id); return; }
+    setTabs(rest);
+    if (id === activeId) setActiveId(rest[Math.min(idx, rest.length - 1)].id);
+  };
+  const patch = (id: number, p: Partial<Tab>) => setTabs((prev) => prev.map((x) => (x.id === id ? { ...x, ...p } : x)));
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-stretch border-b border-zinc-200 bg-zinc-100/70 pr-[17px] dark:border-zinc-800 dark:bg-[var(--s-bar)]">
+        <div className="nunopi-scroll flex min-w-0 items-stretch overflow-x-auto">
+          {tabs.map((tab) => {
+            const on = tab.id === activeId;
+            return (
+              <div key={tab.id} onClick={() => setActiveId(tab.id)}
+                className={`group relative flex max-w-[180px] shrink-0 cursor-pointer items-center gap-1.5 border-r border-zinc-200 px-3 py-1.5 text-[12px] transition dark:border-zinc-800 ${on ? "bg-white text-zinc-800 dark:bg-[var(--s-pane)] dark:text-zinc-100" : "text-zinc-500 hover:bg-white/50 dark:text-zinc-400 dark:hover:bg-zinc-800/50"}`}>
+                {on && <span className="absolute inset-x-0 top-0 h-0.5 bg-mustard-500" aria-hidden />}
+                <IconWorld size={13} stroke={2} className={`shrink-0 ${on ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400"}`} aria-hidden />
+                <span className="truncate">{tab.title || (tab.url ? hostOf(tab.url) : t("browser.newTab"))}</span>
+                <button type="button" onClick={(e) => { e.stopPropagation(); removeTab(tab.id); }}
+                  className={`ml-1 shrink-0 rounded p-0.5 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200 ${on ? "" : "opacity-0 group-hover:opacity-100"}`} aria-label={t("mem.close")}>
+                  <IconX size={12} stroke={2.5} aria-hidden />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <button type="button" onClick={() => addTab()} title={t("browser.newTab")} aria-label={t("browser.newTab")}
+          className="flex shrink-0 items-center px-2 text-zinc-400 transition hover:text-zinc-700 dark:hover:text-zinc-200">
+          <IconPlus size={13} stroke={2} aria-hidden />
+        </button>
+      </div>
+      {tabs.map((tab) => (
+        <BrowserPage key={tab.id} url={tab.url} visible={tab.id === activeId} ports={ports}
+          onUrlChange={(u) => patch(tab.id, { url: u })} onTitle={(title) => patch(tab.id, { title })}
+          onDetach={onDetach ? (u) => { void onDetach(u).then((ok) => { if (ok) removeTab(tab.id, true); }); } : undefined}
+          onDock={onDock ? (u) => { onDock(u); removeTab(tab.id, true); } : undefined} />
+      ))}
     </div>
   );
 }

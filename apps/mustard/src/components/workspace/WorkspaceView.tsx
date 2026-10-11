@@ -84,7 +84,8 @@ export default function WorkspaceView({ path, active = true, providerId, provide
   const [graphOpen, setGraphOpen] = useState(false); // 코드그래프 raw 뷰어 모달(#842 서브5, opt-in)
   const [flowFeature, setFlowFeature] = useState<string | null>(null); // 열린 플로우 패널의 기능(null=닫힘). dock에 flow 패널 존재 여부와 동기(#743)
   const [browserOpen, setBrowserOpen] = useState(false); // 인앱 브라우저 패널(#1034) — 레포별 저장
-  const [browserUrl, setBrowserUrl] = useState("");       // 마지막 주소(레포별)
+  const [browserTabs, setBrowserTabs] = useState<{ urls: string[]; active: number }>({ urls: [], active: 0 }); // 탭 주소들(레포별)
+  const [browserIncoming, setBrowserIncoming] = useState<{ url: string; n: number } | null>(null); // 분리 창에서 넘어온 탭
   const [browserRect, setBrowserRect] = useState<SlotRect | null>(null); // dock 속 브라우저 자리(고정 레이어 위치)
   const dockRef = useRef<HTMLElement>(null);
   const browserPrevRef = useRef(false); // 증분 이펙트가 본 마지막 browserOpen
@@ -148,7 +149,12 @@ export default function WorkspaceView({ path, active = true, providerId, provide
       setActiveDoc(localStorage.getItem(K("active-doc")) || null);
       setDocsOpen(localStorage.getItem(K("docs-open")) === "1");
       setBrowserOpen(localStorage.getItem(K("browser-open")) === "1");
-      setBrowserUrl(localStorage.getItem(K("browser-url")) || "");
+      // 탭 복원 — 옛 단일 주소(browser-url)는 탭 하나로 이전.
+      try {
+        const bt = JSON.parse(localStorage.getItem(K("browser-tabs")) || "null");
+        if (bt && Array.isArray(bt.urls)) setBrowserTabs({ urls: bt.urls.filter((u: unknown): u is string => typeof u === "string"), active: Number(bt.active) || 0 });
+        else { const old = localStorage.getItem(K("browser-url")); setBrowserTabs({ urls: old ? [old] : [], active: 0 }); }
+      } catch { setBrowserTabs({ urls: [], active: 0 }); }
       /* eslint-enable react-hooks/set-state-in-effect */
     } catch { /* ignore */ }
     repoLoadedRef.current = p;
@@ -160,16 +166,14 @@ export default function WorkspaceView({ path, active = true, providerId, provide
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; const k = `nunopi:ws:${path}:active-doc`; try { if (activeDoc) localStorage.setItem(k, activeDoc); else localStorage.removeItem(k); } catch { /* ignore */ } }, [activeDoc]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; const k = `nunopi:ws:${path}:docs-open`; try { localStorage.setItem(k, docsOpen ? "1" : "0"); } catch { /* ignore */ } }, [docsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; const k = `nunopi:ws:${path}:browser-open`; try { localStorage.setItem(k, browserOpen ? "1" : "0"); } catch { /* ignore */ } }, [browserOpen]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!path || repoLoadedRef.current !== path) return; const k = `nunopi:ws:${path}:browser-url`; try { if (browserUrl) localStorage.setItem(k, browserUrl); else localStorage.removeItem(k); } catch { /* ignore */ } }, [browserUrl]); // eslint-disable-line react-hooks/exhaustive-deps
-  // 분리 브라우저 창(#1034)이 같은 origin localStorage에 쓴 값 반영 — storage 이벤트는 다른 창에서 쓸 때만 옴.
-  // 주소는 dock 브라우저가 닫혀 있을 때만 받음(열려 있으면 그쪽 페이지가 우선). "열림"=앱 안으로 되돌리기.
-  const browserOpenRef = useRef(browserOpen);
-  useEffect(() => { browserOpenRef.current = browserOpen; }, [browserOpen]);
+  useEffect(() => { if (!path || repoLoadedRef.current !== path) return; try { localStorage.setItem(`nunopi:ws:${path}:browser-tabs`, JSON.stringify(browserTabs)); localStorage.removeItem(`nunopi:ws:${path}:browser-url`); } catch { /* ignore */ } }, [browserTabs]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 분리 브라우저 창(#1034)과 같은 origin localStorage로 주고받음 — storage 이벤트는 다른 창에서 쓸 때만 옴.
+  // browser-dock {url,n} = 분리 창의 "앱 안에서 열기" → dock 브라우저를 열고 그 주소를 새 탭으로.
   useEffect(() => {
     if (!path) return;
     const onStorage = (e: StorageEvent) => {
-      if (e.key === `nunopi:ws:${path}:browser-url` && !browserOpenRef.current) setBrowserUrl(e.newValue || "");
-      else if (e.key === `nunopi:ws:${path}:browser-open` && e.newValue === "1") setBrowserOpen(true);
+      if (e.key !== `nunopi:ws:${path}:browser-dock` || !e.newValue) return;
+      try { const d = JSON.parse(e.newValue); if (typeof d.url === "string") { setBrowserIncoming((prev) => ({ url: d.url, n: (prev?.n ?? 0) + 1 })); setBrowserOpen(true); } } catch { /* ignore */ }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -316,11 +320,21 @@ export default function WorkspaceView({ path, active = true, providerId, provide
     return n;
   });
   // 인앱 브라우저(#1034) — 툴바 아이콘으로 열기/닫기(닫으면 페이지도 닫힘, 주소는 기억). 분리하면 dock에서 빼고 별도 창.
-  const toggleBrowser = () => { if (browserOpen) setBrowserRect(null); setBrowserOpen(!browserOpen); };
-  const detachBrowser = async (url: string) => {
-    const r = await window.nunopiDesktop?.browser?.openWindow({ url, repo: path });
-    if (r?.ok) { setBrowserOpen(false); setBrowserRect(null); }
+  // 열 때 — 분리 창을 그냥 닫았으면 거기서 보던 주소(browser-detached)를 새 탭으로 이어줌(한 번 쓰면 지움).
+  // ponytail: 분리 창이 아직 열려 있어도 가져옴(같은 페이지가 두 군데) — 창 생존 추적은 필요해지면.
+  // 닫을 때 넘어온 탭 신호도 비움 — 안 비우면 다시 열 때 새 BrowserPane이 같은 탭을 또 추가.
+  const closeBrowser = () => { setBrowserOpen(false); setBrowserRect(null); setBrowserIncoming(null); };
+  const toggleBrowser = () => {
+    if (browserOpen) { closeBrowser(); return; }
+    try {
+      const k = `nunopi:ws:${path}:browser-detached`, u = localStorage.getItem(k);
+      if (u) { localStorage.removeItem(k); setBrowserIncoming((prev) => ({ url: u, n: (prev?.n ?? 0) + 1 })); }
+    } catch { /* ignore */ }
+    setBrowserOpen(true);
   };
+
+  // 활성 탭을 별도 창으로 — 성공하면 BrowserPane이 그 탭을 닫고, 0개면 closeBrowser.
+  const detachBrowser = async (url: string) => !!(await window.nunopiDesktop?.browser?.openWindow({ url, repo: path }))?.ok;
   // 활성 탭이 탭바 오버플로로 스크롤 밖에 있으면 안 보임(#801) — 활성 탭 DOM에 콜백 ref 달아 스크롤 인투 뷰.
   // 활성 탭 바뀔 때만 ref 재부착(콜백 identity 안정) → 그때 nearest로 최소 스크롤. 이미 보이면 no-op.
   const scrollTabIntoView = useCallback((el: HTMLElement | null) => { el?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, []);
@@ -718,7 +732,7 @@ export default function WorkspaceView({ path, active = true, providerId, provide
           {/* 브라우저 고정 레이어(#1034) — slot 위치에 겹쳐 그림. z-20: dock 드롭 오버레이(z-30)·이동 그립(z-40)은 위로. */}
           {browserOpen && browserRect && (
             <div className="absolute z-20" style={{ left: browserRect.l, top: browserRect.t, width: browserRect.w, height: browserRect.h }}>
-              <BrowserPane repo={path} url={browserUrl} onUrlChange={setBrowserUrl} onDetach={(u) => void detachBrowser(u)} />
+              <BrowserPane repo={path} initial={browserTabs} incoming={browserIncoming} onTabsChange={(urls, active) => setBrowserTabs({ urls, active })} onDetach={detachBrowser} onEmpty={closeBrowser} />
             </div>
           )}
         </section>
