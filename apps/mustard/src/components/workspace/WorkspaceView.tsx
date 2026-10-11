@@ -750,7 +750,7 @@ export default function WorkspaceView({ path, active = true, providerId, provide
               {rightMode === "github" ? (
                 <GithubPanel root={path} ciDot={ciDot} />
               ) : rightMode === "learn" ? (
-                <RepoLearnStream key={path} root={path} providerId={providerId} providerSettings={providerSettings} />
+                <RepoLearnStream key={path} root={path} active={active} providerId={providerId} providerSettings={providerSettings} />
               ) : (
                 /* FlyCardProvider(#750) — 세션 카드 목록에서 카드 클릭 시 확대·상세(throwCard). 워크스페이스 카드는 출처이동 없음(빈 sourceIds). */
                 <FlyCardProvider active={active} providerId={providerId} providerSettings={providerSettings} sourceIds={flyNoSources} onGoToSource={() => {}}>

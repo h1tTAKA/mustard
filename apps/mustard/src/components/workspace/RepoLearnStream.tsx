@@ -62,8 +62,9 @@ async function saveItems(root: string, items: { key: string; kind: ConceptKind; 
   } catch { return false; }
 }
 
-export default function RepoLearnStream({ root, providerId, providerSettings }: {
+export default function RepoLearnStream({ root, providerId, providerSettings, active = true }: {
   root: string;
+  active?: boolean; // #1043 보이는 레포일 때만 실시간 연결(숨은 레포 탭까지 열면 브라우저 동시 연결 한도 6개에 걸려 새 연결이 멈춤)
   providerId?: AgentProviderKind;
   providerSettings?: ProviderSettings;
 }) {
@@ -116,8 +117,10 @@ export default function RepoLearnStream({ root, providerId, providerSettings }: 
   const enqueue = useCallback((key: string) => { if (seenRef.current.has(key)) return; seenRef.current.add(key); queueRef.current.push(key); void pump(); }, [pump]);
 
   // SSE — 이벤트 → 개념 upsert(중복은 ts/tool만 갱신) + 새 개념이면 설명 큐.
+  // 보이는 레포일 때만(#1043): 같은 주소 동시 연결은 6개까지라 방문한 레포마다 열어두면 늦게 연 연결이 대기열에 멈춤
+  // (레포 5개 + 상태 스트림 = 6 → "패널 갔다 와야 뜸"). 다시 보이면 아래 로드가 놓친 기록을 채움.
   useEffect(() => {
-    if (!root) return;
+    if (!root || !active) return;
     const es = new EventSource(`/api/repo/mcp/activity/stream?root=${encodeURIComponent(root)}`);
     es.onopen = () => setLive(true); es.onerror = () => setLive(false);
     es.onmessage = (m) => {
@@ -137,12 +140,12 @@ export default function RepoLearnStream({ root, providerId, providerSettings }: 
       const cfg = cfgRef.current; if (cfg.autoExplain && cfg.providerId) enqueue(key);
     };
     return () => es.close();
-  }, [root, enqueue]);
+  }, [root, enqueue, active]);
 
   // #994 서버 기록 로드 — ① 옛 localStorage 기록 있으면 1회 이관(서버가 key로 멱등) 후 삭제 ② 최근 100개 로드해
   // SSE로 먼저 들어온 항목과 key 병합(최신순). 이관 실패하면 로컬 키를 남겨 다음 마운트에 재시도.
   useEffect(() => {
-    if (!root) return;
+    if (!root || !active) return; // 다시 보일 때마다 최근 기록 재로드(숨어 있는 동안 실시간 연결이 없었으니까)
     let alive = true;
     (async () => {
       const legacy = load<Concept>(cKey(root)).filter((c) => c.status === "done" && c.expl);
@@ -161,7 +164,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings }: 
       setLoaded(true);
     })();
     return () => { alive = false; };
-  }, [root]);
+  }, [root, active]);
   // 용어집은 그대로 localStorage(작고 레포별 누적).
   useEffect(() => { try { if (typeof localStorage !== "undefined") localStorage.setItem(gKey(root), JSON.stringify(terms.slice(0, 80))); } catch { /* 무시 */ } }, [terms, root]);
 
