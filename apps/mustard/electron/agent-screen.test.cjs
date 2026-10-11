@@ -71,7 +71,13 @@ assert.strictEqual(st(staleFooter), "claude/idle", "끝난 서브 푸터 잔재�
 // #989 titleHint — 출력이 많아 16KB tail에 타이틀이 없을 때 스트림 추적 타이틀로 판정(실측: 백그라운드 세션 working↔idle 깜빡임)
 const noTitle = "x".repeat(20000) + "? for shortcuts";
 assert.strictEqual((() => { const r = parseAgentScreen(noTitle, `${braille} Fix tests`); return r && `${r.agent}/${r.state}`; })(), "claude/working", "titleHint 스피너 → working");
-assert.strictEqual((() => { const r = parseAgentScreen(noTitle, `${idleGlyph} Fix tests`); return r && `${r.agent}/${r.state}`; })(), "claude/idle", "titleHint ✳ → idle");
+// #1036 hint로만 남은 ✳(이전 턴)는 믿지 않음 — 마커 없으면 unknown, 라이브 마커 있으면 working
+assert.strictEqual((() => { const r = parseAgentScreen(noTitle, `${idleGlyph} Fix tests`); return r && `${r.agent}/${r.state}`; })(), "claude/unknown", "titleHint ✳만 → unknown");
+const midTurn = "x".repeat(20000) + "✻ Precipitating… (11m 10s · ↓ 46.8k tokens)\n? for shortcuts";
+assert.strictEqual((() => { const r = parseAgentScreen(midTurn, `${idleGlyph} prev`); return r && `${r.agent}/${r.state}`; })(), "claude/working", "낡은 ✳ hint + 라이브 타이머 → working");
+const quietRedraw = "x".repeat(20000) + "\u001b[2C6\u001b[1C✢\u001b[3D? for shortcuts";
+assert.strictEqual((() => { const r = parseAgentScreen(quietRedraw, `${idleGlyph} prev`); return r && r.state; })(), "unknown", "조용한 재그리기 → unknown(가짜 완료 X)");
 assert.strictEqual((() => { const r = parseAgentScreen(title(`${idleGlyph} new`) + "? for shortcuts", `${braille} old`); return r && r.state; })(), "idle", "tail 타이틀이 hint보다 우선");
+assert.strictEqual(st(title(`${idleGlyph} done`) + "✻ Brewed for 2m · done\n❯ "), "claude/idle", "턴 끝 새 ✳ → idle(완료 신호는 유지)");
 
 console.log("PASS — all assertions");

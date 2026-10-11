@@ -990,8 +990,10 @@ async function pushScreenState(id, screen) {
   // working→done 가짜 전이 → 알림. 첫 보고(직전 없음)만 done.
   const unknownState = lastScreen.get(id)?.state ?? "done";
   let agent, state;
-  if (ra) { agent = ra; agentSticky.set(id, ra); state = parsed ? mapScreenState(parsed.state) : unknownState; } // #864 신원=실행기록(sticky도 동기화 — agentForId와 일관), 상태만 스크레이프
-  else if (parsed) { agent = parsed.agent; state = mapScreenState(parsed.state); agentSticky.set(id, agent); } // 버퍼가 상태 잡음(working/waiting/유휴→done)
+  // #1036 파서 "unknown"(판정 불가) = 직전 상태 유지 — idle로 떨어뜨리면 가짜 완료 알림.
+  const fromParse = (p) => (p.state === "unknown" ? unknownState : mapScreenState(p.state));
+  if (ra) { agent = ra; agentSticky.set(id, ra); state = parsed ? fromParse(parsed) : unknownState; } // #864 신원=실행기록(sticky도 동기화 — agentForId와 일관), 상태만 스크레이프
+  else if (parsed) { agent = parsed.agent; state = fromParse(parsed); agentSticky.set(id, agent); } // 버퍼가 상태 잡음(working/waiting/유휴→done)
   else if (procAgent) { agent = procAgent; state = unknownState; agentSticky.set(id, agent); }    // 프로세스는 에이전트인데 버퍼 미판정 → 존재
   // 배너 스크롤아웃 등으로 버퍼 미판정이어도, 셸이 아니고 이미 신원이 있으면 유지(#805) — 탭(agentForId)과 동일 sticky.
   // hermes처럼 프로세스명이 python(래퍼 exec)이라 폴백도 안 되는 에이전트가 카드서 사라지던 문제.

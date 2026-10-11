@@ -92,7 +92,9 @@ function agentFromProcess(name) {
 function parseAgentScreen(buffer, titleHint = "") {
   // 타이틀은 넓게(입력 에코로 밀려도 확보). 전체 200k는 perf 낭비라 16KB.
   // #989 출력이 많으면 16KB tail에 타이틀이 아예 없음(실측 6/6) → 스트림 전체서 추적한 마지막 타이틀(titleHint)로 보완(orca 방식).
-  const title = lastTitle(recentRaw(buffer, 16000)) || titleHint || "";
+  const tailTitle = lastTitle(recentRaw(buffer, 16000));
+  const title = tailTitle || titleHint || "";
+  const freshTitle = !!tailTitle; // tail에 새로 찍힌 타이틀인지(hint = 예전에 본 것)
   const tc = firstCode(title.trim());
   const wide = stripAnsi(recentRaw(buffer, 8000)).toLowerCase().replace(/\s+/g, "");    // 넓게 — chrome 감지(입력 에코 많아도 놓치지 않게)
   const compact = stripAnsi(recentRaw(buffer, 2500)).toLowerCase().replace(/\s+/g, ""); // 좁게 — 작업 마커(옛 tokens stale 방지)
@@ -131,9 +133,13 @@ function parseAgentScreen(buffer, titleHint = "") {
     // 최신 compact tail에 접미가 있으면 현재 프레임이 idle 프롬프트+셸실행(권한 박스가 bottom 아님)이라 waiting은 잔재.
     if (CLAUDE_BG.test(compact)) return { agent: "claude", state: "working", task };
     if (CLAUDE_WAITING.test(bottom)) return { agent: "claude", state: "waiting", task };     // 권한/선택/인터럽트(바닥에서만)
-    if (isClaudeIdleGlyph(tc)) return { agent: "claude", state: "idle", task };              // ✳ 타이틀 = 유휴(최신)
-    if (CLAUDE_WORKING.test(compact)) return { agent: "claude", state: "working", task };    // 타이틀 없는 폴백(tokens)
-    return { agent: "claude", state: "idle", task };
+    // #1036 ✳는 tail에 새로 찍혔을 때만 유휴 — 이 Claude 빌드는 타이틀을 턴 끝에만 보내서, 턴 도중엔 이전 턴의 ✳가
+    // hint로 남아 있음. 그걸 믿으면 작업 중에도 idle → 1.5초 뒤 가짜 완료 알림(조용한 긴 Bash에서 실측).
+    if (isClaudeIdleGlyph(tc) && freshTitle) return { agent: "claude", state: "idle", task };
+    if (CLAUDE_WORKING.test(compact)) return { agent: "claude", state: "working", task };    // 타이틀 없는/낡은 경우 라이브 마커
+    // 그 밖엔 "모름" — 화면이 스피너 몇 글자만 바뀌는 조용한 작업은 마커가 tail에 없음. 모름 = main이 직전 상태 유지,
+    // 완료는 확실한 신호(새 ✳·대기 박스·Stop 훅)로만.
+    return { agent: "claude", state: "unknown", task };
   }
 
   // ── Codex(보조) ─────────────────────────
