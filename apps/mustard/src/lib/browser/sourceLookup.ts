@@ -19,13 +19,18 @@ export function findSources(el: any, fetchText: (url: string) => Promise<string>
     if (t && typeof t === "object") return t.displayName || (t.render && (t.render.displayName || t.render.name)) || "";
     return (f && typeof f.name === "string" && f.name) || ""; // React 19 서버 컴포넌트 정보(ReactComponentInfo)
   };
-  const firstUserFrame = (stack: string) => {
+  // 스택 프레임들(위→아래). eval 프레임은 URL이 엉망이라 뺌. React 런타임 chunk는 이름으로 1차 거르고,
+  // 이름에 안 드러나는 합쳐진 chunk는 원본 위치(node_modules 등)로 2차 거름(locate).
+  const framesOf = (stack: string) => {
+    const out: { url: string; line: number; col: number }[] = [];
     for (const ln of String(stack || "").split("\n").slice(1)) {
+      if (ln.includes("eval at ")) continue;
       const m = ln.match(/at (?:.*? \()?(.+?):(\d+):(\d+)\)?\s*$/);
-      if (m && !SKIP.test(m[1])) return { url: m[1], line: Number(m[2]), col: Number(m[3]) };
+      if (m && !SKIP.test(m[1])) out.push({ url: m[1], line: Number(m[2]), col: Number(m[3]) });
     }
-    return null;
+    return out.slice(0, 5);
   };
+  const LIB = /node_modules|next\/dist|^react(-dom)?\//;
   // VLQ — mappings에서 생성 줄 L(0부터)의 칸 C 이하 마지막 세그먼트 → [srcIdx, srcLine, srcCol](0부터).
   const lookup = (mappings: string, L: number, C: number) => {
     let line = 0, genCol = 0, src = 0, sLine = 0, sCol = 0, best: number[] | null = null;
@@ -37,7 +42,12 @@ export function findSources(el: any, fetchText: (url: string) => Promise<string>
       const seg: number[] = [];
       while (i < mappings.length && mappings[i] !== "," && mappings[i] !== ";") {
         let v = 0, shift = 0, d: number;
-        do { d = B64.indexOf(mappings[i++]); v += (d & 31) << shift; shift += 5; } while (d & 32);
+        do {
+          if (i >= mappings.length) return best; // 잘린 맵 — 끝을 넘어 indexOf(undefined)=-1이면 무한 루프(페이지가 멈춤, #1039 리뷰)
+          d = B64.indexOf(mappings[i++]);
+          if (d < 0) return best;
+          v += (d & 31) << shift; shift += 5;
+        } while (d & 32);
         seg.push(v & 1 ? -(v >> 1) : v >> 1);
       }
       genCol += seg[0];
@@ -57,7 +67,8 @@ export function findSources(el: any, fetchText: (url: string) => Promise<string>
     if (!map || typeof map.mappings !== "string") return null;
     const hit = lookup(map.mappings, L, C);
     if (!hit || !map.sources || !map.sources[hit[0]]) return null;
-    return { file: cleanPath((map.sourceRoot || "") + map.sources[hit[0]]), line: hit[1] + 1, col: hit[2] + 1 };
+    const root = map.sourceRoot || "";
+    return { file: cleanPath((root && !root.endsWith("/") ? root + "/" : root) + map.sources[hit[0]]), line: hit[1] + 1, col: hit[2] + 1 };
   };
   const maps: Record<string, Promise<any>> = {};
   const mapFor = (url: string): Promise<any> => {
@@ -75,9 +86,22 @@ export function findSources(el: any, fetchText: (url: string) => Promise<string>
     const ds = f && f._debugSource;
     if (ds && ds.fileName) return Promise.resolve({ file: cleanPath(ds.fileName), line: ds.lineNumber || 0, col: ds.columnNumber || 0 });
     const st = f && f._debugStack;
-    const fr = firstUserFrame(st && typeof st === "object" ? st.stack : st);
-    if (!fr) return Promise.resolve(null);
-    return mapFor(fr.url).then((map) => (map ? fromMap(map, fr.line - 1, fr.col - 1) : null));
+    const frames = framesOf(st && typeof st === "object" ? st.stack : st);
+    // 위에서부터 하나씩 원본으로 바꿔 보고, 라이브러리가 아닌 첫 위치를 씀(못 바꾸면 다음 프레임).
+    const tryAt = (k: number): Promise<{ file: string; line: number; col: number } | null> => {
+      if (k >= frames.length) return Promise.resolve(null);
+      const fr = frames[k];
+      // next dev --webpack(eval-source-map): webpack-internal:///(…)/./src/x.tsx:줄:칸 — fetch 불가, 경로·줄을 그대로(줄은 대략).
+      if (fr.url.startsWith("webpack-internal:")) {
+        const file = cleanPath(fr.url.replace(/^webpack-internal:\/\/\/(\([^)]*\)\/)?/, ""));
+        return LIB.test(file) ? tryAt(k + 1) : Promise.resolve({ file, line: fr.line, col: fr.col });
+      }
+      return mapFor(fr.url).then((map) => {
+        const loc = map ? fromMap(map, fr.line - 1, fr.col - 1) : null;
+        return loc && !LIB.test(loc.file) ? loc : tryAt(k + 1);
+      });
+    };
+    return tryAt(0);
   };
 
   const key = el && Object.keys(el).find((k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$"));

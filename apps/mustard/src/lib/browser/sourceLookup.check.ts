@@ -46,6 +46,21 @@ assert.deepStrictEqual(r18, [{ name: "Header", file: "/Users/me/app/src/Card.jsx
 assert.deepStrictEqual(await findSources({}, fetchText), []);
 assert.deepStrictEqual(await findSources({ __reactFiber$z: { type: "a", _debugStack: stack("http://localhost:3000/missing.js", 1, 1) } }, fetchText), []);
 
+// 잘린 맵(이어짐 비트 켜진 채 끝) — 멈추지 않고 그때까지의 결과
+files["http://localhost:3000/cut.js"] = `a\n//# sourceMappingURL=data:application/json;base64,${b64({ version: 3, sources: ["src/x.tsx"], mappings: ";AAAA,g" })}`;
+const cut = await findSources({ __reactFiber$c: { type: "a", _debugOwner: headerFiber, _debugStack: stack("http://localhost:3000/cut.js", 2, 9) } }, fetchText, 0);
+assert.deepStrictEqual(cut, [{ name: "Header", file: "src/x.tsx", line: 1, col: 1 }]);
+
+// 이름에 안 드러나는 chunk의 React 프레임 → 원본이 node_modules면 다음 프레임으로
+files["http://localhost:3000/merged.js"] = `a\nb\n//# sourceMappingURL=data:application/json;base64,${b64({ version: 3, sourceRoot: "turbopack:///[project]", sources: ["node_modules/react/cjs/react-jsx-dev-runtime.development.js", "src/Btn.tsx"], mappings: ";" + seg([0, 0, 0, 0]) + ";" + seg([0, 1, 4, 2]) })}`;
+const mergedStack = { stack: "Error: x\n    at jsxDEV (http://localhost:3000/merged.js:2:1)\n    at eval (eval at <anonymous> (http://localhost:3000/a.js:1:2), <anonymous>:3:4)\n    at Btn (http://localhost:3000/merged.js:3:1)" };
+const merged = await findSources({ __reactFiber$m: { type: "a", _debugOwner: headerFiber, _debugStack: mergedStack } }, fetchText, 0);
+assert.deepStrictEqual(merged, [{ name: "Header", file: "src/Btn.tsx", line: 5, col: 3 }], "react 프레임·eval 프레임 건너뜀, sourceRoot에 / 붙임");
+
+// next dev --webpack: webpack-internal 경로를 그대로
+const wi = await findSources({ __reactFiber$w: { type: "a", _debugOwner: headerFiber, _debugStack: { stack: "Error: x\n    at Header (webpack-internal:///(app-pages-browser)/./src/Header.tsx:30:9)" } } }, fetchText, 0);
+assert.deepStrictEqual(wi, [{ name: "Header", file: "src/Header.tsx", line: 30, col: 9 }]);
+
 // toString으로 페이지에 주입해도 돌아야 함 — 바깥 참조 없이 다시 만들어 같은 결과
 const injected = new Function(`return (${findSources.toString()})`)() as typeof findSources;
 assert.deepStrictEqual(await injected(btn, fetchText), r19);
