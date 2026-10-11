@@ -1204,7 +1204,9 @@ ipcMain.handle("daemon:restart", async () => {
   // SIGKILL — 데몬은 앱 종료에 살아남으려고 SIGTERM을 무시함(#682). 소켓 파일은 새 데몬이 시작 때 지움.
   try { process.kill(pid, "SIGKILL"); } catch (e) { return { ok: false, reason: String(e?.message || e) }; }
   app.relaunch(); // 새 앱이 뜨면서 새 버전 데몬을 스폰
-  setTimeout(() => app.exit(0), 300);
+  // app.quit — before-quit에서 standalone 서버를 끔. app.exit는 그걸 건너뛰어 서버가 59720을 물고 남고,
+  // 새 앱이 다른 포트로 떠서 저장된 탭·설정이 안 보였음(실측, 포트=origin=저장소).
+  setTimeout(() => app.quit(), 300);
   return { ok: true };
 });
 ipcMain.handle("terminal:list", async () => {
