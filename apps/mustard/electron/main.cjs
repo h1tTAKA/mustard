@@ -3,7 +3,7 @@
 // prod: .next/standalone/server.js를 동적 포트로 spawn 후 그 localhost 로드.
 // #981 다른 require·spawn보다 먼저 — 이후 모든 자식(데몬·서버·SNA)이 정리된 env를 상속.
 require("./claude-env.cjs").stripParentClaudeEnv(process.env);
-const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents } = require("electron");
 const { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, cpSync } = require("node:fs");
 const {
   startSnaServer,
@@ -19,6 +19,7 @@ const { getProviderUsage } = require("./provider-usage.cjs");
 const { startWatch, stopWatch, stopAll: stopAllWatchers } = require("./repo-watcher.cjs");
 const { seen: seenText, freshLines } = require("./narration-dedupe.cjs");
 const { loadSeen, saveSeen } = require("./narration-seen-store.cjs"); // #1031 레포별 디스크 저장 // #1019 재그리기 중복 내레이션 방지
+const { installBrowserGuestPolicy, isAllowedUrl: isBrowserUrl, setAppChords, trackChordHost } = require("./browser-guest.cjs"); // #1034 인앱 브라우저
 const githubBridge = require("./github-bridge.cjs"); // GitHub 패널(#809/#810) gh CLI 브릿지
 const { join, dirname } = require("node:path");
 
@@ -213,6 +214,7 @@ function createWindow(url) {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true, // #1034 인앱 브라우저 — guest 설정은 browser-guest.cjs가 강제
     },
   });
   win.loadURL(url);
@@ -226,7 +228,7 @@ function createWindow(url) {
 
 // 모드 전용 창(#789) — 그 모드만 보이는 별도 창. appBase에 ?win=<kind> 를 붙여 로드.
 // 렌더러(page.tsx)가 win 파라미터를 읽어 windowMode로 렌더한다. 반환된 창을 호출부가 추적.
-function createModeWindow(kind) {
+function createModeWindow(kind, extra = {}) {
   const sep = appBase.includes("?") ? "&" : "?";
   const w = new BrowserWindow({
     width: 1100,
@@ -237,9 +239,11 @@ function createModeWindow(kind) {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true, // #1034 인앱 브라우저 — guest 설정은 browser-guest.cjs가 강제
     },
   });
-  w.loadURL(`${appBase}${sep}win=${encodeURIComponent(kind)}`);
+  const qs = Object.entries(extra).filter(([, v]) => v).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join("");
+  w.loadURL(`${appBase}${sep}win=${encodeURIComponent(kind)}${qs}`);
   wireWindowCommon(w);
   return w;
 }
@@ -330,6 +334,41 @@ ipcMain.handle("mode-window:open", (_e, kind) => {
   }
   return { ok: true };
 });
+// 인앱 브라우저 분리 창(#1034) — 멀티 모니터. 같은 앱 페이지를 ?win=browser 로 띄우고 BrowserPane만 렌더.
+// 모드 창과 달리 여러 개 허용(레포·사이트별로 여러 화면에 띄울 수 있게).
+ipcMain.handle("browser-window:open", (_e, payload) => {
+  const url = String(payload?.url || "");
+  const repo = String(payload?.repo || "");
+  if (url && !isBrowserUrl(url)) return { ok: false, reason: "invalid" };
+  if (!appBase) return { ok: false, reason: "not-ready" };
+  try {
+    const w = createModeWindow("browser", { url, repo });
+    w.setTitle("Browser");
+  } catch (e) { return { ok: false, reason: "error", error: String(e?.message || e) }; }
+  return { ok: true };
+});
+// 인앱 브라우저 포커스 중 앱이 가져갈 단축키 조합(#1034) — 렌더러가 설정 반영해 보냄.
+// 개발자 도구를 같은 화면 안 webview에 띄움(#1034) — 별도 창 대신. 두 id 모두 보낸 창이 품은 webview여야 함
+// (렌더러가 아무 id나 보내 다른 창·앱 UI의 devtools를 여는 것 방지).
+function ownGuest(sender, id) {
+  const wc = webContents.fromId(Number(id));
+  return wc && !wc.isDestroyed() && wc.getType() === "webview" && wc.hostWebContents === sender ? wc : null;
+}
+ipcMain.handle("browser:devtools-open", (e, { guestId, devtoolsId } = {}) => {
+  const guest = ownGuest(e.sender, guestId), dt = ownGuest(e.sender, devtoolsId);
+  if (!guest || !dt || guest === dt) return { ok: false };
+  // devtools 안에서 링크·"새 탭에서 열기"가 이 webview를 페이지로 덮어써 devtools가 사라지지 않게(#1034 리뷰).
+  dt.setWindowOpenHandler(() => ({ action: "deny" }));
+  guest.setDevToolsWebContents(dt);
+  guest.openDevTools();
+  return { ok: true };
+});
+ipcMain.handle("browser:devtools-close", (e, { guestId } = {}) => {
+  const guest = ownGuest(e.sender, guestId);
+  if (guest?.isDevToolsOpened()) guest.closeDevTools();
+  return { ok: true };
+});
+ipcMain.on("browser:set-chords", (e, list) => { trackChordHost(e.sender); setAppChords(e.sender.id, list); });
 // 탭 쪽 모드 점유/해제/조회(#789) — 메인 창 렌더러가 모드 탭 추가·닫기·복원 시 호출.
 ipcMain.handle("mode:claim", (_e, kind) => ({ ok: claimMode(kind, "tab") }));
 ipcMain.handle("mode:release", (_e, kind) => { releaseMode(kind); return { ok: true }; });
@@ -1124,6 +1163,7 @@ function installAppMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 app.whenReady().then(installAppMenu).catch(() => {});
+installBrowserGuestPolicy(app); // #1034 모든 창의 <webview> 보안·정책
 app.whenReady().then(boot).catch((e) => { console.error("[electron] boot failed", e); app.quit(); });
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) boot(); });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

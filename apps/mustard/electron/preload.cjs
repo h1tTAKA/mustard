@@ -82,6 +82,13 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     onData: (cb) => { const h = (_e, p) => cb(p); ipcRenderer.on("terminal:data", h); return () => ipcRenderer.removeListener("terminal:data", h); },
     onExit: (cb) => { const h = (_e, p) => cb(p); ipcRenderer.on("terminal:exit", h); return () => ipcRenderer.removeListener("terminal:exit", h); },
   },
+  browser: { // #1034 인앱 브라우저 — 분리 창 열기 + 포커스된 guest가 넘겨준 단축키 구독(해제 함수 반환)
+    openWindow: (payload) => ipcRenderer.invoke("browser-window:open", payload),
+    setAppChords: (list) => ipcRenderer.send("browser:set-chords", list),
+    openDevTools: (guestId, devtoolsId) => ipcRenderer.invoke("browser:devtools-open", { guestId, devtoolsId }),
+    closeDevTools: (guestId) => ipcRenderer.invoke("browser:devtools-close", { guestId }),
+    onKey: (cb) => { const h = (_e, k) => cb(k); ipcRenderer.on("browser:key", h); return () => ipcRenderer.removeListener("browser:key", h); },
+  },
   ports: { // #880 워크스페이스 dev 서버 포트 감지·열기
     list: (cwd) => ipcRenderer.invoke("ports:list", cwd),
     open: (port) => ipcRenderer.invoke("ports:open", port),
