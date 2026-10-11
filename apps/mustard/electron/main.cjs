@@ -4,7 +4,7 @@
 // #981 다른 require·spawn보다 먼저 — 이후 모든 자식(데몬·서버·SNA)이 정리된 env를 상속.
 require("./claude-env.cjs").stripParentClaudeEnv(process.env);
 const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents, WebContentsView } = require("electron");
-const { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, cpSync } = require("node:fs");
+const { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, cpSync, chmodSync } = require("node:fs");
 const {
   startSnaServer,
   resolveClaudeCli,
@@ -419,6 +419,22 @@ ipcMain.handle("browser:devtools-close", (e, { guestId } = {}) => {
   if (guest) closeDevtoolsView(guest.id);
   return { ok: true };
 });
+// 에이전트용 브라우저 조작(#1041) — 렌더러가 탭(guest)을 레포와 함께 등록, browser-mcp.cjs가 HTTP로 조작 요청.
+const browserControl = require("./browser-control.cjs").createBrowserControl({
+  getGuest: (id) => { const wc = webContents.fromId(Number(id)); return wc && !wc.isDestroyed() && wc.getType() === "webview" ? wc : null; },
+  // 그 레포 브라우저가 안 열려 있으면 모든 창에 "열어줘" — 그 레포 WorkspaceView가 받아서 엶.
+  requestOpen: (cwd, url) => { for (const w of BrowserWindow.getAllWindows()) { try { w.webContents.send("browser:open-request", { cwd, url }); } catch { /* 닫히는 중 */ } } },
+  isAllowedUrl: isBrowserUrl,
+});
+ipcMain.on("browser:register", (e, { guestId, repo, visible } = {}) => { const g = ownGuest(e.sender, guestId); if (g) browserControl.register(g, { repo, visible }); });
+ipcMain.on("browser:unregister", (e, { guestId } = {}) => { if (ownGuest(e.sender, guestId)) browserControl.unregister(guestId); });
+// 부팅마다 새 토큰으로 띄우고 주소·토큰을 0600 파일에 — MCP 스크립트가 매 요청 때 읽음(포트가 바뀌어도 OK).
+const BROWSER_TOKEN = require("node:crypto").randomBytes(24).toString("hex");
+const browserEndpointFile = () => join(app.getPath("userData"), "mustard-browser-endpoint.json");
+app.whenReady().then(() => browserControl.listen(BROWSER_TOKEN)).then(({ port }) => {
+  writeFileSync(browserEndpointFile(), JSON.stringify({ url: `http://127.0.0.1:${port}/call`, token: BROWSER_TOKEN }), { mode: 0o600 });
+  chmodSync(browserEndpointFile(), 0o600);
+}).catch((err) => console.warn("[browser-control] listen failed:", String(err?.message || err)));
 ipcMain.on("browser:set-chords", (e, list) => { trackChordHost(e.sender); setAppChords(e.sender.id, list); });
 // 탭 쪽 모드 점유/해제/조회(#789) — 메인 창 렌더러가 모드 탭 추가·닫기·복원 시 호출.
 ipcMain.handle("mode:claim", (_e, kind) => ({ ok: claimMode(kind, "tab") }));
