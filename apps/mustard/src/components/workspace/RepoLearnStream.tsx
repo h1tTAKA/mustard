@@ -28,6 +28,8 @@ const fmtDateTime = (ts: number) => { const d = new Date(ts); const p = (n: numb
 const dayOf = (ts: number) => { const d = new Date(ts); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
 // 카톡式 구분선 표기 — locale별 자동(ko "2026년 10월 6일 화요일", ja "2026年10月6日火曜日", en "Tuesday, October 6, 2026").
 const fmtDay = (ts: number, locale: string) => { try { return new Intl.DateTimeFormat(locale, { year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(ts); } catch { return new Date(ts).toDateString(); } };
+// nunopi 브랜드 그라데이션(시안→블루→바이올렛) — 카드로 등록된 용어를 머스타드 일반 용어와 구분(#1051).
+const NUNOPI_GRADIENT = "linear-gradient(90deg, #22d3ee 0%, #3b82f6 55%, #8b5cf6 100%)";
 const MAX_ITEMS = 200; // #994 화면 메모리 상한(서버 로드 100 + 실시간 여유). 전체 기록은 서버 날짜별 파일.
 const cKey = (root: string) => `nunopi:ws:${root}:learn-concepts`; // #994 이전 저장소(1회 이관 후 삭제)
 const gKey = (root: string) => `nunopi:ws:${root}:learn-terms`;
@@ -362,11 +364,14 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                     <li key={x.term}>{(() => { const card = cardOf(x.term); const body = (<>
                       <span className="inline-block rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 dark:text-mustard-400">{x.term}</span>
                       <p className="mt-1 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{x.def}</p>
-                    </>); return card ? ( /* 추가됨 — 카드 전체를 누르면 카드 확대 */
+                    </>); return card ? ( /* 추가됨 — nunopi 그라데이션 테두리·배지·용어, 카드 전체를 누르면 카드 확대 */
                       <button type="button" onClick={(e) => throwCard(card, e.currentTarget.getBoundingClientRect())} title={t("learn.openCard")}
-                        className="relative block w-full rounded-lg border border-mustard-500/40 bg-zinc-50/70 px-2.5 py-1.5 pr-14 text-left transition hover:bg-mustard-500/5 dark:border-mustard-400/30 dark:bg-zinc-800/40 dark:hover:bg-mustard-400/5">
-                        <span className="absolute right-1.5 top-1.5 inline-flex items-center gap-0.5 rounded-full bg-mustard-500/12 px-1.5 py-0.5 text-[10px] font-medium text-mustard-700 dark:text-mustard-400"><IconCheck size={10} stroke={2.5} aria-hidden />{t("learn.inCards")}</span>
-                        {body}
+                        className="block w-full rounded-lg p-px text-left transition hover:brightness-110" style={{ backgroundImage: NUNOPI_GRADIENT }}>
+                        <span className="relative block rounded-[7px] bg-white px-2.5 py-1.5 pr-14 dark:bg-[var(--s-pane)]">
+                          <span className="absolute right-1.5 top-1.5 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundImage: NUNOPI_GRADIENT }}><IconCheck size={10} stroke={2.5} aria-hidden />{t("learn.inCards")}</span>
+                          <span className="inline-block rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-semibold"><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{x.term}</span></span>
+                          <span className="mt-1 block text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{x.def}</span>
+                        </span>
                       </button>
                     ) : (
                       <div className={`relative rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 dark:border-zinc-800 dark:bg-zinc-800/40 ${cardsOn ? "pr-8" : ""}`}>
