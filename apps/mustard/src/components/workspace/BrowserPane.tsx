@@ -4,9 +4,13 @@
 // <webview>는 React 속성 대신 직접 만든다 — allowpopups·partition은 붙기 전에 있어야 하고, src를 React가 바꾸면 매번 새로 이동해서.
 import { useEffect, useRef, useState } from "react";
 import type { WebviewTag } from "electron";
-import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld, IconArrowsMinimize, IconPlus } from "@tabler/icons-react";
+import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld, IconArrowsMinimize, IconPlus, IconPointer, IconLoader2 } from "@tabler/icons-react";
 import { useT, useSetting, appChords, SHORTCUT_OVERRIDES_KEY, type ShortcutOverrides } from "@mustard/core";
 import { normalizeBrowserUrl } from "@/lib/browser/url";
+import { PICK_SCRIPT, PICK_CANCEL, type PickedElement } from "@/lib/browser/pickScript";
+import { formatPickFeedback } from "@/lib/browser/feedback";
+import { sendToAgent } from "@/lib/browser/sendToAgent";
+import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 
 const PARTITION = "persist:mustard-browser"; // main의 PARTITION과 같아야 붙음(다르면 거부)
 
@@ -21,7 +25,8 @@ function subscribeGuestKeys() {
 }
 
 // 탭 하나 — 주소창·뒤/앞/새로고침·개발자 도구·webview. 안 보이는 탭도 언마운트하지 않음(페이지 유지).
-function BrowserPage({ url, visible, ports, onUrlChange, onTitle, onDetach, onDock }: {
+function BrowserPage({ repo, url, visible, ports, onUrlChange, onTitle, onDetach, onDock }: {
+  repo: string;
   url: string;                          // 처음 열 주소("" = 빈 화면)
   visible: boolean;
   ports: number[];
@@ -43,6 +48,12 @@ function BrowserPage({ url, visible, ports, onUrlChange, onTitle, onDetach, onDo
   const [wide, setWide] = useState(true);           // 넓으면 오른쪽, 좁으면 아래
   const areaRef = useRef<HTMLDivElement>(null);
   const dtHostRef = useRef<HTMLDivElement>(null);
+  // 요소 집어서 에이전트한테(#1037) — picking: 페이지에서 고르는 중, picked: 고른 요소(+스크린샷) → 코멘트 팝오버.
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<{ el: PickedElement; shot?: string; pos: { left: number; top: number } } | null>(null);
+  const [comment, setComment] = useState("");
+  const [sendState, setSendState] = useState<"idle" | "sending" | "no-agent">("idle");
+  const pickGen = useRef(0); // 선택 회차 — 페이지 이동 뒤 늦게 끝난 옛 선택이 상태를 덮지 않게
   const editingRef = useRef(false); // 주소창 입력 중엔 페이지 이동으로 덮어쓰지 않음
   useEffect(() => { editingRef.current = editing; }, [editing]);
   const onUrlChangeRef = useRef(onUrlChange);
@@ -69,7 +80,8 @@ function BrowserPage({ url, visible, ports, onUrlChange, onTitle, onDetach, onDo
     wv.addEventListener("did-navigate-in-page", sync);
     wv.addEventListener("did-start-loading", () => setLoading(true));
     wv.addEventListener("did-stop-loading", () => setLoading(false));
-    wv.addEventListener("dom-ready", () => setReady(true));
+    // 이동하면 선택 스크립트는 옛 페이지와 함께 사라지고 Promise가 안 끝날 수 있음 → 선택 상태·팝오버 정리(#1037 리뷰).
+    wv.addEventListener("dom-ready", () => { setReady(true); pickGen.current++; setPicking(false); setPicked(null); });
     wv.addEventListener("page-title-updated", (e) => onTitleRef.current((e as unknown as { title: string }).title));
     host.appendChild(wv);
     viewRef.current = wv;
@@ -100,6 +112,37 @@ function BrowserPage({ url, visible, ports, onUrlChange, onTitle, onDetach, onDo
     host.appendChild(dt);
     return () => { void api.closeDevTools(pageId); dt.remove(); };
   }, [devtools, ready]);
+
+  // 선택 시작/취소 — 스크립트가 클릭 때까지 기다렸다 요소 정보를 돌려줌(Esc·취소 = null).
+  const togglePick = () => {
+    const wv = viewRef.current;
+    if (!wv || !ready) return;
+    if (picking) { void wv.executeJavaScript(PICK_CANCEL).catch(() => {}); return; }
+    setPicked(null); setSendState("idle"); setPicking(true);
+    const gen = ++pickGen.current;
+    void (wv.executeJavaScript(PICK_SCRIPT, true) as Promise<PickedElement | null>)
+      .then(async (el) => {
+        if (gen !== pickGen.current) return;
+        setPicking(false);
+        if (!el) return;
+        const shot = await window.nunopiDesktop?.browser?.capture(wv.getWebContentsId(), el.rect).catch(() => undefined);
+        if (gen !== pickGen.current) return;
+        // 팝오버 자리 — 고른 요소 바로 아래(모자라면 위), 폭 300이 칸 밖으로 안 나가게. 고를 때 한 번 계산.
+        const W = hostRef.current?.clientWidth ?? 400, H = hostRef.current?.clientHeight ?? 400, r = el.rect;
+        const pos = { left: Math.max(4, Math.min(r.x, W - 304)), top: r.y + r.h + 150 < H ? r.y + r.h + 6 : Math.max(4, r.y - 146) };
+        setPicked({ el, shot: shot?.ok ? shot.path : undefined, pos });
+        setComment("");
+      })
+      .catch(() => { if (gen === pickGen.current) setPicking(false); }); // 페이지 이동 등으로 스크립트가 끊김
+  };
+  const send = async () => {
+    if (!picked || !comment.trim() || sendState === "sending") return;
+    setSendState("sending");
+    const r = await sendToAgent(repo, formatPickFeedback(picked.el, comment, picked.shot));
+    if (!r.ok) { setSendState("no-agent"); return; }
+    setPicked(null); setSendState("idle");
+    requestTerminalFocus(repo, r.id); // 보낸 터미널 탭으로 — 에이전트가 받는 걸 보이게
+  };
 
   const go = (raw: string) => {
     // 빈 주소로 Enter = 페이지 닫고 처음 빈 화면으로(webview 제거, 저장 주소도 비움).
@@ -132,6 +175,7 @@ function BrowserPage({ url, visible, ports, onUrlChange, onTitle, onDetach, onDo
           <button key={p} type="button" onClick={() => go(`:${p}`)} title={`localhost:${p}`}
             className="shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[10px] text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100">:{p}</button>
         ))}
+        <button type="button" className={`${btn} ${picking ? "bg-mustard-500/20 text-mustard-700 dark:text-mustard-300" : ""}`} disabled={!ready} aria-pressed={picking} onClick={togglePick} title={t("browser.pick")} aria-label={t("browser.pick")}><IconPointer size={14} stroke={2} aria-hidden /></button>
         <button type="button" className={`${btn} ${devtools ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : ""}`} disabled={!ready} aria-pressed={devtools} onClick={() => setDevtools((v) => !v)} title={t("browser.devtools")} aria-label={t("browser.devtools")}><IconCode size={14} stroke={2} aria-hidden /></button>
         {onDock && <button type="button" className={btn} onClick={() => onDock(current)} title={t("browser.dock")} aria-label={t("browser.dock")}><IconArrowsMinimize size={14} stroke={2} aria-hidden /></button>}
         {onDetach && <button type="button" className={btn} onClick={() => onDetach(current)} title={t("browser.detach")} aria-label={t("browser.detach")}><IconAppWindow size={14} stroke={2} aria-hidden /></button>}
@@ -142,6 +186,27 @@ function BrowserPage({ url, visible, ports, onUrlChange, onTitle, onDetach, onDo
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white text-[12px] text-zinc-400 dark:bg-[var(--s-pane)] dark:text-zinc-500">
               <IconWorld size={22} stroke={1.5} aria-hidden />
               <span>{ports.length ? t("browser.emptyPorts") : t("browser.empty")}</span>
+            </div>
+          )}
+          {picked && (
+            <div className="absolute z-10 w-[300px] rounded-lg border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+              style={picked.pos}>
+              <div className="mb-1 truncate font-mono text-[10px] text-zinc-400">{picked.el.kind === "region"
+                ? `${t("browser.pickArea")} ${picked.el.rect.w}×${picked.el.rect.h}${picked.el.items.length ? ` · ${picked.el.items.length}` : ""}`
+                : `${picked.el.react[0] ? `${picked.el.react[0]} · ` : ""}${picked.el.tag}${picked.el.text ? ` "${picked.el.text.slice(0, 40)}"` : ""}`}</div>
+              <textarea autoFocus value={comment} onChange={(e) => { setComment(e.target.value); if (sendState === "no-agent") setSendState("idle"); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); } else if (e.key === "Escape") setPicked(null); }}
+                placeholder={t("browser.pickPlaceholder")} rows={3}
+                className="w-full resize-none rounded-md border border-zinc-200 bg-white px-2 py-1 text-[12px] text-zinc-800 outline-none focus:border-mustard-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
+              <div className="mt-1.5 flex items-center gap-1.5">
+                {sendState === "no-agent" && <span className="min-w-0 flex-1 truncate text-[10px] text-rose-500">{t("browser.pickNoAgent")}</span>}
+                <span className="flex-1" />
+                <button type="button" onClick={() => setPicked(null)} className="rounded-md px-2 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t("browser.pickCancel")}</button>
+                <button type="button" disabled={!comment.trim() || sendState === "sending"} onClick={() => void send()}
+                  className="inline-flex items-center gap-1 rounded-md bg-mustard-500 px-2 py-0.5 text-[11px] font-medium text-zinc-900 transition hover:bg-mustard-400 disabled:opacity-40">
+                  {sendState === "sending" && <IconLoader2 size={11} className="animate-spin" aria-hidden />}{t("browser.pickSend")}
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -257,7 +322,7 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
         </button>
       </div>
       {tabs.map((tab) => (
-        <BrowserPage key={tab.id} url={tab.url} visible={tab.id === activeId} ports={ports}
+        <BrowserPage key={tab.id} repo={repo} url={tab.url} visible={tab.id === activeId} ports={ports}
           onUrlChange={(u) => patch(tab.id, { url: u })} onTitle={(title) => patch(tab.id, { title })}
           onDetach={onDetach ? (u) => { void onDetach(u, tabs.findIndex((x) => x.id === tab.id)).then((ok) => { if (ok) removeTab(tab.id, true); }); } : undefined}
           onDock={onDock ? (u) => { onDock(u); removeTab(tab.id, true); } : undefined} />
