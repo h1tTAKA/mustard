@@ -361,9 +361,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                   <IconChevronDown size={13} stroke={2} className={`ml-auto shrink-0 text-zinc-400 transition ${termsOpen ? "" : "-rotate-90"}`} aria-hidden />
                 </button>
                 {/* #1049 용어 = 작은 카드(용어 배지 + 뜻 아래 줄) — 텍스트 나열보다 훑기 쉽게 */}
-                {/* 전체 필터에선 용어가 많아도 해설·명령어가 묻히지 않게 약 3개 높이로 안에서 스크롤(#1051), 용어 필터면 전부 펼침 */}
-                {(termsOpen || filter === "terms") && <ul className={`flex flex-col gap-1.5 px-2.5 pb-2.5 ${filter === "terms" ? "" : "nunopi-scroll max-h-[13.5rem] overflow-y-auto"}`}>
-                  {shownTerms.map((x) => (
+                {/* 전체 필터에선 해설·명령어가 묻히지 않게 최신 3개만 + "모두 보기"(→ 용어 필터), 용어 필터면 전부(#1051) */}
+                {(termsOpen || filter === "terms") && <ul className="flex flex-col gap-1.5 px-2.5 pb-2.5">
+                  {(filter === "terms" ? shownTerms : shownTerms.slice(0, 3)).map((x) => (
                     <li key={x.term}>{(() => { const card = cardOf(x.term); const body = (<>
                       <span className="inline-block rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 dark:text-mustard-400">{x.term}</span>
                       <p className="mt-1 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{x.def}</p>
@@ -388,6 +388,12 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       </div>
                     ); })()}</li>
                   ))}
+                  {filter !== "terms" && shownTerms.length > 3 && (
+                    <li><button type="button" onClick={() => setFilter("terms")}
+                      className="w-full rounded-lg py-1 text-center text-[11px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-mustard-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-mustard-400">
+                      {t("learn.allTerms", { n: shownTerms.length })} →
+                    </button></li>
+                  )}
                 </ul>}
               </div>
             )}
