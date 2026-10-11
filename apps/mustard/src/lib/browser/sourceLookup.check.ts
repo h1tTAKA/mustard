@@ -61,6 +61,27 @@ assert.deepStrictEqual(merged, [{ name: "Header", file: "src/Btn.tsx", line: 5, 
 const wi = await findSources({ __reactFiber$w: { type: "a", _debugOwner: headerFiber, _debugStack: { stack: "Error: x\n    at Header (webpack-internal:///(app-pages-browser)/./src/Header.tsx:30:9)" } } }, fetchText, 0);
 assert.deepStrictEqual(wi, [{ name: "Header", file: "src/Header.tsx", line: 30, col: 9 }]);
 
+// Metro(Expo web): 앱·라이브러리가 한 번들, 번들 URL에 node_modules, 맵 URL은 //host(프로토콜 상대), sources는 절대경로(#1047)
+const metro = "http://localhost:8081/node_modules/expo-router/entry.bundle?platform=web&dev=true";
+files[metro] = "a\nb\nc\n//# sourceMappingURL=//localhost:8081/node_modules/expo-router/entry.map?platform=web&dev=true";
+files["http://localhost:8081/node_modules/expo-router/entry.map?platform=web&dev=true"] = JSON.stringify({ version: 3, sources: ["/Users/me/app/node_modules/react/cjs/react-jsx-dev-runtime.development.js", "/Users/me/app/app/index.tsx"], mappings: ";" + seg([0, 0, 0, 0]) + ";" + seg([0, 1, 7, 4]) });
+const mt = await findSources({ __reactFiber$mt: { type: "div", _debugOwner: headerFiber, _debugStack: { stack: `Error: x\n    at jsxDEV (${metro}:2:1)\n    at Home (${metro}:3:1)` } } }, fetchText, 0);
+assert.deepStrictEqual(mt, [{ name: "Header", file: "/Users/me/app/app/index.tsx", line: 8, col: 5 }], "번들 URL에 node_modules여도 앱 프레임 찾음");
+
+// Vite: 모듈별 URL(?t=), 상대 source("App.tsx")는 모듈 URL 기준 → src/App.tsx. 맵 없는 deps 프레임은 건너뜀
+files["http://localhost:5173/src/App.tsx?t=123"] = `a\n//# sourceMappingURL=data:application/json;base64,${b64({ version: 3, sources: ["App.tsx"], mappings: ";" + seg([0, 0, 11, 2]) })}`;
+const vt = await findSources({ __reactFiber$vt: { type: "p", _debugOwner: headerFiber, _debugStack: { stack: "Error: x\n    at jsxDEV (http://localhost:5173/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=1:1:1)\n    at App (http://localhost:5173/src/App.tsx?t=123:2:1)" } } }, fetchText, 0);
+assert.deepStrictEqual(vt, [{ name: "Header", file: "src/App.tsx", line: 12, col: 3 }]);
+
+// Metro 가상 모듈("\0shim:…")은 라이브러리 취급 + 라이브러리 컴포넌트 owner(View 등)는 건너뛰고 더 위로
+files["http://localhost:8081/shim.bundle"] = `a\nb\n//# sourceMappingURL=data:application/json;base64,${b64({ version: 3, sources: ["\u0000shim:react-native-web/dist/exports/View/index.js", "/Users/me/app/src/Grid.tsx"], mappings: ";" + seg([0, 0, 0, 0]) + ";" + seg([0, 1, 8, 0]) })}`;
+const libSt = { stack: "Error: x\n    at View (http://localhost:8081/shim.bundle:2:1)" };
+const grid = { type: Header, _debugStack: null };
+const press = { type: Page, _debugOwner: grid, _debugStack: { stack: "Error: x\n    at View (http://localhost:8081/shim.bundle:2:1)\n    at Grid (http://localhost:8081/shim.bundle:3:1)" } };
+let o: object = press; for (let i = 0; i < 3; i++) o = { type: Page, _debugOwner: o, _debugStack: libSt }; // 라이브러리 owner 3단
+const deep = await findSources({ __reactFiber$d: { type: "div", _debugOwner: o, _debugStack: libSt } }, fetchText);
+assert.deepStrictEqual(deep, [{ name: "Header", file: "/Users/me/app/src/Grid.tsx", line: 9, col: 1 }]);
+
 // toString으로 페이지에 주입해도 돌아야 함 — 바깥 참조 없이 다시 만들어 같은 결과
 const injected = new Function(`return (${findSources.toString()})`)() as typeof findSources;
 assert.deepStrictEqual(await injected(btn, fetchText), r19);

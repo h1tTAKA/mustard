@@ -1176,7 +1176,8 @@ function sessionTitleFor(id, proc, screen) {
 }
 // #1036 옛 터미널 데몬 감지 + 재시작 — 데몬은 앱 재시작에도 살아남아 옛 코드(훅 env 없음 등)로 계속 돎.
 // 재시작 = 데몬 종료 후 앱 재실행(새 데몬 스폰). 열린 터미널이 전부 꺼지므로 유저가 버튼으로 결정.
-const { DAEMON_VERSION } = require("./daemon-version.cjs");
+// 패키지 앱: electron-builder가 extraResources로 뺀 파일은 app/electron/에서 빠짐(데몬용 resources/electron/에만) → 거기서 읽음.
+const { DAEMON_VERSION } = require(app.isPackaged ? join(process.resourcesPath, "electron", "daemon-version.cjs") : "./daemon-version.cjs");
 async function daemonStatus() {
   const sessions = await termClient.list().catch(() => []);
   const info = termClient.info?.() || null;
