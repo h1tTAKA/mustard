@@ -7,6 +7,7 @@ import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import { isDocEdit } from "@/lib/mcpActivity";
 import { isNunopiEnabled } from "@/lib/product";
+import { mergeTerms, parseNarrationTerms, type Term } from "@/lib/catchupTerms";
 import { useT, useLocale, useToast, useSetting, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { useFlyCard, collectCards } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
@@ -15,7 +16,6 @@ import { stripCardBlock } from "@mustard/core";
 type ConceptKind = "symbol" | "file" | "query" | "repo" | "edit" | "narration";
 interface ActivityEvent { root: string; tool: string; kind: ConceptKind; target: string; isError: boolean; ts: number; note?: string }
 interface Concept { key: string; kind: ConceptKind; target: string; tool: string; status: "idle" | "loading" | "done" | "error"; expl?: string; ts: number }
-interface Term { term: string; def: string }
 type StreamEvent = { type: string; message?: string; response?: { summary?: string } };
 
 const KIND_ICON: Record<ConceptKind, typeof IconCode> = { symbol: IconCode, file: IconFile, query: IconSearch, repo: IconSitemap, edit: IconPencil, narration: IconBroadcast };
@@ -137,7 +137,6 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const filter = (filterSel === "commands" && !showCommands) || (filterSel === "terms" && !showTerms) ? "all" : filterSel;
 
   const seenRef = useRef(new Set<string>());                          // 이미 설명한 개념(dedup) — 서버 로드 시 채움
-  const termSetRef = useRef(new Set(terms.map((x) => x.term.toLowerCase()))); // 용어 dedup
   const queueRef = useRef<string[]>([]);
   const busyRef = useRef(false);
   const metaRef = useRef(new Map<string, { kind: ConceptKind; target: string; tool: string }>());
@@ -161,7 +160,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       const { expl, terms: newTerms } = parseConcept(answer);
       setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "done", expl } : c)));
       saveItems(root, [{ key, kind: meta.kind, target: meta.target, tool: meta.tool, ts: Date.now(), expl }]); // #994 날짜별 저장(내레이션은 서버가 직접)
-      if (newTerms.length && cfgRef.current.showTerms) setTerms((prev) => { const add = newTerms.filter((x) => { const lk = x.term.toLowerCase(); if (termSetRef.current.has(lk)) return false; termSetRef.current.add(lk); return true; }); return add.length ? [...add, ...prev].slice(0, 80) : prev; });
+      if (newTerms.length && cfgRef.current.showTerms) setTerms((prev) => mergeTerms(prev, newTerms, normalizeCardFront)); // 상한 없음, 표기 변형까지 중복 제거(#1051)
     } catch { setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "error" } : c))); }
   }, [root]);
 
@@ -198,6 +197,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         const nkey = `narration|${ev.ts}|${ev.target}`;                 // ts+제목 = 고유 키(같은 ms 충돌 방지)
         setConcepts((prev) => (prev.some((c) => c.key === nkey) ? prev  // 이미 있으면 스킵(SSE 재연결 replay 중복 방지)
           : [{ key: nkey, kind: "narration" as const, target: ev.target, tool: "narration", status: "done" as const, ts: ev.ts, expl: ev.note }, ...prev].slice(0, MAX_ITEMS)));
+        // #1051 실시간 해설 본문의 "용어" 목록도 용어집으로(서버 프롬프트가 개발·IT 용어만 쓰게 함)
+        const nt = cfgRef.current.showTerms ? parseNarrationTerms(ev.note) : [];
+        if (nt.length) setTerms((prev) => mergeTerms(prev, nt, normalizeCardFront));
         return;
       }
       if (isCommand(ev) && !cfgRef.current.showCommands) return; // 명령어 해설 끔 → 카드 자체 안 띄움
@@ -233,7 +235,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     return () => { alive = false; };
   }, [root, connected]);
   // 용어집은 그대로 localStorage(작고 레포별 누적).
-  useEffect(() => { try { if (typeof localStorage !== "undefined") localStorage.setItem(gKey(root), JSON.stringify(terms.slice(0, 80))); } catch { /* 무시 */ } }, [terms, root]);
+  useEffect(() => { try { if (typeof localStorage !== "undefined") localStorage.setItem(gKey(root), JSON.stringify(terms)); } catch { /* 무시 */ } }, [terms, root]);
 
   useEffect(() => {
     if (!concepts.length) return;
