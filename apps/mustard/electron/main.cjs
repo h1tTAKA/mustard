@@ -19,6 +19,7 @@ const { getProviderUsage } = require("./provider-usage.cjs");
 const { startWatch, stopWatch, stopAll: stopAllWatchers } = require("./repo-watcher.cjs");
 const { seen: seenText, freshLines } = require("./narration-dedupe.cjs");
 const { loadSeen, saveSeen } = require("./narration-seen-store.cjs"); // #1031 레포별 디스크 저장 // #1019 재그리기 중복 내레이션 방지
+const { installBrowserGuestPolicy, isAllowedUrl: isBrowserUrl } = require("./browser-guest.cjs"); // #1034 인앱 브라우저
 const githubBridge = require("./github-bridge.cjs"); // GitHub 패널(#809/#810) gh CLI 브릿지
 const { join, dirname } = require("node:path");
 
@@ -213,6 +214,7 @@ function createWindow(url) {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true, // #1034 인앱 브라우저 — guest 설정은 browser-guest.cjs가 강제
     },
   });
   win.loadURL(url);
@@ -226,7 +228,7 @@ function createWindow(url) {
 
 // 모드 전용 창(#789) — 그 모드만 보이는 별도 창. appBase에 ?win=<kind> 를 붙여 로드.
 // 렌더러(page.tsx)가 win 파라미터를 읽어 windowMode로 렌더한다. 반환된 창을 호출부가 추적.
-function createModeWindow(kind) {
+function createModeWindow(kind, extra = {}) {
   const sep = appBase.includes("?") ? "&" : "?";
   const w = new BrowserWindow({
     width: 1100,
@@ -237,9 +239,11 @@ function createModeWindow(kind) {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true, // #1034 인앱 브라우저 — guest 설정은 browser-guest.cjs가 강제
     },
   });
-  w.loadURL(`${appBase}${sep}win=${encodeURIComponent(kind)}`);
+  const qs = Object.entries(extra).filter(([, v]) => v).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join("");
+  w.loadURL(`${appBase}${sep}win=${encodeURIComponent(kind)}${qs}`);
   wireWindowCommon(w);
   return w;
 }
@@ -328,6 +332,19 @@ ipcMain.handle("mode-window:open", (_e, kind) => {
     releaseMode(kind); // 창 생성 실패 시 점유 해제 — 안 하면 영구 점유로 영영 못 엶.
     return { ok: false, reason: "error", error: String(e?.message || e) };
   }
+  return { ok: true };
+});
+// 인앱 브라우저 분리 창(#1034) — 멀티 모니터. 같은 앱 페이지를 ?win=browser 로 띄우고 BrowserPane만 렌더.
+// 모드 창과 달리 여러 개 허용(레포·사이트별로 여러 화면에 띄울 수 있게).
+ipcMain.handle("browser-window:open", (_e, payload) => {
+  const url = String(payload?.url || "");
+  const repo = String(payload?.repo || "");
+  if (url && !isBrowserUrl(url)) return { ok: false, reason: "invalid" };
+  if (!appBase) return { ok: false, reason: "not-ready" };
+  try {
+    const w = createModeWindow("browser", { url, repo });
+    w.setTitle("Browser");
+  } catch (e) { return { ok: false, reason: "error", error: String(e?.message || e) }; }
   return { ok: true };
 });
 // 탭 쪽 모드 점유/해제/조회(#789) — 메인 창 렌더러가 모드 탭 추가·닫기·복원 시 호출.
@@ -1124,6 +1141,7 @@ function installAppMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 app.whenReady().then(installAppMenu).catch(() => {});
+installBrowserGuestPolicy(app); // #1034 모든 창의 <webview> 보안·정책
 app.whenReady().then(boot).catch((e) => { console.error("[electron] boot failed", e); app.quit(); });
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) boot(); });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
