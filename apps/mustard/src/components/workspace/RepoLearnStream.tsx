@@ -2,12 +2,13 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconBookmark, IconBookmarkFilled } from "@tabler/icons-react";
+import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import { isDocEdit } from "@/lib/mcpActivity";
 import { isNunopiEnabled } from "@/lib/product";
-import { useT, useLocale, useToast, useSetting, CUKEYS, CATCHUP_DEFAULTS, createChatCard, bookmarkedTermExists, CARDS_CHANGED_EVENT } from "@mustard/core";
+import { useT, useLocale, useToast, useSetting, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
+import { useFlyCard, collectCards } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import { stripCardBlock } from "@mustard/core";
@@ -96,7 +97,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [termsOpen, setTermsOpen] = useState(true);
   const showCommands = useSetting<boolean>(CUKEYS.commands, CATCHUP_DEFAULTS.commands); // #1049 설정 > 캐치업
   const showTerms = useSetting<boolean>(CUKEYS.terms, CATCHUP_DEFAULTS.terms);
-  // #1051 용어 → nunopi 카드 북마크. 카드(암기)는 nunopi 학습모듈 기능이라 꺼져 있으면 버튼 없음.
+  // #1051 용어 → nunopi 카드 추가. 카드(암기)는 nunopi 학습모듈 기능이라 꺼져 있으면 버튼 없음.
+  // 추가는 한 방향(카드 삭제는 갤러리에서) → 토글 아이콘 대신 "+ 추가" / "✓ 카드" 표시, 추가된 건 누르면 카드 확대.
+  const { throwCard } = useFlyCard();
   const toast = useToast();
   const cardsOn = isNunopiEnabled();
   const [cardTick, setCardTick] = useState(0); // 다른 곳(질문 패널·챗)에서 카드가 생겨도 표시 갱신
@@ -105,13 +108,13 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     window.addEventListener(CARDS_CHANGED_EVENT, on);
     return () => window.removeEventListener(CARDS_CHANGED_EVENT, on);
   }, []);
-  // 이미 카드인 용어 — 매초 리렌더(상대시간)마다 저장소를 읽지 않게 용어·카드 변경 때만 계산.
-  const bookmarked = useMemo(() => (cardsOn ? new Set(terms.filter((x) => bookmarkedTermExists(x.term)).map((x) => x.term)) : new Set<string>()), [terms, cardTick, cardsOn]); // eslint-disable-line react-hooks/exhaustive-deps -- cardTick = 저장소 변경 신호
-  const bookmarkTerm = useCallback((x: Term) => {
-    if (bookmarked.has(x.term)) { toast(t("card.exists")); return; }
+  // 카드 앞면(정규화) → 카드 — 매초 리렌더(상대시간)마다 저장소를 읽지 않게 카드 변경 때만 계산.
+  const cardByFront = useMemo(() => new Map(cardsOn ? collectCards(["token", "concept", "term"], new Date()).map((c) => [normalizeCardFront(c.front), c] as const) : []), [cardTick, cardsOn]); // eslint-disable-line react-hooks/exhaustive-deps -- cardTick = 저장소 변경 신호
+  const cardOf = (term: string) => cardByFront.get(normalizeCardFront(term));
+  const addTerm = useCallback((x: Term) => {
     const ok = createChatCard("term", x.term, x.def, t("card.workspaceSource", { repo: basename(root) }), undefined, { kind: "workspace", sessionId: "catchup:terms", root });
     toast(ok ? t("card.added", { term: x.term }) : t("card.exists"));
-  }, [bookmarked, root, t, toast]);
+  }, [root, t, toast]);
   // #1049 카테고리 필터 — 해설(실시간 해설·파일/심볼 설명) / 명령어 / 용어. 꺼진 카테고리는 칩도 숨김.
   const [filterSel, setFilter] = useState<"all" | "explain" | "commands" | "terms">("all");
   // #1049 검색 — 서버가 전체 날짜에서 제목·설명을 찾음(입력 멈춘 뒤 250ms). 용어집은 화면에서 거름.
@@ -356,16 +359,26 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                 {/* #1049 용어 = 작은 카드(용어 배지 + 뜻 아래 줄) — 텍스트 나열보다 훑기 쉽게 */}
                 {(termsOpen || filter === "terms") && <ul className="flex flex-col gap-1.5 px-2.5 pb-2.5">
                   {shownTerms.map((x) => (
-                    <li key={x.term} className={`relative rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 dark:border-zinc-800 dark:bg-zinc-800/40 ${cardsOn ? "pr-8" : ""}`}>
-                      {cardsOn && ( /* #1051 오른쪽 위 북마크 → nunopi 카드 */
-                        <button type="button" onClick={() => bookmarkTerm(x)} title={bookmarked.has(x.term) ? t("chat.cardExists") : t("chat.saveAsCard")} aria-label={bookmarked.has(x.term) ? t("chat.cardExists") : t("chat.saveAsCard")}
-                          className={`absolute right-1.5 top-1.5 rounded-md p-0.5 transition ${bookmarked.has(x.term) ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-300 hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"}`}>
-                          {bookmarked.has(x.term) ? <IconBookmarkFilled size={13} aria-hidden /> : <IconBookmark size={13} stroke={2} aria-hidden />}
-                        </button>
-                      )}
+                    <li key={x.term}>{(() => { const card = cardOf(x.term); const body = (<>
                       <span className="inline-block rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 dark:text-mustard-400">{x.term}</span>
                       <p className="mt-1 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{x.def}</p>
-                    </li>
+                    </>); return card ? ( /* 추가됨 — 카드 전체를 누르면 카드 확대 */
+                      <button type="button" onClick={(e) => throwCard(card, e.currentTarget.getBoundingClientRect())} title={t("learn.openCard")}
+                        className="relative block w-full rounded-lg border border-mustard-500/40 bg-zinc-50/70 px-2.5 py-1.5 pr-14 text-left transition hover:bg-mustard-500/5 dark:border-mustard-400/30 dark:bg-zinc-800/40 dark:hover:bg-mustard-400/5">
+                        <span className="absolute right-1.5 top-1.5 inline-flex items-center gap-0.5 rounded-full bg-mustard-500/12 px-1.5 py-0.5 text-[10px] font-medium text-mustard-700 dark:text-mustard-400"><IconCheck size={10} stroke={2.5} aria-hidden />{t("learn.inCards")}</span>
+                        {body}
+                      </button>
+                    ) : (
+                      <div className={`relative rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 dark:border-zinc-800 dark:bg-zinc-800/40 ${cardsOn ? "pr-8" : ""}`}>
+                        {cardsOn && ( /* 오른쪽 위 + → nunopi 카드로 추가 */
+                          <button type="button" onClick={() => addTerm(x)} title={t("chat.saveAsCard")} aria-label={t("chat.saveAsCard")}
+                            className="absolute right-1.5 top-1.5 rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400">
+                            <IconPlus size={13} stroke={2.2} aria-hidden />
+                          </button>
+                        )}
+                        {body}
+                      </div>
+                    ); })()}</li>
                   ))}
                 </ul>}
               </div>
