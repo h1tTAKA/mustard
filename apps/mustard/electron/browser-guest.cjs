@@ -73,9 +73,14 @@ function wireGuest(guest) {
   }
   // 포커스된 guest는 별도 Chromium 프로세스라 키가 앱 렌더러에 안 온다 → 앱 단축키 조합만 페이지 대신 앱으로(#1034 리뷰).
   // 나머지 키(⌘C·⌘F 등)는 페이지가 그대로 받음. 조합 목록은 렌더러가 설정(덮어쓰기) 반영해 보내줌(setAppChords).
-  guest.on("before-input-event", (e, input) => {
+  forwardAppKeys(guest, () => guest.hostWebContents);
+}
+
+// 앱 단축키만 가로채 호스트 렌더러로 — webview guest + 창에 붙인 devtools 뷰(#1039 리뷰: 거기 포커스면 ⌘W 등이 죽었음)가 공유.
+function forwardAppKeys(contents, hostOf) {
+  contents.on("before-input-event", (e, input) => {
     if (input.type !== "keyDown") return;
-    const host = guest.hostWebContents;
+    const host = hostOf();
     if (!host || host.isDestroyed()) return;
     const chord = chordOf(input, process.platform === "darwin");
     if (!chord || !appChordsByHost.get(host.id)?.has(chord)) return;
@@ -92,4 +97,4 @@ function installBrowserGuestPolicy(app) {
   });
 }
 
-module.exports = { installBrowserGuestPolicy, hardenWebview, isAllowedUrl, setAppChords, trackChordHost, chordOf, PARTITION };
+module.exports = { installBrowserGuestPolicy, hardenWebview, isAllowedUrl, setAppChords, trackChordHost, chordOf, forwardAppKeys, PARTITION };

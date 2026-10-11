@@ -104,8 +104,10 @@ function BrowserPage({ repo, url, visible, ports, onUrlChange, onTitle, onDetach
   const reportDevtools = useCallback(() => {
     const page = viewRef.current, host = dtHostRef.current, api = window.nunopiDesktop?.browser;
     if (!page || !host || !api) return;
-    const r = host.getBoundingClientRect();
-    const rect = visibleRef.current ? { x: r.left, y: r.top, w: r.width, h: r.height } : { x: 0, y: 0, w: 0, h: 0 };
+    // 부모가 잘라내는 만큼(overflow) 잘라서 — 칸이 좁아져도 네이티브 뷰가 패널 밖으로 안 삐져나오게(#1039 리뷰).
+    const r = host.getBoundingClientRect(), a = areaRef.current?.getBoundingClientRect() ?? r;
+    const x = Math.max(r.left, a.left), y = Math.max(r.top, a.top), w = Math.min(r.right, a.right) - x, h = Math.min(r.bottom, a.bottom) - y;
+    const rect = visibleRef.current && w > 0 && h > 0 ? { x, y, w, h } : { x: 0, y: 0, w: 0, h: 0 };
     const k = `${Math.round(rect.x)},${Math.round(rect.y)},${Math.round(rect.w)},${Math.round(rect.h)}`;
     if (k === dtKey.current) return;
     dtKey.current = k;
@@ -118,10 +120,13 @@ function BrowserPage({ repo, url, visible, ports, onUrlChange, onTitle, onDetach
     const r = host.getBoundingClientRect();
     dtKey.current = "";
     void api.openDevTools(pageId, { x: r.left, y: r.top, w: r.width, h: r.height }).then(() => reportDevtools());
+    // 크기 변화는 관찰자, 위치만 바뀌는 경우(dock 재배치 등)는 프레임마다 확인 — 같으면 안 보내서 싸다(#1039 리뷰).
     const ro = new ResizeObserver(() => reportDevtools());
     ro.observe(host);
-    window.addEventListener("resize", reportDevtools);
-    return () => { ro.disconnect(); window.removeEventListener("resize", reportDevtools); void api.closeDevTools(pageId); };
+    let raf = 0;
+    const tick = () => { reportDevtools(); raf = requestAnimationFrame(tick); };
+    raf = requestAnimationFrame(tick);
+    return () => { ro.disconnect(); cancelAnimationFrame(raf); void api.closeDevTools(pageId); };
   }, [devtools, ready, reportDevtools]);
   useLayoutEffect(() => { visibleRef.current = visible; if (devtools && ready) reportDevtools(); });
 

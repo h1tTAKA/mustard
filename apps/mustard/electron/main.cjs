@@ -19,7 +19,7 @@ const { getProviderUsage } = require("./provider-usage.cjs");
 const { startWatch, stopWatch, stopAll: stopAllWatchers } = require("./repo-watcher.cjs");
 const { seen: seenText, freshLines } = require("./narration-dedupe.cjs");
 const { loadSeen, saveSeen } = require("./narration-seen-store.cjs"); // #1031 레포별 디스크 저장 // #1019 재그리기 중복 내레이션 방지
-const { installBrowserGuestPolicy, isAllowedUrl: isBrowserUrl, setAppChords, trackChordHost } = require("./browser-guest.cjs"); // #1034 인앱 브라우저
+const { installBrowserGuestPolicy, isAllowedUrl: isBrowserUrl, setAppChords, trackChordHost, forwardAppKeys } = require("./browser-guest.cjs"); // #1034 인앱 브라우저
 const githubBridge = require("./github-bridge.cjs"); // GitHub 패널(#809/#810) gh CLI 브릿지
 const { join, dirname } = require("node:path");
 
@@ -358,14 +358,16 @@ function ownGuest(sender, id) {
 // 페이지와 연결이 안 됨(Elements 빈 화면). 렌더러가 자리(CSS px)를 알려주면 창 줌만큼 곱해 겹쳐 그림.
 // ponytail: 네이티브 뷰라 DOM 위에 그려짐 — ⌘K 팔레트 같은 창 전체 모달이 devtools 영역에선 가려짐.
 const devtoolsViews = new Map(); // guest id → { view, win }
-const dtBounds = (sender, r) => {
-  const z = sender.getZoomFactor() || 1, n = (v) => Math.round((Number(v) || 0) * z);
+// 줌은 preload가 webFrame 줌으로 이미 곱해서 보냄(채널이 달라 main의 줌 값이 한 박자 늦을 수 있어서, #1039 리뷰).
+const dtBounds = (_sender, r) => {
+  const n = (v) => Math.round(Number(v) || 0);
   return { x: n(r?.x), y: n(r?.y), width: Math.max(0, n(r?.w)), height: Math.max(0, n(r?.h)) };
 };
 function closeDevtoolsView(id) {
   const d = devtoolsViews.get(id);
   if (!d) return;
   devtoolsViews.delete(id);
+  try { if (!d.guest.isDestroyed()) d.guest.removeListener("destroyed", d.onGone); } catch { /* ignore */ } // 껐다 켤 때마다 쌓이지 않게
   try { const g = webContents.fromId(id); if (g && !g.isDestroyed() && g.isDevToolsOpened()) g.closeDevTools(); } catch { /* ignore */ }
   try { if (!d.win.isDestroyed()) d.win.contentView.removeChildView(d.view); } catch { /* ignore */ }
   try { if (!d.view.webContents.isDestroyed()) d.view.webContents.close(); } catch { /* ignore */ } // 닫아도 자동으로 안 지워짐(문서)
@@ -376,13 +378,16 @@ ipcMain.handle("browser:devtools-open", (e, { guestId, rect } = {}) => {
   if (devtoolsViews.has(guest.id)) return { ok: true };
   const view = new WebContentsView(); // 새로 만든 webContents = 이동한 적 없음(setDevToolsWebContents 조건)
   view.webContents.setWindowOpenHandler(() => ({ action: "deny" })); // devtools 안 링크가 새 창으로 안 뜨게
+  const host = e.sender;
+  forwardAppKeys(view.webContents, () => host); // devtools에 포커스가 있어도 앱 단축키 동작
   win.contentView.addChildView(view);
   const b = dtBounds(e.sender, rect);
   view.setBounds(b); view.setVisible(b.width > 0 && b.height > 0);
   guest.setDevToolsWebContents(view.webContents);
   guest.openDevTools();
-  devtoolsViews.set(guest.id, { view, win });
-  guest.once("destroyed", () => closeDevtoolsView(guest.id));
+  const onGone = () => closeDevtoolsView(guest.id);
+  devtoolsViews.set(guest.id, { view, win, guest, onGone });
+  guest.once("destroyed", onGone);
   return { ok: true };
 });
 // 자리 갱신 — 크기 0(숨은 탭·숨은 레포 탭)이면 안 보이게.
