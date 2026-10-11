@@ -300,15 +300,15 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
   }, [incoming]);
 
   // 탭 제거 — 함수형 업데이트(창 분리는 await 뒤에 불려서, 그 사이 바뀐 탭·제목을 덮어쓰면 안 됨, #1034 리뷰).
-  // 활성 탭이면 옆 탭으로. 옮겨서 0개가 되면 [] → 아래 이펙트가 저장([])·onEmpty. 그냥 닫아서 0개면 빈 탭 하나.
+  // 활성 탭이면 옆 탭으로. 0개가 되면(닫든 옮기든) [] → 아래 이펙트가 저장([])·onEmpty = 브라우저 패널/분리 창이 닫힘(유저 요청).
   const blankId = () => ++tabSeq; // 업데이트 함수 밖에서 뽑음(StrictMode 이중 호출에도 순수)
-  const removeTab = (id: number, viaMove = false) => {
+  const removeTab = (id: number) => {
     const fresh = blankId();
     setSt((p) => {
       const idx = p.tabs.findIndex((x) => x.id === id);
       if (idx < 0) return p;
       const rest = p.tabs.filter((x) => x.id !== id);
-      if (!rest.length && !(viaMove && onEmpty)) rest.push({ id: fresh, url: "", title: "" });
+      if (!rest.length && !onEmpty) rest.push({ id: fresh, url: "", title: "" }); // 0개면 onEmpty(브라우저·분리 창 닫기), 없을 때만 빈 탭
       const activeId = p.activeId !== id ? p.activeId : rest.length ? rest[Math.min(idx, rest.length - 1)].id : 0;
       return { tabs: rest, activeId };
     });
@@ -346,8 +346,8 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
       {tabs.map((tab) => (
         <BrowserPage key={tab.id} repo={repo} url={tab.url} initialDevtools={tab.devtools} visible={tab.id === activeId} ports={ports}
           onUrlChange={(u) => patch(tab.id, { url: u })} onTitle={(title) => patch(tab.id, { title })}
-          onDetach={onDetach ? (u, dt) => { void onDetach(u, tabs.findIndex((x) => x.id === tab.id), dt).then((ok) => { if (ok) removeTab(tab.id, true); }); } : undefined}
-          onDock={onDock ? (u, dt) => { onDock(u, dt); removeTab(tab.id, true); } : undefined} />
+          onDetach={onDetach ? (u, dt) => { void onDetach(u, tabs.findIndex((x) => x.id === tab.id), dt).then((ok) => { if (ok) removeTab(tab.id); }); } : undefined}
+          onDock={onDock ? (u, dt) => { onDock(u, dt); removeTab(tab.id); } : undefined} />
       ))}
     </div>
   );
