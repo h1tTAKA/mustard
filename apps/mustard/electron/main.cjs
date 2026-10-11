@@ -1174,6 +1174,26 @@ function sessionTitleFor(id, proc, screen) {
   const parsed = parseAgentScreen(liveBuffers.get(id) ?? screen ?? "", lastTitleRawById.get(id));
   return (parsed && parsed.task) ? parsed.task : "";
 }
+// #1036 옛 터미널 데몬 감지 + 재시작 — 데몬은 앱 재시작에도 살아남아 옛 코드(훅 env 없음 등)로 계속 돎.
+// 재시작 = 데몬 종료 후 앱 재실행(새 데몬 스폰). 열린 터미널이 전부 꺼지므로 유저가 버튼으로 결정.
+const { DAEMON_VERSION } = require("./daemon-version.cjs");
+async function daemonStatus() {
+  const sessions = await termClient.list().catch(() => []);
+  const info = termClient.info?.() || null;
+  if (!info) return { outdated: false, sessions: sessions.length }; // 연결 못 함 — 판단 보류
+  let pid = info.pid;
+  if (!pid && sessions.length) { const pmap = await ppidMap(); pid = pmap.get(Number(sessions[0].pid)) || 0; } // 옛 데몬은 pid를 안 줌 → 셸의 부모
+  return { outdated: info.version < DAEMON_VERSION, version: info.version, pid, sessions: sessions.length };
+}
+ipcMain.handle("daemon:status", async () => { const s = await daemonStatus(); return { outdated: s.outdated, sessions: s.sessions }; });
+ipcMain.handle("daemon:restart", async () => {
+  const s = await daemonStatus();
+  if (!s.pid) return { ok: false, reason: "no daemon pid" };
+  try { process.kill(s.pid, "SIGTERM"); } catch (e) { return { ok: false, reason: String(e?.message || e) }; }
+  app.relaunch(); // 새 앱이 뜨면서 새 버전 데몬을 스폰
+  setTimeout(() => app.exit(0), 300);
+  return { ok: true };
+});
 ipcMain.handle("terminal:list", async () => {
   const ss = await termClient.list(); // 세션 목록(#764) — 레포탭 호버 카드 + 탭 이름(#803) + 세션 제목(#970)
   // 비활성 탭도 검출: 데몬 screen(buffer tail)을 힌트로 agentForId에 전달(#836/#840). screen은 검출용, 렌더러 미전송(누출 방지).

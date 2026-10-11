@@ -4,6 +4,7 @@
 //   attach(id?) 인증 → ok. ensure{id,cwd,cols,rows} → ensured{id,ok,buffer}. input{id,data} / resize{id,cols,rows} / kill{id}.
 //   list → listed{sessions:[{id,cwd,process,pid}]}(#764). 데몬 push: data{id,data} / exit{id}.
 const net = require("node:net");
+const { DAEMON_VERSION } = require("./daemon-version.cjs");
 const fs = require("node:fs");
 
 const SOCK = process.env.NUNOPI_TERM_SOCK;   // 소켓 경로
@@ -96,7 +97,7 @@ const server = net.createServer((sock) => {
           // parseAgentScreen은 8KB tail만 보므로 16KB면 충분(전체 200KB 전송 낭비 방지).
           sessions.push({ id, cwd: s.cwd, process: procName, pid, screen: s.buffer.slice(-16000) });
         }
-        send(sock, { t: "listed", sessions });
+        send(sock, { t: "listed", sessions, version: DAEMON_VERSION, pid: process.pid }); // #1036 앱이 옛 데몬 감지
       }
     }
   });

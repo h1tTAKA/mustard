@@ -11,6 +11,7 @@ import WorkspaceModePane from "@/components/workspace/WorkspaceModePane";
 import RepoAvatar from "@/components/workspace/RepoAvatar";
 import WorkspaceAddMenu, { type AddKind } from "@/components/workspace/WorkspaceAddMenu";
 import RepoTabHoverCard from "@/components/workspace/RepoTabHoverCard";
+import DaemonOutdatedNotice from "@/components/workspace/DaemonOutdatedNotice";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import MustardMark from "@/components/brand/MustardMark";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
@@ -519,6 +520,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
+      <DaemonOutdatedNotice />
       {/* 본문 — 방문한 탭들 keep-alive(활성만 보임). 탭 스트립은 각 WorkspaceView 헤더 아래에. 탭 없으면 빈 상태. */}
       <div className="relative flex min-h-0 flex-1">
         {tabs.length === 0 ? (

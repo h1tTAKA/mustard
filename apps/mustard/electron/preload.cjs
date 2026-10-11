@@ -102,6 +102,10 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     capture: (guestId, rect) => ipcRenderer.invoke("browser:capture", { guestId, rect }), // #1037 요소 스크린샷 → 임시 PNG 경로
     onKey: (cb) => { const h = (_e, k) => cb(k); ipcRenderer.on("browser:key", h); return () => ipcRenderer.removeListener("browser:key", h); },
   },
+  daemon: { // #1036 옛 터미널 데몬 감지·재시작
+    status: () => ipcRenderer.invoke("daemon:status"),
+    restart: () => ipcRenderer.invoke("daemon:restart"),
+  },
   ports: { // #880 워크스페이스 dev 서버 포트 감지·열기
     list: (cwd) => ipcRenderer.invoke("ports:list", cwd),
     open: (port) => ipcRenderer.invoke("ports:open", port),

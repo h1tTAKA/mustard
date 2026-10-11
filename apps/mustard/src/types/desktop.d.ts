@@ -123,6 +123,10 @@ interface NunopiDesktopApi {
     capture(guestId: number, rect: { x: number; y: number; w: number; h: number }): Promise<{ ok: boolean; path?: string }>;
     onKey(cb: (k: { code: string; key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }) => void): () => void;
   };
+  daemon?: {
+    status(): Promise<{ outdated: boolean; sessions: number }>;
+    restart(): Promise<{ ok: boolean; reason?: string }>;
+  };
   ports: {
     list(cwd: string): Promise<{ port: number; pid: number; cmd: string }[]>;
     open(port: number): Promise<{ ok: boolean }>;
