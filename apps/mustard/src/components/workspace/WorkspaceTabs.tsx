@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { IconFiles, IconFolderOpen, IconPlus, IconX, IconCircleCheck, IconLoader2, IconQuestionMark, IconAlertTriangle, IconMessages, IconFileCode, IconFileText, IconCards, IconBell, IconBellOff } from "@tabler/icons-react";
+import { IconFiles, IconFolderOpen, IconPlus, IconX, IconMessages, IconFileCode, IconFileText, IconCards, IconBell, IconBellOff } from "@tabler/icons-react";
 import { useT, useShortcut } from "@mustard/core";
 import { getSetting, setSetting, subscribeSettings, NKEYS, NOTIF_DEFAULTS, CKEYS, desktopNotify, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
 import { useToast } from "@mustard/core";
@@ -11,6 +11,9 @@ import WorkspaceModePane from "@/components/workspace/WorkspaceModePane";
 import RepoAvatar from "@/components/workspace/RepoAvatar";
 import WorkspaceAddMenu, { type AddKind } from "@/components/workspace/WorkspaceAddMenu";
 import RepoTabHoverCard from "@/components/workspace/RepoTabHoverCard";
+import DaemonOutdatedNotice from "@/components/workspace/DaemonOutdatedNotice";
+import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
+import { publishRepoSessions } from "@/lib/agentSessionStates";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import MustardMark from "@/components/brand/MustardMark";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
@@ -70,15 +73,8 @@ function aggregate(states: string[]): TabState | null {
   if (states.includes("done")) return "done";
   return null;
 }
-// 탭 상태 아이콘 — 호버 카드와 통일. 작업중=앰버 스피너, 대기(yes/no)=앰버 물음표, 막힘=빨간 경고, 완료=초록 체크.
-function tabDot(st: TabState | null) {
-  if (!st) return null;
-  if (st === "done") return <IconCircleCheck size={13} stroke={2} className="shrink-0 text-emerald-500" aria-hidden />;
-  if (st === "working") return <IconLoader2 size={13} stroke={2.5} className="shrink-0 animate-spin text-amber-500" aria-hidden />;
-  if (st === "waiting") return <IconQuestionMark size={13} stroke={2.5} className="shrink-0 text-amber-500" aria-hidden />;
-  if (st === "blocked") return <IconAlertTriangle size={13} stroke={2.5} className="shrink-0 text-rose-500" aria-hidden />;
-  return null; // 예상 밖 값 → 아무것도(빨간 삼각형 오탐 방지)
-}
+// 탭 상태 아이콘 — 공용 AgentStateIcon(터미널 탭과 같은 모양, #1036).
+const tabDot = (st: TabState | null) => <AgentStateIcon state={st} />;
 
 // 멀티 워크스페이스 탭(#731) — 여러 레포를 탭으로 열고 전환. 각 탭 = WorkspaceView 인스턴스(key=tabKey).
 // 방문한 탭은 숨긴 채 계속 마운트(lazy keep-alive) — 전환해도 도킹/에디터/터미널 상태 보존.
@@ -165,9 +161,10 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
           const raw: { sessionId: string; state: string; silent?: boolean }[] = j?.ok ? (j.statuses ?? []) : [];
           const openIds = openTermIds(p); // #968 유령 제외 — 열린 터미널 탭 세션만 집계(호버와 일관)
           const shown = openIds ? raw.filter((s) => openIds.has(s.sessionId)) : raw;
+          publishRepoSessions(p, shown); // #1036 터미널 탭 아이콘용(같은 폴링 결과 공유)
           return [p, aggregate(shown.map((s) => s.state)), shown] as const;
         }
-        catch { return [p, null, null] as const; }
+        catch { publishRepoSessions(p, null); return [p, null, null] as const; } // 조회 실패면 터미널 탭 아이콘도 비움(낡은 스피너 고정 방지)
       })).then((results) => {
         if (!alive) return;
         const entries = results.map(([p, st]) => [p, st] as const);
@@ -519,6 +516,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
+      <DaemonOutdatedNotice />
       {/* 본문 — 방문한 탭들 keep-alive(활성만 보임). 탭 스트립은 각 WorkspaceView 헤더 아래에. 탭 없으면 빈 상태. */}
       <div className="relative flex min-h-0 flex-1">
         {tabs.length === 0 ? (

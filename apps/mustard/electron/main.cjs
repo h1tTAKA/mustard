@@ -990,8 +990,10 @@ async function pushScreenState(id, screen) {
   // working→done 가짜 전이 → 알림. 첫 보고(직전 없음)만 done.
   const unknownState = lastScreen.get(id)?.state ?? "done";
   let agent, state;
-  if (ra) { agent = ra; agentSticky.set(id, ra); state = parsed ? mapScreenState(parsed.state) : unknownState; } // #864 신원=실행기록(sticky도 동기화 — agentForId와 일관), 상태만 스크레이프
-  else if (parsed) { agent = parsed.agent; state = mapScreenState(parsed.state); agentSticky.set(id, agent); } // 버퍼가 상태 잡음(working/waiting/유휴→done)
+  // #1036 파서 "unknown"(판정 불가) = 직전 상태 유지 — idle로 떨어뜨리면 가짜 완료 알림.
+  const fromParse = (p) => (p.state === "unknown" ? unknownState : mapScreenState(p.state));
+  if (ra) { agent = ra; agentSticky.set(id, ra); state = parsed ? fromParse(parsed) : unknownState; } // #864 신원=실행기록(sticky도 동기화 — agentForId와 일관), 상태만 스크레이프
+  else if (parsed) { agent = parsed.agent; state = fromParse(parsed); agentSticky.set(id, agent); } // 버퍼가 상태 잡음(working/waiting/유휴→done)
   else if (procAgent) { agent = procAgent; state = unknownState; agentSticky.set(id, agent); }    // 프로세스는 에이전트인데 버퍼 미판정 → 존재
   // 배너 스크롤아웃 등으로 버퍼 미판정이어도, 셸이 아니고 이미 신원이 있으면 유지(#805) — 탭(agentForId)과 동일 sticky.
   // hermes처럼 프로세스명이 python(래퍼 exec)이라 폴백도 안 되는 에이전트가 카드서 사라지던 문제.
@@ -1172,6 +1174,41 @@ function sessionTitleFor(id, proc, screen) {
   const parsed = parseAgentScreen(liveBuffers.get(id) ?? screen ?? "", lastTitleRawById.get(id));
   return (parsed && parsed.task) ? parsed.task : "";
 }
+// #1036 옛 터미널 데몬 감지 + 재시작 — 데몬은 앱 재시작에도 살아남아 옛 코드(훅 env 없음 등)로 계속 돎.
+// 재시작 = 데몬 종료 후 앱 재실행(새 데몬 스폰). 열린 터미널이 전부 꺼지므로 유저가 버튼으로 결정.
+const { DAEMON_VERSION } = require("./daemon-version.cjs");
+async function daemonStatus() {
+  const sessions = await termClient.list().catch(() => []);
+  const info = termClient.info?.() || null;
+  if (!info) return { outdated: false, sessions: sessions.length }; // 연결 못 함 — 판단 보류
+  let pid = info.pid;
+  if (!pid && sessions.length) { const pmap = await ppidMap(); pid = pmap.get(Number(sessions[0].pid)) || 0; } // 옛 데몬은 pid를 안 줌 → 셸의 부모
+  return { outdated: info.version < DAEMON_VERSION, version: info.version, pid, sessions: sessions.length };
+}
+ipcMain.handle("daemon:status", async () => { const s = await daemonStatus(); return { outdated: s.outdated, sessions: s.sessions }; });
+// 데몬 pid 확인 — 셸의 부모 추측은 pid 재사용 등으로 틀릴 수 있어, 실제로 terminal-daemon 프로세스인지 확인(#1036 리뷰).
+async function isDaemonPid(pid) {
+  if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) return false;
+  if (process.platform === "win32") return true; // ps 없음 — 셸 부모 추측을 믿음(#1036 재리뷰: 예전 동작 유지)
+  try { const { stdout } = await execFileP("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: 3000 }); return /terminal-daemon/.test(stdout); } catch { return false; }
+}
+// 세션이 없어 셸 부모로 못 찾으면 소켓을 연 프로세스로.
+async function daemonPidBySock() {
+  try { const { stdout } = await execFileP("lsof", ["-t", termSock], { encoding: "utf8", timeout: 3000 }); for (const l of stdout.split("\n")) { const p = Number(l.trim()); if (p !== process.pid && await isDaemonPid(p)) return p; } } catch { /* 없음 */ }
+  return 0;
+}
+ipcMain.handle("daemon:restart", async () => {
+  const s = await daemonStatus();
+  const pid = (await isDaemonPid(s.pid)) ? s.pid : await daemonPidBySock();
+  if (!pid) return { ok: false, reason: "no daemon pid" };
+  // SIGKILL — 데몬은 앱 종료에 살아남으려고 SIGTERM을 무시함(#682). 소켓 파일은 새 데몬이 시작 때 지움.
+  try { process.kill(pid, "SIGKILL"); } catch (e) { return { ok: false, reason: String(e?.message || e) }; }
+  app.relaunch(); // 새 앱이 뜨면서 새 버전 데몬을 스폰
+  // app.quit — before-quit에서 standalone 서버를 끔. app.exit는 그걸 건너뛰어 서버가 59720을 물고 남고,
+  // 새 앱이 다른 포트로 떠서 저장된 탭·설정이 안 보였음(실측, 포트=origin=저장소).
+  setTimeout(() => app.quit(), 300);
+  return { ok: true };
+});
 ipcMain.handle("terminal:list", async () => {
   const ss = await termClient.list(); // 세션 목록(#764) — 레포탭 호버 카드 + 탭 이름(#803) + 세션 제목(#970)
   // 비활성 탭도 검출: 데몬 screen(buffer tail)을 힌트로 agentForId에 전달(#836/#840). screen은 검출용, 렌더러 미전송(누출 방지).

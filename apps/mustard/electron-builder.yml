@@ -33,6 +33,8 @@ extraResources:
   # (RUN_AS_NODE는 asar 미지원 → asar 안 스크립트는 require 불가). resources/electron/에 동봉.
   - from: electron/terminal-daemon.cjs
     to: electron/terminal-daemon.cjs
+  - from: electron/daemon-version.cjs   # #1036 데몬이 require — 빠지면 새 데몬이 켜자마자 죽음(실측)
+    to: electron/daemon-version.cjs
   # 데몬이 require("node-pty") 하는데, resources/electron/에서 walk-up 하면 resources/node_modules/node-pty를
   # 찾는다. from은 hoist된 루트 node_modules(apps/mustard/node_modules는 비어 있음, #906).
   # node-pty .node는 package-app.mjs가 패키징 전 electron ABI로 선빌드(RUN_AS_NODE 데몬서 로드).

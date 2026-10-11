@@ -14,6 +14,7 @@ function createDaemonClient(opts) {
   let token = "";
   let spawning = false;
   const ensured = new Map(); // id → {resolve} 대기 중 ensure
+  let daemonInfo = null;     // #1036 마지막 listed의 {version, pid} — 옛 데몬은 version 없음
   const listWaiters = [];    // list 응답 대기 resolver 큐(FIFO). listed 페이로드는 현재 상태 스냅샷이라 상관 어긋나도 데이터는 유효(#764).
 
   // 기존 데몬 메타(토큰) 로드 or 새 토큰 생성.
@@ -29,7 +30,7 @@ function createDaemonClient(opts) {
     let m; try { m = JSON.parse(line); } catch { return; }
     if (m.t === "ready") { ready = true; return; }
     if (m.t === "ensured") { const w = ensured.get(m.id); if (w) { ensured.delete(m.id); w({ ok: m.ok, buffer: m.buffer, reason: m.reason }); } return; }
-    if (m.t === "listed") { const w = listWaiters.shift(); if (w) w(Array.isArray(m.sessions) ? m.sessions : []); return; }
+    if (m.t === "listed") { daemonInfo = { version: Number(m.version) || 0, pid: Number(m.pid) || 0 }; const w = listWaiters.shift(); if (w) w(Array.isArray(m.sessions) ? m.sessions : []); return; }
     if (m.t === "data") { onData && onData(m.id, m.data); return; }
     if (m.t === "exit") { onExit && onExit(m.id); return; }
   }
@@ -83,6 +84,7 @@ function createDaemonClient(opts) {
   }
 
   return {
+    info: () => daemonInfo, // #1036
     async ensure({ id, cwd, cols, rows, dark }) {
       if (!(await ensureConnected())) return { ok: false, reason: "daemon unavailable" };
       return await new Promise((resolve) => {
