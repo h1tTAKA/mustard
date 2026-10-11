@@ -4,8 +4,8 @@ import { PROVIDER_CATALOG } from "../../lib/agent/catalog";
 import { type LearnProviderMode, type ModeModels, type ModeProviders, LEARN_PROVIDER_MODES, resolveModeModel, resolveModeProvider } from "../../lib/modeProviders";
 import { XIcon } from "../learning/icons";
 import ShortcutsSection from "./ShortcutsSection";
-import { IconKeyboard, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure } from "@tabler/icons-react";
-import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, AKEYS, AGENT_DEFAULTS, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS } from "@mustard/core";
+import { IconKeyboard, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity } from "@tabler/icons-react";
+import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, AKEYS, AGENT_DEFAULTS, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 // 에이전트 런치(#927) — 기본 에이전트 후보. AGENT_META/AgentLogo는 apps 소유(패키지 경계)라 여기선 id 목록만.
 const LAUNCH_AGENTS = ["claude", "codex", "grok", "opencode", "omp", "antigravity", "cursor", "hermes"];
 const AGENT_LABEL: Record<string, string> = { claude: "Claude Code", codex: "Codex", grok: "Grok", opencode: "OpenCode", omp: "OMP", antigravity: "Antigravity", cursor: "Cursor", hermes: "Hermes" };
@@ -190,6 +190,8 @@ export default function SettingsDrawer({
   const gPrBase = useSetting<string>(GKEYS.prBaseDefault, GIT_DEFAULTS.prBaseDefault);
   const gPrDraft = useSetting<boolean>(GKEYS.prDraftDefault, GIT_DEFAULTS.prDraftDefault);
   const gAutoFetch = useSetting<boolean>(GKEYS.autoFetch, GIT_DEFAULTS.autoFetch);
+  const cuCommands = useSetting<boolean>(CUKEYS.commands, CATCHUP_DEFAULTS.commands); // #1049
+  const cuTerms = useSetting<boolean>(CUKEYS.terms, CATCHUP_DEFAULTS.terms);
   const gBranchPrefix = useSetting<string>(GKEYS.branchPrefix, GIT_DEFAULTS.branchPrefix);
   // 연동(#958) — GitHub gh auth 상태 + PAT.
   const [ghAuth, setGhAuth] = useState<{ state: string; detail?: string } | null>(null);
@@ -293,6 +295,7 @@ export default function SettingsDrawer({
     { id: "set-git", label: t("settings.gitSection"), Icon: IconGitBranch, show: true, group: t("settings.groupEnvironment") },
     { id: "set-shortcuts", label: t("settings.shortcutsSection"), Icon: IconKeyboard, show: true, group: t("settings.groupEnvironment") }, // #1027
     { id: "set-agents", label: t("settings.provider"), Icon: IconRobot, show: true, group: t("settings.groupAgents") },
+    { id: "set-catchup", label: t("settings.catchupSection"), Icon: IconActivity, show: true, group: t("settings.groupAgents") }, // #1049
     { id: "set-integrations", label: t("settings.integrations"), Icon: IconPlug, show: true, group: t("settings.groupAgents") },
     { id: "set-nunopi", label: t("settings.nunopiModule"), Icon: IconSparkles, show: !!onNunopiEnabledChange, group: t("settings.groupAgents") },
   ];
@@ -863,6 +866,28 @@ export default function SettingsDrawer({
             {([
               { key: GKEYS.prDraftDefault, on: gPrDraft, label: t("settings.gitPrDraft"), desc: t("settings.gitPrDraftDesc") },
               { key: GKEYS.autoFetch, on: gAutoFetch, label: t("settings.gitAutoFetch"), desc: t("settings.gitAutoFetchDesc") },
+            ]).map((row) => (
+              <div key={row.key} className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{row.label}</span>
+                  <p className="text-xs text-zinc-400 dark:text-zinc-500">{row.desc}</p>
+                </div>
+                <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
+                  onClick={() => setSetting(row.key, !row.on)}
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${row.on ? "left-[22px]" : "left-0.5"}`} />
+                </button>
+              </div>
+            ))}
+          </section>
+          )}
+
+          {/* 캐치업(#1049) — 명령어 해설·용어집 토글. */}
+          {activeSection === "set-catchup" && (
+          <section id="set-catchup" className="scroll-mt-4 space-y-4 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+            {([
+              { key: CUKEYS.commands, on: cuCommands, label: t("settings.catchupCommands"), desc: t("settings.catchupCommandsDesc") },
+              { key: CUKEYS.terms, on: cuTerms, label: t("settings.catchupTerms"), desc: t("settings.catchupTermsDesc") },
             ]).map((row) => (
               <div key={row.key} className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
