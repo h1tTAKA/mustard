@@ -168,6 +168,18 @@ export default function WorkspaceView({ path, active = true, providerId, provide
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; const k = `nunopi:ws:${path}:docs-open`; try { localStorage.setItem(k, docsOpen ? "1" : "0"); } catch { /* ignore */ } }, [docsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; const k = `nunopi:ws:${path}:browser-open`; try { localStorage.setItem(k, browserOpen ? "1" : "0"); } catch { /* ignore */ } }, [browserOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; try { localStorage.setItem(`nunopi:ws:${path}:browser-tabs`, JSON.stringify(browserTabs)); localStorage.removeItem(`nunopi:ws:${path}:browser-url`); } catch { /* ignore */ } }, [browserTabs]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 에이전트가 이 레포 브라우저를 열어달라고 함(#1041 browser_navigate, 안 열려 있을 때) — cwd가 이 레포 안이면 새 탭으로.
+  useEffect(() => {
+    const api = window.nunopiDesktop?.browser;
+    if (!path || !api?.onOpenRequest) return;
+    const root = path.replace(/\/+$/, "");
+    return api.onOpenRequest(({ cwd, url }) => {
+      const c = String(cwd || "").replace(/\/+$/, "");
+      if (c !== root && !c.startsWith(root + "/")) return;
+      setBrowserIncoming((prev) => ({ url, n: (prev?.n ?? 0) + 1 }));
+      setBrowserOpen(true);
+    });
+  }, [path]);
   // 분리 브라우저 창(#1034)과 같은 origin localStorage로 주고받음 — storage 이벤트는 다른 창에서 쓸 때만 옴.
   // browser-dock {url,n} = 분리 창의 "앱 안에서 열기" → dock 브라우저를 열고 그 주소를 새 탭으로.
   useEffect(() => {

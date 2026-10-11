@@ -131,6 +131,16 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
   }, [devtools, ready, reportDevtools]);
   useLayoutEffect(() => { visibleRef.current = visible; if (devtools && ready) reportDevtools(); });
 
+  // 에이전트 MCP(#1041)가 이 탭을 찾게 main에 등록(레포·보임). 보임이 바뀌면 다시, 사라지면 해제.
+  useEffect(() => {
+    const page = viewRef.current, api = window.nunopiDesktop?.browser;
+    if (!ready || !page || !api?.register) return;
+    let id: number;
+    try { id = page.getWebContentsId(); } catch { return; }
+    api.register(id, repo, visible);
+    return () => api.unregister(id);
+  }, [ready, visible, repo]);
+
   // 선택 시작/취소 — 스크립트가 클릭 때까지 기다렸다 요소 정보를 돌려줌(Esc·취소 = null).
   const togglePick = () => {
     const wv = viewRef.current;

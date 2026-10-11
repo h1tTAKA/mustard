@@ -441,7 +441,15 @@ const browserEndpointFile = () => join(app.getPath("userData"), "mustard-browser
 app.whenReady().then(() => browserControl.listen(BROWSER_TOKEN)).then(({ port }) => {
   writeFileSync(browserEndpointFile(), JSON.stringify({ url: `http://127.0.0.1:${port}/call`, token: BROWSER_TOKEN }), { mode: 0o600 });
   chmodSync(browserEndpointFile(), 0o600);
-}).catch((err) => console.warn("[browser-control] listen failed:", String(err?.message || err)));
+  // Claude·Codex에 MCP 자동 등록(이미 같으면 건너뜀). CLI 없으면 그 쪽만 건너뜀.
+  const rp = loadSavedRuntimePaths();
+  return require("./browser-mcp-install.cjs").installBrowserMcp({
+    userData: app.getPath("userData"),
+    execPath: process.execPath,
+    claudePath: rp.claudeCode || process.env.NUNOPI_CLAUDE_COMMAND?.trim() || safeResolve(resolveClaudeCli),
+    codexPath: rp.codex || process.env.NUNOPI_CODEX_COMMAND?.trim() || safeResolve(resolveCodexCli),
+  }).then((r) => console.log("[browser-mcp]", JSON.stringify(r)));
+}).catch((err) => console.warn("[browser-control] setup failed:", String(err?.message || err)));
 ipcMain.on("browser:set-chords", (e, list) => { trackChordHost(e.sender); setAppChords(e.sender.id, list); });
 // 탭 쪽 모드 점유/해제/조회(#789) — 메인 창 렌더러가 모드 탭 추가·닫기·복원 시 호출.
 ipcMain.handle("mode:claim", (_e, kind) => ({ ok: claimMode(kind, "tab") }));

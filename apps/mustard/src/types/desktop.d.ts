@@ -114,6 +114,9 @@ interface NunopiDesktopApi {
     devtoolsBounds(guestId: number, rect: { x: number; y: number; w: number; h: number }): void;
     closeDevTools(guestId: number): Promise<{ ok: boolean }>;
     sendToAgent(payload: { cwd: string; preferId?: string; text: string }): Promise<{ ok: true; id: string } | { ok: false; reason: string }>;
+    register(guestId: number, repo: string, visible: boolean): void;
+    unregister(guestId: number): void;
+    onOpenRequest(cb: (p: { cwd: string; url: string }) => void): () => void;
     capture(guestId: number, rect: { x: number; y: number; w: number; h: number }): Promise<{ ok: boolean; path?: string }>;
     onKey(cb: (k: { code: string; key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }) => void): () => void;
   };

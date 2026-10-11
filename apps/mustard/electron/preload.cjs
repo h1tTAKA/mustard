@@ -92,6 +92,9 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     devtoolsBounds: (guestId, rect) => ipcRenderer.send("browser:devtools-bounds", { guestId, rect: zoomRect(rect) }),
     closeDevTools: (guestId) => ipcRenderer.invoke("browser:devtools-close", { guestId }),
     sendToAgent: (payload) => ipcRenderer.invoke("browser:send-to-agent", payload), // #1037 셸이면 안 보냄(main 판정)
+    register: (guestId, repo, visible) => ipcRenderer.send("browser:register", { guestId, repo, visible }), // #1041 에이전트가 이 탭을 찾게
+    unregister: (guestId) => ipcRenderer.send("browser:unregister", { guestId }),
+    onOpenRequest: (cb) => { const h = (_e, p) => cb(p); ipcRenderer.on("browser:open-request", h); return () => ipcRenderer.removeListener("browser:open-request", h); },
     capture: (guestId, rect) => ipcRenderer.invoke("browser:capture", { guestId, rect }), // #1037 요소 스크린샷 → 임시 PNG 경로
     onKey: (cb) => { const h = (_e, k) => cb(k); ipcRenderer.on("browser:key", h); return () => ipcRenderer.removeListener("browser:key", h); },
   },
