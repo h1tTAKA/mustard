@@ -5,6 +5,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
+import { isDocEdit } from "@/lib/mcpActivity";
 import { useT, useLocale, useSetting, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
@@ -252,7 +253,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
     dragCleanup.current = stop;
   }, [askH]);
-  const shown = (viewDay ? (dayItems ?? []) : concepts).filter((c) => showCommands || !isCommand(c)); // 끄면 지난 명령 카드도 숨김
+  const shown = (viewDay ? (dayItems ?? []) : concepts).filter((c) => (showCommands || !isCommand(c)) && !(c.kind === "edit" && isDocEdit(c.tool, c.target))); // 끄면 지난 명령 카드도 숨김, 문서 편집 카드는 항상 숨김(#1049)
   const viewLabel = viewDay ? (() => { try { return new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${viewDay}T00:00:00`)); } catch { return viewDay; } })() : "";
 
   return (

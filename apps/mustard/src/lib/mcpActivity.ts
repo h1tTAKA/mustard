@@ -53,10 +53,14 @@ export function emitToolCall(root: string, tool: string, args: Record<string, un
   pushEvent({ root: normPath(root), tool, kind: c.kind, target: c.target, isError, ts: now });
 }
 
+// 문서 파일(#1049) — .md 학습정리·작업일지 같은 문서 편집은 코드가 아니라 캐치업 카드에서 뺌(내레이션의 문서 SKIP과 맞춤).
+// 명령(Bash)의 target은 명령 문자열이라 대상 아님. 클라도 지난 기록 숨김에 같은 함수를 씀.
+export const isDocEdit = (tool: string, target: string) => tool !== "Bash" && /\.(md|mdx|markdown|txt|rst|adoc)$/i.test(target.trim());
+
 // 편집 활동 방출(#857) — agentStatus의 편집 툴을 학습 신호로. 직전 편집과 동일하면 스킵(스크레이퍼 반복 POST 대비).
 export function emitEdit(root: string, tool: string, target: string, isError: boolean, now: number): void {
   const t = (target ?? "").trim();
-  if (!t) return;
+  if (!t || isDocEdit(tool, t)) return;
   const r = normPath(root);
   const sig = `${tool}|${t}|${isError ? 1 : 0}`; // isError 포함(성공→실패 전환은 새 이벤트, cavecrew 🟡)
   if (lastEdit.get(r) === sig) return; // dedup(연속 동일만)
