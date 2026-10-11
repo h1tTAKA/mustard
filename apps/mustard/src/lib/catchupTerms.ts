@@ -30,6 +30,9 @@ export function parseNarrationTerms(note: string): Term[] {
 export function mergeTerms(prev: Term[], add: Term[], key: (s: string) => string): Term[] {
   const seen = new Set(prev.map((x) => key(x.term)));
   const fresh: Term[] = [];
-  for (const x of add) { const k = key(x.term); if (!k || seen.has(k)) continue; seen.add(k); fresh.push(x); }
+  for (const raw of add) {
+    const x = { term: raw.term.replace(/`/g, "").trim(), def: raw.def.trim() }; // 모델이 붙인 코드 백틱 제거(`tsconfig.json`)
+    const k = key(x.term); if (!k || seen.has(k)) continue; seen.add(k); fresh.push(x);
+  }
   return fresh.length ? [...fresh, ...prev] : prev;
 }

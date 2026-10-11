@@ -361,7 +361,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                   <IconChevronDown size={13} stroke={2} className={`ml-auto shrink-0 text-zinc-400 transition ${termsOpen ? "" : "-rotate-90"}`} aria-hidden />
                 </button>
                 {/* #1049 용어 = 작은 카드(용어 배지 + 뜻 아래 줄) — 텍스트 나열보다 훑기 쉽게 */}
-                {(termsOpen || filter === "terms") && <ul className="flex flex-col gap-1.5 px-2.5 pb-2.5">
+                {/* 전체 필터에선 용어가 많아도 해설·명령어가 묻히지 않게 약 3개 높이로 안에서 스크롤(#1051), 용어 필터면 전부 펼침 */}
+                {(termsOpen || filter === "terms") && <ul className={`flex flex-col gap-1.5 px-2.5 pb-2.5 ${filter === "terms" ? "" : "nunopi-scroll max-h-[13.5rem] overflow-y-auto"}`}>
                   {shownTerms.map((x) => (
                     <li key={x.term}>{(() => { const card = cardOf(x.term); const body = (<>
                       <span className="inline-block rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 dark:text-mustard-400">{x.term}</span>
