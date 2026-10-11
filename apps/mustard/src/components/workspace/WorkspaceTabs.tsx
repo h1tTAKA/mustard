@@ -164,7 +164,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
           publishRepoSessions(p, shown); // #1036 터미널 탭 아이콘용(같은 폴링 결과 공유)
           return [p, aggregate(shown.map((s) => s.state)), shown] as const;
         }
-        catch { return [p, null, null] as const; }
+        catch { publishRepoSessions(p, null); return [p, null, null] as const; } // 조회 실패면 터미널 탭 아이콘도 비움(낡은 스피너 고정 방지)
       })).then((results) => {
         if (!alive) return;
         const entries = results.map(([p, st]) => [p, st] as const);

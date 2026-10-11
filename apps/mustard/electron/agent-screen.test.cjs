@@ -79,5 +79,7 @@ const quietRedraw = "x".repeat(20000) + "\u001b[2C6\u001b[1C✢\u001b[3D? for sh
 assert.strictEqual((() => { const r = parseAgentScreen(quietRedraw, `${idleGlyph} prev`); return r && r.state; })(), "unknown", "조용한 재그리기 → unknown(가짜 완료 X)");
 assert.strictEqual((() => { const r = parseAgentScreen(title(`${idleGlyph} new`) + "? for shortcuts", `${braille} old`); return r && r.state; })(), "idle", "tail 타이틀이 hint보다 우선");
 assert.strictEqual(st(title(`${idleGlyph} done`) + "✻ Brewed for 2m · done\n❯ "), "claude/idle", "턴 끝 새 ✳ → idle(완료 신호는 유지)");
+assert.strictEqual(st(title(`${idleGlyph} prev`) + "❯ 다음 일\n✻ Working… (5s · esc to interrupt)"), "claude/working", "새 턴 초반 — 지난 ✳ 뒤 라이브 마커 → working");
+assert.strictEqual(st("? for shortcuts\n❯ "), "claude/idle", "타이틀 없는 크롬만 → idle(영원히 working 방지)");
 
 console.log("PASS — all assertions");

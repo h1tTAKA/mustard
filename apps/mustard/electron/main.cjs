@@ -1186,10 +1186,22 @@ async function daemonStatus() {
   return { outdated: info.version < DAEMON_VERSION, version: info.version, pid, sessions: sessions.length };
 }
 ipcMain.handle("daemon:status", async () => { const s = await daemonStatus(); return { outdated: s.outdated, sessions: s.sessions }; });
+// 데몬 pid 확인 — 셸의 부모 추측은 pid 재사용 등으로 틀릴 수 있어, 실제로 terminal-daemon 프로세스인지 확인(#1036 리뷰).
+async function isDaemonPid(pid) {
+  if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) return false;
+  try { const { stdout } = await execFileP("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: 3000 }); return /terminal-daemon/.test(stdout); } catch { return false; }
+}
+// 세션이 없어 셸 부모로 못 찾으면 소켓을 연 프로세스로.
+async function daemonPidBySock() {
+  try { const { stdout } = await execFileP("lsof", ["-t", termSock], { encoding: "utf8", timeout: 3000 }); for (const l of stdout.split("\n")) { const p = Number(l.trim()); if (p !== process.pid && await isDaemonPid(p)) return p; } } catch { /* 없음 */ }
+  return 0;
+}
 ipcMain.handle("daemon:restart", async () => {
   const s = await daemonStatus();
-  if (!s.pid) return { ok: false, reason: "no daemon pid" };
-  try { process.kill(s.pid, "SIGTERM"); } catch (e) { return { ok: false, reason: String(e?.message || e) }; }
+  const pid = (await isDaemonPid(s.pid)) ? s.pid : await daemonPidBySock();
+  if (!pid) return { ok: false, reason: "no daemon pid" };
+  // SIGKILL — 데몬은 앱 종료에 살아남으려고 SIGTERM을 무시함(#682). 소켓 파일은 새 데몬이 시작 때 지움.
+  try { process.kill(pid, "SIGKILL"); } catch (e) { return { ok: false, reason: String(e?.message || e) }; }
   app.relaunch(); // 새 앱이 뜨면서 새 버전 데몬을 스폰
   setTimeout(() => app.exit(0), 300);
   return { ok: true };

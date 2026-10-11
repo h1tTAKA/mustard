@@ -92,9 +92,15 @@ function agentFromProcess(name) {
 function parseAgentScreen(buffer, titleHint = "") {
   // 타이틀은 넓게(입력 에코로 밀려도 확보). 전체 200k는 perf 낭비라 16KB.
   // #989 출력이 많으면 16KB tail에 타이틀이 아예 없음(실측 6/6) → 스트림 전체서 추적한 마지막 타이틀(titleHint)로 보완(orca 방식).
-  const tailTitle = lastTitle(recentRaw(buffer, 16000));
+  const raw16 = recentRaw(buffer, 16000);
+  const tailTitle = lastTitle(raw16);
   const title = tailTitle || titleHint || "";
-  const freshTitle = !!tailTitle; // tail에 새로 찍힌 타이틀인지(hint = 예전에 본 것)
+  const freshTitle = !!tailTitle; // tail에 찍힌 타이틀인지(hint = 예전에 본 것)
+  // 마지막 타이틀 "뒤"에 라이브 작업 마커가 있으면 그 타이틀은 지난 턴 것(#1036 리뷰: 새 턴 초반엔 이전 ✳가 아직 tail에 있음).
+  const titleMatches = tailTitle ? [...raw16.matchAll(TITLE_RE)] : [];
+  const lastTitleEnd = titleMatches.length ? titleMatches[titleMatches.length - 1].index + titleMatches[titleMatches.length - 1][0].length : 0;
+  // 여기선 ↓tokens는 빼고 "esc to interrupt"·괄호 타이머만 — 끝난 서브에이전트 푸터("30s · ↓ 57k tokens")가 ✳ 뒤에 남아 있어도 working으로 안 보게.
+  const workingAfterTitle = !!tailTitle && /esctointerrupt|\(\d+m?\d*s[·)]/i.test(stripAnsi(raw16.slice(lastTitleEnd)).toLowerCase().replace(/\s+/g, ""));
   const tc = firstCode(title.trim());
   const wide = stripAnsi(recentRaw(buffer, 8000)).toLowerCase().replace(/\s+/g, "");    // 넓게 — chrome 감지(입력 에코 많아도 놓치지 않게)
   const compact = stripAnsi(recentRaw(buffer, 2500)).toLowerCase().replace(/\s+/g, ""); // 좁게 — 작업 마커(옛 tokens stale 방지)
@@ -135,11 +141,12 @@ function parseAgentScreen(buffer, titleHint = "") {
     if (CLAUDE_WAITING.test(bottom)) return { agent: "claude", state: "waiting", task };     // 권한/선택/인터럽트(바닥에서만)
     // #1036 ✳는 tail에 새로 찍혔을 때만 유휴 — 이 Claude 빌드는 타이틀을 턴 끝에만 보내서, 턴 도중엔 이전 턴의 ✳가
     // hint로 남아 있음. 그걸 믿으면 작업 중에도 idle → 1.5초 뒤 가짜 완료 알림(조용한 긴 Bash에서 실측).
-    if (isClaudeIdleGlyph(tc) && freshTitle) return { agent: "claude", state: "idle", task };
-    if (CLAUDE_WORKING.test(compact)) return { agent: "claude", state: "working", task };    // 타이틀 없는/낡은 경우 라이브 마커
-    // 그 밖엔 "모름" — 화면이 스피너 몇 글자만 바뀌는 조용한 작업은 마커가 tail에 없음. 모름 = main이 직전 상태 유지,
-    // 완료는 확실한 신호(새 ✳·대기 박스·Stop 훅)로만.
-    return { agent: "claude", state: "unknown", task };
+    if (isClaudeIdleGlyph(tc) && freshTitle && !workingAfterTitle) return { agent: "claude", state: "idle", task };
+    if (workingAfterTitle || CLAUDE_WORKING.test(compact)) return { agent: "claude", state: "working", task }; // 라이브 마커
+    // 지난 턴 ✳만 hint로 남은 경우 = "모름"(조용한 작업은 마커가 tail에 없음) — main이 직전 상태 유지, 완료는 새 ✳·대기·Stop 훅으로만.
+    // 타이틀을 아예 안 쓰는 에이전트(claude 크롬만 닮은 aider·copilot 등, tmux)는 예전처럼 idle(#1036 리뷰: 영원히 working 방지).
+    if (isClaudeIdleGlyph(tc) && !freshTitle) return { agent: "claude", state: "unknown", task };
+    return { agent: "claude", state: "idle", task };
   }
 
   // ── Codex(보조) ─────────────────────────
