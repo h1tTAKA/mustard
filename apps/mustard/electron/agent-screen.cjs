@@ -100,7 +100,9 @@ function parseAgentScreen(buffer, titleHint = "") {
   const titleMatches = tailTitle ? [...raw16.matchAll(TITLE_RE)] : [];
   const lastTitleEnd = titleMatches.length ? titleMatches[titleMatches.length - 1].index + titleMatches[titleMatches.length - 1][0].length : 0;
   // 여기선 ↓tokens는 빼고 "esc to interrupt"·괄호 타이머만 — 끝난 서브에이전트 푸터("30s · ↓ 57k tokens")가 ✳ 뒤에 남아 있어도 working으로 안 보게.
-  const workingAfterTitle = !!tailTitle && /esctointerrupt|\(\d+m?\d*s[·)]/i.test(stripAnsi(raw16.slice(lastTitleEnd)).toLowerCase().replace(/\s+/g, ""));
+  // 스피너 줄("✻ Precipitating…")도 — 바뀐 칸만 다시 그려 "esc to interrupt"가 통째로 안 올 수 있어서(#1036 재리뷰).
+  // 끝난 뒤 요약 "✻ Worked for 30s"는 말줄임표가 없어 안 걸림.
+  const workingAfterTitle = !!tailTitle && /esctointerrupt|\(\d+m?\d*s[·)]|[✢✳✶✻✽·*][a-z]+…/i.test(stripAnsi(raw16.slice(lastTitleEnd)).toLowerCase().replace(/\s+/g, ""));
   const tc = firstCode(title.trim());
   const wide = stripAnsi(recentRaw(buffer, 8000)).toLowerCase().replace(/\s+/g, "");    // 넓게 — chrome 감지(입력 에코 많아도 놓치지 않게)
   const compact = stripAnsi(recentRaw(buffer, 2500)).toLowerCase().replace(/\s+/g, ""); // 좁게 — 작업 마커(옛 tokens stale 방지)

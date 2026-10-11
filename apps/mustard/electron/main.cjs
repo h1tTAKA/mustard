@@ -1189,6 +1189,7 @@ ipcMain.handle("daemon:status", async () => { const s = await daemonStatus(); re
 // 데몬 pid 확인 — 셸의 부모 추측은 pid 재사용 등으로 틀릴 수 있어, 실제로 terminal-daemon 프로세스인지 확인(#1036 리뷰).
 async function isDaemonPid(pid) {
   if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) return false;
+  if (process.platform === "win32") return true; // ps 없음 — 셸 부모 추측을 믿음(#1036 재리뷰: 예전 동작 유지)
   try { const { stdout } = await execFileP("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: 3000 }); return /terminal-daemon/.test(stdout); } catch { return false; }
 }
 // 세션이 없어 셸 부모로 못 찾으면 소켓을 연 프로세스로.
