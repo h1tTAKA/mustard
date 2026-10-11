@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     setAppChords: (list) => ipcRenderer.send("browser:set-chords", list),
     openDevTools: (guestId, devtoolsId) => ipcRenderer.invoke("browser:devtools-open", { guestId, devtoolsId }),
     closeDevTools: (guestId) => ipcRenderer.invoke("browser:devtools-close", { guestId }),
+    capture: (guestId, rect) => ipcRenderer.invoke("browser:capture", { guestId, rect }), // #1037 요소 스크린샷 → 임시 PNG 경로
     onKey: (cb) => { const h = (_e, k) => cb(k); ipcRenderer.on("browser:key", h); return () => ipcRenderer.removeListener("browser:key", h); },
   },
   ports: { // #880 워크스페이스 dev 서버 포트 감지·열기

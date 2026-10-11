@@ -363,6 +363,20 @@ ipcMain.handle("browser:devtools-open", (e, { guestId, devtoolsId } = {}) => {
   guest.openDevTools();
   return { ok: true };
 });
+// 선택한 요소 스크린샷(#1037) — 그 영역만 잘라 임시 PNG로, 경로를 에이전트 프롬프트에 넣음(터미널 이미지 붙여넣기 #799와 같은 방식).
+ipcMain.handle("browser:capture", async (e, { guestId, rect } = {}) => {
+  const guest = ownGuest(e.sender, guestId);
+  const n = (v) => Math.max(0, Math.round(Number(v) || 0));
+  if (!guest || !rect) return { ok: false };
+  const r = { x: n(rect.x), y: n(rect.y), width: Math.max(1, n(rect.w)), height: Math.max(1, n(rect.h)) };
+  try {
+    const img = await guest.capturePage(r);
+    if (img.isEmpty()) return { ok: false };
+    const p = join(app.getPath("temp"), `mustard-pick-${Date.now()}.png`);
+    writeFileSync(p, img.toPNG());
+    return { ok: true, path: p };
+  } catch (err) { return { ok: false, error: String(err?.message || err) }; }
+});
 ipcMain.handle("browser:devtools-close", (e, { guestId } = {}) => {
   const guest = ownGuest(e.sender, guestId);
   if (guest?.isDevToolsOpened()) guest.closeDevTools();
