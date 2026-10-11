@@ -300,60 +300,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const shownTerms = query ? terms.filter((x) => `${x.term}\n${x.def}`.toLowerCase().includes(query.toLowerCase())) : terms;
   const viewLabel = viewDay ? (() => { try { return new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${viewDay}T00:00:00`)); } catch { return viewDay; } })() : "";
 
-  return (
-    <div ref={rootRef} className="flex h-full min-h-0 w-full flex-col bg-white dark:bg-[var(--s-pane)]">
-      <div className="relative flex shrink-0 items-center gap-1.5 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
-        <IconActivity size={14} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
-        <span className="mr-auto truncate text-[13px] font-semibold text-zinc-700 dark:text-zinc-200" title={t("learn.mode")}>{t("learn.title")}</span>
-        <button type="button" data-cal-toggle onClick={openCal} aria-expanded={calOpen} title={t("learn.calendar")} aria-label={t("learn.calendar")}
-          className={`rounded-md p-1 transition ${calOpen || viewDay ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
-          <IconCalendar size={14} stroke={2} aria-hidden />
-        </button>
-        <label className="flex cursor-pointer items-center gap-1 text-[10px] text-zinc-500 dark:text-zinc-400" title={t("learn.autoExplain")}>
-          <input type="checkbox" checked={autoExplain} onChange={(e) => setAutoExplain(e.target.checked)} /> {t("learn.autoExplain")}
-        </label>
-        <span className={`flex items-center gap-1 text-[10px] ${live ? "text-emerald-500" : "text-zinc-400 dark:text-zinc-500"}`}><IconPointFilled size={10} stroke={2} aria-hidden /> {live ? t("learn.live") : t("learn.idle")}</span>
-        {calOpen && <CatchupCalendar days={days} selected={viewDay} locale={locale} onPick={pickDay} onClose={closeCal} />}
-      </div>
-      {/* #1049 카테고리 필터 칩 */}
-      <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
-        {([["all", t("learn.filterAll")], ["explain", t("learn.filterExplain")], ...(showCommands ? [["commands", t("learn.filterCommands")]] : []), ...(showTerms ? [["terms", t("learn.filterTerms")]] : [])] as [typeof filterSel, string][]).map(([id, label]) => (
-          <button key={id} type="button" onClick={() => setFilter(id)} aria-pressed={filter === id}
-            className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition ${filter === id ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
-            {label}
-          </button>
-        ))}
-        <label className="ml-auto flex min-w-[8rem] flex-1 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 focus-within:border-mustard-500/60 dark:border-zinc-700">
-          <IconSearch size={11} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
-          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("learn.search")} aria-label={t("learn.search")}
-            className="min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none placeholder:text-zinc-400 dark:text-zinc-200" />
-        </label>
-      </div>
-      {/* 지난 날 보는 중 안내 바 — 오늘로 복귀(그사이 실시간 항목 바로 보임) */}
-      {viewDay && (
-        <div className="flex shrink-0 items-center gap-1.5 border-b border-mustard-500/30 bg-mustard-500/10 px-3 py-1.5 text-[11px] text-mustard-700 dark:text-mustard-400">
-          <IconCalendar size={12} stroke={2} className="shrink-0" aria-hidden />
-          <span className="mr-auto truncate">{t("learn.viewingDay", { date: viewLabel })}</span>
-          <button type="button" onClick={() => pickDay(null)} className="flex items-center gap-0.5 rounded-md px-1.5 py-0.5 font-medium hover:bg-mustard-500/15">
-            <IconArrowBarToUp size={11} stroke={2} aria-hidden /> {t("learn.backToToday")}
-          </button>
-        </div>
-      )}
-      <div ref={listRef} className="nunopi-scroll min-h-0 flex-1 overflow-y-auto">
-        {query && found === null && filter !== "terms" ? (
-          <div className="flex justify-center py-6"><IconLoader2 size={14} stroke={2} className="animate-spin text-zinc-400" aria-hidden /></div>
-        ) : query && !shown.length && !(showTerms && filter !== "explain" && filter !== "commands" && shownTerms.length) ? (
-          <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.searchEmpty")}</p>
-        ) : viewDay && dayItems === null && filter !== "terms" ? (
-          <div className="flex justify-center py-6"><IconLoader2 size={14} stroke={2} className="animate-spin text-zinc-400" aria-hidden /></div>
-        ) : viewDay && !shown.length && filter !== "terms" ? ( /* 용어집은 날짜 무관 — 지난 날 보기여도 용어 필터면 용어집 */
-          <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.dayEmpty")}</p>
-        ) : !loaded && !concepts.length ? null : !concepts.length && !(showTerms && terms.length) ? (
-          <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.empty")}</p>
-        ) : (
-          <>
-            {/* 용어집 — 이해에 필요한 용어 누적(중복 없음) */}
-            {showTerms && shownTerms.length > 0 && (filter === "terms" || (filter === "all" && (!viewDay || !!query))) && ( /* 용어집은 날짜 무관 누적 → 지난 날 보기에선 숨김(#996) */
+  // 용어집(#1049·#1051) — 전체 필터에선 목록 위에 고정(해설·명령어 목록과 스크롤 따로), 용어 필터에선 목록 자리에서 전부.
+  // 날짜 무관 누적이라 지난 날 보기에선 숨김(#996, 검색·용어 필터는 예외).
+  const glossary = showTerms && shownTerms.length > 0 && (filter === "terms" || (filter === "all" && (!viewDay || !!query))) ? (
               <div className="border-b border-zinc-100 dark:border-zinc-800/70">
                 <button type="button" onClick={() => setTermsOpen((v) => !v)} className="flex w-full items-center gap-1.5 px-3 py-2 text-left">
                   <IconBook2 size={13} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
@@ -396,7 +345,62 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                   )}
                 </ul>}
               </div>
-            )}
+  ) : null;
+
+  return (
+    <div ref={rootRef} className="flex h-full min-h-0 w-full flex-col bg-white dark:bg-[var(--s-pane)]">
+      <div className="relative flex shrink-0 items-center gap-1.5 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+        <IconActivity size={14} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
+        <span className="mr-auto truncate text-[13px] font-semibold text-zinc-700 dark:text-zinc-200" title={t("learn.mode")}>{t("learn.title")}</span>
+        <button type="button" data-cal-toggle onClick={openCal} aria-expanded={calOpen} title={t("learn.calendar")} aria-label={t("learn.calendar")}
+          className={`rounded-md p-1 transition ${calOpen || viewDay ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
+          <IconCalendar size={14} stroke={2} aria-hidden />
+        </button>
+        <label className="flex cursor-pointer items-center gap-1 text-[10px] text-zinc-500 dark:text-zinc-400" title={t("learn.autoExplain")}>
+          <input type="checkbox" checked={autoExplain} onChange={(e) => setAutoExplain(e.target.checked)} /> {t("learn.autoExplain")}
+        </label>
+        <span className={`flex items-center gap-1 text-[10px] ${live ? "text-emerald-500" : "text-zinc-400 dark:text-zinc-500"}`}><IconPointFilled size={10} stroke={2} aria-hidden /> {live ? t("learn.live") : t("learn.idle")}</span>
+        {calOpen && <CatchupCalendar days={days} selected={viewDay} locale={locale} onPick={pickDay} onClose={closeCal} />}
+      </div>
+      {/* #1049 카테고리 필터 칩 */}
+      <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
+        {([["all", t("learn.filterAll")], ["explain", t("learn.filterExplain")], ...(showCommands ? [["commands", t("learn.filterCommands")]] : []), ...(showTerms ? [["terms", t("learn.filterTerms")]] : [])] as [typeof filterSel, string][]).map(([id, label]) => (
+          <button key={id} type="button" onClick={() => setFilter(id)} aria-pressed={filter === id}
+            className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition ${filter === id ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
+            {label}
+          </button>
+        ))}
+        <label className="ml-auto flex min-w-[8rem] flex-1 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 focus-within:border-mustard-500/60 dark:border-zinc-700">
+          <IconSearch size={11} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
+          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("learn.search")} aria-label={t("learn.search")}
+            className="min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none placeholder:text-zinc-400 dark:text-zinc-200" />
+        </label>
+      </div>
+      {/* 지난 날 보는 중 안내 바 — 오늘로 복귀(그사이 실시간 항목 바로 보임) */}
+      {viewDay && (
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-mustard-500/30 bg-mustard-500/10 px-3 py-1.5 text-[11px] text-mustard-700 dark:text-mustard-400">
+          <IconCalendar size={12} stroke={2} className="shrink-0" aria-hidden />
+          <span className="mr-auto truncate">{t("learn.viewingDay", { date: viewLabel })}</span>
+          <button type="button" onClick={() => pickDay(null)} className="flex items-center gap-0.5 rounded-md px-1.5 py-0.5 font-medium hover:bg-mustard-500/15">
+            <IconArrowBarToUp size={11} stroke={2} aria-hidden /> {t("learn.backToToday")}
+          </button>
+        </div>
+      )}
+      {filter === "all" && glossary && <div className="shrink-0">{glossary}</div>}
+      <div ref={listRef} className="nunopi-scroll min-h-0 flex-1 overflow-y-auto">
+        {query && found === null && filter !== "terms" ? (
+          <div className="flex justify-center py-6"><IconLoader2 size={14} stroke={2} className="animate-spin text-zinc-400" aria-hidden /></div>
+        ) : query && !shown.length && !(showTerms && filter !== "explain" && filter !== "commands" && shownTerms.length) ? (
+          <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.searchEmpty")}</p>
+        ) : viewDay && dayItems === null && filter !== "terms" ? (
+          <div className="flex justify-center py-6"><IconLoader2 size={14} stroke={2} className="animate-spin text-zinc-400" aria-hidden /></div>
+        ) : viewDay && !shown.length && filter !== "terms" ? ( /* 용어집은 날짜 무관 — 지난 날 보기여도 용어 필터면 용어집 */
+          <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.dayEmpty")}</p>
+        ) : !loaded && !concepts.length ? null : !concepts.length && !(showTerms && terms.length) ? (
+          <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.empty")}</p>
+        ) : (
+          <>
+            {filter === "terms" && glossary}
             {/* 개념 — 등장한 개념 1회씩(중복 없음), 최근 먼저 */}
             {filter !== "terms" && <ul className="flex flex-col gap-2 p-2.5">
               {shown.map((c, i) => { const Icon = KIND_ICON[c.kind] ?? IconActivity; const today = dayOf(c.ts) === dayOf(now || Date.now()); return ( // 미지 kind(구버전/영속 데이터)여도 크래시 안 나게 fallback
