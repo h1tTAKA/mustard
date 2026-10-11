@@ -2,7 +2,7 @@
 
 // 인앱 브라우저 분리 창(#1034) — main이 ?win=browser&url=&repo= 로 띄움. 멀티 모니터용.
 // 신호등(hiddenInset) 자리 + 창 드래그용 제목 줄 아래에 dock과 같은 BrowserPane.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { I18nProvider } from "@mustard/core";
 import BrowserPane, { type BrowserState } from "@/components/workspace/BrowserPane";
 
@@ -22,9 +22,10 @@ export default function BrowserWindowView({ url, repo, devtools }: { url: string
   });
   const [title, setTitle] = useState(initial.urls[initial.active] ?? url);
   // 이 창의 탭들을 레포별로 기억 — 창을 그냥 닫으면 앱에서 지구본 누를 때 그 탭들로 이어짐.
-  const onTabsChange = (urls: string[], active: number) => { setTitle(urls[active] ?? ""); if (repo) store(key(repo, "browser-detached"), urls.length ? JSON.stringify({ urls, active }) : ""); };
+  const docked = useRef(false); // 앱으로 보낸 뒤 창이 닫히기 전 탭 변화가 지운 기억을 다시 쓰지 않게(#1041 리뷰)
+  const onTabsChange = (urls: string[], active: number) => { setTitle(urls[active] ?? ""); if (repo && !docked.current) store(key(repo, "browser-detached"), urls.length ? JSON.stringify({ urls, active }) : ""); };
   // 앱 안으로: 탭들 전부를 넘기고(앱 창이 storage 이벤트로 받음) 이 창은 닫음. 이어보기 기억은 지움(중복 방지).
-  const dock = (st: BrowserState) => { store(key(repo, "browser-dock"), JSON.stringify({ ...st, n: Date.now() })); store(key(repo, "browser-detached"), ""); window.close(); };
+  const dock = (st: BrowserState) => { docked.current = true; store(key(repo, "browser-dock"), JSON.stringify({ ...st, n: Date.now() })); store(key(repo, "browser-detached"), ""); window.close(); };
   const name = repo.split("/").filter(Boolean).pop() ?? "";
   return (
     // h-screen: body가 min-h-full이라 h-full이 안 잡혀 webview가 짧게 잘렸음(AppShell과 같은 방식).
