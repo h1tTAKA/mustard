@@ -265,16 +265,18 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
 
 // 탭 묶음(#1034) — dock·분리 창 공용. 탭 줄은 코드 탭바와 같은 모양, pr-[17px]은 dock 이동 그립 자리(#716).
 type Tab = { id: number; url: string; title: string; devtools?: boolean }; // devtools = 처음 열 때 개발자 도구도
+export type BrowserState = { urls: string[]; active: number; devtools: boolean };
 let tabSeq = 0;
 const hostOf = (u: string) => { try { return new URL(u).host; } catch { return u; } };
 
 export default function BrowserPane({ repo, initial, incoming, onTabsChange, onDetach, onDock, onEmpty }: {
   repo: string;
   initial: { urls: string[]; active: number; devtools?: boolean }; // 처음 탭들(레포별 저장분). devtools = 활성 탭에 개발자 도구(분리 창용)
-  incoming?: { url: string; n: number; at?: number; devtools?: boolean } | null; // 바깥에서 탭 밀어넣기(분리 창 → 앱으로). n이 바뀔 때마다, at = 원래 자리
+  incoming?: { url: string; n: number; devtools?: boolean; urls?: string[]; active?: number } | null; // 바깥에서 탭 밀어넣기(에이전트 열기 요청 = url 하나, 분리 창 → 앱 = urls 전부). n이 바뀔 때마다
   onTabsChange?: (urls: string[], active: number) => void; // 저장용
-  onDetach?: (url: string, index: number, devtools: boolean) => Promise<boolean>; // 활성 탭을 별도 창으로(성공하면 이 탭은 닫음). index = 떼기 전 자리
-  onDock?: (url: string, devtools: boolean) => void;       // 분리 창: 활성 탭을 앱 안으로
+  // 창 분리·앱 안으로는 탭 하나가 아니라 브라우저 통째로(유저 요청) — 탭 주소들·활성 탭·활성 탭 devtools.
+  onDetach?: (state: BrowserState) => void;                // 앱 → 별도 창(부모가 창 열고 패널 닫음)
+  onDock?: (state: BrowserState) => void;                  // 분리 창 → 앱 안(부모가 넘기고 창 닫음)
   onEmpty?: () => void;                                    // 떼거나 보내서 탭이 0개가 됨
 }) {
   const t = useT();
@@ -322,7 +324,15 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
   useEffect(() => {
     if (!incoming || incoming.n === lastIncoming.current) return;
     lastIncoming.current = incoming.n;
-    addTab(incoming.url, incoming.at, incoming.devtools); // 바깥 신호(n 변경)로 탭 추가
+    if (incoming.urls?.length) { // 여러 탭을 한꺼번에(분리 창이 돌아옴) — 뒤에 붙이고 그중 활성 탭을 보이게
+      const add: Tab[] = incoming.urls.map((u) => ({ id: ++tabSeq, url: u, title: "" }));
+      const act = add[Math.min(Math.max(incoming.active ?? 0, 0), add.length - 1)];
+      if (incoming.devtools) act.devtools = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 바깥 신호(n 변경)로 탭 추가(addTab과 같은 경로)
+      setSt((p) => ({ tabs: [...p.tabs.filter((x) => x.url), ...add], activeId: act.id })); // 빈 탭은 버림
+      return;
+    }
+    addTab(incoming.url, undefined, incoming.devtools); // 바깥 신호(n 변경)로 탭 추가
   }, [incoming]);
 
   // 탭 제거 — 함수형 업데이트(창 분리는 await 뒤에 불려서, 그 사이 바뀐 탭·제목을 덮어쓰면 안 됨, #1034 리뷰).
@@ -372,8 +382,8 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
       {tabs.map((tab) => (
         <BrowserPage key={tab.id} repo={repo} url={tab.url} initialDevtools={tab.devtools} visible={tab.id === activeId} ports={ports}
           onUrlChange={(u) => patch(tab.id, { url: u })} onTitle={(title) => patch(tab.id, { title })}
-          onDetach={onDetach ? (u, dt) => { void onDetach(u, tabs.findIndex((x) => x.id === tab.id), dt).then((ok) => { if (ok) removeTab(tab.id); }); } : undefined}
-          onDock={onDock ? (u, dt) => { onDock(u, dt); removeTab(tab.id); } : undefined}
+          onDetach={onDetach ? (_u, dt) => onDetach({ urls: tabs.map((x) => x.url), active: activeIdx, devtools: dt }) : undefined}
+          onDock={onDock ? (_u, dt) => onDock({ urls: tabs.map((x) => x.url), active: activeIdx, devtools: dt }) : undefined}
           onSelect={() => setActiveId(tab.id)} onClose={() => removeTab(tab.id)} />
       ))}
     </div>
