@@ -2,7 +2,7 @@
 
 // 인앱 브라우저 패널(#1034) — dock 패널·분리 창 공용. 보안·팝업·권한은 main(browser-guest.cjs)이 강제.
 // <webview>는 React 속성 대신 직접 만든다 — allowpopups·partition은 붙기 전에 있어야 하고, src를 React가 바꾸면 매번 새로 이동해서.
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { WebviewTag } from "electron";
 import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld, IconArrowsMinimize, IconPlus, IconPointer, IconLoader2 } from "@tabler/icons-react";
 import { useT, useSetting, appChords, SHORTCUT_OVERRIDES_KEY, type ShortcutOverrides } from "@mustard/core";
@@ -97,21 +97,33 @@ function BrowserPage({ repo, url, visible, ports, onUrlChange, onTitle, onDetach
     return () => ro.disconnect();
   }, []);
 
-  // 개발자 도구 — 빈 webview를 하나 더 만들어 main이 그 안에 devtools를 띄움(setDevToolsWebContents).
-  // 끌 때·페이지가 사라질 때 닫고 그 webview를 지움(닫아도 자동으로 안 지워짐).
+  // 개발자 도구 — main이 창에 붙인 네이티브 뷰(WebContentsView)에 띄우고, 여기 dtHost 자리에 겹쳐 그림(#1039 실측:
+  // webview 안 devtools는 페이지와 연결이 안 됨). 자리는 크기 변화(관찰자) + 렌더마다(위치만 바뀐 경우) 알려줌, 같으면 안 보냄.
+  const dtKey = useRef("");
+  const visibleRef = useRef(visible); // 탭 전환마다 devtools를 닫았다 열지 않게 — 보임 여부는 ref로(자리 보고에서 0으로), 아래 레이아웃 이펙트가 갱신
+  const reportDevtools = useCallback(() => {
+    const page = viewRef.current, host = dtHostRef.current, api = window.nunopiDesktop?.browser;
+    if (!page || !host || !api) return;
+    const r = host.getBoundingClientRect();
+    const rect = visibleRef.current ? { x: r.left, y: r.top, w: r.width, h: r.height } : { x: 0, y: 0, w: 0, h: 0 };
+    const k = `${Math.round(rect.x)},${Math.round(rect.y)},${Math.round(rect.w)},${Math.round(rect.h)}`;
+    if (k === dtKey.current) return;
+    dtKey.current = k;
+    try { api.devtoolsBounds(page.getWebContentsId(), rect); } catch { /* 붙기 전 */ }
+  }, []);
   useEffect(() => {
     const page = viewRef.current, host = dtHostRef.current, api = window.nunopiDesktop?.browser;
     if (!devtools || !ready || !page || !host || !api) return;
     const pageId = page.getWebContentsId();
-    const dt = document.createElement("webview") as WebviewTag;
-    dt.setAttribute("partition", PARTITION);
-    dt.setAttribute("src", "about:blank");
-    dt.style.width = "100%"; dt.style.height = "100%";
-    let attached = false; // dom-ready는 devtools 화면이 뜰 때 또 올 수 있음 — 처음 한 번만 연결
-    dt.addEventListener("dom-ready", () => { if (attached) return; attached = true; void api.openDevTools(pageId, dt.getWebContentsId()); });
-    host.appendChild(dt);
-    return () => { void api.closeDevTools(pageId); dt.remove(); };
-  }, [devtools, ready]);
+    const r = host.getBoundingClientRect();
+    dtKey.current = "";
+    void api.openDevTools(pageId, { x: r.left, y: r.top, w: r.width, h: r.height }).then(() => reportDevtools());
+    const ro = new ResizeObserver(() => reportDevtools());
+    ro.observe(host);
+    window.addEventListener("resize", reportDevtools);
+    return () => { ro.disconnect(); window.removeEventListener("resize", reportDevtools); void api.closeDevTools(pageId); };
+  }, [devtools, ready, reportDevtools]);
+  useLayoutEffect(() => { visibleRef.current = visible; if (devtools && ready) reportDevtools(); });
 
   // 선택 시작/취소 — 스크립트가 클릭 때까지 기다렸다 요소 정보를 돌려줌(Esc·취소 = null).
   const togglePick = () => {

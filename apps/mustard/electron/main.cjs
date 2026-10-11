@@ -3,7 +3,7 @@
 // prod: .next/standalone/server.js를 동적 포트로 spawn 후 그 localhost 로드.
 // #981 다른 require·spawn보다 먼저 — 이후 모든 자식(데몬·서버·SNA)이 정리된 env를 상속.
 require("./claude-env.cjs").stripParentClaudeEnv(process.env);
-const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents, WebContentsView } = require("electron");
 const { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, cpSync } = require("node:fs");
 const {
   startSnaServer,
@@ -354,14 +354,44 @@ function ownGuest(sender, id) {
   const wc = webContents.fromId(Number(id));
   return wc && !wc.isDestroyed() && wc.getType() === "webview" && wc.hostWebContents === sender ? wc : null;
 }
-ipcMain.handle("browser:devtools-open", (e, { guestId, devtoolsId } = {}) => {
-  const guest = ownGuest(e.sender, guestId), dt = ownGuest(e.sender, devtoolsId);
-  if (!guest || !dt || guest === dt) return { ok: false };
-  // devtools 안에서 링크·"새 탭에서 열기"가 이 webview를 페이지로 덮어써 devtools가 사라지지 않게(#1034 리뷰).
-  dt.setWindowOpenHandler(() => ({ action: "deny" }));
-  guest.setDevToolsWebContents(dt);
+// 개발자 도구는 창에 붙인 WebContentsView에(#1039 실측) — webview 안에 넣으면 devtools가 "hosted 모드"로 떠서
+// 페이지와 연결이 안 됨(Elements 빈 화면). 렌더러가 자리(CSS px)를 알려주면 창 줌만큼 곱해 겹쳐 그림.
+// ponytail: 네이티브 뷰라 DOM 위에 그려짐 — ⌘K 팔레트 같은 창 전체 모달이 devtools 영역에선 가려짐.
+const devtoolsViews = new Map(); // guest id → { view, win }
+const dtBounds = (sender, r) => {
+  const z = sender.getZoomFactor() || 1, n = (v) => Math.round((Number(v) || 0) * z);
+  return { x: n(r?.x), y: n(r?.y), width: Math.max(0, n(r?.w)), height: Math.max(0, n(r?.h)) };
+};
+function closeDevtoolsView(id) {
+  const d = devtoolsViews.get(id);
+  if (!d) return;
+  devtoolsViews.delete(id);
+  try { const g = webContents.fromId(id); if (g && !g.isDestroyed() && g.isDevToolsOpened()) g.closeDevTools(); } catch { /* ignore */ }
+  try { if (!d.win.isDestroyed()) d.win.contentView.removeChildView(d.view); } catch { /* ignore */ }
+  try { if (!d.view.webContents.isDestroyed()) d.view.webContents.close(); } catch { /* ignore */ } // 닫아도 자동으로 안 지워짐(문서)
+}
+ipcMain.handle("browser:devtools-open", (e, { guestId, rect } = {}) => {
+  const guest = ownGuest(e.sender, guestId), win = BrowserWindow.fromWebContents(e.sender);
+  if (!guest || !win) return { ok: false };
+  if (devtoolsViews.has(guest.id)) return { ok: true };
+  const view = new WebContentsView(); // 새로 만든 webContents = 이동한 적 없음(setDevToolsWebContents 조건)
+  view.webContents.setWindowOpenHandler(() => ({ action: "deny" })); // devtools 안 링크가 새 창으로 안 뜨게
+  win.contentView.addChildView(view);
+  const b = dtBounds(e.sender, rect);
+  view.setBounds(b); view.setVisible(b.width > 0 && b.height > 0);
+  guest.setDevToolsWebContents(view.webContents);
   guest.openDevTools();
+  devtoolsViews.set(guest.id, { view, win });
+  guest.once("destroyed", () => closeDevtoolsView(guest.id));
   return { ok: true };
+});
+// 자리 갱신 — 크기 0(숨은 탭·숨은 레포 탭)이면 안 보이게.
+ipcMain.on("browser:devtools-bounds", (e, { guestId, rect } = {}) => {
+  const guest = ownGuest(e.sender, guestId), d = guest && devtoolsViews.get(guest.id);
+  if (!d) return;
+  const b = dtBounds(e.sender, rect);
+  d.view.setVisible(b.width > 0 && b.height > 0);
+  d.view.setBounds(b);
 });
 // 선택한 요소 스크린샷(#1037) — 그 영역만 잘라 임시 PNG로, 경로를 에이전트 프롬프트에 넣음(터미널 이미지 붙여넣기 #799와 같은 방식).
 ipcMain.handle("browser:capture", async (e, { guestId, rect } = {}) => {
@@ -381,7 +411,7 @@ ipcMain.handle("browser:capture", async (e, { guestId, rect } = {}) => {
 });
 ipcMain.handle("browser:devtools-close", (e, { guestId } = {}) => {
   const guest = ownGuest(e.sender, guestId);
-  if (guest?.isDevToolsOpened()) guest.closeDevTools();
+  if (guest) closeDevtoolsView(guest.id);
   return { ok: true };
 });
 ipcMain.on("browser:set-chords", (e, list) => { trackChordHost(e.sender); setAppChords(e.sender.id, list); });
