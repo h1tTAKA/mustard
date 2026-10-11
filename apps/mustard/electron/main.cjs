@@ -442,6 +442,7 @@ const browserControl = require("./browser-control.cjs").createBrowserControl({
     }, 150);
   },
   isAllowedUrl: isBrowserUrl,
+  realpath: (p) => realOf(p), // 요청 때 호출(아래 정의) — MCP cwd와 등록 레포를 같은 실경로로 비교
 });
 const openClaims = new Map(); // reqId → [{ sender, repo, depth }]
 const realOf = (p) => { try { return require("node:fs").realpathSync(p); } catch { return String(p || ""); } };
