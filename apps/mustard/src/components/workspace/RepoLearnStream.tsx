@@ -1,19 +1,21 @@
 "use client";
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle } from "@tabler/icons-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import { isDocEdit } from "@/lib/mcpActivity";
-import { useT, useLocale, useSetting, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
+import { isNunopiEnabled } from "@/lib/product";
+import { mergeTerms, parseNarrationTerms, type Term } from "@/lib/catchupTerms";
+import { useT, useLocale, useToast, useSetting, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
+import { useFlyCard, collectCards } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import { stripCardBlock } from "@mustard/core";
 type ConceptKind = "symbol" | "file" | "query" | "repo" | "edit" | "narration";
 interface ActivityEvent { root: string; tool: string; kind: ConceptKind; target: string; isError: boolean; ts: number; note?: string }
 interface Concept { key: string; kind: ConceptKind; target: string; tool: string; status: "idle" | "loading" | "done" | "error"; expl?: string; ts: number }
-interface Term { term: string; def: string }
 type StreamEvent = { type: string; message?: string; response?: { summary?: string } };
 
 const KIND_ICON: Record<ConceptKind, typeof IconCode> = { symbol: IconCode, file: IconFile, query: IconSearch, repo: IconSitemap, edit: IconPencil, narration: IconBroadcast };
@@ -26,6 +28,8 @@ const fmtDateTime = (ts: number) => { const d = new Date(ts); const p = (n: numb
 const dayOf = (ts: number) => { const d = new Date(ts); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
 // 카톡式 구분선 표기 — locale별 자동(ko "2026년 10월 6일 화요일", ja "2026年10月6日火曜日", en "Tuesday, October 6, 2026").
 const fmtDay = (ts: number, locale: string) => { try { return new Intl.DateTimeFormat(locale, { year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(ts); } catch { return new Date(ts).toDateString(); } };
+// nunopi 브랜드 그라데이션(시안→블루→바이올렛) — 카드로 등록된 용어를 머스타드 일반 용어와 구분(#1051).
+const NUNOPI_GRADIENT = "linear-gradient(90deg, #22d3ee 0%, #3b82f6 55%, #8b5cf6 100%)";
 const MAX_ITEMS = 200; // #994 화면 메모리 상한(서버 로드 100 + 실시간 여유). 전체 기록은 서버 날짜별 파일.
 const cKey = (root: string) => `nunopi:ws:${root}:learn-concepts`; // #994 이전 저장소(1회 이관 후 삭제)
 const gKey = (root: string) => `nunopi:ws:${root}:learn-terms`;
@@ -95,6 +99,24 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [termsOpen, setTermsOpen] = useState(true);
   const showCommands = useSetting<boolean>(CUKEYS.commands, CATCHUP_DEFAULTS.commands); // #1049 설정 > 캐치업
   const showTerms = useSetting<boolean>(CUKEYS.terms, CATCHUP_DEFAULTS.terms);
+  // #1051 용어 → nunopi 카드 추가. 카드(암기)는 nunopi 학습모듈 기능이라 꺼져 있으면 버튼 없음.
+  // 추가는 한 방향(카드 삭제는 갤러리에서) → 토글 아이콘 대신 "+ 추가" / "✓ 카드" 표시, 추가된 건 누르면 카드 확대.
+  const { throwCard } = useFlyCard();
+  const toast = useToast();
+  const cardsOn = isNunopiEnabled();
+  const [cardTick, setCardTick] = useState(0); // 다른 곳(질문 패널·챗)에서 카드가 생겨도 표시 갱신
+  useEffect(() => {
+    const on = () => setCardTick((n) => n + 1);
+    window.addEventListener(CARDS_CHANGED_EVENT, on);
+    return () => window.removeEventListener(CARDS_CHANGED_EVENT, on);
+  }, []);
+  // 카드 앞면(정규화) → 카드 — 매초 리렌더(상대시간)마다 저장소를 읽지 않게 카드 변경 때만 계산.
+  const cardByFront = useMemo(() => new Map(cardsOn ? collectCards(["token", "concept", "term"], new Date()).map((c) => [normalizeCardFront(c.front), c] as const) : []), [cardTick, cardsOn]); // eslint-disable-line react-hooks/exhaustive-deps -- cardTick = 저장소 변경 신호
+  const cardOf = (term: string) => cardByFront.get(normalizeCardFront(term));
+  const addTerm = useCallback((x: Term) => {
+    const ok = createChatCard("term", x.term, x.def, t("card.workspaceSource", { repo: basename(root) }), undefined, { kind: "workspace", sessionId: "catchup:terms", root });
+    toast(ok ? t("card.added", { term: x.term }) : t("card.exists"));
+  }, [root, t, toast]);
   // #1049 카테고리 필터 — 해설(실시간 해설·파일/심볼 설명) / 명령어 / 용어. 꺼진 카테고리는 칩도 숨김.
   const [filterSel, setFilter] = useState<"all" | "explain" | "commands" | "terms">("all");
   // #1049 검색 — 서버가 전체 날짜에서 제목·설명을 찾음(입력 멈춘 뒤 250ms). 용어집은 화면에서 거름.
@@ -115,7 +137,6 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const filter = (filterSel === "commands" && !showCommands) || (filterSel === "terms" && !showTerms) ? "all" : filterSel;
 
   const seenRef = useRef(new Set<string>());                          // 이미 설명한 개념(dedup) — 서버 로드 시 채움
-  const termSetRef = useRef(new Set(terms.map((x) => x.term.toLowerCase()))); // 용어 dedup
   const queueRef = useRef<string[]>([]);
   const busyRef = useRef(false);
   const metaRef = useRef(new Map<string, { kind: ConceptKind; target: string; tool: string }>());
@@ -139,7 +160,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       const { expl, terms: newTerms } = parseConcept(answer);
       setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "done", expl } : c)));
       saveItems(root, [{ key, kind: meta.kind, target: meta.target, tool: meta.tool, ts: Date.now(), expl }]); // #994 날짜별 저장(내레이션은 서버가 직접)
-      if (newTerms.length && cfgRef.current.showTerms) setTerms((prev) => { const add = newTerms.filter((x) => { const lk = x.term.toLowerCase(); if (termSetRef.current.has(lk)) return false; termSetRef.current.add(lk); return true; }); return add.length ? [...add, ...prev].slice(0, 80) : prev; });
+      if (newTerms.length && cfgRef.current.showTerms) setTerms((prev) => mergeTerms(prev, newTerms, normalizeCardFront)); // 상한 없음, 표기 변형까지 중복 제거(#1051)
     } catch { setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "error" } : c))); }
   }, [root]);
 
@@ -176,6 +197,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         const nkey = `narration|${ev.ts}|${ev.target}`;                 // ts+제목 = 고유 키(같은 ms 충돌 방지)
         setConcepts((prev) => (prev.some((c) => c.key === nkey) ? prev  // 이미 있으면 스킵(SSE 재연결 replay 중복 방지)
           : [{ key: nkey, kind: "narration" as const, target: ev.target, tool: "narration", status: "done" as const, ts: ev.ts, expl: ev.note }, ...prev].slice(0, MAX_ITEMS)));
+        // #1051 실시간 해설 본문의 "용어" 목록도 용어집으로(서버 프롬프트가 개발·IT 용어만 쓰게 함)
+        const nt = cfgRef.current.showTerms ? parseNarrationTerms(ev.note) : [];
+        if (nt.length) setTerms((prev) => mergeTerms(prev, nt, normalizeCardFront));
         return;
       }
       if (isCommand(ev) && !cfgRef.current.showCommands) return; // 명령어 해설 끔 → 카드 자체 안 띄움
@@ -211,7 +235,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     return () => { alive = false; };
   }, [root, connected]);
   // 용어집은 그대로 localStorage(작고 레포별 누적).
-  useEffect(() => { try { if (typeof localStorage !== "undefined") localStorage.setItem(gKey(root), JSON.stringify(terms.slice(0, 80))); } catch { /* 무시 */ } }, [terms, root]);
+  useEffect(() => { try { if (typeof localStorage !== "undefined") localStorage.setItem(gKey(root), JSON.stringify(terms)); } catch { /* 무시 */ } }, [terms, root]);
 
   useEffect(() => {
     if (!concepts.length) return;
@@ -276,6 +300,53 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const shownTerms = query ? terms.filter((x) => `${x.term}\n${x.def}`.toLowerCase().includes(query.toLowerCase())) : terms;
   const viewLabel = viewDay ? (() => { try { return new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${viewDay}T00:00:00`)); } catch { return viewDay; } })() : "";
 
+  // 용어집(#1049·#1051) — 전체 필터에선 목록 위에 고정(해설·명령어 목록과 스크롤 따로), 용어 필터에선 목록 자리에서 전부.
+  // 날짜 무관 누적이라 지난 날 보기에선 숨김(#996, 검색·용어 필터는 예외).
+  const glossary = showTerms && shownTerms.length > 0 && (filter === "terms" || (filter === "all" && (!viewDay || !!query))) ? (
+              <div className="border-b border-zinc-100 dark:border-zinc-800/70">
+                <button type="button" onClick={() => setTermsOpen((v) => !v)} className="flex w-full items-center gap-1.5 px-3 py-2 text-left">
+                  <IconBook2 size={13} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
+                  <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">{t("learn.terms")} ({shownTerms.length})</span>
+                  <IconChevronDown size={13} stroke={2} className={`ml-auto shrink-0 text-zinc-400 transition ${termsOpen ? "" : "-rotate-90"}`} aria-hidden />
+                </button>
+                {/* #1049 용어 = 작은 카드(용어 배지 + 뜻 아래 줄) — 텍스트 나열보다 훑기 쉽게 */}
+                {/* 전체 필터에선 해설·명령어가 묻히지 않게 최신 3개만 + "모두 보기"(→ 용어 필터), 용어 필터면 전부(#1051) */}
+                {(termsOpen || filter === "terms") && <ul className="flex flex-col gap-1.5 px-2.5 pb-2.5">
+                  {(filter === "terms" ? shownTerms : shownTerms.slice(0, 3)).map((x) => (
+                    <li key={x.term}>{(() => { const card = cardOf(x.term); const body = (<>
+                      <span className="inline-block rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 dark:text-mustard-400">{x.term}</span>
+                      <p className="mt-1 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{x.def}</p>
+                    </>); return card ? ( /* 추가됨 — nunopi 그라데이션 테두리·배지·용어, 카드 전체를 누르면 카드 확대 */
+                      <button type="button" onClick={(e) => throwCard(card, e.currentTarget.getBoundingClientRect())} title={t("learn.openCard")}
+                        className="block w-full rounded-lg p-px text-left transition hover:brightness-110" style={{ backgroundImage: NUNOPI_GRADIENT }}>
+                        <span className="relative block rounded-[7px] bg-white px-2.5 py-1.5 pr-14 dark:bg-[var(--s-pane)]">
+                          <span className="absolute right-1.5 top-1.5 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundImage: NUNOPI_GRADIENT }}><IconCheck size={10} stroke={2.5} aria-hidden />{t("learn.inCards")}</span>
+                          <span className="inline-block rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-semibold"><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{x.term}</span></span>
+                          <span className="mt-1 block text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{x.def}</span>
+                        </span>
+                      </button>
+                    ) : (
+                      <div className={`relative rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 dark:border-zinc-800 dark:bg-zinc-800/40 ${cardsOn ? "pr-8" : ""}`}>
+                        {cardsOn && ( /* 오른쪽 위 + → nunopi 카드로 추가 */
+                          <button type="button" onClick={() => addTerm(x)} title={t("chat.saveAsCard")} aria-label={t("chat.saveAsCard")}
+                            className="absolute right-1.5 top-1.5 rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400">
+                            <IconPlus size={13} stroke={2.2} aria-hidden />
+                          </button>
+                        )}
+                        {body}
+                      </div>
+                    ); })()}</li>
+                  ))}
+                  {filter !== "terms" && shownTerms.length > 3 && (
+                    <li><button type="button" onClick={() => setFilter("terms")}
+                      className="w-full rounded-lg py-1 text-center text-[11px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-mustard-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-mustard-400">
+                      {t("learn.allTerms", { n: shownTerms.length })} →
+                    </button></li>
+                  )}
+                </ul>}
+              </div>
+  ) : null;
+
   return (
     <div ref={rootRef} className="flex h-full min-h-0 w-full flex-col bg-white dark:bg-[var(--s-pane)]">
       <div className="relative flex shrink-0 items-center gap-1.5 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
@@ -315,6 +386,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           </button>
         </div>
       )}
+      {filter === "all" && glossary && <div className="shrink-0">{glossary}</div>}
       <div ref={listRef} className="nunopi-scroll min-h-0 flex-1 overflow-y-auto">
         {query && found === null && filter !== "terms" ? (
           <div className="flex justify-center py-6"><IconLoader2 size={14} stroke={2} className="animate-spin text-zinc-400" aria-hidden /></div>
@@ -328,25 +400,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.empty")}</p>
         ) : (
           <>
-            {/* 용어집 — 이해에 필요한 용어 누적(중복 없음) */}
-            {showTerms && shownTerms.length > 0 && (filter === "terms" || (filter === "all" && (!viewDay || !!query))) && ( /* 용어집은 날짜 무관 누적 → 지난 날 보기에선 숨김(#996) */
-              <div className="border-b border-zinc-100 dark:border-zinc-800/70">
-                <button type="button" onClick={() => setTermsOpen((v) => !v)} className="flex w-full items-center gap-1.5 px-3 py-2 text-left">
-                  <IconBook2 size={13} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
-                  <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">{t("learn.terms")} ({shownTerms.length})</span>
-                  <IconChevronDown size={13} stroke={2} className={`ml-auto shrink-0 text-zinc-400 transition ${termsOpen ? "" : "-rotate-90"}`} aria-hidden />
-                </button>
-                {/* #1049 용어 = 작은 카드(용어 배지 + 뜻 아래 줄) — 텍스트 나열보다 훑기 쉽게 */}
-                {(termsOpen || filter === "terms") && <ul className="flex flex-col gap-1.5 px-2.5 pb-2.5">
-                  {shownTerms.map((x) => (
-                    <li key={x.term} className="rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 dark:border-zinc-800 dark:bg-zinc-800/40">
-                      <span className="inline-block rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 dark:text-mustard-400">{x.term}</span>
-                      <p className="mt-1 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{x.def}</p>
-                    </li>
-                  ))}
-                </ul>}
-              </div>
-            )}
+            {filter === "terms" && glossary}
             {/* 개념 — 등장한 개념 1회씩(중복 없음), 최근 먼저 */}
             {filter !== "terms" && <ul className="flex flex-col gap-2 p-2.5">
               {shown.map((c, i) => { const Icon = KIND_ICON[c.kind] ?? IconActivity; const today = dayOf(c.ts) === dayOf(now || Date.now()); return ( // 미지 kind(구버전/영속 데이터)여도 크래시 안 나게 fallback
