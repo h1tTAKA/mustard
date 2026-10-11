@@ -160,9 +160,9 @@ const hostOf = (u: string) => { try { return new URL(u).host; } catch { return u
 export default function BrowserPane({ repo, initial, incoming, onTabsChange, onDetach, onDock, onEmpty }: {
   repo: string;
   initial: { urls: string[]; active: number };            // 처음 탭들(레포별 저장분)
-  incoming?: { url: string; n: number } | null;            // 바깥에서 새 탭 밀어넣기(분리 창 → 앱으로). n이 바뀔 때마다 추가
+  incoming?: { url: string; n: number; at?: number } | null; // 바깥에서 탭 밀어넣기(분리 창 → 앱으로). n이 바뀔 때마다, at = 원래 자리
   onTabsChange?: (urls: string[], active: number) => void; // 저장용
-  onDetach?: (url: string) => Promise<boolean>;            // 활성 탭을 별도 창으로(성공하면 이 탭은 닫음)
+  onDetach?: (url: string, index: number) => Promise<boolean>; // 활성 탭을 별도 창으로(성공하면 이 탭은 닫음). index = 떼기 전 자리
   onDock?: (url: string) => void;                          // 분리 창: 활성 탭을 앱 안으로
   onEmpty?: () => void;                                    // 떼거나 보내서 탭이 0개가 됨
 }) {
@@ -200,12 +200,16 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
   const activeIdx = Math.max(0, tabs.findIndex((x) => x.id === activeId));
   useEffect(() => { onTabsChangeRef.current?.(tabs.map((x) => x.url), activeIdx); }, [urlsKey, activeIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const addTab = (url = "") => { const tab = { id: ++tabSeq, url, title: "" }; setSt((p) => ({ tabs: [...p.tabs, tab], activeId: tab.id })); };
+  // at: 넣을 자리(분리했다 돌아온 탭은 원래 자리로). 없으면 끝에.
+  const addTab = (url = "", at?: number) => {
+    const tab = { id: ++tabSeq, url, title: "" };
+    setSt((p) => { const i = at === undefined ? p.tabs.length : Math.min(Math.max(at, 0), p.tabs.length); return { tabs: [...p.tabs.slice(0, i), tab, ...p.tabs.slice(i)], activeId: tab.id }; });
+  };
   const lastIncoming = useRef(0);
   useEffect(() => {
     if (!incoming || incoming.n === lastIncoming.current) return;
     lastIncoming.current = incoming.n;
-    addTab(incoming.url); // 바깥 신호(n 변경)로 탭 추가
+    addTab(incoming.url, incoming.at); // 바깥 신호(n 변경)로 탭 추가
   }, [incoming]);
 
   // 탭 제거 — 함수형 업데이트(창 분리는 await 뒤에 불려서, 그 사이 바뀐 탭·제목을 덮어쓰면 안 됨, #1034 리뷰).
@@ -255,7 +259,7 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
       {tabs.map((tab) => (
         <BrowserPage key={tab.id} url={tab.url} visible={tab.id === activeId} ports={ports}
           onUrlChange={(u) => patch(tab.id, { url: u })} onTitle={(title) => patch(tab.id, { title })}
-          onDetach={onDetach ? (u) => { void onDetach(u).then((ok) => { if (ok) removeTab(tab.id, true); }); } : undefined}
+          onDetach={onDetach ? (u) => { void onDetach(u, tabs.findIndex((x) => x.id === tab.id)).then((ok) => { if (ok) removeTab(tab.id, true); }); } : undefined}
           onDock={onDock ? (u) => { onDock(u); removeTab(tab.id, true); } : undefined} />
       ))}
     </div>

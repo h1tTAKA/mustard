@@ -85,7 +85,8 @@ export default function WorkspaceView({ path, active = true, providerId, provide
   const [flowFeature, setFlowFeature] = useState<string | null>(null); // 열린 플로우 패널의 기능(null=닫힘). dock에 flow 패널 존재 여부와 동기(#743)
   const [browserOpen, setBrowserOpen] = useState(false); // 인앱 브라우저 패널(#1034) — 레포별 저장
   const [browserTabs, setBrowserTabs] = useState<{ urls: string[]; active: number }>({ urls: [], active: 0 }); // 탭 주소들(레포별)
-  const [browserIncoming, setBrowserIncoming] = useState<{ url: string; n: number } | null>(null); // 분리 창에서 넘어온 탭
+  const [browserIncoming, setBrowserIncoming] = useState<{ url: string; n: number; at?: number } | null>(null); // 분리 창에서 넘어온 탭
+  const detachedAtRef = useRef<number | undefined>(undefined); // 떼어낸 탭의 원래 자리 — 돌아오면 거기에(#1034 유저 요청)
   const [browserRect, setBrowserRect] = useState<SlotRect | null>(null); // dock 속 브라우저 자리(고정 레이어 위치)
   const dockRef = useRef<HTMLElement>(null);
   const browserPrevRef = useRef(false); // 증분 이펙트가 본 마지막 browserOpen
@@ -173,7 +174,7 @@ export default function WorkspaceView({ path, active = true, providerId, provide
     if (!path) return;
     const onStorage = (e: StorageEvent) => {
       if (e.key !== `nunopi:ws:${path}:browser-dock` || !e.newValue) return;
-      try { const d = JSON.parse(e.newValue); if (typeof d.url === "string") { setBrowserIncoming((prev) => ({ url: d.url, n: (prev?.n ?? 0) + 1 })); setBrowserOpen(true); } } catch { /* ignore */ }
+      try { const d = JSON.parse(e.newValue); if (typeof d.url === "string") { const at = detachedAtRef.current; detachedAtRef.current = undefined; setBrowserIncoming((prev) => ({ url: d.url, n: (prev?.n ?? 0) + 1, at })); setBrowserOpen(true); } } catch { /* ignore */ }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -328,13 +329,17 @@ export default function WorkspaceView({ path, active = true, providerId, provide
     if (browserOpen) { closeBrowser(); return; }
     try {
       const k = `nunopi:ws:${path}:browser-detached`, u = localStorage.getItem(k);
-      if (u) { localStorage.removeItem(k); setBrowserIncoming((prev) => ({ url: u, n: (prev?.n ?? 0) + 1 })); }
+      if (u) { localStorage.removeItem(k); const at = detachedAtRef.current; detachedAtRef.current = undefined; setBrowserIncoming((prev) => ({ url: u, n: (prev?.n ?? 0) + 1, at })); }
     } catch { /* ignore */ }
     setBrowserOpen(true);
   };
 
   // 활성 탭을 별도 창으로 — 성공하면 BrowserPane이 그 탭을 닫고, 0개면 closeBrowser.
-  const detachBrowser = async (url: string) => !!(await window.nunopiDesktop?.browser?.openWindow({ url, repo: path }))?.ok;
+  const detachBrowser = async (url: string, index: number) => {
+    const ok = !!(await window.nunopiDesktop?.browser?.openWindow({ url, repo: path }))?.ok;
+    if (ok) detachedAtRef.current = index; // ponytail: 마지막으로 뗀 탭 하나만 기억(여러 개 떼면 마지막 것만 원래 자리)
+    return ok;
+  };
   // 활성 탭이 탭바 오버플로로 스크롤 밖에 있으면 안 보임(#801) — 활성 탭 DOM에 콜백 ref 달아 스크롤 인투 뷰.
   // 활성 탭 바뀔 때만 ref 재부착(콜백 identity 안정) → 그때 nearest로 최소 스크롤. 이미 보이면 no-op.
   const scrollTabIntoView = useCallback((el: HTMLElement | null) => { el?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, []);
