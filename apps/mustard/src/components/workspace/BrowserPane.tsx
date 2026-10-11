@@ -86,6 +86,8 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 만들 때의 주소만 씀(이후는 loadURL)
   }, [hasPage]);
   const go = (raw: string) => {
+    // 빈 주소로 Enter = 페이지 닫고 처음 빈 화면으로(webview 제거, 저장 주소도 비움).
+    if (!raw.trim()) { setCurrent(""); setDraft(""); setEditing(false); setNav({ back: false, fwd: false }); setLoading(false); onUrlChangeRef.current?.(""); return; }
     const u = normalizeBrowserUrl(raw);
     if (!u) return;
     setDraft(u); setEditing(false);
