@@ -4,7 +4,9 @@
 //   attach(id?) 인증 → ok. ensure{id,cwd,cols,rows} → ensured{id,ok,buffer}. input{id,data} / resize{id,cols,rows} / kill{id}.
 //   list → listed{sessions:[{id,cwd,process,pid}]}(#764). 데몬 push: data{id,data} / exit{id}.
 const net = require("node:net");
-const { DAEMON_VERSION } = require("./daemon-version.cjs");
+// 버전 파일이 옆에 없어도(패키징 누락 등) 데몬은 떠야 함 — 못 읽으면 0(= 앱이 "옛 데몬"으로 보고 안내만).
+let DAEMON_VERSION = 0;
+try { ({ DAEMON_VERSION } = require("./daemon-version.cjs")); } catch { /* 터미널은 살림 */ }
 const fs = require("node:fs");
 
 const SOCK = process.env.NUNOPI_TERM_SOCK;   // 소켓 경로
