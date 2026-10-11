@@ -30,11 +30,15 @@ const cKey = (root: string) => `nunopi:ws:${root}:learn-concepts`; // #994 이�
 const gKey = (root: string) => `nunopi:ws:${root}:learn-terms`;
 function load<T>(key: string): T[] { try { const r = typeof localStorage !== "undefined" && localStorage.getItem(key); return r ? (JSON.parse(r) as T[]) : []; } catch { return []; } }
 
-// 개념 1개 설명 프롬프트 — 설명 2문장 + [용어] term :: 뜻. 카드·JSON·코드 금지.
-function conceptPrompt(repo: string, kind: ConceptKind, target: string): string {
+// 개념 1개 설명 프롬프트 — 설명 2문장 + (용어집 켜짐이면) [용어] term :: 뜻. 카드·JSON·코드 금지.
+// 용어는 프로그래밍·개발 것만(#1049) — 앱이 다루는 주제(언어학·문자 표준·업무 용어 등)가 섞이던 문제.
+function conceptPrompt(repo: string, kind: ConceptKind, target: string, withTerms: boolean): string {
   return `레포 "${repo}"에서 AI 코딩 에이전트가 지금 ${KIND_VERB[kind]} "${target}"을(를) 다루고 있어.\n`
     + `이게 뭐고 에이전트가 왜 이걸 보는지 개발 초보에게 자연스러운 한국어 2문장으로.\n`
-    + `그 다음 줄에 "[용어]"만 쓰고, 이 설명을 이해하는 데 필요한 핵심 용어 2~3개를 "용어 :: 한 줄 뜻" 형식으로 한 줄씩.\n`
+    + (withTerms
+      ? `그 다음 줄에 "[용어]"만 쓰고, 이 설명을 이해하는 데 필요한 **프로그래밍·개발 용어**(언어 문법·함수·라이브러리·도구·명령어·개발 개념) 2~3개를 "용어 :: 한 줄 뜻" 형식으로 한 줄씩. `
+        + `이 앱이 다루는 주제의 도메인 지식(언어학·문자 표준·업무 용어 등)은 넣지 마. 해당 용어가 없으면 "[용어]" 줄 자체를 생략.\n`
+      : "")
     + `코드·카드·JSON·메타 발언 금지. 설명은 흐르는 문장으로(사전식 나열 말고).`;
 }
 
@@ -89,14 +93,15 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [autoExplain, setAutoExplain] = useState(true);
   const [termsOpen, setTermsOpen] = useState(true);
   const showCommands = useSetting<boolean>(CUKEYS.commands, CATCHUP_DEFAULTS.commands); // #1049 설정 > 캐치업
+  const showTerms = useSetting<boolean>(CUKEYS.terms, CATCHUP_DEFAULTS.terms);
 
   const seenRef = useRef(new Set<string>());                          // 이미 설명한 개념(dedup) — 서버 로드 시 채움
   const termSetRef = useRef(new Set(terms.map((x) => x.term.toLowerCase()))); // 용어 dedup
   const queueRef = useRef<string[]>([]);
   const busyRef = useRef(false);
   const metaRef = useRef(new Map<string, { kind: ConceptKind; target: string; tool: string }>());
-  const cfgRef = useRef({ providerId, providerSettings, locale, autoExplain, showCommands });
-  useEffect(() => { cfgRef.current = { providerId, providerSettings, locale, autoExplain, showCommands }; }, [providerId, providerSettings, locale, autoExplain, showCommands]);
+  const cfgRef = useRef({ providerId, providerSettings, locale, autoExplain, showCommands, showTerms });
+  useEffect(() => { cfgRef.current = { providerId, providerSettings, locale, autoExplain, showCommands, showTerms }; }, [providerId, providerSettings, locale, autoExplain, showCommands, showTerms]);
 
   const explainOne = useCallback(async (key: string) => {
     const meta = metaRef.current.get(key); const { providerId: pid, providerSettings: ps, locale: loc } = cfgRef.current;
@@ -105,7 +110,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     try {
       const res = await fetch("/api/agent/analyze", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerId: pid, request: { code: `레포: ${basename(root)}`, locale: loc, providerId: pid, mode: "chat", messages: [{ role: "user", content: isCommand(meta) ? commandPrompt(meta.target) : conceptPrompt(basename(root), meta.kind, meta.target) }], providerSettings: ps } }),
+        body: JSON.stringify({ providerId: pid, request: { code: `레포: ${basename(root)}`, locale: loc, providerId: pid, mode: "chat", messages: [{ role: "user", content: isCommand(meta) ? commandPrompt(meta.target) : conceptPrompt(basename(root), meta.kind, meta.target, cfgRef.current.showTerms) }], providerSettings: ps } }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       const reader = res.body.getReader(); const dec = new TextDecoder();
@@ -115,7 +120,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       const { expl, terms: newTerms } = parseConcept(answer);
       setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "done", expl } : c)));
       saveItems(root, [{ key, kind: meta.kind, target: meta.target, tool: meta.tool, ts: Date.now(), expl }]); // #994 날짜별 저장(내레이션은 서버가 직접)
-      if (newTerms.length) setTerms((prev) => { const add = newTerms.filter((x) => { const lk = x.term.toLowerCase(); if (termSetRef.current.has(lk)) return false; termSetRef.current.add(lk); return true; }); return add.length ? [...add, ...prev].slice(0, 80) : prev; });
+      if (newTerms.length && cfgRef.current.showTerms) setTerms((prev) => { const add = newTerms.filter((x) => { const lk = x.term.toLowerCase(); if (termSetRef.current.has(lk)) return false; termSetRef.current.add(lk); return true; }); return add.length ? [...add, ...prev].slice(0, 80) : prev; });
     } catch { setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "error" } : c))); }
   }, [root]);
 
@@ -280,20 +285,26 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           <div className="flex justify-center py-6"><IconLoader2 size={14} stroke={2} className="animate-spin text-zinc-400" aria-hidden /></div>
         ) : viewDay && !shown.length ? (
           <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.dayEmpty")}</p>
-        ) : !loaded && !concepts.length ? null : !concepts.length && !terms.length ? (
+        ) : !loaded && !concepts.length ? null : !concepts.length && !(showTerms && terms.length) ? (
           <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.empty")}</p>
         ) : (
           <>
             {/* 용어집 — 이해에 필요한 용어 누적(중복 없음) */}
-            {terms.length > 0 && !viewDay && ( /* 용어집은 날짜 무관 누적 → 지난 날 보기에선 숨김(#996) */
+            {showTerms && terms.length > 0 && !viewDay && ( /* 용어집은 날짜 무관 누적 → 지난 날 보기에선 숨김(#996) */
               <div className="border-b border-zinc-100 dark:border-zinc-800/70">
                 <button type="button" onClick={() => setTermsOpen((v) => !v)} className="flex w-full items-center gap-1.5 px-3 py-2 text-left">
                   <IconBook2 size={13} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                   <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">{t("learn.terms")} ({terms.length})</span>
                   <IconChevronDown size={13} stroke={2} className={`ml-auto shrink-0 text-zinc-400 transition ${termsOpen ? "" : "-rotate-90"}`} aria-hidden />
                 </button>
-                {termsOpen && <ul className="flex flex-col gap-1 px-3 pb-2.5">
-                  {terms.map((x) => (<li key={x.term} className="text-[11px] leading-snug"><span className="font-semibold text-zinc-700 dark:text-zinc-200">{x.term}</span> <span className="text-zinc-500 dark:text-zinc-400">— {x.def}</span></li>))}
+                {/* #1049 용어 = 작은 카드(용어 배지 + 뜻 아래 줄) — 텍스트 나열보다 훑기 쉽게 */}
+                {termsOpen && <ul className="flex flex-col gap-1.5 px-2.5 pb-2.5">
+                  {terms.map((x) => (
+                    <li key={x.term} className="rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 dark:border-zinc-800 dark:bg-zinc-800/40">
+                      <span className="inline-block rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 dark:text-mustard-400">{x.term}</span>
+                      <p className="mt-1 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{x.def}</p>
+                    </li>
+                  ))}
                 </ul>}
               </div>
             )}
