@@ -5,7 +5,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
-import { useT, useLocale } from "@mustard/core";
+import { useT, useLocale, useSetting, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import { stripCardBlock } from "@mustard/core";
@@ -36,6 +36,15 @@ function conceptPrompt(repo: string, kind: ConceptKind, target: string): string 
     + `이게 뭐고 에이전트가 왜 이걸 보는지 개발 초보에게 자연스러운 한국어 2문장으로.\n`
     + `그 다음 줄에 "[용어]"만 쓰고, 이 설명을 이해하는 데 필요한 핵심 용어 2~3개를 "용어 :: 한 줄 뜻" 형식으로 한 줄씩.\n`
     + `코드·카드·JSON·메타 발언 금지. 설명은 흐르는 문장으로(사전식 나열 말고).`;
+}
+
+// 명령어 카드(#1049) — 에이전트가 왜 했는지 말고 명령 자체를 풀이. 첫 줄 한 문장 요약 + 명령·옵션별 목록.
+const isCommand = (c: { kind: ConceptKind; tool: string }) => c.kind === "edit" && c.tool === "Bash";
+function commandPrompt(command: string): string {
+  return `터미널 명령어 하나를 개발 초보에게 풀이해줘:\n${command}\n\n`
+    + `첫 줄: 이 명령 전체가 무슨 일을 하는지 한국어 한 문장.\n`
+    + `그 다음: 쓰인 명령·옵션을 나온 순서대로 "- \`cd\` — 폴더 이동"처럼 한 줄씩(이름은 백틱, 뜻은 짧게). 같은 명령이 반복되면 한 번만.\n`
+    + `에이전트가 왜 실행했는지·결과 추측·메타 발언 금지. 코드블록·JSON 금지.`;
 }
 
 // 응답 → {설명, 용어[]}. "[용어]" 기준 분리, 카드/펜스 제거.
@@ -79,14 +88,15 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [now, setNow] = useState(() => 0);
   const [autoExplain, setAutoExplain] = useState(true);
   const [termsOpen, setTermsOpen] = useState(true);
+  const showCommands = useSetting<boolean>(CUKEYS.commands, CATCHUP_DEFAULTS.commands); // #1049 설정 > 캐치업
 
   const seenRef = useRef(new Set<string>());                          // 이미 설명한 개념(dedup) — 서버 로드 시 채움
   const termSetRef = useRef(new Set(terms.map((x) => x.term.toLowerCase()))); // 용어 dedup
   const queueRef = useRef<string[]>([]);
   const busyRef = useRef(false);
   const metaRef = useRef(new Map<string, { kind: ConceptKind; target: string; tool: string }>());
-  const cfgRef = useRef({ providerId, providerSettings, locale, autoExplain });
-  useEffect(() => { cfgRef.current = { providerId, providerSettings, locale, autoExplain }; }, [providerId, providerSettings, locale, autoExplain]);
+  const cfgRef = useRef({ providerId, providerSettings, locale, autoExplain, showCommands });
+  useEffect(() => { cfgRef.current = { providerId, providerSettings, locale, autoExplain, showCommands }; }, [providerId, providerSettings, locale, autoExplain, showCommands]);
 
   const explainOne = useCallback(async (key: string) => {
     const meta = metaRef.current.get(key); const { providerId: pid, providerSettings: ps, locale: loc } = cfgRef.current;
@@ -95,7 +105,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     try {
       const res = await fetch("/api/agent/analyze", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerId: pid, request: { code: `레포: ${basename(root)}`, locale: loc, providerId: pid, mode: "chat", messages: [{ role: "user", content: conceptPrompt(basename(root), meta.kind, meta.target) }], providerSettings: ps } }),
+        body: JSON.stringify({ providerId: pid, request: { code: `레포: ${basename(root)}`, locale: loc, providerId: pid, mode: "chat", messages: [{ role: "user", content: isCommand(meta) ? commandPrompt(meta.target) : conceptPrompt(basename(root), meta.kind, meta.target) }], providerSettings: ps } }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       const reader = res.body.getReader(); const dec = new TextDecoder();
@@ -144,6 +154,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           : [{ key: nkey, kind: "narration" as const, target: ev.target, tool: "narration", status: "done" as const, ts: ev.ts, expl: ev.note }, ...prev].slice(0, MAX_ITEMS)));
         return;
       }
+      if (isCommand(ev) && !cfgRef.current.showCommands) return; // 명령어 해설 끔 → 카드 자체 안 띄움
       const key = `${ev.kind}|${ev.target}`;
       metaRef.current.set(key, { kind: ev.kind, target: ev.target, tool: ev.tool });
       setConcepts((prev) => { const found = prev.find((c) => c.key === key); if (found) return [{ ...found, tool: ev.tool, ts: ev.ts }, ...prev.filter((c) => c.key !== key)]; return [{ key, kind: ev.kind, target: ev.target, tool: ev.tool, status: "idle" as const, ts: ev.ts }, ...prev].slice(0, MAX_ITEMS); });
@@ -236,7 +247,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
     dragCleanup.current = stop;
   }, [askH]);
-  const shown = viewDay ? (dayItems ?? []) : concepts;
+  const shown = (viewDay ? (dayItems ?? []) : concepts).filter((c) => showCommands || !isCommand(c)); // 끄면 지난 명령 카드도 숨김
   const viewLabel = viewDay ? (() => { try { return new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${viewDay}T00:00:00`)); } catch { return viewDay; } })() : "";
 
   return (
