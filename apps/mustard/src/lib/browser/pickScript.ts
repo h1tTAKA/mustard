@@ -2,7 +2,11 @@
 // 페이지 쪽 코드라 import·클로저 없이 문자열 하나. 결과는 Promise: 클릭 → PickedElement, Esc/취소 → null.
 // 오버레이는 shadow root 안(페이지 CSS와 안 섞임). 클릭은 capture 단계에서 막아 페이지 버튼이 눌리지 않게.
 
+// kind: 클릭 = element(요소 하나), 드래그 = region(사각형 영역 — 안에 완전히 들어간 바깥쪽 요소들을 items로).
+export interface PickedItem { tag: string; selector: string; text: string; react: string[] }
 export interface PickedElement {
+  kind: "element" | "region";
+  items: PickedItem[]; // region일 때만 채움(최대 8)
   url: string;
   viewport: { w: number; h: number; dpr: number };
   tag: string;
@@ -31,6 +35,14 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
   let cur = null;
   const label = (el) => el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + (typeof el.className === "string" && el.className.trim() ? "." + el.className.trim().split(/\\s+/).slice(0, 2).join(".") : "");
   const move = (e) => {
+    if (down && (dragging || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6)) {
+      dragging = true;
+      const r = regionRect(e);
+      Object.assign(box.style, { display: "block", left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
+      tip.textContent = Math.round(r.w) + "×" + Math.round(r.h);
+      Object.assign(tip.style, { display: "block", left: r.x + "px", top: (r.y > 22 ? r.y - 20 : r.y + r.h + 4) + "px" });
+      return;
+    }
     const el = document.elementFromPoint(e.clientX, e.clientY);
     if (!el || el === host) return;
     cur = el;
@@ -40,9 +52,28 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
     Object.assign(tip.style, { display: "block", left: Math.max(0, r.left) + "px", top: (r.top > 22 ? r.top - 20 : r.bottom + 4) + "px" });
   };
   const stop = (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
+  // 드래그 = 영역 지정(6px 넘게 끌면). 그냥 클릭 = 요소 하나.
+  let down = null, dragging = false;
+  const onDown = (e) => { stop(e); if (e.button === 0) { down = { x: e.clientX, y: e.clientY }; dragging = false; } };
+  const regionRect = (e) => ({ x: Math.min(down.x, e.clientX), y: Math.min(down.y, e.clientY), w: Math.abs(e.clientX - down.x), h: Math.abs(e.clientY - down.y) });
+  const onUp = (e) => {
+    stop(e);
+    if (!down) return;
+    if (!dragging) { down = null; return; } // 클릭은 click 핸들러가 처리
+    const r = regionRect(e);
+    down = null;
+    // 드래그 끝의 mouseup 뒤에 click이 한 번 더 옴 — 리스너를 다 걷으면 그 click이 페이지 버튼을 눌러버림 → 한 번만 더 삼킴.
+    const swallow = (ev) => { stop(ev); window.removeEventListener("click", swallow, true); };
+    window.addEventListener("click", swallow, true);
+    setTimeout(() => window.removeEventListener("click", swallow, true), 400);
+    cleanup();
+    resolve(regionResult(r));
+  };
   const cleanup = () => {
     window.removeEventListener("mousemove", move, true);
-    for (const t of ["mousedown", "mouseup", "pointerdown", "pointerup"]) window.removeEventListener(t, stop, true);
+    window.removeEventListener("mousedown", onDown, true);
+    window.removeEventListener("mouseup", onUp, true);
+    for (const t of ["pointerdown", "pointerup"]) window.removeEventListener(t, stop, true);
     window.removeEventListener("click", click, true);
     window.removeEventListener("keydown", key, true);
     host.remove();
@@ -70,8 +101,25 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
     }
     return out;
   };
+  const base = () => ({ url: location.href, viewport: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio } });
+  const textOf = (el) => (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim();
+  // 영역 안에 완전히 들어간 요소 중 바깥쪽(부모는 영역에 안 들어감)만, 보이는 것, 최대 8개.
+  const regionResult = (r) => {
+    const inside = (b) => b.width > 0 && b.height > 0 && b.left >= r.x - 1 && b.top >= r.y - 1 && b.right <= r.x + r.w + 1 && b.bottom <= r.y + r.h + 1;
+    const items = [];
+    for (const el of document.body ? document.body.querySelectorAll("*") : []) {
+      if (items.length >= 8) break;
+      if (el === host || ["SCRIPT", "STYLE", "NOSCRIPT"].includes(el.tagName)) continue;
+      if (!inside(el.getBoundingClientRect())) continue;
+      const p = el.parentElement;
+      if (p && p !== document.body && inside(p.getBoundingClientRect())) continue;
+      items.push({ tag: el.tagName.toLowerCase(), selector: selectorOf(el), text: textOf(el).slice(0, 120), react: reactOf(el).slice(0, 3) });
+    }
+    return { kind: "region", items, ...base(), tag: "region", selector: "", text: "", attrs: {}, rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) }, styles: {}, html: "", react: [] };
+  };
   const click = (e) => {
     stop(e);
+    if (dragging) return;
     const el = cur;
     cleanup();
     if (!el) return resolve(null);
@@ -82,11 +130,12 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
     const styles = {};
     for (const s of ["display", "position", "color", "background-color", "font-size", "font-weight", "line-height", "padding", "margin", "border", "border-radius", "gap", "width", "height"]) styles[s] = cs.getPropertyValue(s);
     resolve({
-      url: location.href,
-      viewport: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio },
+      kind: "element",
+      items: [],
+      ...base(),
       tag: el.tagName.toLowerCase(),
       selector: selectorOf(el),
-      text: (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 300),
+      text: textOf(el).slice(0, 300),
       attrs,
       rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
       styles,
@@ -97,7 +146,9 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
   const key = (e) => { if (e.key === "Escape") { stop(e); cleanup(); resolve(null); } };
   window.__mustardPickCancel = () => { cleanup(); resolve(null); };
   window.addEventListener("mousemove", move, true);
-  for (const t of ["mousedown", "mouseup", "pointerdown", "pointerup"]) window.addEventListener(t, stop, true);
+  window.addEventListener("mousedown", onDown, true);
+  window.addEventListener("mouseup", onUp, true);
+  for (const t of ["pointerdown", "pointerup"]) window.addEventListener(t, stop, true);
   window.addEventListener("click", click, true);
   window.addEventListener("keydown", key, true);
 }))()`;

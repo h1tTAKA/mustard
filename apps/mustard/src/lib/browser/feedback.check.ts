@@ -3,6 +3,8 @@ import assert from "node:assert";
 import { formatPickFeedback, sanitizePaste } from "./feedback.ts";
 
 const p = {
+  kind: "element" as const,
+  items: [],
   url: "http://localhost:3000/settings?tab=a",
   viewport: { w: 1280, h: 800, dpr: 2 },
   tag: "button",
@@ -24,4 +26,9 @@ assert.ok(md.includes("````\nSave ```now```\n````"), "내용 백틱보다 긴 �
 assert.ok(!formatPickFeedback({ ...p, react: [] }, "x").includes("React components"));
 assert.strictEqual(sanitizePaste("a\x1b[201~b\tc\nd\x07"), "a[201~b\tc\nd", "ESC·BEL 제거, 탭·줄바꿈 유지");
 assert.ok(!md.includes("\x1b"));
+// 영역(드래그)
+const rg = formatPickFeedback({ ...p, kind: "region", tag: "region", items: [{ tag: "nav", selector: "header > nav", text: "Home About", react: ["Nav"] }] }, "여백 줄여줘", "/tmp/a.png");
+assert.ok(rg.startsWith("## UI feedback (selected area): /settings?tab=a"));
+assert.ok(rg.includes("- Screenshot of the area: /tmp/a.png") && rg.includes("nav  header > nav  [Nav]") && rg.includes('"Home About"'));
+assert.ok(!rg.includes("Selector:"));
 console.log("browser feedback ok");

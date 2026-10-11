@@ -191,7 +191,9 @@ function BrowserPage({ repo, url, visible, ports, onUrlChange, onTitle, onDetach
           {picked && (
             <div className="absolute z-10 w-[300px] rounded-lg border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
               style={picked.pos}>
-              <div className="mb-1 truncate font-mono text-[10px] text-zinc-400">{picked.el.react[0] ? `${picked.el.react[0]} · ` : ""}{picked.el.tag}{picked.el.text ? ` "${picked.el.text.slice(0, 40)}"` : ""}</div>
+              <div className="mb-1 truncate font-mono text-[10px] text-zinc-400">{picked.el.kind === "region"
+                ? `${t("browser.pickArea")} ${picked.el.rect.w}×${picked.el.rect.h}${picked.el.items.length ? ` · ${picked.el.items.length}` : ""}`
+                : `${picked.el.react[0] ? `${picked.el.react[0]} · ` : ""}${picked.el.tag}${picked.el.text ? ` "${picked.el.text.slice(0, 40)}"` : ""}`}</div>
               <textarea autoFocus value={comment} onChange={(e) => { setComment(e.target.value); if (sendState === "no-agent") setSendState("idle"); }}
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); } else if (e.key === "Escape") setPicked(null); }}
                 placeholder={t("browser.pickPlaceholder")} rows={3}
