@@ -15,11 +15,14 @@ const p = {
   styles: { color: "rgb(0, 0, 0)", margin: "0px", display: "flex" },
   html: '<button class="btn">Save</button>',
   react: ["SaveButton", "Header"],
+  sources: [{ name: "Header", file: "src/components/Header.tsx", line: 42, col: 7 }, { name: "Page", file: "src/app/page.tsx", line: 3, col: 4 }],
 };
 const md = formatPickFeedback(p, "  간격 이상함, 고쳐줘 ", "/tmp/shot.png");
 assert.ok(md.startsWith("## UI feedback: /settings?tab=a"));
 assert.ok(md.includes("**Request:** 간격 이상함, 고쳐줘"));
 assert.ok(md.includes("SaveButton < Header"));
+assert.ok(md.includes("- Source: src/components/Header.tsx:42:7 (in Header)") && md.includes("- Used from: src/app/page.tsx:3:4 (in Page)"));
+assert.ok(!formatPickFeedback({ ...p, sources: [] }, "x").includes("Source:"), "못 찾으면 줄 없음");
 assert.ok(md.includes("- Screenshot: /tmp/shot.png"));
 assert.ok(md.includes("color: rgb(0, 0, 0)") && !md.includes("margin: 0px"), "기본값 스타일 생략");
 assert.ok(md.includes("````\nSave ```now```\n````"), "내용 백틱보다 긴 펜스");

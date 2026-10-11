@@ -2,6 +2,8 @@
 // 런타임 CLI 경로 설정(재시작 후 적용)과 재시작만.
 const { contextBridge, ipcRenderer, webFrame } = require("electron");
 
+const zoomRect = (r) => { const z = webFrame.getZoomFactor() || 1; return { x: r.x * z, y: r.y * z, w: r.w * z, h: r.h * z }; };
+
 contextBridge.exposeInMainWorld("nunopiDesktop", {
   isDesktop: true,
   // UI 줌(#937) — 전체 인터페이스 배율. webFrame은 렌더러 프로세스 API(즉시 적용).
@@ -85,7 +87,9 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
   browser: { // #1034 인앱 브라우저 — 분리 창 열기 + 포커스된 guest가 넘겨준 단축키 구독(해제 함수 반환)
     openWindow: (payload) => ipcRenderer.invoke("browser-window:open", payload),
     setAppChords: (list) => ipcRenderer.send("browser:set-chords", list),
-    openDevTools: (guestId, devtoolsId) => ipcRenderer.invoke("browser:devtools-open", { guestId, devtoolsId }),
+    // devtools 자리(CSS px) → 창 DIP — UI 줌(webFrame)을 여기서 곱함(main 쪽 줌 값은 늦을 수 있음).
+    openDevTools: (guestId, rect) => ipcRenderer.invoke("browser:devtools-open", { guestId, rect: zoomRect(rect) }),
+    devtoolsBounds: (guestId, rect) => ipcRenderer.send("browser:devtools-bounds", { guestId, rect: zoomRect(rect) }),
     closeDevTools: (guestId) => ipcRenderer.invoke("browser:devtools-close", { guestId }),
     sendToAgent: (payload) => ipcRenderer.invoke("browser:send-to-agent", payload), // #1037 셸이면 안 보냄(main 판정)
     capture: (guestId, rect) => ipcRenderer.invoke("browser:capture", { guestId, rect }), // #1037 요소 스크린샷 → 임시 PNG 경로

@@ -14,19 +14,19 @@ const SPLASH = <div className="h-full w-full bg-white dark:bg-zinc-950" />;
 
 export default function Home() {
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
-  const [browserWin, setBrowserWin] = useState<{ url: string; repo: string } | null>(null); // #1034 분리 브라우저 창
+  const [browserWin, setBrowserWin] = useState<{ url: string; repo: string; devtools: boolean } | null>(null); // #1034 분리 브라우저 창
   useEffect(() => {
     let done = true; // localStorage 불가 환경이면 온보딩 스킵(true)
     try { done = localStorage.getItem("mustard:onboarded") === "1"; } catch { /* keep true */ }
     // client 마운트 후 1회 판정 — SSR 하이드레이션 불일치 회피용 의도된 set-state-in-effect.
     const q = new URLSearchParams(window.location.search);
     /* eslint-disable react-hooks/set-state-in-effect */
-    if (q.get("win") === "browser") setBrowserWin({ url: q.get("url") || "", repo: q.get("repo") || "" });
+    if (q.get("win") === "browser") setBrowserWin({ url: q.get("url") || "", repo: q.get("repo") || "", devtools: q.get("devtools") === "1" });
     setOnboarded(done);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
-  if (browserWin) return <BrowserWindowView url={browserWin.url} repo={browserWin.repo} />;
+  if (browserWin) return <BrowserWindowView url={browserWin.url} repo={browserWin.repo} devtools={browserWin.devtools} />;
   if (onboarded === null) return SPLASH;                 // client 마운트 전 — 깜빡임 방지
   if (!onboarded) return <Onboarding onDone={() => setOnboarded(true)} />;
   if (!isNunopiEnabled()) return <WorkspaceOnlyHome />;

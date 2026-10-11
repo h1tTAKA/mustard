@@ -29,6 +29,10 @@ export function formatPickFeedback(p: PickedElement, comment: string, screenshot
     `- Element: \`${p.tag}\` at x=${p.rect.x}, y=${p.rect.y}, ${p.rect.w}x${p.rect.h}`,
     `- Selector: \`${p.selector}\``,
   ];
+  // 소스 위치(#1039) — 첫 줄 = 이 요소를 쓴 JSX, 나머지 = 바깥 컴포넌트가 쓰인 곳.
+  const at = (s: { name: string; file: string; line: number; col: number }) => `${s.file}:${s.line}:${s.col}${s.name ? ` (in ${s.name})` : ""}`;
+  if (p.sources[0]) lines.push(`- Source: ${at(p.sources[0])}`);
+  if (p.sources.length > 1) lines.push(`- Used from: ${p.sources.slice(1).map(at).join(" ← ")}`);
   if (p.react.length) lines.push(`- React components (inner → outer): ${p.react.join(" < ")}`);
   if (screenshot) lines.push(`- Screenshot: ${screenshot}`);
   if (styles) lines.push(`- Computed styles: ${styles}`);
