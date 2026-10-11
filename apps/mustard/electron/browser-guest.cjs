@@ -30,6 +30,12 @@ const hardenedSessions = new WeakSet();
 // 창(호스트 렌더러)별 — 단축키 처리기가 있는 메인 창만 보냄. 분리 브라우저 창은 없음 → 그 창 페이지는 키를 그대로 받음.
 const appChordsByHost = new Map(); // host webContents id → Set
 function setAppChords(hostId, list) { appChordsByHost.set(hostId, new Set(Array.isArray(list) ? list.filter((c) => typeof c === "string") : [])); }
+// 창이 처음 보낼 때만 정리 예약(보낼 때마다 걸면 리스너가 쌓임, #1034 리뷰).
+function trackChordHost(sender) {
+  if (appChordsByHost.has(sender.id)) return;
+  const id = sender.id;
+  sender.once("destroyed", () => appChordsByHost.delete(id));
+}
 const CODE_TOKEN = {
   BracketLeft: "[", BracketRight: "]", Equal: "=", Minus: "-", Comma: ",", Period: ".", Slash: "/", Semicolon: ";",
   Quote: "'", Backquote: "`", Backslash: "\\", Enter: "Enter", Tab: "Tab", Space: "Space", Backspace: "Backspace", Escape: "Escape",
@@ -86,4 +92,4 @@ function installBrowserGuestPolicy(app) {
   });
 }
 
-module.exports = { installBrowserGuestPolicy, hardenWebview, isAllowedUrl, setAppChords, chordOf, PARTITION };
+module.exports = { installBrowserGuestPolicy, hardenWebview, isAllowedUrl, setAppChords, trackChordHost, chordOf, PARTITION };
