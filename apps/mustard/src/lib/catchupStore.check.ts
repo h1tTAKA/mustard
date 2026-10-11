@@ -2,7 +2,7 @@
 import assert from "node:assert";
 import { appendFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { appendItems, askCounts, dayKey, listDays, readAsk, readDay, readRecent, sanitize, writeAsk } from "./catchupStore.ts";
+import { appendItems, askCounts, dayKey, listDays, readAsk, readDay, readRecent, searchItems, sanitize, writeAsk } from "./catchupStore.ts";
 
 assert.ok(process.env.MUSTARD_STREAM_DIR, "임시 디렉터리 필수(실 기록 보호)");
 const root = "/tmp/repo-a";
@@ -24,6 +24,10 @@ assert.deepStrictEqual(listDays("/tmp/none"), [], "없는 레포");
 const dir = join(process.env.MUSTARD_STREAM_DIR!, readdirSync(process.env.MUSTARD_STREAM_DIR!)[0]);
 appendFileSync(join(dir, "2026-10-06.jsonl"), JSON.stringify(it("b", d2)) + "\n");
 assert.deepStrictEqual(readDay(root, "2026-10-06").map((x) => x.key), ["c", "b"], "중복 줄 읽기 dedupe");
+// #1049 검색 — 전체 날짜, 최신순, 대소문자 무시, 빈 검색어는 빈 배열
+assert.deepStrictEqual(searchItems(root, "", 10), [], "빈 검색어");
+assert.ok(searchItems(root, readDay(root, "2026-10-05")[0].target.toUpperCase(), 10).some((x) => x.key === "a"), "지난 날짜도·대소문자 무시");
+assert.strictEqual(searchItems(root, "없는검색어zzz", 10).length, 0);
 // #998 질문 대화 저장·복원·배지
 assert.strictEqual(readAsk(root, "narration|1|x"), null, "없는 대화 null");
 const saved = writeAsk(root, { key: "narration|1|x", target: "x", messages: [{ role: "user", content: "q1" }, { role: "assistant", content: "a1" }, { role: "evil", content: "z" }, { role: "user", content: "q2" }] }, 99);

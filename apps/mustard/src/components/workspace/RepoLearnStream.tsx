@@ -97,6 +97,21 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const showTerms = useSetting<boolean>(CUKEYS.terms, CATCHUP_DEFAULTS.terms);
   // #1049 카테고리 필터 — 해설(실시간 해설·파일/심볼 설명) / 명령어 / 용어. 꺼진 카테고리는 칩도 숨김.
   const [filterSel, setFilter] = useState<"all" | "explain" | "commands" | "terms">("all");
+  // #1049 검색 — 서버가 전체 날짜에서 제목·설명을 찾음(입력 멈춘 뒤 250ms). 용어집은 화면에서 거름.
+  const [q, setQ] = useState("");
+  const [found, setFound] = useState<Concept[] | null>(null); // null = 검색 중
+  const query = q.trim();
+  useEffect(() => {
+    if (!query) return;
+    let alive = true;
+    const tm = setTimeout(() => {
+      setFound(null);
+      fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&q=${encodeURIComponent(query)}`).then((r) => r.json())
+        .then((j) => { if (alive) setFound(j?.ok && Array.isArray(j.items) ? (j.items as Omit<Concept, "status">[]).map((x) => ({ ...x, status: "done" as const })) : []); })
+        .catch(() => { if (alive) setFound([]); });
+    }, 250);
+    return () => { alive = false; clearTimeout(tm); };
+  }, [query, root]);
   const filter = (filterSel === "commands" && !showCommands) || (filterSel === "terms" && !showTerms) ? "all" : filterSel;
 
   const seenRef = useRef(new Set<string>());                          // 이미 설명한 개념(dedup) — 서버 로드 시 채움
@@ -256,8 +271,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
     dragCleanup.current = stop;
   }, [askH]);
-  const shown = (viewDay ? (dayItems ?? []) : concepts).filter((c) => (showCommands || !isCommand(c)) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)) // 끄면 지난 명령 카드도 숨김, 문서 편집 카드는 항상 숨김(#1049)
+  const shown = (query ? (found ?? []) : viewDay ? (dayItems ?? []) : concepts).filter((c) => (showCommands || !isCommand(c)) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)) // 끄면 지난 명령 카드도 숨김, 문서 편집 카드는 항상 숨김(#1049)
     && (filter === "all" || (filter === "commands" ? isCommand(c) : filter === "explain" && !isCommand(c))));
+  const shownTerms = query ? terms.filter((x) => `${x.term}\n${x.def}`.toLowerCase().includes(query.toLowerCase())) : terms;
   const viewLabel = viewDay ? (() => { try { return new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${viewDay}T00:00:00`)); } catch { return viewDay; } })() : "";
 
   return (
@@ -276,13 +292,18 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         {calOpen && <CatchupCalendar days={days} selected={viewDay} locale={locale} onPick={pickDay} onClose={closeCal} />}
       </div>
       {/* #1049 카테고리 필터 칩 */}
-      <div className="flex shrink-0 items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
+      <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
         {([["all", t("learn.filterAll")], ["explain", t("learn.filterExplain")], ...(showCommands ? [["commands", t("learn.filterCommands")]] : []), ...(showTerms ? [["terms", t("learn.filterTerms")]] : [])] as [typeof filterSel, string][]).map(([id, label]) => (
           <button key={id} type="button" onClick={() => setFilter(id)} aria-pressed={filter === id}
             className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition ${filter === id ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
             {label}
           </button>
         ))}
+        <label className="ml-auto flex min-w-[8rem] flex-1 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 focus-within:border-mustard-500/60 dark:border-zinc-700">
+          <IconSearch size={11} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
+          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("learn.search")} aria-label={t("learn.search")}
+            className="min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none placeholder:text-zinc-400 dark:text-zinc-200" />
+        </label>
       </div>
       {/* 지난 날 보는 중 안내 바 — 오늘로 복귀(그사이 실시간 항목 바로 보임) */}
       {viewDay && (
@@ -295,7 +316,11 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         </div>
       )}
       <div ref={listRef} className="nunopi-scroll min-h-0 flex-1 overflow-y-auto">
-        {viewDay && dayItems === null && filter !== "terms" ? (
+        {query && found === null && filter !== "terms" ? (
+          <div className="flex justify-center py-6"><IconLoader2 size={14} stroke={2} className="animate-spin text-zinc-400" aria-hidden /></div>
+        ) : query && !shown.length && !(showTerms && filter !== "explain" && filter !== "commands" && shownTerms.length) ? (
+          <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.searchEmpty")}</p>
+        ) : viewDay && dayItems === null && filter !== "terms" ? (
           <div className="flex justify-center py-6"><IconLoader2 size={14} stroke={2} className="animate-spin text-zinc-400" aria-hidden /></div>
         ) : viewDay && !shown.length && filter !== "terms" ? ( /* 용어집은 날짜 무관 — 지난 날 보기여도 용어 필터면 용어집 */
           <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.dayEmpty")}</p>
@@ -304,16 +329,16 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         ) : (
           <>
             {/* 용어집 — 이해에 필요한 용어 누적(중복 없음) */}
-            {showTerms && terms.length > 0 && (filter === "terms" || (filter === "all" && !viewDay)) && ( /* 용어집은 날짜 무관 누적 → 지난 날 보기에선 숨김(#996) */
+            {showTerms && shownTerms.length > 0 && (filter === "terms" || (filter === "all" && (!viewDay || !!query))) && ( /* 용어집은 날짜 무관 누적 → 지난 날 보기에선 숨김(#996) */
               <div className="border-b border-zinc-100 dark:border-zinc-800/70">
                 <button type="button" onClick={() => setTermsOpen((v) => !v)} className="flex w-full items-center gap-1.5 px-3 py-2 text-left">
                   <IconBook2 size={13} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
-                  <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">{t("learn.terms")} ({terms.length})</span>
+                  <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">{t("learn.terms")} ({shownTerms.length})</span>
                   <IconChevronDown size={13} stroke={2} className={`ml-auto shrink-0 text-zinc-400 transition ${termsOpen ? "" : "-rotate-90"}`} aria-hidden />
                 </button>
                 {/* #1049 용어 = 작은 카드(용어 배지 + 뜻 아래 줄) — 텍스트 나열보다 훑기 쉽게 */}
                 {(termsOpen || filter === "terms") && <ul className="flex flex-col gap-1.5 px-2.5 pb-2.5">
-                  {terms.map((x) => (
+                  {shownTerms.map((x) => (
                     <li key={x.term} className="rounded-lg border border-zinc-200 bg-zinc-50/70 px-2.5 py-1.5 dark:border-zinc-800 dark:bg-zinc-800/40">
                       <span className="inline-block rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 dark:text-mustard-400">{x.term}</span>
                       <p className="mt-1 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{x.def}</p>
