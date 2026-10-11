@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { WebviewTag } from "electron";
 import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld } from "@tabler/icons-react";
-import { useT } from "@mustard/core";
+import { useT, useSetting, appChords, SHORTCUT_OVERRIDES_KEY, type ShortcutOverrides } from "@mustard/core";
 import { normalizeBrowserUrl } from "@/lib/browser/url";
 
 const PARTITION = "persist:mustard-browser"; // main의 PARTITION과 같아야 붙음(다르면 거부)
@@ -35,12 +35,16 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach }: {
   const [loading, setLoading] = useState(false);
   const [nav, setNav] = useState({ back: false, fwd: false });
   const [ports, setPorts] = useState<number[]>([]);
+  const [ready, setReady] = useState(false); // guest 붙기 전엔 loadURL·reload 등이 예외를 던짐(#1034 리뷰)
   const editingRef = useRef(false); // 주소창 입력 중엔 페이지 이동으로 덮어쓰지 않음
   useEffect(() => { editingRef.current = editing; }, [editing]);
   const onUrlChangeRef = useRef(onUrlChange);
   useEffect(() => { onUrlChangeRef.current = onUrlChange; }, [onUrlChange]);
 
   useEffect(() => subscribeGuestKeys(), []);
+  // main에 "브라우저 포커스 중에도 앱이 가져갈 조합" 알림 — 설정에서 단축키 바꾸면 다시 보냄(#1034 리뷰).
+  const overrides = useSetting<ShortcutOverrides>(SHORTCUT_OVERRIDES_KEY, {});
+  useEffect(() => { window.nunopiDesktop?.browser?.setAppChords(appChords(overrides)); }, [overrides]);
 
   // 이 레포 터미널에서 뜬 dev 서버 포트(#880 감지 재사용) — 10초마다.
   useEffect(() => {
@@ -73,17 +77,20 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach }: {
     wv.addEventListener("did-navigate-in-page", sync);
     wv.addEventListener("did-start-loading", () => setLoading(true));
     wv.addEventListener("did-stop-loading", () => setLoading(false));
+    wv.addEventListener("dom-ready", () => setReady(true));
     host.appendChild(wv);
     viewRef.current = wv;
-    return () => { wv.remove(); viewRef.current = null; };
+    return () => { wv.remove(); viewRef.current = null; setReady(false); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 만들 때의 주소만 씀(이후는 loadURL)
   }, [hasPage]);
   const go = (raw: string) => {
     const u = normalizeBrowserUrl(raw);
     if (!u) return;
     setDraft(u); setEditing(false);
-    if (viewRef.current) void viewRef.current.loadURL(u).catch(() => {}); // 실패(연결 거부 등)는 페이지가 보여줌
-    else setCurrent(u);
+    const wv = viewRef.current;
+    if (!wv) setCurrent(u);
+    else if (ready) void wv.loadURL(u).catch(() => {}); // 실패(연결 거부 등)는 페이지가 보여줌
+    else wv.src = u; // 아직 안 붙음 — 속성으로 이동(붙을 때 그 주소로)
   };
 
   const btn = "flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-800 disabled:pointer-events-none disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100";
@@ -91,9 +98,9 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach }: {
     <div className="flex h-full min-h-0 flex-col">
       {/* 탭바와 같은 높이·색. pr-[17px]: dock 이동 그립 자리(#716). */}
       <div className="flex shrink-0 items-center gap-0.5 border-b border-zinc-200 bg-zinc-100/70 py-1 pl-1.5 pr-[17px] dark:border-zinc-800 dark:bg-[var(--s-bar)]">
-        <button type="button" className={btn} disabled={!nav.back} onClick={() => viewRef.current?.goBack()} title={t("browser.back")} aria-label={t("browser.back")}><IconArrowLeft size={14} stroke={2} aria-hidden /></button>
-        <button type="button" className={btn} disabled={!nav.fwd} onClick={() => viewRef.current?.goForward()} title={t("browser.forward")} aria-label={t("browser.forward")}><IconArrowRight size={14} stroke={2} aria-hidden /></button>
-        <button type="button" className={btn} disabled={!hasPage} onClick={() => (loading ? viewRef.current?.stop() : viewRef.current?.reload())} title={loading ? t("browser.stop") : t("browser.reload")} aria-label={loading ? t("browser.stop") : t("browser.reload")}>
+        <button type="button" className={btn} disabled={!ready || !nav.back} onClick={() => viewRef.current?.goBack()} title={t("browser.back")} aria-label={t("browser.back")}><IconArrowLeft size={14} stroke={2} aria-hidden /></button>
+        <button type="button" className={btn} disabled={!ready || !nav.fwd} onClick={() => viewRef.current?.goForward()} title={t("browser.forward")} aria-label={t("browser.forward")}><IconArrowRight size={14} stroke={2} aria-hidden /></button>
+        <button type="button" className={btn} disabled={!ready} onClick={() => (loading ? viewRef.current?.stop() : viewRef.current?.reload())} title={loading ? t("browser.stop") : t("browser.reload")} aria-label={loading ? t("browser.stop") : t("browser.reload")}>
           {loading ? <IconX size={14} stroke={2} aria-hidden /> : <IconRefresh size={14} stroke={2} aria-hidden />}
         </button>
         <form className="mx-1 min-w-0 flex-1" onSubmit={(e) => { e.preventDefault(); go(draft); }}>
@@ -106,7 +113,7 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach }: {
           <button key={p} type="button" onClick={() => go(`:${p}`)} title={`localhost:${p}`}
             className="shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[10px] text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100">:{p}</button>
         ))}
-        <button type="button" className={btn} disabled={!hasPage} onClick={() => viewRef.current?.openDevTools()} title={t("browser.devtools")} aria-label={t("browser.devtools")}><IconCode size={14} stroke={2} aria-hidden /></button>
+        <button type="button" className={btn} disabled={!ready} onClick={() => viewRef.current?.openDevTools()} title={t("browser.devtools")} aria-label={t("browser.devtools")}><IconCode size={14} stroke={2} aria-hidden /></button>
         {onDetach && <button type="button" className={btn} onClick={() => onDetach(current)} title={t("browser.detach")} aria-label={t("browser.detach")}><IconAppWindow size={14} stroke={2} aria-hidden /></button>}
       </div>
       <div ref={hostRef} className="relative min-h-0 flex-1 bg-white">

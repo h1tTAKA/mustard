@@ -19,7 +19,7 @@ const { getProviderUsage } = require("./provider-usage.cjs");
 const { startWatch, stopWatch, stopAll: stopAllWatchers } = require("./repo-watcher.cjs");
 const { seen: seenText, freshLines } = require("./narration-dedupe.cjs");
 const { loadSeen, saveSeen } = require("./narration-seen-store.cjs"); // #1031 레포별 디스크 저장 // #1019 재그리기 중복 내레이션 방지
-const { installBrowserGuestPolicy, isAllowedUrl: isBrowserUrl } = require("./browser-guest.cjs"); // #1034 인앱 브라우저
+const { installBrowserGuestPolicy, isAllowedUrl: isBrowserUrl, setAppChords } = require("./browser-guest.cjs"); // #1034 인앱 브라우저
 const githubBridge = require("./github-bridge.cjs"); // GitHub 패널(#809/#810) gh CLI 브릿지
 const { join, dirname } = require("node:path");
 
@@ -347,6 +347,8 @@ ipcMain.handle("browser-window:open", (_e, payload) => {
   } catch (e) { return { ok: false, reason: "error", error: String(e?.message || e) }; }
   return { ok: true };
 });
+// 인앱 브라우저 포커스 중 앱이 가져갈 단축키 조합(#1034) — 렌더러가 설정 반영해 보냄.
+ipcMain.on("browser:set-chords", (_e, list) => setAppChords(list));
 // 탭 쪽 모드 점유/해제/조회(#789) — 메인 창 렌더러가 모드 탭 추가·닫기·복원 시 호출.
 ipcMain.handle("mode:claim", (_e, kind) => ({ ok: claimMode(kind, "tab") }));
 ipcMain.handle("mode:release", (_e, kind) => { releaseMode(kind); return { ok: true }; });

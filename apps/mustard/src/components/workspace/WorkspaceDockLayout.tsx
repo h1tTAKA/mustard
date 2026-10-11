@@ -52,9 +52,9 @@ export function pruneTree(node: DockNode, has: Record<PanelId, boolean>): DockNo
 }
 
 // 패널을 트리에 추가/제거(프로그래밍적, #743 플로우 패널 열고 닫기). 드래그 도킹(insertBeside)과 별개.
-export function appendPanel(tree: DockNode, panel: PanelId): DockNode {
+export function appendPanel(tree: DockNode, panel: PanelId, ratio = 0.66): DockNode {
   if (leavesOf(tree).has(panel)) return tree; // 이미 있으면 그대로
-  return { t: "split", dir: "row", a: tree, b: { t: "leaf", panel }, ratio: 0.66 };
+  return { t: "split", dir: "row", a: tree, b: { t: "leaf", panel }, ratio };
 }
 export function removePanel(tree: DockNode, panel: PanelId): DockNode | null {
   return removeLeaf(tree, panel);

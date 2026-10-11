@@ -26,6 +26,33 @@ function hardenWebview(event, webPreferences, params) {
 const ALLOWED_PERMISSIONS = new Set(["clipboard-sanitized-write", "fullscreen"]);
 const hardenedSessions = new WeakSet();
 
+// 앱 단축키 조합 — packages/core/src/shortcuts.ts chordFromEvent·tokenOf와 같은 규칙(바꾸면 같이). cjs라 import 불가.
+let appChords = new Set();
+function setAppChords(list) { appChords = new Set(Array.isArray(list) ? list.filter((c) => typeof c === "string") : []); }
+const CODE_TOKEN = {
+  BracketLeft: "[", BracketRight: "]", Equal: "=", Minus: "-", Comma: ",", Period: ".", Slash: "/", Semicolon: ";",
+  Quote: "'", Backquote: "`", Backslash: "\\", Enter: "Enter", Tab: "Tab", Space: "Space", Backspace: "Backspace", Escape: "Escape",
+  ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right", NumpadAdd: "=", NumpadSubtract: "-",
+};
+function tokenOf(code) {
+  const c = String(code || "");
+  if (/^Key[A-Z]$/.test(c)) return c.slice(3);
+  if (/^Digit[0-9]$/.test(c)) return c.slice(5);
+  if (/^Numpad[0-9]$/.test(c)) return c.slice(6);
+  if (/^F([1-9]|1[0-2])$/.test(c)) return c;
+  return CODE_TOKEN[c] ?? null;
+}
+function chordOf(input, isMac) {
+  const key = tokenOf(input.code);
+  if (!key) return null;
+  const mods = [];
+  if (isMac ? input.meta : input.control) mods.push("Mod");
+  if (isMac && input.control) mods.push("Ctrl");
+  if (input.alt) mods.push("Alt");
+  if (input.shift) mods.push("Shift");
+  return mods.length ? [...mods, key].join("+") : null;
+}
+
 function wireGuest(guest) {
   // 팝업(target=_blank·window.open) — 새 창 대신 같은 webview에서 이동.
   guest.setWindowOpenHandler(({ url }) => { if (isAllowedUrl(url)) void guest.loadURL(url); return { action: "deny" }; });
@@ -37,10 +64,13 @@ function wireGuest(guest) {
     ses.setPermissionRequestHandler((_wc, perm, cb) => cb(ALLOWED_PERMISSIONS.has(perm)));
     ses.setPermissionCheckHandler((_wc, perm) => ALLOWED_PERMISSIONS.has(perm));
   }
-  // 포커스된 guest는 별도 Chromium 프로세스라 키가 앱 렌더러에 안 온다 → ⌘/Ctrl 조합만 복사해서 호스트에 전달.
-  // preventDefault 안 함 — 페이지도 그대로 받음(⌘C 복사 등). 앱 단축키 dispatcher는 등록된 조합만 반응.
-  guest.on("before-input-event", (_e, input) => {
-    if (input.type !== "keyDown" || !(input.meta || input.control)) return;
+  // 포커스된 guest는 별도 Chromium 프로세스라 키가 앱 렌더러에 안 온다 → 앱 단축키 조합만 페이지 대신 앱으로(#1034 리뷰).
+  // 나머지 키(⌘C·⌘F 등)는 페이지가 그대로 받음. 조합 목록은 렌더러가 설정(덮어쓰기) 반영해 보내줌(setAppChords).
+  guest.on("before-input-event", (e, input) => {
+    if (input.type !== "keyDown") return;
+    const chord = chordOf(input, process.platform === "darwin");
+    if (!chord || !appChords.has(chord)) return;
+    e.preventDefault();
     const host = guest.hostWebContents;
     if (!host || host.isDestroyed()) return;
     host.send("browser:key", { code: input.code, key: input.key, metaKey: !!input.meta, ctrlKey: !!input.control, altKey: !!input.alt, shiftKey: !!input.shift });
@@ -55,4 +85,4 @@ function installBrowserGuestPolicy(app) {
   });
 }
 
-module.exports = { installBrowserGuestPolicy, hardenWebview, isAllowedUrl, PARTITION };
+module.exports = { installBrowserGuestPolicy, hardenWebview, isAllowedUrl, setAppChords, chordOf, PARTITION };

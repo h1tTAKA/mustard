@@ -19,3 +19,13 @@ assert.strictEqual(run({}, { src: "file:///etc/passwd" }), true, "file: 거부")
 assert.strictEqual(run({}, { src: "http://x", partition: "persist:other" }), true, "다른 partition 거부");
 assert.strictEqual(run({}, {}), false, "src 없음 = about:blank 허용");
 console.log("browser-guest ok");
+// 단축키 조합(#1034 리뷰) — core chordFromEvent와 같은 문자열
+const { chordOf } = require("./browser-guest.cjs");
+assert.strictEqual(chordOf({ code: "KeyK", meta: true }, true), "Mod+K");
+assert.strictEqual(chordOf({ code: "BracketRight", meta: true, shift: true }, true), "Mod+Shift+]");
+assert.strictEqual(chordOf({ code: "Digit1", meta: true, alt: true }, true), "Mod+Alt+1");
+assert.strictEqual(chordOf({ code: "KeyK", control: true }, false), "Mod+K");
+assert.strictEqual(chordOf({ code: "KeyK", control: true }, true), "Ctrl+K");
+assert.strictEqual(chordOf({ code: "Backslash", meta: true }, true), "Mod+\\");
+assert.strictEqual(chordOf({ code: "KeyK" }, true), null);
+console.log("browser-guest chord ok");

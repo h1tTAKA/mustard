@@ -85,6 +85,11 @@ export function bindingsOf(def: ShortcutDef, overrides: ShortcutOverrides): stri
   return raw.map(normalizeChord).filter((c): c is string => !!c);
 }
 
+// 터미널 밖에서 앱이 가져가는 조합 전부(#1034) — 인앱 브라우저가 포커스일 때 main이 이 조합만 페이지 대신 앱으로 보냄.
+export function appChords(overrides: ShortcutOverrides = {}): string[] {
+  return [...new Set(SHORTCUTS.filter((d) => d.scope !== "terminal").flatMap((d) => bindingsOf(d, overrides)))];
+}
+
 // 조합 + 문맥 → 동작. 터미널 포커스면 terminal 범위 우선(⌘K = 화면 지우기), 아니면 terminal 범위는 무시.
 export function matchShortcut(chord: string, inTerminal: boolean, overrides: ShortcutOverrides = {}): ShortcutDef | null {
   let fallback: ShortcutDef | null = null;

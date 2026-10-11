@@ -1,6 +1,6 @@
 // shortcuts 점검(#1027) — 실행: node --experimental-strip-types packages/core/src/shortcuts.check.ts
 import assert from "node:assert";
-import { SHORTCUTS, chordFromEvent, findConflicts, formatChord, matchShortcut, normalizeChord } from "./shortcuts.ts";
+import { SHORTCUTS, appChords, chordFromEvent, findConflicts, formatChord, matchShortcut, normalizeChord } from "./shortcuts.ts";
 
 const ev = (code: string, m: Partial<{ meta: boolean; ctrl: boolean; alt: boolean; shift: boolean }> = {}) =>
   ({ code, metaKey: !!m.meta, ctrlKey: !!m.ctrl, altKey: !!m.alt, shiftKey: !!m.shift });
@@ -37,4 +37,10 @@ for (const s of SHORTCUTS) for (const d of s.defaults) {
 assert.strictEqual(formatChord("Mod+Shift+]", true), "⇧⌘]");
 assert.strictEqual(formatChord("Mod+Alt+=", true), "⌥⌘=");
 assert.strictEqual(formatChord("Mod+Shift+]", false), "Ctrl+Shift+]");
+// 인앱 브라우저용 앱 조합(#1034) — terminal 범위(⌘K 화면 지우기)는 빼되 같은 ⌘K 팔레트는 포함, 덮어쓰기 반영, 중복 없음
+const ac = appChords();
+assert.ok(ac.includes("Mod+K") && ac.includes("Mod+W") && ac.includes("Mod+1"));
+assert.strictEqual(ac.length, new Set(ac).size);
+const ac2 = appChords({ "view.left": [], palette: ["Mod+Shift+P"] });
+assert.ok(!ac2.includes("Mod+B") && !ac2.includes("Mod+K"));
 console.log("shortcuts.check OK");

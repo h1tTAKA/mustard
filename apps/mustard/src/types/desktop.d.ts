@@ -109,6 +109,7 @@ interface NunopiDesktopApi {
   // #1034 인앱 브라우저 — 분리 창(멀티 모니터) + guest 포커스 중 앱 단축키 전달.
   browser?: {
     openWindow(payload: { url?: string; repo?: string }): Promise<{ ok: boolean; reason?: string }>;
+    setAppChords(list: string[]): void;
     onKey(cb: (k: { code: string; key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }) => void): () => void;
   };
   ports: {

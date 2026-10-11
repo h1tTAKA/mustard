@@ -1,7 +1,7 @@
 "use client";
 // 워크스페이스 모드(#647) — 누노피 안에서 화면전환 없이 에이전트 코딩+즉시 학습.
 // 골격(커밋1): 4존 셸 [파일트리 | 터미널 | 코드 | 챗]. 각 존은 후속 커밋서 채움(트리·코드·챗·pty터미널).
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconMessages, IconCards, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld } from "@tabler/icons-react";
 import { useShortcut, useShortcutHint, withShortcutHint, useT, getSetting, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
@@ -85,6 +85,8 @@ export default function WorkspaceView({ path, active = true, providerId, provide
   const [flowFeature, setFlowFeature] = useState<string | null>(null); // 열린 플로우 패널의 기능(null=닫힘). dock에 flow 패널 존재 여부와 동기(#743)
   const [browserOpen, setBrowserOpen] = useState(false); // 인앱 브라우저 패널(#1034) — 레포별 저장
   const [browserUrl, setBrowserUrl] = useState("");       // 마지막 주소(레포별)
+  const [browserRect, setBrowserRect] = useState<SlotRect | null>(null); // dock 속 브라우저 자리(고정 레이어 위치)
+  const dockRef = useRef<HTMLElement>(null);
   const [chatPrefill, setChatPrefill] = useState<{ text: string; n: number } | null>(null); // 챗 입력창 자동 삽입 신호(#746)
   const flyNoSources = useMemo(() => new Set<string>(), []); // FlyCardProvider용 빈 출처(워크스페이스 카드는 출처이동 없음, #750)
   const [gitH, setGitH] = useState(220);           // 깃 그래프 높이(px)
@@ -206,8 +208,11 @@ export default function WorkspaceView({ path, active = true, providerId, provide
   useEffect(() => {
     if (!mounted || !path) return;
     // 접힌 패널은 dock에서 뺀다(#758) — 존재해도 숨김. collapsed는 deps에 없어(아래 증분 이펙트가 토글 처리) 여기선 클로저 현재값.
-    const has: Record<PanelId, boolean> = { terminal: !collapsed.has("terminal"), code: hasCode && !collapsed.has("code"), doc: hasDoc && !collapsed.has("doc"), flow: flowFeature !== null && !collapsed.has("flow"), browser: browserOpen };
     const switched = dockRepoRef.current !== path;
+    // 브라우저 열림은 같은 커밋의 복원 이펙트가 아직 state에 반영 전 → 전환 시엔 저장값을 직접 읽어야 저장 배치가 안 지워짐(#1034 리뷰).
+    let browserHas = browserOpen;
+    if (switched) { try { browserHas = localStorage.getItem(`nunopi:ws:${path}:browser-open`) === "1"; } catch { /* ignore */ } }
+    const has: Record<PanelId, boolean> = { terminal: !collapsed.has("terminal"), code: hasCode && !collapsed.has("code"), doc: hasDoc && !collapsed.has("doc"), flow: flowFeature !== null && !collapsed.has("flow"), browser: browserHas };
     let stored: DockNode | null = null;
     if (switched) { try { const j = JSON.parse(localStorage.getItem(`nunopi:ws:${path}:dock-tree`) || "null"); if (isDockNode(j)) stored = j; } catch { /* ignore */ } dockRepoRef.current = path; }
     setDockTree((prev) => {
@@ -231,7 +236,7 @@ export default function WorkspaceView({ path, active = true, providerId, provide
       for (const p of ["terminal", "code", "doc", "flow", "browser"] as PanelId[]) {
         const want = panelVisible(p);
         const inTree = leavesOf(tree).has(p);
-        if (want && !inTree) tree = appendPanel(tree, p);
+        if (want && !inTree) tree = appendPanel(tree, p, p === "browser" ? 0.5 : undefined); // 브라우저는 오른쪽 절반(defaultTree와 같게)
         else if (!want && inTree) tree = removePanel(tree, p) ?? tree;
       }
       return tree;
@@ -293,10 +298,10 @@ export default function WorkspaceView({ path, active = true, providerId, provide
     return n;
   });
   // 인앱 브라우저(#1034) — 툴바 아이콘으로 열기/닫기(닫으면 페이지도 닫힘, 주소는 기억). 분리하면 dock에서 빼고 별도 창.
-  const toggleBrowser = () => setBrowserOpen((v) => !v);
+  const toggleBrowser = () => { if (browserOpen) setBrowserRect(null); setBrowserOpen(!browserOpen); };
   const detachBrowser = async (url: string) => {
     const r = await window.nunopiDesktop?.browser?.openWindow({ url, repo: path });
-    if (r?.ok) setBrowserOpen(false);
+    if (r?.ok) { setBrowserOpen(false); setBrowserRect(null); }
   };
   // 활성 탭이 탭바 오버플로로 스크롤 밖에 있으면 안 보임(#801) — 활성 탭 DOM에 콜백 ref 달아 스크롤 인투 뷰.
   // 활성 탭 바뀔 때만 ref 재부착(콜백 identity 안정) → 그때 nearest로 최소 스크롤. 이미 보이면 no-op.
@@ -510,7 +515,9 @@ export default function WorkspaceView({ path, active = true, providerId, provide
     code: codeNode,
     doc: docNode,
     // 기능별 아키텍처 플로우(#743) — flowFeature 있을 때만 dock에 삽입됨. 노드 클릭 → 코드 탭 열기.
-    browser: browserOpen ? <BrowserPane repo={path} url={browserUrl} onUrlChange={setBrowserUrl} onDetach={(u) => void detachBrowser(u)} /> : null,
+    // 브라우저(#1034)는 dock엔 자리(slot)만 — 실제 페이지는 아래 고정 레이어. dock 트리가 바뀌면 리프가 다시 만들어지는데
+    // <webview>는 DOM에서 빠지면 페이지가 죽어서(새로고침·기록 유실) 위치만 따라가게 한다(orca 방식).
+    browser: browserOpen ? <BrowserSlot anchor={dockRef} onRect={setBrowserRect} /> : null,
     flow: <RepoFlowPane feature={flowFeature} root={path} providerId={providerId} providerSettings={providerSettings} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onAskArch={askArch} onQuoteNode={quoteNode} onClose={() => setFlowFeature(null)} />,
   };
 
@@ -688,8 +695,14 @@ export default function WorkspaceView({ path, active = true, providerId, provide
         )}
         {leftOpen && <div onMouseDown={startDrag("tree", treeW)} className="w-1 shrink-0 cursor-col-resize transition hover:bg-mustard-500/40 dark:hover:bg-mustard-400/40" />}
         {/* 가운데: 커스텀 도킹 분할 트리(터미널·코드·문서 자유 배치, #716). 기존 패널 그대로 렌더만 재배치. */}
-        <section className="flex min-w-0 flex-1">
+        <section ref={dockRef} className="relative flex min-w-0 flex-1">
           {dockTree && <WorkspaceDockLayout tree={dockTree} panels={dockPanels} onTreeChange={setDockTree} />}
+          {/* 브라우저 고정 레이어(#1034) — slot 위치에 겹쳐 그림. z-20: dock 드롭 오버레이(z-30)·이동 그립(z-40)은 위로. */}
+          {browserOpen && browserRect && (
+            <div className="absolute z-20" style={{ left: browserRect.l, top: browserRect.t, width: browserRect.w, height: browserRect.h }}>
+              <BrowserPane repo={path} url={browserUrl} onUrlChange={setBrowserUrl} onDetach={(u) => void detachBrowser(u)} />
+            </div>
+          )}
         </section>
         {/* 우: 챗룸(접기/펴기 #695) — 접힘 시 aside·divider 미렌더(폭 0). 토글은 아래 플로팅 엣지 탭. */}
         {chatOpen && (
@@ -715,4 +728,26 @@ export default function WorkspaceView({ path, active = true, providerId, provide
       </div>
     </div>
   );
+}
+
+// 브라우저 자리 표시(#1034) — dock 리프 안 빈 칸. 크기·위치를 anchor(dock 영역) 기준으로 재서 고정 레이어에 알려줌.
+// 리프가 다시 만들어져도 이건 그냥 다시 재면 끝(레이어는 그대로라 페이지 유지). 값 같으면 state 안 바꿔 렌더 루프 방지.
+type SlotRect = { l: number; t: number; w: number; h: number };
+function BrowserSlot({ anchor, onRect }: { anchor: RefObject<HTMLElement | null>; onRect: (fn: (prev: SlotRect | null) => SlotRect | null) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current, a = anchor.current;
+    if (!el || !a) return;
+    const measure = () => {
+      const ar = a.getBoundingClientRect(), r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return; // 숨은 레포 탭(display:none) — 마지막 위치 유지
+      const next = { l: r.left - ar.left, t: r.top - ar.top, w: r.width, h: r.height };
+      onRect((prev) => (prev && prev.l === next.l && prev.t === next.t && prev.w === next.w && prev.h === next.h ? prev : next));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el); ro.observe(a);
+    return () => ro.disconnect();
+  });
+  return <div ref={ref} className="h-full w-full" />;
 }
