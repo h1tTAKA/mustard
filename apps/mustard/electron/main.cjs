@@ -3,6 +3,13 @@
 // prod: .next/standalone/server.js를 동적 포트로 spawn 후 그 localhost 로드.
 // #981 다른 require·spawn보다 먼저 — 이후 모든 자식(데몬·서버·SNA)이 정리된 env를 상속.
 require("./claude-env.cjs").stripParentClaudeEnv(process.env);
+// Dock·Finder·open으로 켜면 PATH가 /usr/bin:/bin 정도뿐 → Homebrew·~/.local의 gh·glab·claude·codex를 못 찾음
+// (GitHub 패널 "gh가 설치되어 있지 않아요"). 흔한 설치 위치를 뒤에 붙여둠(이미 있으면 그대로, 유저 PATH 우선).
+{
+  const have = new Set(String(process.env.PATH || "").split(":").filter(Boolean));
+  const extra = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", require("node:path").join(require("node:os").homedir(), ".local", "bin")].filter((d) => !have.has(d));
+  if (extra.length) process.env.PATH = [...have, ...extra].join(":");
+}
 const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents, WebContentsView } = require("electron");
 const { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, cpSync, chmodSync } = require("node:fs");
 const {
