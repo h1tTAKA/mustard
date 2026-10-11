@@ -13,6 +13,10 @@ const note = `순수 함수와 리듀서
 assert.deepStrictEqual(parseNarrationTerms(note).map((x) => x.term), ["리듀서(reducer)", "불변성", "Date.now()"], "용어 섹션만, 대시 종류 무관");
 assert.deepStrictEqual(parseNarrationTerms("**용어**\n- **diff** — 차이"), [{ term: "diff", def: "차이" }]);
 assert.deepStrictEqual(parseNarrationTerms("- **x** — 용어 섹션 밖"), [], "섹션 없으면 없음");
+// 리뷰: 표기 흔들림 — 소제목 변형, 통째 굵게, 굵게 없음
+assert.deepStrictEqual(parseNarrationTerms("### 핵심 용어\n- **useMemo — 계산 결과 기억**\n- props — 부모가 주는 값\n## 다음\n- **x** — y"),
+  [{ term: "useMemo", def: "계산 결과 기억" }, { term: "props", def: "부모가 주는 값" }], "변형 허용 + 다음 소제목에서 끝");
+assert.deepStrictEqual(parseNarrationTerms("용어:\n- **API**: 프로그램끼리 대화하는 약속"), [{ term: "API", def: "프로그램끼리 대화하는 약속" }]);
 
 const k = (s: string) => s.trim().toLowerCase();
 const prev = [{ term: "Git", def: "a" }];
