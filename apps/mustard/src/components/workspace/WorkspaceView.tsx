@@ -738,15 +738,21 @@ export default function WorkspaceView({ path, active = true, providerId, provide
 // 브라우저 자리 표시(#1034) — dock 리프 안 빈 칸. 크기·위치를 anchor(dock 영역) 기준으로 재서 고정 레이어에 알려줌.
 // 리프가 다시 만들어져도 이건 그냥 다시 재면 끝(레이어는 그대로라 페이지 유지). 값 같으면 state 안 바꿔 렌더 루프 방지.
 type SlotRect = { l: number; t: number; w: number; h: number };
-function BrowserSlot({ anchor, onRect }: { anchor: RefObject<HTMLElement | null>; onRect: (fn: (prev: SlotRect | null) => SlotRect | null) => void }) {
+function BrowserSlot({ anchor, onRect }: { anchor: RefObject<HTMLElement | null>; onRect: (r: SlotRect) => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const last = useRef("");
   const measure = () => {
     const el = ref.current, a = anchor.current;
     if (!el || !a) return;
     const ar = a.getBoundingClientRect(), r = el.getBoundingClientRect();
     if (!r.width || !r.height) return; // 숨은 레포 탭(display:none) — 마지막 위치 유지
-    const next = { l: r.left - ar.left, t: r.top - ar.top, w: r.width, h: r.height };
-    onRect((prev) => (prev && prev.l === next.l && prev.t === next.t && prev.w === next.w && prev.h === next.h ? prev : next));
+    const next = { l: Math.round(r.left - ar.left), t: Math.round(r.top - ar.top), w: Math.round(r.width), h: Math.round(r.height) };
+    // 같으면 setState 자체를 안 부름 — 렌더마다 재는 이펙트라, 같은 값이라도 업데이트를 걸면
+    // React가 부모를 다시 렌더 → 또 잼 → 무한 루프(#185, 앱이 "This page couldn't load")였음.
+    const key = `${next.l},${next.t},${next.w},${next.h}`;
+    if (key === last.current) return;
+    last.current = key;
+    onRect(next);
   };
   const measureRef = useRef(measure);
   useLayoutEffect(() => { measureRef.current = measure; measure(); }); // 렌더마다(트리 변경으로 자리만 옮겨진 경우)
