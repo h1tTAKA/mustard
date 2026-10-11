@@ -25,7 +25,7 @@ function subscribeGuestKeys() {
 }
 
 // 탭 하나 — 주소창·뒤/앞/새로고침·개발자 도구·webview. 안 보이는 탭도 언마운트하지 않음(페이지 유지).
-function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, onTitle, onDetach, onDock }: {
+function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, onTitle, onDetach, onDock, onSelect, onClose }: {
   repo: string;
   url: string;                          // 처음 열 주소("" = 빈 화면)
   visible: boolean;
@@ -35,6 +35,8 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
   initialDevtools?: boolean;            // 창 분리·되돌리기 때 개발자 도구 열림을 이어받음
   onDetach?: (url: string, devtools: boolean) => void; // 별도 창으로 떼기(분리 창 자신엔 없음)
   onDock?: (url: string, devtools: boolean) => void;   // 분리 창 → 앱 안으로 되돌리기(분리 창에만)
+  onSelect: () => void;                                 // 에이전트가 이 탭을 고름(#1041)
+  onClose: () => void;                                  // 에이전트가 이 탭을 닫음
 }) {
   const t = useT();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -140,6 +142,20 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
     api.register(id, repo, visible);
     return () => api.unregister(id);
   }, [ready, visible, repo]);
+
+  // 에이전트 탭 명령(#1041) — 이 탭(webview id)에 온 고르기/닫기만.
+  const onSelectRef = useRef(onSelect), onCloseRef = useRef(onClose);
+  useEffect(() => { onSelectRef.current = onSelect; onCloseRef.current = onClose; });
+  useEffect(() => {
+    const page = viewRef.current, api = window.nunopiDesktop?.browser;
+    if (!ready || !page || !api?.onTabCommand) return;
+    let id: number;
+    try { id = page.getWebContentsId(); } catch { return; }
+    return api.onTabCommand(({ guestId, action }) => {
+      if (guestId !== id) return;
+      if (action === "select") onSelectRef.current(); else if (action === "close") onCloseRef.current();
+    });
+  }, [ready]);
 
   // 선택 시작/취소 — 스크립트가 클릭 때까지 기다렸다 요소 정보를 돌려줌(Esc·취소 = null).
   const togglePick = () => {
@@ -357,7 +373,8 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
         <BrowserPage key={tab.id} repo={repo} url={tab.url} initialDevtools={tab.devtools} visible={tab.id === activeId} ports={ports}
           onUrlChange={(u) => patch(tab.id, { url: u })} onTitle={(title) => patch(tab.id, { title })}
           onDetach={onDetach ? (u, dt) => { void onDetach(u, tabs.findIndex((x) => x.id === tab.id), dt).then((ok) => { if (ok) removeTab(tab.id); }); } : undefined}
-          onDock={onDock ? (u, dt) => { onDock(u, dt); removeTab(tab.id); } : undefined} />
+          onDock={onDock ? (u, dt) => { onDock(u, dt); removeTab(tab.id); } : undefined}
+          onSelect={() => setActiveId(tab.id)} onClose={() => removeTab(tab.id)} />
       ))}
     </div>
   );

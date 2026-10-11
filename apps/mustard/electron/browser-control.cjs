@@ -92,33 +92,65 @@ function createBrowserControl(deps) {
   function unregister(guestId) { registry.delete(Number(guestId)); }
 
   const real = deps.realpath || ((p) => p);
-  const target = (cwd) => { const e = pickGuest(entries(), real(cwd)); return e ? deps.getGuest(e.guestId) : null; };
+  // 이 cwd 레포의 탭들(#1041 여러 탭 — 모노레포 등에서 에이전트가 탭을 골라 씀).
+  const mineOf = (cwd) => { const c = norm(real(cwd)); return entries().filter((e) => { const r = norm(e.repo); return r && (c === r || c.startsWith(r + "/")); }); };
+  // tabId를 주면 그 탭(이 레포 것일 때만), 아니면 자동(보이는 탭 > 최근).
+  const target = (cwd, tabId) => {
+    if (tabId !== undefined && tabId !== null && tabId !== "") { const e = mineOf(cwd).find((x) => x.guestId === Number(tabId)); return e ? deps.getGuest(e.guestId) : null; }
+    const e = pickGuest(entries(), real(cwd)); return e ? deps.getGuest(e.guestId) : null;
+  };
+  // 새 탭이 등록될 때까지(최대 10초) — 열기 전 탭 목록에 없던 것.
+  const waitNewTab = async (cwd, before) => {
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      const e = mineOf(cwd).find((x) => !before.has(x.guestId));
+      if (e) return e;
+    }
+    return null;
+  };
   const entryOf = (g) => registry.get(g.id);
   const NONE = "No in-app browser tab is open for this repo in Mustard. Use browser_navigate to open one.";
 
   async function call(tool, args, cwd) {
     args = args || {};
     if (tool === "browser_status") {
-      const c = norm(real(cwd));
-      const mine = entries().filter((e) => { const r = norm(e.repo); return r && (c === r || c.startsWith(r + "/")); });
-      const pick = pickGuest(mine, c);
-      return text(mine.map((e) => { const g = deps.getGuest(e.guestId); return { url: g.getURL(), title: g.getTitle(), visible: !!e.visible, target: e === pick }; }));
+      const mine = mineOf(cwd);
+      const pick = pickGuest(mine, real(cwd));
+      return text(mine.map((e) => { const g = deps.getGuest(e.guestId); return { tabId: e.guestId, url: g.getURL(), title: g.getTitle(), visible: !!e.visible, defaultTarget: e === pick }; }));
+    }
+    if (tool === "browser_new_tab") {
+      const url = args.url ? normalizeUrl(args.url) : "about:blank";
+      if (!url || (url !== "about:blank" && !deps.isAllowedUrl(url))) return fail("Only http(s) URLs are allowed.");
+      const before = new Set(mineOf(cwd).map((e) => e.guestId));
+      deps.requestOpen(cwd, url); // 브라우저가 닫혀 있으면 열면서, 열려 있으면 새 탭으로(빈 탭도 about:blank로 — 빈 주소면 페이지가 안 생겨 등록이 안 됨)
+      const e = await waitNewTab(cwd, before);
+      if (!e) return fail("Asked Mustard to open a new tab for this repo, but none appeared (is the repo open in Mustard?).");
+      return text({ tabId: e.guestId, url, note: "New tab is now visible. Pass this tabId to other browser_* tools to target it." });
+    }
+    if (tool === "browser_select_tab" || tool === "browser_close_tab") {
+      const g = target(cwd, args.tabId);
+      if (!g) return fail("No such tab for this repo (see browser_status for tabIds).");
+      if (tool === "browser_select_tab") { deps.tabCommand(g.id, "select"); await new Promise((r) => setTimeout(r, 300)); return text(`Tab ${g.id} is now visible.`); }
+      deps.tabCommand(g.id, "close");
+      return text(`Closed tab ${g.id}.`);
     }
     if (tool === "browser_navigate") {
       const url = normalizeUrl(args.url);
       if (!url || !deps.isAllowedUrl(url)) return fail("Only http(s) URLs are allowed.");
-      let g = target(cwd);
+      let g = target(cwd, args.tabId);
+      if (!g && args.tabId !== undefined && args.tabId !== null && args.tabId !== "") return fail("No such tab for this repo (see browser_status for tabIds).");
       if (!g) { // 브라우저가 안 열려 있으면 렌더러에 열어달라고 하고 등록될 때까지 기다림
+        const before = new Set(mineOf(cwd).map((e) => e.guestId));
         deps.requestOpen(cwd, url);
-        for (let i = 0; i < 40 && !g; i++) { await new Promise((r) => setTimeout(r, 250)); g = target(cwd); }
-        if (!g) return fail("Asked Mustard to open the in-app browser for this repo, but no tab appeared (is the repo open in Mustard?).");
-        return text(`Opened ${url} in a new in-app browser tab.`);
+        const e = await waitNewTab(cwd, before);
+        if (!e) return fail("Asked Mustard to open the in-app browser for this repo, but no tab appeared (is the repo open in Mustard?).");
+        return text(`Opened ${url} in a new in-app browser tab (tabId ${e.guestId}).`);
       }
       await g.loadURL(url).catch(() => {}); // 실패 페이지도 페이지 — 결과는 status/read로
       return text(`Navigated to ${g.getURL()}`);
     }
-    const g = target(cwd);
-    if (!g) return fail(NONE);
+    const g = target(cwd, args.tabId);
+    if (!g) return fail(args.tabId !== undefined && args.tabId !== null && args.tabId !== "" ? "No such tab for this repo (see browser_status for tabIds)." : NONE);
     if (tool === "browser_screenshot") {
       let img = await g.capturePage();
       if (img.isEmpty()) return fail("Screenshot was empty (tab hidden or not painted yet).");
@@ -136,7 +168,7 @@ function createBrowserControl(deps) {
     }
     if (tool === "browser_click" || tool === "browser_type") {
       if (!args.selector) return fail("selector is required (get one from browser_read).");
-      if (!entryOf(g)?.visible) return fail("The browser tab is in the background in Mustard — clicks need it visible. Ask the user to show it, or use browser_read.");
+      if (!entryOf(g)?.visible) return fail("That tab is in the background — call browser_select_tab with its tabId first (clicks need it visible).");
       const pt = await g.executeJavaScript(CENTER_SCRIPT(args.selector));
       if (pt.error) return fail(pt.error);
       // 실제 마우스 이벤트(isTrusted) — 페이지가 막는 합성 click()이 아니라. 좌표는 CSS px → 페이지 줌만큼 DIP로(#1041 리뷰).

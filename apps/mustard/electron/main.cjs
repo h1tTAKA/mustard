@@ -443,6 +443,8 @@ const browserControl = require("./browser-control.cjs").createBrowserControl({
   },
   isAllowedUrl: isBrowserUrl,
   realpath: (p) => realOf(p), // 요청 때 호출(아래 정의) — MCP cwd와 등록 레포를 같은 실경로로 비교
+  // 탭 고르기/닫기 — 그 탭(guest)을 품은 창의 렌더러에(그 BrowserPage가 처리).
+  tabCommand: (guestId, action) => { const g = webContents.fromId(Number(guestId)); const host = g && !g.isDestroyed() ? g.hostWebContents : null; if (host && !host.isDestroyed()) host.send("browser:tab-command", { guestId: Number(guestId), action }); },
 });
 const openClaims = new Map(); // reqId → [{ sender, repo, depth }]
 const realOf = (p) => { try { return require("node:fs").realpathSync(p); } catch { return String(p || ""); } };

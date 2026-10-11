@@ -35,8 +35,8 @@ assert.ok(CENTER_SCRIPT('"); alert(1); ("').includes('"\\"); alert(1); (\\""'), 
     executeJavaScript(src) { return Promise.resolve(src.includes("scrollIntoView") ? { x: 10, y: 20 } : { url: this.url, title: "T", text: "hi", elements: [] }); },
     sendInputEvent(e) { events.push(e.type); }, insertText(t) { events.push("text:" + t); return Promise.resolve(); },
   };
-  let opened = null;
-  const ctl = createBrowserControl({ getGuest: (id) => (id === 7 ? fake : null), requestOpen: (cwd, url) => { opened = [cwd, url]; }, isAllowedUrl: (u) => /^https?:/.test(u) });
+  let opened = null; const cmds = [];
+  const ctl = createBrowserControl({ getGuest: (id) => (id === 7 ? fake : null), requestOpen: (cwd, url) => { opened = [cwd, url]; }, isAllowedUrl: (u) => /^https?:/.test(u), tabCommand: (id, a) => cmds.push([id, a]) });
   // 등록 전: 이동 요청 → 렌더러에 열기 요청, 끝내 안 생기면 실패(10초 대기를 줄이려 바로 등록)
   const p = ctl.call("browser_navigate", { url: "localhost:3000" }, "/r/app");
   await new Promise((r) => setTimeout(r, 300));
@@ -58,13 +58,21 @@ assert.ok(CENTER_SCRIPT('"); alert(1); ("').includes('"\\"); alert(1); (\\""'), 
   assert.ok((await ctl.call("browser_navigate", { url: "file:///etc/passwd" }, "/r/app")).isError);
   assert.ok((await ctl.call("browser_read", {}, "/elsewhere")).isError, "다른 레포는 탭 없음");
 
+  // 여러 탭(#1041): tabId 지정·고르기·닫기, 다른 레포 tabId는 거부
+  assert.ok(!(await ctl.call("browser_read", { tabId: 7 }, "/r/app")).isError);
+  assert.ok((await ctl.call("browser_read", { tabId: 99 }, "/r/app")).isError, "없는 탭");
+  assert.ok((await ctl.call("browser_read", { tabId: 7 }, "/r/other")).isError, "다른 레포의 탭 X");
+  await ctl.call("browser_select_tab", { tabId: 7 }, "/r/app"); await ctl.call("browser_close_tab", { tabId: 7 }, "/r/app");
+  assert.deepStrictEqual(cmds, [[7, "select"], [7, "close"]]);
+  assert.ok((await ctl.call("browser_new_tab", { url: "javascript:x" }, "/r/app")).isError);
+
   // HTTP — 토큰 없으면 403
   const { server, port } = await ctl.listen("secret-token");
   const post = (auth, body) => fetch(`http://127.0.0.1:${port}/call`, { method: "POST", headers: auth ? { Authorization: `Bearer ${auth}` } : {}, body: JSON.stringify(body) });
   assert.strictEqual((await post(null, {})).status, 403);
   assert.strictEqual((await post("wrong-token!", {})).status, 403);
   const ok = await (await post("secret-token", { tool: "browser_status", cwd: "/r/app" })).json();
-  assert.ok(ok.content[0].text.includes('"target": true'));
+  assert.ok(ok.content[0].text.includes('"defaultTarget": true') && ok.content[0].text.includes('"tabId": 7'));
   server.close();
   console.log("browser-control ok");
 })().catch((e) => { console.error(e); process.exit(1); });

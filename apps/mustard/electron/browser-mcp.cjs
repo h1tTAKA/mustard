@@ -7,14 +7,18 @@ const { readFileSync } = require("node:fs");
 const ENDPOINT_FILE = process.argv[2] || "";
 const SERVER = { name: "mustard-browser", version: "1.0.0" };
 
+const TAB = { tabId: { type: "number", description: "Optional tab id from browser_status/browser_new_tab. Omit to use the visible tab." } };
 const TOOLS = [
-  { name: "browser_status", description: "List Mustard in-app browser tabs for this repo (url, title, which one the other tools act on).", inputSchema: { type: "object", properties: {} } },
-  { name: "browser_navigate", description: "Open a URL in the Mustard in-app browser for this repo (opens the browser if needed). http(s) only; 'localhost:3000' or ':3000' work.", inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] } },
-  { name: "browser_screenshot", description: "Screenshot of the current in-app browser tab (what the user sees). Use after edits to verify the UI.", inputSchema: { type: "object", properties: {} } },
-  { name: "browser_read", description: "Current page URL, title, visible text, and a numbered list of clickable/typeable elements with CSS selectors for browser_click/browser_type.", inputSchema: { type: "object", properties: { maxChars: { type: "number", description: "Max text length (default 20000)" } } } },
-  { name: "browser_console", description: "Recent console messages from the page (errors, warnings, logs).", inputSchema: { type: "object", properties: { limit: { type: "number", description: "Default 50, max 200" }, level: { type: "string", enum: ["error", "warning", "info", "verbose"] } } } },
-  { name: "browser_click", description: "Click an element (real mouse event at its center) by CSS selector from browser_read.", inputSchema: { type: "object", properties: { selector: { type: "string" } }, required: ["selector"] } },
-  { name: "browser_type", description: "Click an input by CSS selector, then type text. Optionally clear it first and press Enter.", inputSchema: { type: "object", properties: { selector: { type: "string" }, text: { type: "string" }, clear: { type: "boolean" }, submit: { type: "boolean" } }, required: ["selector", "text"] } },
+  { name: "browser_status", description: "List Mustard in-app browser tabs for this repo: tabId, url, title, visible, and which tab other tools use by default.", inputSchema: { type: "object", properties: {} } },
+  { name: "browser_new_tab", description: "Open a new in-app browser tab for this repo (opens the browser if needed) and make it visible. Returns its tabId. Use for side-by-side pages (e.g. monorepo apps on different ports).", inputSchema: { type: "object", properties: { url: { type: "string", description: "Optional http(s) URL; 'localhost:3000' or ':3000' work" } } } },
+  { name: "browser_select_tab", description: "Make a tab visible in Mustard (needed before click/type on a background tab).", inputSchema: { type: "object", properties: { tabId: { type: "number" } }, required: ["tabId"] } },
+  { name: "browser_close_tab", description: "Close an in-app browser tab.", inputSchema: { type: "object", properties: { tabId: { type: "number" } }, required: ["tabId"] } },
+  { name: "browser_navigate", description: "Open a URL in the Mustard in-app browser for this repo (opens the browser if needed). http(s) only; 'localhost:3000' or ':3000' work.", inputSchema: { type: "object", properties: { ...TAB, url: { type: "string" } }, required: ["url"] } },
+  { name: "browser_screenshot", description: "Screenshot of the current in-app browser tab (what the user sees). Use after edits to verify the UI.", inputSchema: { type: "object", properties: { ...TAB,} } },
+  { name: "browser_read", description: "Current page URL, title, visible text, and a numbered list of clickable/typeable elements with CSS selectors for browser_click/browser_type.", inputSchema: { type: "object", properties: { ...TAB, maxChars: { type: "number", description: "Max text length (default 20000)" } } } },
+  { name: "browser_console", description: "Recent console messages from the page (errors, warnings, logs).", inputSchema: { type: "object", properties: { ...TAB, limit: { type: "number", description: "Default 50, max 200" }, level: { type: "string", enum: ["error", "warning", "info", "verbose"] } } } },
+  { name: "browser_click", description: "Click an element (real mouse event at its center) by CSS selector from browser_read.", inputSchema: { type: "object", properties: { ...TAB, selector: { type: "string" } }, required: ["selector"] } },
+  { name: "browser_type", description: "Click an input by CSS selector, then type text. Optionally clear it first and press Enter.", inputSchema: { type: "object", properties: { ...TAB, selector: { type: "string" }, text: { type: "string" }, clear: { type: "boolean" }, submit: { type: "boolean" } }, required: ["selector", "text"] } },
 ];
 
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + "\n");
