@@ -368,7 +368,9 @@ ipcMain.handle("browser:capture", async (e, { guestId, rect } = {}) => {
   const guest = ownGuest(e.sender, guestId);
   const n = (v) => Math.max(0, Math.round(Number(v) || 0));
   if (!guest || !rect) return { ok: false };
-  const r = { x: n(rect.x), y: n(rect.y), width: Math.max(1, n(rect.w)), height: Math.max(1, n(rect.h)) };
+  // 화면 밖으로 일부 나간 요소 — 음수 x/y는 0으로 당기고 그만큼 폭·높이도 줄임(#1037 리뷰).
+  const x = Number(rect.x) || 0, y = Number(rect.y) || 0;
+  const r = { x: n(x), y: n(y), width: Math.max(1, n((Number(rect.w) || 0) + Math.min(0, x))), height: Math.max(1, n((Number(rect.h) || 0) + Math.min(0, y))) };
   try {
     const img = await guest.capturePage(r);
     if (img.isEmpty()) return { ok: false };
@@ -1086,6 +1088,27 @@ ipcMain.handle("terminal:list", async () => {
   const ss = await termClient.list(); // 세션 목록(#764) — 레포탭 호버 카드 + 탭 이름(#803) + 세션 제목(#970)
   // 비활성 탭도 검출: 데몬 screen(buffer tail)을 힌트로 agentForId에 전달(#836/#840). screen은 검출용, 렌더러 미전송(누출 방지).
   return ss.map(({ screen, ...s }) => ({ ...s, agent: agentForId(s.id, s.process, screen), sessionTitle: sessionTitleFor(s.id, s.process, screen) }));
+});
+
+// 인앱 브라우저 피드백 → 에이전트 터미널(#1037 리뷰). 페이지 글이 들어가므로 **지금 포그라운드가 셸이면 절대 안 보냄**
+// (에이전트가 죽고 zsh로 돌아왔는데 신원만 남은 경우 → 붙여넣기+Enter가 셸 명령으로 실행됨). 판단은 main이 직전에.
+ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, text } = {}) => {
+  const root = String(cwd || "").replace(/\/+$/, "");
+  if (!root || typeof text !== "string" || !text.trim()) return { ok: false, reason: "bad-args" };
+  const live = async () => (await termClient.list()).filter((s) => {
+    const c = String(s.cwd || "").replace(/\/+$/, "");
+    return (c === root || c.startsWith(root + "/")) && s.process !== undefined && !isShellProc(s.process) && agentForId(s.id, s.process, s.screen);
+  });
+  let ss;
+  try { ss = await live(); } catch { return { ok: false, reason: "no-agent" }; }
+  const target = ss.find((s) => s.id === preferId) ?? ss[0];
+  if (!target) return { ok: false, reason: "no-agent" };
+  const body = text.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, ""); // ESC 등 제거(붙여넣기 조기 종료 방지) — 렌더러도 하지만 신뢰 경계라 한 번 더
+  termClient.input({ id: target.id, data: `\x1b[200~${body}\x1b[201~` });
+  await new Promise((r) => setTimeout(r, 150)); // TUI가 붙여넣기를 다 받은 뒤 Enter
+  try { if (!(await live()).some((s) => s.id === target.id)) return { ok: false, reason: "no-agent" }; } catch { return { ok: false, reason: "no-agent" }; } // 그 사이 셸로 바뀌었으면 Enter 안 침
+  termClient.input({ id: target.id, data: "\r" });
+  return { ok: true, id: target.id };
 });
 
 // ── 포트 패널(#880) — 워크스페이스가 띄운 dev 서버 리스닝 포트 감지. lsof(포트+PID)+세션PID+ps(ppid) 귀속.

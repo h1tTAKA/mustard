@@ -112,6 +112,7 @@ interface NunopiDesktopApi {
     setAppChords(list: string[]): void;
     openDevTools(guestId: number, devtoolsId: number): Promise<{ ok: boolean }>;
     closeDevTools(guestId: number): Promise<{ ok: boolean }>;
+    sendToAgent(payload: { cwd: string; preferId?: string; text: string }): Promise<{ ok: true; id: string } | { ok: false; reason: string }>;
     capture(guestId: number, rect: { x: number; y: number; w: number; h: number }): Promise<{ ok: boolean; path?: string }>;
     onKey(cb: (k: { code: string; key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }) => void): () => void;
   };

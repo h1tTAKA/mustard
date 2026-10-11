@@ -53,6 +53,7 @@ function BrowserPage({ repo, url, visible, ports, onUrlChange, onTitle, onDetach
   const [picked, setPicked] = useState<{ el: PickedElement; shot?: string; pos: { left: number; top: number } } | null>(null);
   const [comment, setComment] = useState("");
   const [sendState, setSendState] = useState<"idle" | "sending" | "no-agent">("idle");
+  const pickGen = useRef(0); // 선택 회차 — 페이지 이동 뒤 늦게 끝난 옛 선택이 상태를 덮지 않게
   const editingRef = useRef(false); // 주소창 입력 중엔 페이지 이동으로 덮어쓰지 않음
   useEffect(() => { editingRef.current = editing; }, [editing]);
   const onUrlChangeRef = useRef(onUrlChange);
@@ -79,7 +80,8 @@ function BrowserPage({ repo, url, visible, ports, onUrlChange, onTitle, onDetach
     wv.addEventListener("did-navigate-in-page", sync);
     wv.addEventListener("did-start-loading", () => setLoading(true));
     wv.addEventListener("did-stop-loading", () => setLoading(false));
-    wv.addEventListener("dom-ready", () => setReady(true));
+    // 이동하면 선택 스크립트는 옛 페이지와 함께 사라지고 Promise가 안 끝날 수 있음 → 선택 상태·팝오버 정리(#1037 리뷰).
+    wv.addEventListener("dom-ready", () => { setReady(true); pickGen.current++; setPicking(false); setPicked(null); });
     wv.addEventListener("page-title-updated", (e) => onTitleRef.current((e as unknown as { title: string }).title));
     host.appendChild(wv);
     viewRef.current = wv;
@@ -117,18 +119,21 @@ function BrowserPage({ repo, url, visible, ports, onUrlChange, onTitle, onDetach
     if (!wv || !ready) return;
     if (picking) { void wv.executeJavaScript(PICK_CANCEL).catch(() => {}); return; }
     setPicked(null); setSendState("idle"); setPicking(true);
+    const gen = ++pickGen.current;
     void (wv.executeJavaScript(PICK_SCRIPT, true) as Promise<PickedElement | null>)
       .then(async (el) => {
+        if (gen !== pickGen.current) return;
         setPicking(false);
         if (!el) return;
         const shot = await window.nunopiDesktop?.browser?.capture(wv.getWebContentsId(), el.rect).catch(() => undefined);
+        if (gen !== pickGen.current) return;
         // 팝오버 자리 — 고른 요소 바로 아래(모자라면 위), 폭 300이 칸 밖으로 안 나가게. 고를 때 한 번 계산.
         const W = hostRef.current?.clientWidth ?? 400, H = hostRef.current?.clientHeight ?? 400, r = el.rect;
         const pos = { left: Math.max(4, Math.min(r.x, W - 304)), top: r.y + r.h + 150 < H ? r.y + r.h + 6 : Math.max(4, r.y - 146) };
         setPicked({ el, shot: shot?.ok ? shot.path : undefined, pos });
         setComment("");
       })
-      .catch(() => setPicking(false)); // 페이지 이동 등으로 스크립트가 끊김
+      .catch(() => { if (gen === pickGen.current) setPicking(false); }); // 페이지 이동 등으로 스크립트가 끊김
   };
   const send = async () => {
     if (!picked || !comment.trim() || sendState === "sending") return;
