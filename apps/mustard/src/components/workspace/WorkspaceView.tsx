@@ -49,7 +49,7 @@ function ZonePlaceholder({ Icon, label }: { Icon: typeof IconFiles; label: strin
 }
 
 // path(레포)는 WorkspaceTabs가 소유해 prop로 내려준다(#731). key={path}로 탭마다 인스턴스 분리.
-export default function WorkspaceView({ path, active = true, providerId, providerSettings, onExitWorkspace, onOpenMemorize, onOpenSettings, tabStrip }: { path: string; active?: boolean; providerId: AgentProviderKind; providerSettings: ProviderSettings; onExitWorkspace?: () => void; onOpenMemorize?: () => void; onOpenSettings?: () => void; tabStrip?: ReactNode }) {
+export default function WorkspaceView({ path, active = true, agentWorking = false, providerId, providerSettings, onExitWorkspace, onOpenMemorize, onOpenSettings, tabStrip }: { path: string; active?: boolean; agentWorking?: boolean; providerId: AgentProviderKind; providerSettings: ProviderSettings; onExitWorkspace?: () => void; onOpenMemorize?: () => void; onOpenSettings?: () => void; tabStrip?: ReactNode }) {
   const t = useT();
   const fullscreen = useFullscreen(); // 타이틀바 통합(#779) — 신호등 자리 좌측 패딩 토글
   const [picking, setPicking] = useState(false);
@@ -750,7 +750,7 @@ export default function WorkspaceView({ path, active = true, providerId, provide
               {rightMode === "github" ? (
                 <GithubPanel root={path} ciDot={ciDot} />
               ) : rightMode === "learn" ? (
-                <RepoLearnStream key={path} root={path} active={active} providerId={providerId} providerSettings={providerSettings} />
+                <RepoLearnStream key={path} root={path} active={active} agentWorking={agentWorking} providerId={providerId} providerSettings={providerSettings} />
               ) : (
                 /* FlyCardProvider(#750) — 세션 카드 목록에서 카드 클릭 시 확대·상세(throwCard). 워크스페이스 카드는 출처이동 없음(빈 sourceIds). */
                 <FlyCardProvider active={active} providerId={providerId} providerSettings={providerSettings} sourceIds={flyNoSources} onGoToSource={() => {}}>

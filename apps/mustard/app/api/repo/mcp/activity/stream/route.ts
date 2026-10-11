@@ -13,7 +13,7 @@ export async function GET(request: Request): Promise<Response> {
     start(controller) {
       const push = (s: string) => { try { controller.enqueue(enc.encode(s)); } catch { /* 닫힌 스트림 */ } };
       push(": connected\n\n");
-      if (root) for (const e of recent(root, 30)) push(`data: ${JSON.stringify(e)}\n\n`); // 초기(최근)
+      if (root) for (const e of recent(root, 100)) push(`data: ${JSON.stringify(e)}\n\n`); // 초기(최근) — 끊겼다 다시 붙을 때 놓친 활동을 넉넉히(#1043)
       const unsub = subscribe((e: ActivityEvent) => { if (!root || matchesRoot(e.root, root)) push(`data: ${JSON.stringify(e)}\n\n`); });
       const hb = setInterval(() => push(": hb\n\n"), 25000);
       cleanup = () => { clearInterval(hb); unsub(); };
