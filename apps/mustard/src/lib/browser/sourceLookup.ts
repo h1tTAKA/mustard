@@ -9,7 +9,6 @@ export interface SourceLoc { name: string; file: string; line: number; col: numb
 /* eslint-disable @typescript-eslint/no-explicit-any -- 페이지의 React 내부 객체(타입 없음) */
 export function findSources(el: any, fetchText: (url: string) => Promise<string>, maxOwners = 2): Promise<SourceLoc[]> {
   const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  const SKIP = /node_modules|react-dom|react-jsx|jsx-dev-runtime|next[/_]dist|webpack-internal:\/\/\/\(app-pages-browser\)\/\.\/node_modules/;
   const cleanPath = (p: string) => String(p)
     .replace(/^webpack:\/\/[^/]*\//, "").replace(/^turbopack:\/\/\/(\[project\]\/)?/, "").replace(/^\[project\]\//, "")
     .replace(/^file:\/\//, "").replace(/^\.\//, "").replace(/\?.*$/, "");
@@ -19,16 +18,16 @@ export function findSources(el: any, fetchText: (url: string) => Promise<string>
     if (t && typeof t === "object") return t.displayName || (t.render && (t.render.displayName || t.render.name)) || "";
     return (f && typeof f.name === "string" && f.name) || ""; // React 19 서버 컴포넌트 정보(ReactComponentInfo)
   };
-  // 스택 프레임들(위→아래). eval 프레임은 URL이 엉망이라 뺌. React 런타임 chunk는 이름으로 1차 거르고,
-  // 이름에 안 드러나는 합쳐진 chunk는 원본 위치(node_modules 등)로 2차 거름(locate).
+  // 스택 프레임들(위→아래). eval 프레임은 URL이 엉망이라 뺌. 번들 URL로는 거르지 않음 — Metro(Expo)는 앱 코드까지
+  // 한 번들이고 그 URL에 node_modules가 들어 있어 다 버려짐(#1047). 라이브러리 여부는 원본 위치로만 판단(locate).
   const framesOf = (stack: string) => {
     const out: { url: string; line: number; col: number }[] = [];
     for (const ln of String(stack || "").split("\n").slice(1)) {
       if (ln.includes("eval at ")) continue;
       const m = ln.match(/at (?:.*? \()?(.+?):(\d+):(\d+)\)?\s*$/);
-      if (m && !SKIP.test(m[1])) out.push({ url: m[1], line: Number(m[2]), col: Number(m[3]) });
+      if (m) out.push({ url: m[1], line: Number(m[2]), col: Number(m[3]) });
     }
-    return out.slice(0, 5);
+    return out.slice(0, 8);
   };
   const LIB = /node_modules|next\/dist|^react(-dom)?\//;
   // VLQ — mappings에서 생성 줄 L(0부터)의 칸 C 이하 마지막 세그먼트 → [srcIdx, srcLine, srcCol](0부터).
@@ -56,19 +55,25 @@ export function findSources(el: any, fetchText: (url: string) => Promise<string>
     }
     return best;
   };
-  const fromMap = (map: any, L: number, C: number): { file: string; line: number; col: number } | null => {
+  // 맵의 상대 경로 source(Vite: "App.tsx")는 맵 URL 기준으로 풀어 경로만(/src/App.tsx → src/App.tsx). 스킴·절대경로는 그대로.
+  const resolveSrc = (s: string, base: string) => {
+    if (/^[a-z][\w+.-]*:|^\//i.test(s)) return s;
+    try { return decodeURIComponent(new URL(s, base).pathname).slice(1); } catch { return s; }
+  };
+  const fromMap = (map: any, L: number, C: number, base: string): { file: string; line: number; col: number } | null => {
     if (map && Array.isArray(map.sections)) { // Turbopack index map — 이 위치를 덮는 마지막 섹션
       let pick: any = null;
       for (const s of map.sections) { const o = s.offset || { line: 0, column: 0 }; if (o.line < L || (o.line === L && o.column <= C)) pick = s; }
       if (!pick || !pick.map) return null;
       const o = pick.offset || { line: 0, column: 0 };
-      return fromMap(pick.map, L - o.line, o.line === L ? C - o.column : C);
+      return fromMap(pick.map, L - o.line, o.line === L ? C - o.column : C, base);
     }
     if (!map || typeof map.mappings !== "string") return null;
     const hit = lookup(map.mappings, L, C);
     if (!hit || !map.sources || !map.sources[hit[0]]) return null;
     const root = map.sourceRoot || "";
-    return { file: cleanPath((root && !root.endsWith("/") ? root + "/" : root) + map.sources[hit[0]]), line: hit[1] + 1, col: hit[2] + 1 };
+    const src = resolveSrc((root && !root.endsWith("/") ? root + "/" : root) + map.sources[hit[0]], base);
+    return { file: cleanPath(src), line: hit[1] + 1, col: hit[2] + 1 };
   };
   const maps: Record<string, Promise<any>> = {};
   const mapFor = (url: string): Promise<any> => {
@@ -77,8 +82,9 @@ export function findSources(el: any, fetchText: (url: string) => Promise<string>
       if (!all) return null;
       const ref = all[all.length - 1].replace(/^\/\/[#@] sourceMappingURL=/, "");
       const m = ref.match(/^data:application\/json[^,]*?;base64,(.+)$/);
-      if (m) return JSON.parse(decodeURIComponent(escape(atob(m[1]))));
-      return fetchText(new URL(ref, url).href).then((t) => JSON.parse(t));
+      if (m) return { map: JSON.parse(decodeURIComponent(escape(atob(m[1])))), base: url };
+      const mapUrl = new URL(ref, url).href; // 상대·절대·//host(Metro) 모두
+      return fetchText(mapUrl).then((t) => ({ map: JSON.parse(t), base: mapUrl }));
     }).catch(() => null);
     return maps[url];
   };
@@ -97,7 +103,7 @@ export function findSources(el: any, fetchText: (url: string) => Promise<string>
         return LIB.test(file) ? tryAt(k + 1) : Promise.resolve({ file, line: fr.line, col: fr.col });
       }
       return mapFor(fr.url).then((map) => {
-        const loc = map ? fromMap(map, fr.line - 1, fr.col - 1) : null;
+        const loc = map ? fromMap(map.map, fr.line - 1, fr.col - 1, map.base) : null;
         return loc && !LIB.test(loc.file) ? loc : tryAt(k + 1);
       });
     };

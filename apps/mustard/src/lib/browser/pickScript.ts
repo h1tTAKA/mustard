@@ -153,9 +153,9 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
       html: el.outerHTML.slice(0, 1500),
       react: reactOf(el),
     };
-    // 소스 위치는 chunk·map을 받아야 해서 시간이 걸릴 수 있음 → 1.5초 넘으면 없이 보냄(#1039).
+    // 소스 위치는 chunk·map을 받아야 해서 시간이 걸릴 수 있음 → 3초 넘으면 없이 보냄(#1039, Metro 같은 큰 단일 맵 대비 #1047).
     const fetchText = (u) => fetch(u).then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))));
-    const timeout = new Promise((r) => setTimeout(() => r([]), 1500));
+    const timeout = new Promise((r) => setTimeout(() => r([]), 3000));
     Promise.race([__findSources(el, fetchText), timeout]).catch(() => []).then((sources) => resolve({ ...data, sources: sources || [] }));
   };
   const key = (e) => { if (e.key === "Escape") { stop(e); cleanup(); resolve(null); } };
