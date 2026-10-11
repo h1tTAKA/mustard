@@ -1,3 +1,5 @@
+import { findSources, type SourceLoc } from "./sourceLookup.ts"; // .ts — check 스크립트(node)에서도 풀리게
+
 // 인앱 브라우저 요소 선택(#1037) — webview.executeJavaScript로 페이지 안에 주입하는 스크립트.
 // 페이지 쪽 코드라 import·클로저 없이 문자열 하나. 결과는 Promise: 클릭 → PickedElement, Esc/취소 → null.
 // 오버레이는 shadow root 안(페이지 CSS와 안 섞임). 클릭은 capture 단계에서 막아 페이지 버튼이 눌리지 않게.
@@ -17,11 +19,14 @@ export interface PickedElement {
   styles: Record<string, string>;
   html: string;
   react: string[]; // 안쪽 → 바깥 컴포넌트 이름
+  sources: SourceLoc[]; // 소스 file:line(#1039) — [요소 자신, 바깥 컴포넌트…], 못 찾으면 []
 }
 
 export const PICK_CANCEL = "window.__mustardPickCancel && window.__mustardPickCancel()";
 
+// findSources를 글자 그대로 끼워 넣음(페이지 안에서 돌아야 같은 origin이라 chunk·source map을 CORS 없이 fetch).
 export const PICK_SCRIPT = `(() => new Promise((resolve) => {
+  const __findSources = (${findSources.toString()});
   if (window.__mustardPickCancel) window.__mustardPickCancel();
   const host = document.createElement("div");
   host.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:2147483647";
@@ -121,7 +126,7 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
       if (p && p !== document.body && inside(p.getBoundingClientRect())) continue;
       items.push({ tag: el.tagName.toLowerCase(), selector: selectorOf(el), text: textOf(el).slice(0, 120), react: reactOf(el).slice(0, 3) });
     }
-    return { kind: "region", items, ...base(), tag: "region", selector: "", text: "", attrs: {}, rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) }, styles: {}, html: "", react: [] };
+    return { kind: "region", items, ...base(), tag: "region", selector: "", text: "", attrs: {}, rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) }, styles: {}, html: "", react: [], sources: [] };
   };
   const click = (e) => {
     stop(e);
@@ -135,7 +140,7 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
     for (const a of ["id", "class", "role", "aria-label", "href", "name", "type", "placeholder", "alt", "data-testid"]) { const v = el.getAttribute(a); if (v) attrs[a] = v.slice(0, 200); }
     const styles = {};
     for (const s of ["display", "position", "color", "background-color", "font-size", "font-weight", "line-height", "padding", "margin", "border", "border-radius", "gap", "width", "height"]) styles[s] = cs.getPropertyValue(s);
-    resolve({
+    const data = {
       kind: "element",
       items: [],
       ...base(),
@@ -147,7 +152,11 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
       styles,
       html: el.outerHTML.slice(0, 1500),
       react: reactOf(el),
-    });
+    };
+    // 소스 위치는 chunk·map을 받아야 해서 시간이 걸릴 수 있음 → 1.5초 넘으면 없이 보냄(#1039).
+    const fetchText = (u) => fetch(u).then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))));
+    const timeout = new Promise((r) => setTimeout(() => r([]), 1500));
+    Promise.race([__findSources(el, fetchText), timeout]).catch(() => []).then((sources) => resolve({ ...data, sources: sources || [] }));
   };
   const key = (e) => { if (e.key === "Escape") { stop(e); cleanup(); resolve(null); } };
   window.__mustardPickCancel = () => { cleanup(); resolve(null); };

@@ -193,7 +193,9 @@ function BrowserPage({ repo, url, visible, ports, onUrlChange, onTitle, onDetach
               style={picked.pos}>
               <div className="mb-1 truncate font-mono text-[10px] text-zinc-400">{picked.el.kind === "region"
                 ? `${t("browser.pickArea")} ${picked.el.rect.w}×${picked.el.rect.h}${picked.el.items.length ? ` · ${picked.el.items.length}` : ""}`
-                : `${picked.el.react[0] ? `${picked.el.react[0]} · ` : ""}${picked.el.tag}${picked.el.text ? ` "${picked.el.text.slice(0, 40)}"` : ""}`}</div>
+                : picked.el.sources[0]
+                  ? `${picked.el.sources[0].file.split("/").pop()}:${picked.el.sources[0].line} · ${picked.el.tag}`
+                  : `${picked.el.react[0] ? `${picked.el.react[0]} · ` : ""}${picked.el.tag}${picked.el.text ? ` "${picked.el.text.slice(0, 40)}"` : ""}`}</div>
               <textarea autoFocus value={comment} onChange={(e) => { setComment(e.target.value); if (sendState === "no-agent") setSendState("idle"); }}
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); } else if (e.key === "Escape") setPicked(null); }}
                 placeholder={t("browser.pickPlaceholder")} rows={3}
