@@ -92,6 +92,10 @@ export const GKEYS = {
   branchPrefix: "git.branchPrefix",
 } as const;
 
+// 캐치업(#1049) — 명령어 해설 카드·용어집 켜고 끄기.
+export const CATCHUP_DEFAULTS = { commands: true, terms: true };
+export const CUKEYS = { commands: "catchup.commands", terms: "catchup.terms" } as const;
+
 const KEY = "mustard:settings";
 type Listener = () => void;
 const listeners = new Set<Listener>();

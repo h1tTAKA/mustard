@@ -51,4 +51,13 @@ un3();
 assert.deepEqual(nar, ["코드 편집|App.tsx의 상태 관리를 useReducer로 바꾸는 중", "테스트 실행|vitest 돌림"], "narration 방출 + 빈 note·연속 동일 제목 스킵");
 assert.ok(recent("/repo/N", 5).some((e) => e.kind === "narration" && e.note), "narration 링버퍼 조회");
 
+// #1049 문서 편집은 카드 안 띄움, 코드·명령은 그대로
+{
+  const got: string[] = []; const un = subscribe((e) => { if (e.root === "/doc") got.push(e.target); });
+  emitEdit("/doc", "Write", "/doc/notes/01_학습정리.md", false, 1);
+  emitEdit("/doc", "Edit", "/doc/src/a.ts", false, 2);
+  emitEdit("/doc", "Bash", "cat README.md", false, 3);
+  un();
+  assert.deepStrictEqual(got, ["/doc/src/a.ts", "cat README.md"]);
+}
 console.log("mcpActivity.check OK");

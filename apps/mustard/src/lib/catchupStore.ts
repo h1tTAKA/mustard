@@ -94,6 +94,19 @@ export function readRecent(root: string, limit: number): CatchupItem[] {
   return out.slice(0, limit);
 }
 
+// 검색(#1049) — 전체 날짜를 최신부터 훑어 제목·설명에 검색어(대소문자 무시)가 든 항목 limit개.
+// ponytail: 날짜 파일 전수 스캔 — 기록이 수만 개로 커지면 색인(FTS) 고려.
+export function searchItems(root: string, q: string, limit: number): CatchupItem[] {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return [];
+  const out: CatchupItem[] = [];
+  for (const day of listDays(root)) {
+    for (const x of readDay(root, day)) if (`${x.target}\n${x.expl}`.toLowerCase().includes(needle)) out.push(x);
+    if (out.length >= limit) break;
+  }
+  return out.slice(0, limit);
+}
+
 // ── 항목 질문 대화(#998) — 항목별 ask/<sha(key)>.json. 기록 폴더 안이라 질문 에이전트가 예전 Q&A도 grep.
 export interface AskMessage { role: "user" | "assistant"; content: string }
 export interface AskThread { key: string; target: string; messages: AskMessage[]; updatedAt: number }
