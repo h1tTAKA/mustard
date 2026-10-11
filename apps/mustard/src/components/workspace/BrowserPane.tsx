@@ -4,7 +4,7 @@
 // <webview>는 React 속성 대신 직접 만든다 — allowpopups·partition은 붙기 전에 있어야 하고, src를 React가 바꾸면 매번 새로 이동해서.
 import { useEffect, useRef, useState } from "react";
 import type { WebviewTag } from "electron";
-import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld } from "@tabler/icons-react";
+import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld, IconArrowsMinimize } from "@tabler/icons-react";
 import { useT, useSetting, appChords, SHORTCUT_OVERRIDES_KEY, type ShortcutOverrides } from "@mustard/core";
 import { normalizeBrowserUrl } from "@/lib/browser/url";
 
@@ -20,11 +20,12 @@ function subscribeGuestKeys() {
   return () => { if (--keySubs === 0) { keyOff?.(); keyOff = null; } };
 }
 
-export default function BrowserPane({ repo, url, onUrlChange, onDetach }: {
+export default function BrowserPane({ repo, url, onUrlChange, onDetach, onDock }: {
   repo: string;
   url: string;                          // 처음 열 주소("" = 빈 화면)
   onUrlChange?: (url: string) => void;  // 실제 이동한 주소(레포별 저장용)
   onDetach?: (url: string) => void;     // 별도 창으로 떼기(분리 창 자신엔 없음)
+  onDock?: (url: string) => void;       // 분리 창 → 앱 안으로 되돌리기(분리 창에만)
 }) {
   const t = useT();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -118,6 +119,7 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach }: {
             className="shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[10px] text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100">:{p}</button>
         ))}
         <button type="button" className={btn} disabled={!ready} onClick={() => viewRef.current?.openDevTools()} title={t("browser.devtools")} aria-label={t("browser.devtools")}><IconCode size={14} stroke={2} aria-hidden /></button>
+        {onDock && <button type="button" className={btn} onClick={() => onDock(current)} title={t("browser.dock")} aria-label={t("browser.dock")}><IconArrowsMinimize size={14} stroke={2} aria-hidden /></button>}
         {onDetach && <button type="button" className={btn} onClick={() => onDetach(current)} title={t("browser.detach")} aria-label={t("browser.detach")}><IconAppWindow size={14} stroke={2} aria-hidden /></button>}
       </div>
       <div ref={hostRef} className="relative min-h-0 flex-1 bg-white">

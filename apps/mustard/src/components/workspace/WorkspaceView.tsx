@@ -161,6 +161,19 @@ export default function WorkspaceView({ path, active = true, providerId, provide
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; const k = `nunopi:ws:${path}:docs-open`; try { localStorage.setItem(k, docsOpen ? "1" : "0"); } catch { /* ignore */ } }, [docsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; const k = `nunopi:ws:${path}:browser-open`; try { localStorage.setItem(k, browserOpen ? "1" : "0"); } catch { /* ignore */ } }, [browserOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; const k = `nunopi:ws:${path}:browser-url`; try { if (browserUrl) localStorage.setItem(k, browserUrl); else localStorage.removeItem(k); } catch { /* ignore */ } }, [browserUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 분리 브라우저 창(#1034)이 같은 origin localStorage에 쓴 값 반영 — storage 이벤트는 다른 창에서 쓸 때만 옴.
+  // 주소는 dock 브라우저가 닫혀 있을 때만 받음(열려 있으면 그쪽 페이지가 우선). "열림"=앱 안으로 되돌리기.
+  const browserOpenRef = useRef(browserOpen);
+  useEffect(() => { browserOpenRef.current = browserOpen; }, [browserOpen]);
+  useEffect(() => {
+    if (!path) return;
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === `nunopi:ws:${path}:browser-url` && !browserOpenRef.current) setBrowserUrl(e.newValue || "");
+      else if (e.key === `nunopi:ws:${path}:browser-open` && e.newValue === "1") setBrowserOpen(true);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [path]);
   // 코드/diff 탭 영속(#714).
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; const k = `nunopi:ws:${path}:code-tabs`; try { if (codeTabs.length) localStorage.setItem(k, JSON.stringify(codeTabs)); else localStorage.removeItem(k); } catch { /* ignore */ } }, [codeTabs]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; const k = `nunopi:ws:${path}:active-code`; try { if (activeCode) localStorage.setItem(k, activeCode); else localStorage.removeItem(k); } catch { /* ignore */ } }, [activeCode]); // eslint-disable-line react-hooks/exhaustive-deps
