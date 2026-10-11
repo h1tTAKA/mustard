@@ -41,10 +41,12 @@ export default function BrowserPane({ repo, url, onUrlChange, onDetach }: {
   const onUrlChangeRef = useRef(onUrlChange);
   useEffect(() => { onUrlChangeRef.current = onUrlChange; }, [onUrlChange]);
 
-  useEffect(() => subscribeGuestKeys(), []);
   // main에 "브라우저 포커스 중에도 앱이 가져갈 조합" 알림 — 설정에서 단축키 바꾸면 다시 보냄(#1034 리뷰).
+  // dock(메인 창)에서만 — 분리 창엔 단축키 처리기가 없어서 가로채면 키가 그냥 사라짐.
+  const docked = !!onDetach;
   const overrides = useSetting<ShortcutOverrides>(SHORTCUT_OVERRIDES_KEY, {});
-  useEffect(() => { window.nunopiDesktop?.browser?.setAppChords(appChords(overrides)); }, [overrides]);
+  useEffect(() => { if (docked) return subscribeGuestKeys(); }, [docked]);
+  useEffect(() => { if (docked) window.nunopiDesktop?.browser?.setAppChords(appChords(overrides)); }, [docked, overrides]);
 
   // 이 레포 터미널에서 뜬 dev 서버 포트(#880 감지 재사용) — 10초마다.
   useEffect(() => {

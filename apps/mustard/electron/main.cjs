@@ -348,7 +348,11 @@ ipcMain.handle("browser-window:open", (_e, payload) => {
   return { ok: true };
 });
 // 인앱 브라우저 포커스 중 앱이 가져갈 단축키 조합(#1034) — 렌더러가 설정 반영해 보냄.
-ipcMain.on("browser:set-chords", (_e, list) => setAppChords(list));
+ipcMain.on("browser:set-chords", (e, list) => {
+  const id = e.sender.id;
+  setAppChords(id, list);
+  e.sender.once("destroyed", () => setAppChords(id, [])); // ponytail: 빈 Set이 남음(창 수만큼, 무시할 크기)
+});
 // 탭 쪽 모드 점유/해제/조회(#789) — 메인 창 렌더러가 모드 탭 추가·닫기·복원 시 호출.
 ipcMain.handle("mode:claim", (_e, kind) => ({ ok: claimMode(kind, "tab") }));
 ipcMain.handle("mode:release", (_e, kind) => { releaseMode(kind); return { ok: true }; });

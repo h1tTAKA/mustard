@@ -27,8 +27,9 @@ const ALLOWED_PERMISSIONS = new Set(["clipboard-sanitized-write", "fullscreen"])
 const hardenedSessions = new WeakSet();
 
 // 앱 단축키 조합 — packages/core/src/shortcuts.ts chordFromEvent·tokenOf와 같은 규칙(바꾸면 같이). cjs라 import 불가.
-let appChords = new Set();
-function setAppChords(list) { appChords = new Set(Array.isArray(list) ? list.filter((c) => typeof c === "string") : []); }
+// 창(호스트 렌더러)별 — 단축키 처리기가 있는 메인 창만 보냄. 분리 브라우저 창은 없음 → 그 창 페이지는 키를 그대로 받음.
+const appChordsByHost = new Map(); // host webContents id → Set
+function setAppChords(hostId, list) { appChordsByHost.set(hostId, new Set(Array.isArray(list) ? list.filter((c) => typeof c === "string") : [])); }
 const CODE_TOKEN = {
   BracketLeft: "[", BracketRight: "]", Equal: "=", Minus: "-", Comma: ",", Period: ".", Slash: "/", Semicolon: ";",
   Quote: "'", Backquote: "`", Backslash: "\\", Enter: "Enter", Tab: "Tab", Space: "Space", Backspace: "Backspace", Escape: "Escape",
@@ -68,11 +69,11 @@ function wireGuest(guest) {
   // 나머지 키(⌘C·⌘F 등)는 페이지가 그대로 받음. 조합 목록은 렌더러가 설정(덮어쓰기) 반영해 보내줌(setAppChords).
   guest.on("before-input-event", (e, input) => {
     if (input.type !== "keyDown") return;
-    const chord = chordOf(input, process.platform === "darwin");
-    if (!chord || !appChords.has(chord)) return;
-    e.preventDefault();
     const host = guest.hostWebContents;
     if (!host || host.isDestroyed()) return;
+    const chord = chordOf(input, process.platform === "darwin");
+    if (!chord || !appChordsByHost.get(host.id)?.has(chord)) return;
+    e.preventDefault();
     host.send("browser:key", { code: input.code, key: input.key, metaKey: !!input.meta, ctrlKey: !!input.control, altKey: !!input.alt, shiftKey: !!input.shift });
   });
 }

@@ -87,6 +87,7 @@ export default function WorkspaceView({ path, active = true, providerId, provide
   const [browserUrl, setBrowserUrl] = useState("");       // 마지막 주소(레포별)
   const [browserRect, setBrowserRect] = useState<SlotRect | null>(null); // dock 속 브라우저 자리(고정 레이어 위치)
   const dockRef = useRef<HTMLElement>(null);
+  const browserPrevRef = useRef(false); // 증분 이펙트가 본 마지막 browserOpen
   const [chatPrefill, setChatPrefill] = useState<{ text: string; n: number } | null>(null); // 챗 입력창 자동 삽입 신호(#746)
   const flyNoSources = useMemo(() => new Set<string>(), []); // FlyCardProvider용 빈 출처(워크스페이스 카드는 출처이동 없음, #750)
   const [gitH, setGitH] = useState(220);           // 깃 그래프 높이(px)
@@ -203,6 +204,8 @@ export default function WorkspaceView({ path, active = true, providerId, provide
   // 레포 전환 시 그 레포의 저장 트리를 base로 로드(레포별 영속), 아니면 이전 트리 유지. 리프 집합 같으면 배치·비율 보존, 다르면 prune 후 필요 시 기본.
   const hasCode = codeTabs.length > 0;
   const hasDoc = !!(docsRoot && activeDoc && docTabs.length);
+  const panelExists = (p: PanelId) => p === "terminal" || (p === "code" && hasCode) || (p === "doc" && hasDoc) || (p === "flow" && flowFeature !== null) || (p === "browser" && browserOpen);
+  const panelVisible = (p: PanelId) => panelExists(p) && !collapsed.has(p);
   const dockRepoRef = useRef<string | null>(null); // 현재 dockTree가 로드된 레포 — 전환 감지·저장 게이트
   const flowRepoRef = useRef<string | null>(null); // flowFeature가 복원된 레포 — 전환 시 그 레포 저장값으로 복원(#743)
   useEffect(() => {
@@ -229,11 +232,15 @@ export default function WorkspaceView({ path, active = true, providerId, provide
   // (존재 변화 hasCode/hasDoc는 위 메인 이펙트가 재빌드로 처리 → 여기 deps엔 안 넣어 이중 처리 방지.)
   useEffect(() => {
     if (!mounted) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 토글 시 dock 트리 증분 갱신(함수형 업데이트)
+    // 브라우저는 열림 값이 "바뀐" 때만 넣고 뺌(#1034 리뷰) — 복원 커밋에선 이 이펙트가 아직 옛 값(false)을 봐서
+    // 메인 이펙트가 저장 배치로 넣어둔 브라우저를 지웠다가 오른쪽 절반으로 다시 붙여 배치가 날아갔음.
+    const browserChanged = browserPrevRef.current !== browserOpen;
+    browserPrevRef.current = browserOpen;
     setDockTree((prev) => {
       if (!prev) return prev;
       let tree = prev;
       for (const p of ["terminal", "code", "doc", "flow", "browser"] as PanelId[]) {
+        if (p === "browser" && !browserChanged) continue;
         const want = panelVisible(p);
         const inTree = leavesOf(tree).has(p);
         if (want && !inTree) tree = appendPanel(tree, p, p === "browser" ? 0.5 : undefined); // 브라우저는 오른쪽 절반(defaultTree와 같게)
@@ -282,8 +289,6 @@ export default function WorkspaceView({ path, active = true, providerId, provide
     else toggleGit();
   });
   // 중앙 패널 접기/펴기(#758) — 콘텐츠는 유지하고 dock 표시만. 존재하는 패널만 대상.
-  const panelExists = (p: PanelId) => p === "terminal" || (p === "code" && hasCode) || (p === "doc" && hasDoc) || (p === "flow" && flowFeature !== null) || (p === "browser" && browserOpen);
-  const panelVisible = (p: PanelId) => panelExists(p) && !collapsed.has(p);
   const toggleCollapse = (p: PanelId) => setCollapsed((prev) => {
     const n = new Set(prev); if (n.has(p)) n.delete(p); else n.add(p);
     try { localStorage.setItem("nunopi:ws-collapsed", JSON.stringify([...n])); } catch { /* ignore */ }
@@ -735,19 +740,22 @@ export default function WorkspaceView({ path, active = true, providerId, provide
 type SlotRect = { l: number; t: number; w: number; h: number };
 function BrowserSlot({ anchor, onRect }: { anchor: RefObject<HTMLElement | null>; onRect: (fn: (prev: SlotRect | null) => SlotRect | null) => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
+  const measure = () => {
     const el = ref.current, a = anchor.current;
     if (!el || !a) return;
-    const measure = () => {
-      const ar = a.getBoundingClientRect(), r = el.getBoundingClientRect();
-      if (!r.width || !r.height) return; // 숨은 레포 탭(display:none) — 마지막 위치 유지
-      const next = { l: r.left - ar.left, t: r.top - ar.top, w: r.width, h: r.height };
-      onRect((prev) => (prev && prev.l === next.l && prev.t === next.t && prev.w === next.w && prev.h === next.h ? prev : next));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
+    const ar = a.getBoundingClientRect(), r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return; // 숨은 레포 탭(display:none) — 마지막 위치 유지
+    const next = { l: r.left - ar.left, t: r.top - ar.top, w: r.width, h: r.height };
+    onRect((prev) => (prev && prev.l === next.l && prev.t === next.t && prev.w === next.w && prev.h === next.h ? prev : next));
+  };
+  const measureRef = useRef(measure);
+  useLayoutEffect(() => { measureRef.current = measure; measure(); }); // 렌더마다(트리 변경으로 자리만 옮겨진 경우)
+  useLayoutEffect(() => { // 크기 변화(창·사이드바·경계 드래그)는 관찰자 하나로
+    const el = ref.current, a = anchor.current;
+    if (!el || !a) return;
+    const ro = new ResizeObserver(() => measureRef.current());
     ro.observe(el); ro.observe(a);
     return () => ro.disconnect();
-  });
+  }, [anchor]);
   return <div ref={ref} className="h-full w-full" />;
 }
