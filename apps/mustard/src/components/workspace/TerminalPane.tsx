@@ -6,6 +6,8 @@ import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
 import { useShortcut, useT, getTerminalThemePref, isTerminalDark, getSetting, AKEYS, AGENT_DEFAULTS, CKEYS, useConfirm } from "@mustard/core";
 import Terminal from "@/components/workspace/Terminal";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
+import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
+import { sessionState, useAgentSessionStates } from "@/lib/agentSessionStates";
 
 interface Tab { id: string; title: string; customTitle?: string } // customTitle=유저 더블클릭 리네임(최우선, 영속)
 const genId = () => globalThis.crypto?.randomUUID?.() ?? String(Math.random()).slice(2);
@@ -108,6 +110,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
 
   // 탭별 실행 중 에이전트(#803) — main이 버퍼 파싱으로 판정한 agent id(node 래퍼 CLI도 잡음). 탭 이름·아이콘용.
   // pty는 push 이벤트가 없어(에이전트 실행/종료=프로세스 교체) 2s 폴링. list()는 전 세션 반환 → tab.id로 조회.
+  useAgentSessionStates(); // #1036 탭별 에이전트 상태가 바뀌면 다시 그림(WorkspaceTabs 폴링 결과 공유)
   const [agentById, setAgentById] = useState<Record<string, AgentId>>({});
   const [sessionTitleById, setSessionTitleById] = useState<Record<string, string>>({}); // #970 세션 제목(OSC 타이틀)
   useEffect(() => {
@@ -220,6 +223,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
               onClick={() => setActiveId(tab.id)}>
               {on && <span className="absolute inset-x-0 top-0 h-0.5 bg-mustard-500" aria-hidden />}
               {overId === tab.id && <span className="absolute inset-y-0 left-0 w-0.5 bg-mustard-500" aria-hidden />}
+              {agent && <AgentStateIcon state={sessionState(tab.id)} />}{/* #1036 orca처럼 에이전트 아이콘 왼쪽에 상태 */}
               {agent
                 ? <span className="shrink-0"><AgentLogo agent={agent} size={13} /></span>
                 : <IconTerminal2 size={13} stroke={2} className={`shrink-0 ${on ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400"}`} aria-hidden />}
