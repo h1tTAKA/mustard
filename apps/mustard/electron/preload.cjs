@@ -92,6 +92,13 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     devtoolsBounds: (guestId, rect) => ipcRenderer.send("browser:devtools-bounds", { guestId, rect: zoomRect(rect) }),
     closeDevTools: (guestId) => ipcRenderer.invoke("browser:devtools-close", { guestId }),
     sendToAgent: (payload) => ipcRenderer.invoke("browser:send-to-agent", payload), // #1037 셸이면 안 보냄(main 판정)
+    register: (guestId, repo, visible) => ipcRenderer.send("browser:register", { guestId, repo, visible }), // #1041 에이전트가 이 탭을 찾게
+    unregister: (guestId) => ipcRenderer.send("browser:unregister", { guestId }),
+    // 열기 요청(#1041): 각 레포 화면이 "내가 그 cwd 레포"라고 손들고(claimOpen), main이 가장 깊은 레포 하나에만 grant.
+    onOpenRequest: (cb) => { const h = (_e, p) => cb(p); ipcRenderer.on("browser:open-request", h); return () => ipcRenderer.removeListener("browser:open-request", h); },
+    onTabCommand: (cb) => { const h = (_e, p) => cb(p); ipcRenderer.on("browser:tab-command", h); return () => ipcRenderer.removeListener("browser:tab-command", h); }, // #1041 에이전트가 탭 고르기/닫기
+    claimOpen: (reqId, repo, cwd) => ipcRenderer.send("browser:claim-open", { reqId, repo, cwd }),
+    onOpenGrant: (cb) => { const h = (_e, p) => cb(p); ipcRenderer.on("browser:open-grant", h); return () => ipcRenderer.removeListener("browser:open-grant", h); },
     capture: (guestId, rect) => ipcRenderer.invoke("browser:capture", { guestId, rect }), // #1037 요소 스크린샷 → 임시 PNG 경로
     onKey: (cb) => { const h = (_e, k) => cb(k); ipcRenderer.on("browser:key", h); return () => ipcRenderer.removeListener("browser:key", h); },
   },
