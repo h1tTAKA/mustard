@@ -16,7 +16,8 @@ function narrationPrompt(agent: string, delta: string, diff: string): string {
 - **무슨 코드가 어떻게 바뀌었나**: +/- 줄을 짚어 before→after로. 어떤 함수·변수·로직이 추가/수정/삭제됐고 그게 무슨 일을 하는지 코드 자체로.
 - **왜/개념**: 그 코드가 왜 그렇게 동작하는지, 얽힌 프로그래밍·아키텍처 개념·패턴·원리.
 - **용어**: "## 용어" 소제목 아래, 나온 **프로그래밍·개발·IT 용어와 개념만**(함수·문법·라이브러리·도구·명령어·개발 개념) "- **이름** — 쉬운 뜻" 목록으로. 이 앱이 다루는 주제의 도메인 지식(언어학·문자 표준·업무 용어 등)은 넣지 마. 해당 없으면 이 소제목 생략.`
-    : `아직 코드 변경(diff)은 없어. 에이전트가 무슨 파일/영역을 왜 보는지, 그 파일·함수가 코드베이스에서 무슨 역할인지, 얽힌 개념을 가르쳐. **제품 기능·UX 동작 서술(버튼 누르면 어디 가고 등) 금지 — 코드·구조·개념만.** 코드/구조 얘깃거리 없고 제품·상황 얘기뿐이면 딱 "SKIP"만.`;
+    : `아직 코드 변경(diff)은 없어. 에이전트가 무슨 파일/영역을 왜 보는지, 그 파일·함수가 코드베이스에서 무슨 역할인지, 얽힌 개념을 가르쳐. **제품 기능·UX 동작 서술(버튼 누르면 어디 가고 등) 금지 — 코드·구조·개념만.** 코드/구조 얘깃거리 없고 제품·상황 얘기뿐이면 딱 "SKIP"만.
+- **브라우저·MCP 작업은 SKIP 아님(#1045)**: 에이전트가 인앱 브라우저나 MCP 도구(navigate·screenshot·click·new_tab 등)로 웹을 다루면, 그 출력에 보이는 **웹·개발 도구 개념**(DOM·선택자, URL·쿼리 인코딩, HTTP 상태·요청, 개발 서버·빌드·배포 설정, MCP 도구 호출 방식 등)을 가르쳐. 화면에 뭐가 보였는지 중계는 말고 그 밑의 기술만.`;
   const material = hasDiff
     ? `## 실제 코드 변경 (git diff HEAD — 핵심 재료)
 \`\`\`diff
@@ -99,6 +100,7 @@ export async function POST(req: Request): Promise<Response> {
     const res = await provider.analyze(request, { signal: req.signal });
     const summary = (res?.summary ?? "").trim();
     // 모델이 실제 활동 없다고 판단하면 "SKIP" → 카드 방출 안 함(무의미 내레이션·토큰 낭비 방지).
+    if (/^SKIP\b/i.test(summary)) console.log(`[narration] SKIP ${cwd.split("/").pop()} (delta ${delta.length}B, diff ${diff.length}B)`); // #1045 진단 — 왜 해설이 안 뜨나
     if (summary && !/^SKIP\b/i.test(summary) && summary.length > 8) {
       const { title, note } = splitNarration(summary);
       const now = Date.now();

@@ -1013,9 +1013,11 @@ async function pushScreenState(id, screen) {
   // #970 fix: task가 빈값↔제목으로 "생기거나 사라질 때"도 재POST(호버 즉시 반영). 작업 중 제목 텍스트만 바뀌는 건
   // 제외(!!로 존재 여부만 비교) → 과POST 방지. 유휴 세션은 상태 변화가 없어 예전엔 30s 뒤에야 제목이 떴음.
   const changed = !prev || prev.state !== state || prev.agent !== agent || (!!prev.task !== !!task);
+  // #1031 해설 게이트용 — 마지막으로 "작업 중"이던 시각. 아래 30s 재POST 억제보다 먼저(#1045): 뒤에 두면 꾸준히 일하는 동안
+  // 30초마다만 갱신돼 15초 게이트(NARR_WORK_GRACE)를 절반쯤 벗어나 출력이 해설 없이 "본 것"으로만 처리됐음.
+  if (state === "working") narrWorkingAt.set(id, now);
   if (!changed && prev && now - prev.at < 30000) return; // 같은 상태·제목유무면 30s마다만 재POST(TTL 유지, 과POST 억제)
   lastScreen.set(id, { state, agent, at: now, task });
-  if (state === "working") narrWorkingAt.set(id, now); // #1031 해설 게이트용 — 마지막으로 "작업 중"이던 시각
   await postStatus({ cwd, agent, state, sessionId: id, source: "screen", task });
 }
 function scheduleScreenParse(id) {
