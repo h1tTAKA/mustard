@@ -29,7 +29,8 @@ export function findSources(el: any, fetchText: (url: string) => Promise<string>
     }
     return out.slice(0, 8);
   };
-  const LIB = /node_modules|next\/dist|^react(-dom)?\//;
+  // 라이브러리·가상 모듈(Metro "\0shim:…"·"__prelude__", Vite "\0…"·"virtual:")은 사용자 코드 아님.
+  const LIB = /node_modules|next\/dist|^react(-dom)?\/|^\0|^__prelude__$|^virtual:/;
   // VLQ — mappings에서 생성 줄 L(0부터)의 칸 C 이하 마지막 세그먼트 → [srcIdx, srcLine, srcCol](0부터).
   const lookup = (mappings: string, L: number, C: number) => {
     let line = 0, genCol = 0, src = 0, sLine = 0, sCol = 0, best: number[] | null = null;
@@ -57,7 +58,7 @@ export function findSources(el: any, fetchText: (url: string) => Promise<string>
   };
   // 맵의 상대 경로 source(Vite: "App.tsx")는 맵 URL 기준으로 풀어 경로만(/src/App.tsx → src/App.tsx). 스킴·절대경로는 그대로.
   const resolveSrc = (s: string, base: string) => {
-    if (/^[a-z][\w+.-]*:|^\//i.test(s)) return s;
+    if (/^[a-z][\w+.-]*:|^\/|^\0/i.test(s)) return s; // 스킴·절대경로·가상 모듈(\0)은 그대로
     try { return decodeURIComponent(new URL(s, base).pathname).slice(1); } catch { return s; }
   };
   const fromMap = (map: any, L: number, C: number, base: string): { file: string; line: number; col: number } | null => {
@@ -117,9 +118,11 @@ export function findSources(el: any, fetchText: (url: string) => Promise<string>
   const chain: { f: any; name: string }[] = [];
   let owner = host._debugOwner;
   if (!owner) { for (let r = host.return; r; r = r.return) if (typeof r.type === "function" || (r.type && typeof r.type === "object")) { owner = r; break; } }
+  // 라이브러리 컴포넌트(react-native-web View·Pressable 등) 안에서 만든 요소는 위치가 전부 라이브러리 → 그 owner는 건너뛰고
+  // 위로 더 올라감(최대 8단계). 찾은 것 중 앞 maxOwners+1개.
   chain.push({ f: host, name: nameOf(owner) });
-  for (let o = owner; o && chain.length < maxOwners + 1; o = o._debugOwner) chain.push({ f: o, name: nameOf(o._debugOwner) || nameOf(o) });
+  for (let o = owner; o && chain.length < 9; o = o._debugOwner) chain.push({ f: o, name: nameOf(o._debugOwner) || nameOf(o) });
   return Promise.all(chain.map((c) => locate(c.f).catch(() => null)))
-    .then((locs) => locs.map((l, i) => (l ? { name: chain[i].name, ...l } : null)).filter((x): x is SourceLoc => !!x && !!x.file));
+    .then((locs) => locs.map((l, i) => (l ? { name: chain[i].name, ...l } : null)).filter((x): x is SourceLoc => !!x && !!x.file).slice(0, maxOwners + 1));
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
