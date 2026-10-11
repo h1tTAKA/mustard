@@ -56,6 +56,7 @@ const CENTER_SCRIPT = (selector) => `(() => {
   el.scrollIntoView({ block: "center", inline: "center" });
   const r = el.getBoundingClientRect();
   if (!r.width || !r.height) return { error: "element has no size (hidden?)" };
+  if (typeof el.focus === "function") el.focus(); // 덮개가 클릭을 가로채도 입력은 이 요소로
   return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
 })()`;
 
@@ -90,15 +91,17 @@ function createBrowserControl(deps) {
   }
   function unregister(guestId) { registry.delete(Number(guestId)); }
 
-  const target = (cwd) => { const e = pickGuest(entries(), cwd); return e ? deps.getGuest(e.guestId) : null; };
+  const real = deps.realpath || ((p) => p);
+  const target = (cwd) => { const e = pickGuest(entries(), real(cwd)); return e ? deps.getGuest(e.guestId) : null; };
+  const entryOf = (g) => registry.get(g.id);
   const NONE = "No in-app browser tab is open for this repo in Mustard. Use browser_navigate to open one.";
 
   async function call(tool, args, cwd) {
     args = args || {};
     if (tool === "browser_status") {
-      const c = norm(cwd);
+      const c = norm(real(cwd));
       const mine = entries().filter((e) => { const r = norm(e.repo); return r && (c === r || c.startsWith(r + "/")); });
-      const pick = pickGuest(mine, cwd);
+      const pick = pickGuest(mine, c);
       return text(mine.map((e) => { const g = deps.getGuest(e.guestId); return { url: g.getURL(), title: g.getTitle(), visible: !!e.visible, target: e === pick }; }));
     }
     if (tool === "browser_navigate") {
@@ -119,8 +122,10 @@ function createBrowserControl(deps) {
     if (tool === "browser_screenshot") {
       let img = await g.capturePage();
       if (img.isEmpty()) return fail("Screenshot was empty (tab hidden or not painted yet).");
-      if (img.getSize().width > 1600) img = img.resize({ width: 1600 });
-      return { content: [{ type: "image", data: img.toPNG().toString("base64"), mimeType: "image/png" }, { type: "text", text: `URL: ${g.getURL()}` }] };
+      // 크기 상한 — 고해상도·긴 화면이 MCP/API 이미지 한도(수 MB)를 넘지 않게: 긴 변 1600px, JPEG(#1041 리뷰).
+      const { width, height } = img.getSize();
+      if (Math.max(width, height) > 1600) img = width >= height ? img.resize({ width: 1600 }) : img.resize({ height: 1600 });
+      return { content: [{ type: "image", data: img.toJPEG(80).toString("base64"), mimeType: "image/jpeg" }, { type: "text", text: `URL: ${g.getURL()}` }] };
     }
     if (tool === "browser_read") return text(await g.executeJavaScript(READ_SCRIPT(Math.min(Number(args.maxChars) || 20000, 100000))));
     if (tool === "browser_console") {
@@ -131,11 +136,13 @@ function createBrowserControl(deps) {
     }
     if (tool === "browser_click" || tool === "browser_type") {
       if (!args.selector) return fail("selector is required (get one from browser_read).");
+      if (!entryOf(g)?.visible) return fail("The browser tab is in the background in Mustard — clicks need it visible. Ask the user to show it, or use browser_read.");
       const pt = await g.executeJavaScript(CENTER_SCRIPT(args.selector));
       if (pt.error) return fail(pt.error);
-      // 실제 마우스 이벤트(isTrusted) — 페이지가 막는 합성 click()이 아니라.
-      g.sendInputEvent({ type: "mouseDown", x: pt.x, y: pt.y, button: "left", clickCount: 1 });
-      g.sendInputEvent({ type: "mouseUp", x: pt.x, y: pt.y, button: "left", clickCount: 1 });
+      // 실제 마우스 이벤트(isTrusted) — 페이지가 막는 합성 click()이 아니라. 좌표는 CSS px → 페이지 줌만큼 DIP로(#1041 리뷰).
+      const z = g.getZoomFactor ? g.getZoomFactor() || 1 : 1, x = Math.round(pt.x * z), y = Math.round(pt.y * z);
+      g.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+      g.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
       if (tool === "browser_click") return text(`Clicked ${args.selector} at (${pt.x}, ${pt.y}).`);
       if (args.clear) await g.executeJavaScript(`(() => { const el = document.activeElement; if (el && "value" in el) { el.value = ""; el.dispatchEvent(new Event("input", { bubbles: true })); } })()`);
       await g.insertText(String(args.text ?? ""));

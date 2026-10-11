@@ -172,13 +172,14 @@ export default function WorkspaceView({ path, active = true, providerId, provide
   useEffect(() => {
     const api = window.nunopiDesktop?.browser;
     if (!path || !api?.onOpenRequest) return;
-    const root = path.replace(/\/+$/, "");
-    return api.onOpenRequest(({ cwd, url }) => {
-      const c = String(cwd || "").replace(/\/+$/, "");
-      if (c !== root && !c.startsWith(root + "/")) return;
+    // 손들기만(main이 실경로로 판정·가장 깊은 레포 하나에 grant) → grant 받은 레포만 엶(중복 탭 방지).
+    const offReq = api.onOpenRequest(({ cwd, reqId }) => api.claimOpen(reqId, path, cwd));
+    const offGrant = api.onOpenGrant(({ repo, url }) => {
+      if (repo !== path) return;
       setBrowserIncoming((prev) => ({ url, n: (prev?.n ?? 0) + 1 }));
       setBrowserOpen(true);
     });
+    return () => { offReq(); offGrant(); };
   }, [path]);
   // 분리 브라우저 창(#1034)과 같은 origin localStorage로 주고받음 — storage 이벤트는 다른 창에서 쓸 때만 옴.
   // browser-dock {url,n} = 분리 창의 "앱 안에서 열기" → dock 브라우저를 열고 그 주소를 새 탭으로.

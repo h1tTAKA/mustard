@@ -6,7 +6,7 @@ require("./claude-env.cjs").stripParentClaudeEnv(process.env);
 // Dock·Finder·open으로 켜면 PATH가 /usr/bin:/bin 정도뿐 → Homebrew·~/.local의 gh·glab·claude·codex를 못 찾음
 // (GitHub 패널 "gh가 설치되어 있지 않아요"). 흔한 설치 위치를 뒤에 붙여둠(이미 있으면 그대로, 유저 PATH 우선).
 {
-  const have = new Set(String(process.env.PATH || "").split(":").filter(Boolean));
+  const have = new Set(String(process.env.PATH || "/usr/bin:/bin:/usr/sbin:/sbin").split(":").filter(Boolean)); // PATH 자체가 없으면 기본값부터
   const extra = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", require("node:path").join(require("node:os").homedir(), ".local", "bin")].filter((d) => !have.has(d));
   if (extra.length) process.env.PATH = [...have, ...extra].join(":");
 }
@@ -430,10 +430,27 @@ ipcMain.handle("browser:devtools-close", (e, { guestId } = {}) => {
 const browserControl = require("./browser-control.cjs").createBrowserControl({
   getGuest: (id) => { const wc = webContents.fromId(Number(id)); return wc && !wc.isDestroyed() && wc.getType() === "webview" ? wc : null; },
   // 그 레포 브라우저가 안 열려 있으면 모든 창에 "열어줘" — 그 레포 WorkspaceView가 받아서 엶.
-  requestOpen: (cwd, url) => { for (const w of BrowserWindow.getAllWindows()) { try { w.webContents.send("browser:open-request", { cwd, url }); } catch { /* 닫히는 중 */ } } },
+  // 레포 하나만 열리게(#1041 리뷰): 모든 창에 묻고 150ms 동안 "내 레포가 그 cwd를 품음" 답을 모아 가장 깊은 레포만 엶.
+  requestOpen: (cwd, url) => {
+    const reqId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    openClaims.set(reqId, []);
+    for (const w of BrowserWindow.getAllWindows()) { try { w.webContents.send("browser:open-request", { cwd, url, reqId }); } catch { /* 닫히는 중 */ } }
+    setTimeout(() => {
+      const claims = openClaims.get(reqId) || []; openClaims.delete(reqId);
+      const best = claims.sort((a, b) => b.depth - a.depth)[0];
+      if (best && !best.sender.isDestroyed()) best.sender.send("browser:open-grant", { reqId, repo: best.repo, url });
+    }, 150);
+  },
   isAllowedUrl: isBrowserUrl,
 });
-ipcMain.on("browser:register", (e, { guestId, repo, visible } = {}) => { const g = ownGuest(e.sender, guestId); if (g) browserControl.register(g, { repo, visible }); });
+const openClaims = new Map(); // reqId → [{ sender, repo, depth }]
+const realOf = (p) => { try { return require("node:fs").realpathSync(p); } catch { return String(p || ""); } };
+ipcMain.on("browser:claim-open", (e, { reqId, repo, cwd } = {}) => {
+  const list = openClaims.get(reqId); if (!list) return;
+  const r = realOf(repo).replace(/\/+$/, ""), c = realOf(cwd).replace(/\/+$/, ""); // 심볼릭 링크로 연 레포도 맞게
+  if (r && (c === r || c.startsWith(r + "/"))) list.push({ sender: e.sender, repo, depth: r.length });
+});
+ipcMain.on("browser:register", (e, { guestId, repo, visible } = {}) => { const g = ownGuest(e.sender, guestId); if (g) browserControl.register(g, { repo: realOf(repo), visible }); }); // 실경로로 — MCP의 cwd(process.cwd)는 실경로
 ipcMain.on("browser:unregister", (e, { guestId } = {}) => { if (ownGuest(e.sender, guestId)) browserControl.unregister(guestId); });
 // 부팅마다 새 토큰으로 띄우고 주소·토큰을 0600 파일에 — MCP 스크립트가 매 요청 때 읽음(포트가 바뀌어도 OK).
 const BROWSER_TOKEN = require("node:crypto").randomBytes(24).toString("hex");
@@ -442,6 +459,8 @@ app.whenReady().then(() => browserControl.listen(BROWSER_TOKEN)).then(({ port })
   writeFileSync(browserEndpointFile(), JSON.stringify({ url: `http://127.0.0.1:${port}/call`, token: BROWSER_TOKEN }), { mode: 0o600 });
   chmodSync(browserEndpointFile(), 0o600);
   // Claude·Codex에 MCP 자동 등록(이미 같으면 건너뜀). CLI 없으면 그 쪽만 건너뜀.
+  // 패키징 앱에서만 — dev 실행이 등록을 dev 바이너리·dev userData로 덮어 패키징 앱과 번갈아 깨지지 않게(#1041 리뷰).
+  if (!app.isPackaged) return;
   const rp = loadSavedRuntimePaths();
   return require("./browser-mcp-install.cjs").installBrowserMcp({
     userData: app.getPath("userData"),
