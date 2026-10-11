@@ -35,6 +35,7 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
   let cur = null;
   const label = (el) => el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + (typeof el.className === "string" && el.className.trim() ? "." + el.className.trim().split(/\\s+/).slice(0, 2).join(".") : "");
   const move = (e) => {
+    if (down && e.buttons === 0) { down = null; dragging = false; } // 놓는 걸 놓쳤으면(창 밖) 드래그 해제
     if (down && (dragging || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6)) {
       dragging = true;
       const r = regionRect(e);
@@ -54,7 +55,12 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
   const stop = (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
   // 드래그 = 영역 지정(6px 넘게 끌면). 그냥 클릭 = 요소 하나.
   let down = null, dragging = false;
-  const onDown = (e) => { stop(e); if (e.button === 0) { down = { x: e.clientX, y: e.clientY }; dragging = false; } };
+  const onDown = (e) => {
+    stop(e);
+    if (e.button !== 0) return;
+    down = { x: e.clientX, y: e.clientY }; dragging = false;
+    try { document.documentElement.setPointerCapture(e.pointerId); } catch {} // 창 밖에서 놓아도 pointerup 받음
+  };
   const regionRect = (e) => ({ x: Math.min(down.x, e.clientX), y: Math.min(down.y, e.clientY), w: Math.abs(e.clientX - down.x), h: Math.abs(e.clientY - down.y) });
   const onUp = (e) => {
     stop(e);
@@ -70,10 +76,10 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
     resolve(regionResult(r));
   };
   const cleanup = () => {
-    window.removeEventListener("mousemove", move, true);
-    window.removeEventListener("mousedown", onDown, true);
-    window.removeEventListener("mouseup", onUp, true);
-    for (const t of ["pointerdown", "pointerup"]) window.removeEventListener(t, stop, true);
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerdown", onDown, true);
+    window.removeEventListener("pointerup", onUp, true);
+    for (const t of ["mousedown", "mouseup"]) window.removeEventListener(t, stop, true);
     window.removeEventListener("click", click, true);
     window.removeEventListener("keydown", key, true);
     host.remove();
@@ -145,10 +151,12 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
   };
   const key = (e) => { if (e.key === "Escape") { stop(e); cleanup(); resolve(null); } };
   window.__mustardPickCancel = () => { cleanup(); resolve(null); };
-  window.addEventListener("mousemove", move, true);
-  window.addEventListener("mousedown", onDown, true);
-  window.addEventListener("mouseup", onUp, true);
-  for (const t of ["pointerdown", "pointerup"]) window.addEventListener(t, stop, true);
+  // 포인터 이벤트로 받음(#1037 리뷰) — pointerdown을 preventDefault하면 Chromium이 뒤따르는 mousedown/mousemove/mouseup을
+  // 안 보내서 마우스 이벤트로는 드래그가 시작조차 안 됨. mousedown/up은 페이지로 안 가게 막기만.
+  window.addEventListener("pointermove", move, true);
+  window.addEventListener("pointerdown", onDown, true);
+  window.addEventListener("pointerup", onUp, true);
+  for (const t of ["mousedown", "mouseup"]) window.addEventListener(t, stop, true);
   window.addEventListener("click", click, true);
   window.addEventListener("keydown", key, true);
 }))()`;
