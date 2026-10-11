@@ -203,14 +203,23 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
     addTab(incoming.url); // 바깥 신호(n 변경)로 탭 추가
   }, [incoming]);
 
-  // 탭 제거 — 활성 탭이면 옆 탭으로. 0개가 되면 onEmpty(없으면 빈 탭 하나 남김).
+  // 탭 제거 — 함수형 업데이트(창 분리는 await 뒤에 불려서, 그 사이 바뀐 탭·제목을 덮어쓰면 안 됨, #1034 리뷰).
+  // 활성 탭이면 옆 탭으로. 옮겨서 0개가 되면 [] → 아래 이펙트가 저장([])·onEmpty. 그냥 닫아서 0개면 빈 탭 하나.
+  const nextActive = useRef(0);
   const removeTab = (id: number, viaMove = false) => {
-    const idx = tabs.findIndex((x) => x.id === id);
-    const rest = tabs.filter((x) => x.id !== id);
-    if (!rest.length) { if (viaMove && onEmpty) { onEmpty(); return; } const blank = { id: ++tabSeq, url: "", title: "" }; setTabs([blank]); setActiveId(blank.id); return; }
-    setTabs(rest);
-    if (id === activeId) setActiveId(rest[Math.min(idx, rest.length - 1)].id);
+    setTabs((prev) => {
+      const idx = prev.findIndex((x) => x.id === id);
+      if (idx < 0) return prev;
+      const rest = prev.filter((x) => x.id !== id);
+      if (!rest.length && !(viaMove && onEmpty)) rest.push({ id: ++tabSeq, url: "", title: "" });
+      nextActive.current = rest.length ? rest[Math.min(idx, rest.length - 1)].id : 0;
+      return rest;
+    });
+    setActiveId((cur) => (cur === id ? nextActive.current : cur)); // tabs 업데이트 다음에 처리됨(훅 순서)
   };
+  const onEmptyRef = useRef(onEmpty);
+  useEffect(() => { onEmptyRef.current = onEmpty; });
+  useEffect(() => { if (!tabs.length) onEmptyRef.current?.(); }, [tabs.length]);
   const patch = (id: number, p: Partial<Tab>) => setTabs((prev) => prev.map((x) => (x.id === id ? { ...x, ...p } : x)));
 
   return (

@@ -357,6 +357,8 @@ function ownGuest(sender, id) {
 ipcMain.handle("browser:devtools-open", (e, { guestId, devtoolsId } = {}) => {
   const guest = ownGuest(e.sender, guestId), dt = ownGuest(e.sender, devtoolsId);
   if (!guest || !dt || guest === dt) return { ok: false };
+  // devtools 안에서 링크·"새 탭에서 열기"가 이 webview를 페이지로 덮어써 devtools가 사라지지 않게(#1034 리뷰).
+  dt.setWindowOpenHandler(() => ({ action: "deny" }));
   guest.setDevToolsWebContents(dt);
   guest.openDevTools();
   return { ok: true };
