@@ -108,7 +108,7 @@ interface NunopiDesktopApi {
   // 포트 패널(#880) — 워크스페이스(cwd)가 띄운 dev 서버 리스닝 포트. open은 기본 브라우저로.
   // #1034 인앱 브라우저 — 분리 창(멀티 모니터) + guest 포커스 중 앱 단축키 전달.
   browser?: {
-    openWindow(payload: { url?: string; repo?: string }): Promise<{ ok: boolean; reason?: string }>;
+    openWindow(payload: { url?: string; repo?: string; devtools?: boolean }): Promise<{ ok: boolean; reason?: string }>;
     setAppChords(list: string[]): void;
     openDevTools(guestId: number, rect: { x: number; y: number; w: number; h: number }): Promise<{ ok: boolean }>;
     devtoolsBounds(guestId: number, rect: { x: number; y: number; w: number; h: number }): void;

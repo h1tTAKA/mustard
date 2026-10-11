@@ -10,12 +10,12 @@ import BrowserPane from "@/components/workspace/BrowserPane";
 const key = (repo: string, k: string) => `nunopi:ws:${repo}:${k}`;
 function store(k: string, v: string) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { /* ignore */ } }
 
-export default function BrowserWindowView({ url, repo }: { url: string; repo: string }) {
+export default function BrowserWindowView({ url, repo, devtools }: { url: string; repo: string; devtools?: boolean }) {
   const [title, setTitle] = useState(url);
   // 이 창의 활성 탭 주소를 레포별로 기억 — 창 닫고 앱에서 지구본 누르면 그 주소가 새 탭으로 이어짐.
   const onTabsChange = (urls: string[], active: number) => { const u = urls[active] ?? ""; setTitle(u); if (repo) store(key(repo, "browser-detached"), u); };
   // 앱 안으로: 앱 창이 storage 이벤트로 받아 dock에 새 탭으로 엶. 이 탭의 "이어보기" 기억은 지움(중복 방지).
-  const dock = (u: string) => { store(key(repo, "browser-dock"), JSON.stringify({ url: u, n: Date.now() })); store(key(repo, "browser-detached"), ""); };
+  const dock = (u: string, dt: boolean) => { store(key(repo, "browser-dock"), JSON.stringify({ url: u, n: Date.now(), devtools: dt })); store(key(repo, "browser-detached"), ""); };
   const name = repo.split("/").filter(Boolean).pop() ?? "";
   return (
     // h-screen: body가 min-h-full이라 h-full이 안 잡혀 webview가 짧게 잘렸음(AppShell과 같은 방식).
@@ -25,7 +25,7 @@ export default function BrowserWindowView({ url, repo }: { url: string; repo: st
         {name && <span className="shrink-0 font-medium text-zinc-700 dark:text-zinc-200">{name}</span>}
         <span className="truncate">{title}</span>
       </header>
-      <div className="min-h-0 flex-1"><BrowserPane repo={repo} initial={{ urls: [url], active: 0 }} onTabsChange={onTabsChange} onDock={repo ? dock : undefined} onEmpty={() => window.close()} /></div>
+      <div className="min-h-0 flex-1"><BrowserPane repo={repo} initial={{ urls: [url], active: 0, devtools }} onTabsChange={onTabsChange} onDock={repo ? dock : undefined} onEmpty={() => window.close()} /></div>
     </div>
     </I18nProvider>
   );

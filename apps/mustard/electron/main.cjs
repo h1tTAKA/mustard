@@ -342,7 +342,7 @@ ipcMain.handle("browser-window:open", (_e, payload) => {
   if (url && !isBrowserUrl(url)) return { ok: false, reason: "invalid" };
   if (!appBase) return { ok: false, reason: "not-ready" };
   try {
-    const w = createModeWindow("browser", { url, repo });
+    const w = createModeWindow("browser", { url, repo, devtools: payload?.devtools ? "1" : "" }); // 개발자 도구 열림 이어받기
     w.setTitle("Browser");
   } catch (e) { return { ok: false, reason: "error", error: String(e?.message || e) }; }
   return { ok: true };

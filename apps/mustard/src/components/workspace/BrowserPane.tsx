@@ -25,15 +25,16 @@ function subscribeGuestKeys() {
 }
 
 // 탭 하나 — 주소창·뒤/앞/새로고침·개발자 도구·webview. 안 보이는 탭도 언마운트하지 않음(페이지 유지).
-function BrowserPage({ repo, url, visible, ports, onUrlChange, onTitle, onDetach, onDock }: {
+function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, onTitle, onDetach, onDock }: {
   repo: string;
   url: string;                          // 처음 열 주소("" = 빈 화면)
   visible: boolean;
   ports: number[];
   onUrlChange: (url: string) => void;
   onTitle: (title: string) => void;
-  onDetach?: (url: string) => void;     // 별도 창으로 떼기(분리 창 자신엔 없음)
-  onDock?: (url: string) => void;       // 분리 창 → 앱 안으로 되돌리기(분리 창에만)
+  initialDevtools?: boolean;            // 창 분리·되돌리기 때 개발자 도구 열림을 이어받음
+  onDetach?: (url: string, devtools: boolean) => void; // 별도 창으로 떼기(분리 창 자신엔 없음)
+  onDock?: (url: string, devtools: boolean) => void;   // 분리 창 → 앱 안으로 되돌리기(분리 창에만)
 }) {
   const t = useT();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -44,7 +45,7 @@ function BrowserPage({ repo, url, visible, ports, onUrlChange, onTitle, onDetach
   const [loading, setLoading] = useState(false);
   const [nav, setNav] = useState({ back: false, fwd: false });
   const [ready, setReady] = useState(false); // guest 붙기 전엔 loadURL·reload 등이 예외를 던짐(#1034 리뷰)
-  const [devtools, setDevtools] = useState(false); // 같은 화면 안 개발자 도구(별도 창 X)
+  const [devtools, setDevtools] = useState(!!initialDevtools); // 같은 화면 안 개발자 도구(별도 창 X)
   const [wide, setWide] = useState(true);           // 넓으면 오른쪽, 좁으면 아래
   const areaRef = useRef<HTMLDivElement>(null);
   const dtHostRef = useRef<HTMLDivElement>(null);
@@ -194,8 +195,8 @@ function BrowserPage({ repo, url, visible, ports, onUrlChange, onTitle, onDetach
         ))}
         <button type="button" className={`${btn} ${picking ? "bg-mustard-500/20 text-mustard-700 dark:text-mustard-300" : ""}`} disabled={!ready} aria-pressed={picking} onClick={togglePick} title={t("browser.pick")} aria-label={t("browser.pick")}><IconPointer size={14} stroke={2} aria-hidden /></button>
         <button type="button" className={`${btn} ${devtools ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : ""}`} disabled={!ready} aria-pressed={devtools} onClick={() => setDevtools((v) => !v)} title={t("browser.devtools")} aria-label={t("browser.devtools")}><IconCode size={14} stroke={2} aria-hidden /></button>
-        {onDock && <button type="button" className={btn} onClick={() => onDock(current)} title={t("browser.dock")} aria-label={t("browser.dock")}><IconArrowsMinimize size={14} stroke={2} aria-hidden /></button>}
-        {onDetach && <button type="button" className={btn} onClick={() => onDetach(current)} title={t("browser.detach")} aria-label={t("browser.detach")}><IconAppWindow size={14} stroke={2} aria-hidden /></button>}
+        {onDock && <button type="button" className={btn} onClick={() => onDock(current, devtools)} title={t("browser.dock")} aria-label={t("browser.dock")}><IconArrowsMinimize size={14} stroke={2} aria-hidden /></button>}
+        {onDetach && <button type="button" className={btn} onClick={() => onDetach(current, devtools)} title={t("browser.detach")} aria-label={t("browser.detach")}><IconAppWindow size={14} stroke={2} aria-hidden /></button>}
       </div>
       <div ref={areaRef} className={`flex min-h-0 flex-1 ${wide ? "flex-row" : "flex-col"}`}>
         <div ref={hostRef} className="relative min-h-0 min-w-0 flex-1 bg-white">
@@ -237,24 +238,26 @@ function BrowserPage({ repo, url, visible, ports, onUrlChange, onTitle, onDetach
 }
 
 // 탭 묶음(#1034) — dock·분리 창 공용. 탭 줄은 코드 탭바와 같은 모양, pr-[17px]은 dock 이동 그립 자리(#716).
-type Tab = { id: number; url: string; title: string };
+type Tab = { id: number; url: string; title: string; devtools?: boolean }; // devtools = 처음 열 때 개발자 도구도
 let tabSeq = 0;
 const hostOf = (u: string) => { try { return new URL(u).host; } catch { return u; } };
 
 export default function BrowserPane({ repo, initial, incoming, onTabsChange, onDetach, onDock, onEmpty }: {
   repo: string;
-  initial: { urls: string[]; active: number };            // 처음 탭들(레포별 저장분)
-  incoming?: { url: string; n: number; at?: number } | null; // 바깥에서 탭 밀어넣기(분리 창 → 앱으로). n이 바뀔 때마다, at = 원래 자리
+  initial: { urls: string[]; active: number; devtools?: boolean }; // 처음 탭들(레포별 저장분). devtools = 활성 탭에 개발자 도구(분리 창용)
+  incoming?: { url: string; n: number; at?: number; devtools?: boolean } | null; // 바깥에서 탭 밀어넣기(분리 창 → 앱으로). n이 바뀔 때마다, at = 원래 자리
   onTabsChange?: (urls: string[], active: number) => void; // 저장용
-  onDetach?: (url: string, index: number) => Promise<boolean>; // 활성 탭을 별도 창으로(성공하면 이 탭은 닫음). index = 떼기 전 자리
-  onDock?: (url: string) => void;                          // 분리 창: 활성 탭을 앱 안으로
+  onDetach?: (url: string, index: number, devtools: boolean) => Promise<boolean>; // 활성 탭을 별도 창으로(성공하면 이 탭은 닫음). index = 떼기 전 자리
+  onDock?: (url: string, devtools: boolean) => void;       // 분리 창: 활성 탭을 앱 안으로
   onEmpty?: () => void;                                    // 떼거나 보내서 탭이 0개가 됨
 }) {
   const t = useT();
   // 탭 목록과 활성 탭은 한 state — 지우기·추가가 둘을 같이 바꿔서, 따로 두면 업데이트 순서에 기대게 됨(#1034 리뷰).
   const [st, setSt] = useState<{ tabs: Tab[]; activeId: number }>(() => {
-    const tabs = (initial.urls.length ? initial.urls : [""]).map((url) => ({ id: ++tabSeq, url, title: "" }));
-    return { tabs, activeId: tabs[Math.min(Math.max(initial.active, 0), tabs.length - 1)].id };
+    const tabs: Tab[] = (initial.urls.length ? initial.urls : [""]).map((url) => ({ id: ++tabSeq, url, title: "" }));
+    const active = tabs[Math.min(Math.max(initial.active, 0), tabs.length - 1)];
+    if (initial.devtools) active.devtools = true;
+    return { tabs, activeId: active.id };
   });
   const { tabs, activeId } = st;
   const setActiveId = (id: number) => setSt((p) => ({ ...p, activeId: id }));
@@ -285,15 +288,15 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
   useEffect(() => { onTabsChangeRef.current?.(tabs.map((x) => x.url), activeIdx); }, [urlsKey, activeIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // at: 넣을 자리(분리했다 돌아온 탭은 원래 자리로). 없으면 끝에.
-  const addTab = (url = "", at?: number) => {
-    const tab = { id: ++tabSeq, url, title: "" };
+  const addTab = (url = "", at?: number, devtools?: boolean) => {
+    const tab: Tab = { id: ++tabSeq, url, title: "", devtools };
     setSt((p) => { const i = at === undefined ? p.tabs.length : Math.min(Math.max(at, 0), p.tabs.length); return { tabs: [...p.tabs.slice(0, i), tab, ...p.tabs.slice(i)], activeId: tab.id }; });
   };
   const lastIncoming = useRef(0);
   useEffect(() => {
     if (!incoming || incoming.n === lastIncoming.current) return;
     lastIncoming.current = incoming.n;
-    addTab(incoming.url, incoming.at); // 바깥 신호(n 변경)로 탭 추가
+    addTab(incoming.url, incoming.at, incoming.devtools); // 바깥 신호(n 변경)로 탭 추가
   }, [incoming]);
 
   // 탭 제거 — 함수형 업데이트(창 분리는 await 뒤에 불려서, 그 사이 바뀐 탭·제목을 덮어쓰면 안 됨, #1034 리뷰).
@@ -341,10 +344,10 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
         </button>
       </div>
       {tabs.map((tab) => (
-        <BrowserPage key={tab.id} repo={repo} url={tab.url} visible={tab.id === activeId} ports={ports}
+        <BrowserPage key={tab.id} repo={repo} url={tab.url} initialDevtools={tab.devtools} visible={tab.id === activeId} ports={ports}
           onUrlChange={(u) => patch(tab.id, { url: u })} onTitle={(title) => patch(tab.id, { title })}
-          onDetach={onDetach ? (u) => { void onDetach(u, tabs.findIndex((x) => x.id === tab.id)).then((ok) => { if (ok) removeTab(tab.id, true); }); } : undefined}
-          onDock={onDock ? (u) => { onDock(u); removeTab(tab.id, true); } : undefined} />
+          onDetach={onDetach ? (u, dt) => { void onDetach(u, tabs.findIndex((x) => x.id === tab.id), dt).then((ok) => { if (ok) removeTab(tab.id, true); }); } : undefined}
+          onDock={onDock ? (u, dt) => { onDock(u, dt); removeTab(tab.id, true); } : undefined} />
       ))}
     </div>
   );
