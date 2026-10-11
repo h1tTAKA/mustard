@@ -549,6 +549,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
                   <WorkspaceView
                     path={tab.path}
                     active={active && on}
+                    agentWorking={repoStatus[tab.path] === "working"} // #1043 숨은 레포라도 에이전트 작업 중이면 캐치업 연결 유지
                     providerId={providerId}
                     providerSettings={providerSettings}
                     onExitWorkspace={onExitWorkspace}
