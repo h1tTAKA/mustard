@@ -453,8 +453,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                   </button>
                   {(c.status === "done" || c.status === "error") && (
                     <div className="border-t border-zinc-200/70 px-3 py-2 text-[11.5px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">
-                      {c.status === "done" ? <Markdown>{c.expl ?? ""}</Markdown> : <span className="text-[10px] text-rose-500">{t("learn.explainError")}</span>}
+                      {/* #1060 변경 코드는 제목 바로 밑·설명 위 */}
                       {c.kind === "diff" && (() => { const d = parseDiffItemKey(c.key); return d ? <CatchupDiffCode root={root} hash={d.hash} file={d.file} /> : null; })()}
+                      {c.status === "done" ? <Markdown>{c.expl ?? ""}</Markdown> : <span className="text-[10px] text-rose-500">{t("learn.explainError")}</span>}
                     </div>
                   )}
                 </li>

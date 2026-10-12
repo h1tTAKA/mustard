@@ -27,7 +27,7 @@ export default function CatchupDiffCode({ root, hash, file }: { root: string; ha
   };
 
   return (
-    <div className="mt-2">
+    <div className="mb-2">
       <button type="button" onClick={toggle} aria-expanded={open}
         className="flex items-center gap-1 rounded-md px-1 py-0.5 text-[10.5px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
         <IconChevronDown size={12} stroke={2} className={`transition ${open ? "" : "-rotate-90"}`} aria-hidden />
