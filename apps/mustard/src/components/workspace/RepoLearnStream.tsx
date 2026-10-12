@@ -2,7 +2,7 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink } from "@tabler/icons-react";
+import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
@@ -451,8 +451,27 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                   <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" && onOpenDiff ? "pr-16" : "pr-9"}`}>
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
+                      {c.kind === "diff" ? (() => {
+                        // #1062 diff 카드 — 파일명 강조 + [브랜치][커밋] 칩 + 커밋 제목(2줄) + 시각. tool = "브랜치 · 커밋 제목"(옛 카드는 "diff")
+                        const m = /^(.*) @([0-9a-f]{4,40})$/i.exec(c.target); const path = m ? m[1] : c.target; const hash = m?.[2];
+                        const info = c.tool !== "diff" ? c.tool : ""; const cut = info.indexOf(" · ");
+                        const branch = cut >= 0 ? info.slice(0, cut) : info; const subject = cut >= 0 ? info.slice(cut + 3) : "";
+                        const slash = path.lastIndexOf("/");
+                        return (<>
+                          <span className="block break-all text-[12px] font-medium text-zinc-700 dark:text-zinc-100">
+                            {slash >= 0 && <span className="font-normal text-zinc-400 dark:text-zinc-500">{path.slice(0, slash + 1)}</span>}{path.slice(slash + 1)}
+                          </span>
+                          <span className="mt-1 flex flex-wrap items-center gap-1">
+                            {branch && <span className="inline-flex max-w-full items-center gap-0.5 truncate rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"><IconGitBranch size={10} stroke={2} className="shrink-0" aria-hidden /><span className="truncate">{branch}</span></span>}
+                            {hash && <span className="rounded-md bg-mustard-500/10 px-1.5 py-0.5 font-mono text-[10px] text-mustard-700 dark:text-mustard-400">{hash}</span>}
+                            <span className="text-[10px] text-zinc-400 dark:text-zinc-500">{fmtDateTime(c.ts)}</span>
+                          </span>
+                          {subject && <span className="mt-1 line-clamp-2 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{subject}</span>}
+                        </>);
+                      })() : (<>
                       <span className="block break-all text-[12px] font-medium text-zinc-700 dark:text-zinc-100">{c.target}</span>
-                      <span className="block text-[10px] text-zinc-400 dark:text-zinc-500">{/* #1060 모든 카드 = 기록 날짜·시각. #1062 diff는 "브랜치 · 커밋 제목"(tool) — 커밋 번호는 제목 @hash */}{c.kind === "narration" ? fmtDateTime(c.ts) : c.kind === "diff" && c.tool !== "diff" ? `⎇ ${c.tool} · ${fmtDateTime(c.ts)}` : `${c.tool.replace(/^katchup_/, "")} · ${fmtDateTime(c.ts)}`}</span>
+                      <span className="block text-[10px] text-zinc-400 dark:text-zinc-500">{/* #1060 모든 카드 = 기록 날짜·시각 */}{c.kind === "narration" ? fmtDateTime(c.ts) : `${c.tool.replace(/^katchup_/, "")} · ${fmtDateTime(c.ts)}`}</span>
+                      </>)}
                     </span>
                     {c.status === "loading" && <IconLoader2 size={12} stroke={2} className="mt-0.5 shrink-0 animate-spin text-zinc-400" aria-hidden />}
                   </button>
