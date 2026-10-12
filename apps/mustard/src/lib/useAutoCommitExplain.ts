@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useLocale, useSetting, withModel, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { parseDiff, groupHunks, noteStoreKey, loadNotes, saveNote, explainDiffText } from "@/lib/hunkNotes";
+import { buildSessionItem } from "@/lib/sessionCard";
 
 // #1056 캐치업 연동 — 파일 하나 설명이 끝나면 캐치업 카드(kind diff)로. key에 hash·파일을 담아 카드에서 diff를 열 수 있게.
 export const CATCHUP_ITEM_EVENT = "nunopi:catchup-item"; // detail = { root, item } — 같은 창 캐치업이 즉시 추가
@@ -81,6 +82,15 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         for (const c of fresh) {
           if (!alive) return;
           await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200));
+          // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드(원본은 서버에 저장, 카드에서 펼쳐 봄)
+          if (alive) {
+            const { providerId: sp, providerSettings: sps, locale: sl } = cfg.current;
+            const item = await buildSessionItem(root, c.hash, c.ts, c.subject ?? "", branch, sp, sps, sl).catch(() => null);
+            if (item && alive) {
+              void post("/api/repo/stream", { root, items: [item] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
+              window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
+            }
+          }
           if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)
           st = { since: Math.max(st.since, c.ts), done: [...st.done, c.hash].slice(-50) }; // 같은 초 커밋은 done으로 중복 차단
           write(st);
