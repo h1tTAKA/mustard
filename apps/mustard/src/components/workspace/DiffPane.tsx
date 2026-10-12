@@ -5,42 +5,8 @@ import { codeToTokens, type ThemedToken, type BundledLanguage } from "shiki";
 import { IconLoader2, IconAlertTriangle, IconGitCompare, IconSparkles, IconRefresh } from "@tabler/icons-react";
 import { useLocale, useT } from "@mustard/core";
 import { Markdown } from "@mustard/core";
-import { parseCardSuggestions } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
-type StreamEvent = { type: "progress"; line: string } | { type: "result"; response: { summary: string } } | { type: "error"; message: string };
-
-interface DLine { kind: "hunk" | "add" | "del" | "ctx" | "meta"; oldN: number | null; newN: number | null; text: string; ctxLabel?: string }
-
-// 변경 구간(우리의 "hunk") — 연속 add/del 런. 사이 컨텍스트가 짧으면 한 구간으로 병합(주석 폭발 방지).
-// -U100000이라 파일당 @@가 1개뿐 → 표준 hunk 대신 실제 바뀐 블록을 단위로.
-interface Hunk { id: number; startLine: number; endLine: number; diffText: string }
-const MERGE_GAP = 3;   // 변경 사이 컨텍스트 줄이 이 이하면 같은 구간
-const CTX_LINES = 3;   // diffText에 실을 앞뒤 컨텍스트 줄 수
-const MAX_DIFF = 4000; // diffText 상한(토큰 방어)
-
-function groupHunks(lines: DLine[]): Hunk[] {
-  const hunks: Hunk[] = [];
-  let start = -1, lastChange = -1;
-  const flush = () => {
-    if (start < 0) return;
-    const from = Math.max(0, start - CTX_LINES);
-    const to = Math.min(lines.length - 1, lastChange + CTX_LINES);
-    const diffText = lines.slice(from, to + 1)
-      .filter((l) => l.kind === "add" || l.kind === "del" || l.kind === "ctx")
-      .map((l) => (l.kind === "add" ? "+ " : l.kind === "del" ? "- " : "  ") + l.text)
-      .join("\n").slice(0, MAX_DIFF);
-    hunks.push({ id: hunks.length, startLine: start, endLine: lastChange, diffText });
-    start = -1; lastChange = -1;
-  };
-  lines.forEach((l, i) => {
-    if (l.kind !== "add" && l.kind !== "del") return;
-    if (start >= 0 && i - lastChange - 1 > MERGE_GAP) flush(); // 컨텍스트 간격 크면 새 구간
-    if (start < 0) start = i;
-    lastChange = i;
-  });
-  flush();
-  return hunks;
-}
+import { type DLine, parseDiff, groupHunks, type Hunk, noteStoreKey, loadNotes, saveNote, explainDiffText, HUNK_NOTES_EVENT } from "@/lib/hunkNotes";
 
 const EXT_LANG: Record<string, string> = {
   ts: "typescript", tsx: "tsx", js: "javascript", jsx: "jsx", mjs: "javascript", cjs: "javascript", json: "json",
@@ -48,27 +14,6 @@ const EXT_LANG: Record<string, string> = {
   cpp: "cpp", cs: "csharp", swift: "swift", css: "css", scss: "scss", html: "html", md: "markdown", yml: "yaml", yaml: "yaml", sh: "bash", sql: "sql", toml: "toml",
 };
 const langOf = (file: string) => EXT_LANG[file.split(".").pop()?.toLowerCase() ?? ""] ?? "text";
-
-function parseDiff(diff: string): DLine[] {
-  const out: DLine[] = [];
-  let oldN = 0, newN = 0;
-  for (const raw of diff.split("\n")) {
-    if (raw.startsWith("@@")) {
-      const m = /@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(raw);
-      if (m) { oldN = Number(m[1]); newN = Number(m[2]); }
-      out.push({ kind: "hunk", oldN: null, newN: null, text: raw, ctxLabel: (m?.[3] ?? "").trim() });
-    } else if (/^(\+\+\+|---|diff |index |new file|deleted file|similarity|rename )/.test(raw)) {
-      out.push({ kind: "meta", oldN: null, newN: null, text: raw });
-    } else if (raw.startsWith("+")) {
-      out.push({ kind: "add", oldN: null, newN: newN++, text: raw.slice(1) });
-    } else if (raw.startsWith("-")) {
-      out.push({ kind: "del", oldN: oldN++, newN: null, text: raw.slice(1) });
-    } else {
-      out.push({ kind: "ctx", oldN: oldN++, newN: newN++, text: raw.startsWith(" ") ? raw.slice(1) : raw });
-    }
-  }
-  return out;
-}
 
 export default function DiffPane({ root, hash, file, worktree, providerId, providerSettings }: { root: string; hash?: string; file: string; worktree?: "staged" | "unstaged" | "untracked"; providerId: AgentProviderKind; providerSettings: ProviderSettings }) {
   const t = useT();
@@ -96,44 +41,33 @@ export default function DiffPane({ root, hash, file, worktree, providerId, provi
   };
   useEffect(() => { if (status === "ok") syncVp(); }, [status, lines]);
 
-  // 노트 영속 — diff 신원별 localStorage. 재오픈 시 저장된 설명 복원.
-  const noteStore = `nunopi:hunk-notes:${root}:${hash ?? (worktree ? "wt:" + worktree : "")}:${file}`;
-  // 구간 내용(diffText) 기반 안정 키 — 인덱스가 아니라 내용이라 같은 diff 재오픈 시 매칭, 편집되면 자연 미스.
+  // 노트 영속 — diff 신원별 localStorage(#1054 hunkNotes로 분리, 커밋 자동 설명과 같은 저장소).
+  const noteStore = noteStoreKey(root, file, hash, worktree);
   const hunkKey = (h: Hunk) => h.diffText; // 구간 내용 자체를 키로(해시 충돌 원천 제거, 재오픈 매칭)
-  const persist = (map: Record<string, { status: "loading" | "done" | "error"; text?: string }>) => {
-    try { const done: Record<string, string> = {}; for (const k in map) if (map[k].status === "done" && map[k].text) done[k] = map[k].text!; localStorage.setItem(noteStore, JSON.stringify(done)); } catch { /* ignore */ }
-  };
-  // diff(파일/커밋/워킹트리) 바뀌면 저장된 노트 로드(없으면 빈).
+  // diff 바뀌면 저장 노트 로드 + 자동 설명이 이 diff에 쓰면 바로 반영(진행 중 로딩 표시는 유지).
   useEffect(() => {
-    let loaded: Record<string, { status: "done"; text: string }> = {};
-    try { const raw = localStorage.getItem(noteStore); if (raw) { const m = JSON.parse(raw) as Record<string, string>; for (const k in m) loaded[k] = { status: "done", text: m[k] }; } } catch { loaded = {}; }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- diff 키 변경 시 저장 노트 복원
-    setNotes(loaded);
+    const load = () => setNotes((p) => {
+      const n: Record<string, { status: "loading" | "done" | "error"; text?: string }> = {};
+      for (const k in p) if (p[k].status === "loading") n[k] = p[k];
+      const m = loadNotes(noteStore); for (const k in m) n[k] = { status: "done", text: m[k] };
+      return n;
+    });
+    setNotes({}); // eslint-disable-line react-hooks/set-state-in-effect -- diff 키 변경 시 이전 diff 노트 비움
+    load();
+    const on = (e: Event) => { if ((e as CustomEvent).detail === noteStore) load(); };
+    window.addEventListener(HUNK_NOTES_EVENT, on);
+    return () => window.removeEventListener(HUNK_NOTES_EVENT, on);
   }, [noteStore]);
 
-  // 변경 구간 온디맨드 설명 — analyze mode:chat 재사용(서버 변경 0). 로딩→최종(카드 블록 제거) → 영속.
+  // 변경 구간 온디맨드 설명 — 로딩 → 최종 → 영속.
   async function explainHunk(h: Hunk) {
     const key = hunkKey(h);
     if (notes[key]?.status === "loading") return; // 중복 가드
     setNotes((p) => ({ ...p, [key]: { status: "loading" } }));
     try {
-      const prompt = "아래는 코드 변경(diff)입니다(- 삭제, + 추가). 다음을 쉬운 말로, 그러나 정확하게 설명해줘:\n1) 무엇을 바꿨는지 한 문장.\n2) 바뀐(+ 표시된) 코드가 실제로 하는 일을 한 줄씩 또는 흐름으로 풀어서 읽어줘.\n3) 왜 이렇게 바꿨는지(의도·이유).\n4) 어떤 효과·영향이 있는지.\n주니어 개발자도 이해할 만큼 쉽게. 짧고 명확하게. '답변' 같은 제목·머리말 없이 바로 내용부터 시작하고, 큰 제목(#, ##)은 쓰지 마세요. 카드는 만들지 마세요.";
-      const res = await fetch("/api/agent/analyze", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerId, request: { code: h.diffText, locale, providerId, mode: "chat", messages: [{ role: "user", content: prompt }], providerSettings } }),
-      });
-      if (!res.ok || !res.body) { setNotes((p) => ({ ...p, [key]: { status: "error" } })); return; }
-      const reader = res.body.getReader(); const dec = new TextDecoder();
-      let buf = "", answer = "";
-      const take = (l: string) => { if (!l.trim()) return; let ev: StreamEvent; try { ev = JSON.parse(l) as StreamEvent; } catch { return; } if (ev.type === "result") answer = ev.response.summary; };
-      for (;;) {
-        const { done, value } = await reader.read(); if (done) break;
-        buf += dec.decode(value, { stream: true }); const ls = buf.split("\n"); buf = ls.pop() ?? "";
-        for (const l of ls) take(l);
-      }
-      if (buf.trim()) take(buf); // 개행 없이 끝난 마지막 이벤트(result) 유실 방지
-      const clean = parseCardSuggestions(answer || "").text || answer || "(빈 응답)";
-      setNotes((p) => { const n = { ...p, [key]: { status: "done" as const, text: clean } }; persist(n); return n; });
+      const text = await explainDiffText(h.diffText, providerId, providerSettings, locale);
+      saveNote(noteStore, key, text); // 저장 이벤트로 load()가 done 반영
+      setNotes((p) => ({ ...p, [key]: { status: "done", text } }));
     } catch { setNotes((p) => ({ ...p, [key]: { status: "error" } })); }
   }
 
