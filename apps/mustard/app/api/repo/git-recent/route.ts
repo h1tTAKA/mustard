@@ -14,9 +14,11 @@ export async function POST(request: Request): Promise<Response> {
   if (typeof since !== "number" || !Number.isFinite(since) || since < 0) return Response.json({ error: "bad since" }, { status: 400 });
   if (!existsSync(path) || !statSync(path).isDirectory()) return Response.json({ error: "not a directory" }, { status: 400 });
   try {
-    const { stdout } = await pexecFile("git", ["log", "HEAD", "--no-merges", "-n", "20", `--since=@${Math.floor(since)}`, "--format=%H%x1f%ct"], { cwd: path, timeout: 8000 });
-    const commits = stdout.split("\n").filter(Boolean).map((l) => { const [hash, ct] = l.split("\x1f"); return { hash, ts: Number(ct) }; });
-    return Response.json({ ok: true, commits });
+    const { stdout } = await pexecFile("git", ["log", "HEAD", "--no-merges", "-n", "20", `--since=@${Math.floor(since)}`, "--format=%H%x1f%ct%x1f%s"], { cwd: path, timeout: 8000 });
+    const commits = stdout.split("\n").filter(Boolean).map((l) => { const [hash, ct, subject = ""] = l.split("\x1f"); return { hash, ts: Number(ct), subject }; });
+    // #1062 캐치업 diff 카드에 "어느 브랜치·커밋" 표시용 — 지금 HEAD 브랜치(분리 HEAD면 "HEAD").
+    const branch = (await pexecFile("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: path, timeout: 4000 }).catch(() => ({ stdout: "" }))).stdout.trim();
+    return Response.json({ ok: true, commits, branch });
   } catch (e) {
     // 커밋 없는 새 레포(HEAD 없음) 등 — 빈 목록
     return Response.json({ ok: true, commits: [], note: String((e as Error)?.message ?? e).slice(0, 200) });

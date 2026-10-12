@@ -191,8 +191,34 @@ export default function SettingsDrawer({
   const gPrDraft = useSetting<boolean>(GKEYS.prDraftDefault, GIT_DEFAULTS.prDraftDefault);
   const gAutoFetch = useSetting<boolean>(GKEYS.autoFetch, GIT_DEFAULTS.autoFetch);
   const gAutoExplain = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits); // #1054
-  const cuCommands = useSetting<boolean>(CUKEYS.commands, CATCHUP_DEFAULTS.commands); // #1049
-  const cuTerms = useSetting<boolean>(CUKEYS.terms, CATCHUP_DEFAULTS.terms);
+  // #1062 캐치업 — 카테고리별 [표시][분석]. Diff 분석은 git 자동 설명과 같은 키.
+  const cuOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
+  const cu = {
+    explainShow: useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow), explainAnalyze: useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze),
+    commandsShow: useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow), commandsAnalyze: useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze),
+    diffShow: useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow),
+    termsShow: useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow), termsAnalyze: useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze),
+  };
+  // 카테고리 → [프로바이더 키, 값, 모델 키, 모델 값] — "" = 워크스페이스 기본 AI / 그 AI 기본 모델(#1062)
+  const cuProv: Record<string, [string, string, string, string]> = {
+    explain: [CUKEYS.explainProvider, useSetting<string>(CUKEYS.explainProvider, ""), CUKEYS.explainModel, useSetting<string>(CUKEYS.explainModel, "")],
+    commands: [CUKEYS.commandsProvider, useSetting<string>(CUKEYS.commandsProvider, ""), CUKEYS.commandsModel, useSetting<string>(CUKEYS.commandsModel, "")],
+    diff: [CUKEYS.diffProvider, useSetting<string>(CUKEYS.diffProvider, ""), CUKEYS.diffModel, useSetting<string>(CUKEYS.diffModel, "")],
+  };
+  // 캐치업 카테고리 모델 목록(#1062) — 캐치업 섹션 열 때 쓰이는 프로바이더만 같은 캐시로 조회.
+  const cuProviders = [...new Set(Object.values(cuProv).map(([, v]) => (v || resolveModeProvider(modeProviders, "default")) as AgentProviderKind))].sort().join(",");
+  useEffect(() => {
+    if (activeSection !== "set-catchup") return;
+    for (const p of cuProviders.split(",") as AgentProviderKind[]) {
+      if (modelLists[p]) continue;
+      setModelLists((prev) => ({ ...prev, [p]: "loading" }));
+      fetch(`/api/agent/models?providerId=${encodeURIComponent(p)}`)
+        .then((r) => r.json())
+        .then((j) => setModelLists((prev) => ({ ...prev, [p]: j?.ok ? { models: j.models, defaultModel: j.defaultModel } : "error" })))
+        .catch(() => setModelLists((prev) => ({ ...prev, [p]: "error" })));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- modelLists는 캐시 확인용
+  }, [activeSection, cuProviders]);
   const gBranchPrefix = useSetting<string>(GKEYS.branchPrefix, GIT_DEFAULTS.branchPrefix);
   // 연동(#958) — GitHub gh auth 상태 + PAT.
   const [ghAuth, setGhAuth] = useState<{ state: string; detail?: string } | null>(null);
@@ -884,23 +910,69 @@ export default function SettingsDrawer({
           </section>
           )}
 
-          {/* 캐치업(#1049) — 명령어 해설·용어집 토글. */}
+          {/* 캐치업(#1049·#1062) — 카테고리별 [표시][분석]. 표시 끔 = 창에서 숨김(분석된 것도), 분석 끔 = 새로 분석 안 함. */}
           {activeSection === "set-catchup" && (
           <section id="set-catchup" className="scroll-mt-4 space-y-4 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+            {/* 캐치업 전체 — 끄면 패널·분석 전부 중지, 아래 카테고리는 꺼진 채 잠김(값은 보존 → 다시 켜면 그대로) */}
+            <div className="flex items-center justify-between gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800">
+              <div className="min-w-0">
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.catchupEnabled")}</span>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.catchupEnabledDesc")}</p>
+              </div>
+              <button type="button" role="switch" aria-checked={cuOn} aria-label={t("settings.catchupEnabled")}
+                onClick={() => setSetting(CUKEYS.enabled, !cuOn)}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition ${cuOn ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${cuOn ? "left-[22px]" : "left-0.5"}`} />
+              </button>
+            </div>
+            <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.catchupDesc")}</p>
             {([
-              { key: CUKEYS.commands, on: cuCommands, label: t("settings.catchupCommands"), desc: t("settings.catchupCommandsDesc") },
-              { key: CUKEYS.terms, on: cuTerms, label: t("settings.catchupTerms"), desc: t("settings.catchupTermsDesc") },
-            ]).map((row) => (
-              <div key={row.key} className="flex items-center justify-between gap-3">
+              { id: "explain", label: t("settings.catchupExplain"), desc: t("settings.catchupExplainDesc"), show: [CUKEYS.explainShow, cu.explainShow], analyze: [CUKEYS.explainAnalyze, cu.explainAnalyze] },
+              { id: "commands", label: t("settings.catchupCommands"), desc: t("settings.catchupCommandsDesc"), show: [CUKEYS.commandsShow, cu.commandsShow], analyze: [CUKEYS.commandsAnalyze, cu.commandsAnalyze] },
+              { id: "diff", label: t("settings.catchupDiff"), desc: t("settings.catchupDiffDesc"), show: [CUKEYS.diffShow, cu.diffShow], analyze: [GKEYS.autoExplainCommits, gAutoExplain] },
+              { id: "terms", label: t("settings.catchupTerms"), desc: t("settings.catchupTermsDesc"), show: [CUKEYS.termsShow, cu.termsShow], analyze: [CUKEYS.termsAnalyze, cu.termsAnalyze] },
+            ] as { id: string; label: string; desc: string; show: [string, boolean]; analyze: [string, boolean] }[]).map((row) => (
+              <div key={row.id} className={`flex items-center justify-between gap-3 ${cuOn ? "" : "opacity-50"}`}>
                 <div className="min-w-0">
                   <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{row.label}</span>
                   <p className="text-xs text-zinc-400 dark:text-zinc-500">{row.desc}</p>
+                  {/* 카테고리별 AI(#1062) — 용어는 해설·명령어 응답에서 모아서 따로 없음 */}
+                  {cuProv[row.id] && (() => { const [pKey, pVal, mKey, mVal] = cuProv[row.id]; const eff = (pVal || resolveModeProvider(modeProviders, "default")) as AgentProviderKind; const list = modelLists[eff]; const listed = typeof list === "object" ? list : undefined; return (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    <div className="relative w-52">
+                      <select value={pVal} onChange={(e) => { setSetting(pKey, e.target.value); setSetting(mKey, ""); }} disabled={!cuOn}
+                        aria-label={`${row.label} ${t("settings.catchupProvider")}`}
+                        className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 pr-8 text-xs text-zinc-900 outline-none transition focus:border-zinc-400 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-500">
+                        <option value="">{t("settings.catchupProviderDefault")}</option>
+                        {PROVIDER_CATALOG.map((p) => (<option key={p.id} value={p.id}>{t(`provider.${p.id}`)}</option>))}
+                      </select>
+                      <IconChevronDown size={14} stroke={2} aria-hidden className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
+                    </div>
+                    {/* 모델 — "" = 그 AI 기본 모델. 목록은 /api/agent/models(학습모듈 모델 선택과 같은 캐시) */}
+                    <div className="relative w-52">
+                      <select value={mVal} onChange={(e) => setSetting(mKey, e.target.value)} disabled={!cuOn || !listed}
+                        aria-label={`${row.label} ${t("settings.catchupModel")}`}
+                        className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 pr-8 text-xs text-zinc-900 outline-none transition focus:border-zinc-400 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-500">
+                        <option value="">{list === "loading" ? "…" : t("settings.catchupModelDefault", { name: listed?.models.find((x) => x.id === listed.defaultModel)?.label ?? listed?.defaultModel ?? "" })}</option>
+                        {listed?.models.map((m) => (<option key={m.id} value={m.id}>{m.label}{m.latest ? ` (${t("settings.modelLatest")})` : ""}</option>))}
+                      </select>
+                      <IconChevronDown size={14} stroke={2} aria-hidden className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
+                    </div>
+                  </div>
+                  ); })()}
                 </div>
-                <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
-                  onClick={() => setSetting(row.key, !row.on)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
-                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${row.on ? "left-[22px]" : "left-0.5"}`} />
-                </button>
+                <div className="flex shrink-0 items-center gap-3">
+                  {([["show", t("settings.catchupShow"), row.show], ["analyze", t("settings.catchupAnalyze"), row.analyze]] as const).map(([k, cap, [key, stored]]) => { const on = cuOn && stored; return (
+                    <div key={k} className="flex flex-col items-center gap-1">
+                      <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">{cap}</span>
+                      <button type="button" role="switch" aria-checked={on} aria-label={`${row.label} ${cap}`} disabled={!cuOn}
+                        onClick={() => setSetting(key, !stored)}
+                        className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
+                      </button>
+                    </div>
+                  ); })}
+                </div>
               </div>
             ))}
           </section>

@@ -1,10 +1,11 @@
 // 터미널 에이전트 실시간 활동 내레이션(#870) — main이 관찰한 터미널 버퍼 델타를 받아
 // SNA 에이전트(구독 CLI)로 "지금 뭘 어떻게 하는지 + 개념/용어"를 초보 눈높이로 생성해 캐치업(구 학습 스트림)에 push.
 // 유저 아키텍처: 머스타드 터미널의 에이전트 동작을 우리 SNA가 관찰하며 실시간 설명.
-import { snaClaudeProvider, snaCodexProvider } from "@mustard/nunopi/server";
+import { snaClaudeProvider, snaCodexProvider, snaOpenCodeProvider } from "@mustard/nunopi/server";
 import type { AgentAnalyzeRequest } from "@mustard/core";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems } from "@/lib/catchupStore";
+import { isNarrationOn, narrationProvider, narrationModel } from "@/lib/narrationConfig";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -86,15 +87,20 @@ export async function POST(req: Request): Promise<Response> {
   const delta = typeof body.delta === "string" ? body.delta.slice(0, 6000) : "";
   const diff = typeof body.diff === "string" ? body.diff.slice(0, 6500) : "";
   if (!cwd || delta.trim().length < 40) return Response.json({ ok: false, reason: "no cwd/delta" });
+  if (!isNarrationOn()) return Response.json({ ok: true, skipped: "off" }); // #1062 설정 > 캐치업 > 해설 분석 꺼짐
 
-  const useCodex = body.providerId === "codex";
-  const provider = useCodex ? snaCodexProvider : snaClaudeProvider;
+  // #1062 설정 > 캐치업 > 해설 AI — SNA(구독 CLI) 3종. 그 밖(openai-compatible 등)은 Claude로, 모델도 그 AI 것만 적용.
+  const chosen = body.providerId === "codex" ? "codex-agent" : narrationProvider();
+  const pid = chosen === "codex-agent" || chosen === "opencode-agent" ? chosen : "claude-agent";
+  const provider = pid === "codex-agent" ? snaCodexProvider : pid === "opencode-agent" ? snaOpenCodeProvider : snaClaudeProvider;
+  const model = pid === chosen ? narrationModel() : ""; // 다른 AI로 대체되면 그 모델 id는 안 맞음 → 기본 모델
   const request: AgentAnalyzeRequest = {
     code: "repo terminal activity",
     locale: "ko",
-    providerId: useCodex ? "codex-agent" : "claude-agent",
+    providerId: pid,
     mode: "chat",
     messages: [{ role: "user", content: narrationPrompt(agent, delta, diff) }],
+    ...(model ? { providerSettings: { [pid]: { model } } } : {}), // #1062 해설 모델
   };
   try {
     const res = await provider.analyze(request, { signal: req.signal });

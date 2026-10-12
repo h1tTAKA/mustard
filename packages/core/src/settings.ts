@@ -94,8 +94,27 @@ export const GKEYS = {
 } as const;
 
 // 캐치업(#1049) — 명령어 해설 카드·용어집 켜고 끄기.
-export const CATCHUP_DEFAULTS = { commands: true, terms: true };
-export const CUKEYS = { commands: "catchup.commands", terms: "catchup.terms" } as const;
+// #1062 카테고리마다 표시(캐치업 창에 보이기)·분석(새로 AI 분석) 분리 — 분석 꺼도 예전 내용은 표시로 계속 봄.
+// Diff 분석 = 커밋 자동 설명(GKEYS.autoExplainCommits, git 설정과 같은 키).
+export const CATCHUP_DEFAULTS = { enabled: true, explainShow: true, explainAnalyze: true, commandsShow: true, commandsAnalyze: true, diffShow: true, termsShow: true, termsAnalyze: true };
+export const CUKEYS = {
+  enabled: "catchup.enabled", // 캐치업 전체 — 끄면 패널 숨김 + 모든 분석 중지(카테고리 값은 보존)
+  explainShow: "catchup.explainShow", explainAnalyze: "catchup.explainAnalyze",
+  commandsShow: "catchup.commandsShow", commandsAnalyze: "catchup.commandsAnalyze",
+  diffShow: "catchup.diffShow",
+  termsShow: "catchup.termsShow", termsAnalyze: "catchup.termsAnalyze",
+  // 카테고리별 AI(#1062) — "" = 워크스페이스 기본 프로바이더. 용어는 해설·명령어 응답에서 모아서 별도 호출 없음.
+  explainProvider: "catchup.explainProvider", commandsProvider: "catchup.commandsProvider", diffProvider: "catchup.diffProvider",
+  // 카테고리별 모델 — "" = 그 프로바이더 기본 모델. 프로바이더 바꾸면 비움(목록이 달라서).
+  explainModel: "catchup.explainModel", commandsModel: "catchup.commandsModel", diffModel: "catchup.diffModel",
+} as const;
+
+// 프로바이더 설정에 모델만 덮어씀(#1062 캐치업 카테고리별 모델). 빈 모델이면 그대로.
+export function withModel<T extends object | undefined>(ps: T, providerId: string, model: string): T {
+  if (!model) return ps;
+  const cur = ((ps as Record<string, unknown> | undefined)?.[providerId] ?? {}) as Record<string, unknown>;
+  return { ...(ps ?? {}), [providerId]: { ...cur, model } } as T;
+}
 
 const KEY = "mustard:settings";
 type Listener = () => void;
@@ -104,6 +123,8 @@ const listeners = new Set<Listener>();
 // 이름 바뀐 설정 키(옛 → 새). 옛 값이 있고 새 키가 없으면 옮기고 옛 키 삭제 — 유저가 고른 값 유지.
 export const RENAMED_KEYS: Record<string, string> = {
   "notif.suppressWhileFocused": "notif.suppressWhileWatching", // #1021 의미가 '보고 있는 레포 억제'로 바뀜(#973)
+  "catchup.commands": "catchup.commandsAnalyze", // #1062 표시/분석 분리 — 옛 켜기/끄기는 분석으로
+  "catchup.terms": "catchup.termsAnalyze",
 };
 // 순수 이관 — 바뀌었으면 true(호출 측이 저장).
 export function migrateRenamed(obj: Record<string, unknown>): boolean {

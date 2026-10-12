@@ -2,8 +2,8 @@
 // 커밋 자동 설명(#1054) — 새 커밋이 생기면 그 커밋 파일들의 변경 구간을 "이 변경 설명"과 같은 방식으로 미리 설명·저장.
 // diff를 열면 이미 설명이 붙어 있음. 커밋에만(워킹트리 diff X). 설정 > git "커밋 변경 자동 설명".
 // 레포별 상태(localStorage) = { since: 마지막 확인 커밋 시각(초), done: 처리한 hash }. 처음 켜면 지금부터(옛 이력 X), 끄면 상태 삭제.
-import { useEffect, useRef } from "react";
-import { useLocale, useSetting, GKEYS, GIT_DEFAULTS } from "@mustard/core";
+import { useEffect, useMemo, useRef } from "react";
+import { useLocale, useSetting, withModel, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { parseDiff, groupHunks, noteStoreKey, loadNotes, saveNote, explainDiffText } from "@/lib/hunkNotes";
 
@@ -20,10 +20,16 @@ const SKIP_FILE = /\.(md|mdx|markdown|txt|rst|adoc|lock|png|jpe?g|gif|webp|ico|s
 const post = (url: string, body: unknown) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
 
 export function useAutoCommitExplain(root: string, providerId: AgentProviderKind, providerSettings: ProviderSettings) {
-  const on = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits);
+  const autoOn = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits);
+  const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
+  const diffProvider = useSetting<string>(CUKEYS.diffProvider, ""); // #1062 Diff AI("" = 워크스페이스 기본)
+  const diffModel = useSetting<string>(CUKEYS.diffModel, "");
+  const on = autoOn && catchupOn; // #1062 캐치업 전체 끄면 Diff 분석도 중지
   const { locale } = useLocale();
-  const cfg = useRef({ providerId, providerSettings, locale });
-  useEffect(() => { cfg.current = { providerId, providerSettings, locale }; }, [providerId, providerSettings, locale]);
+  const pid = (diffProvider || providerId) as AgentProviderKind;
+  const ps = useMemo(() => withModel(providerSettings, pid, diffModel), [providerSettings, pid, diffModel]);
+  const cfg = useRef({ providerId: pid, providerSettings: ps, locale });
+  useEffect(() => { cfg.current = { providerId: pid, providerSettings: ps, locale }; }, [pid, ps, locale]);
 
   useEffect(() => {
     if (!root) return;
@@ -34,7 +40,8 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
     let alive = true, busy = false;
 
-    const explainCommit = async (hash: string) => {
+    // info = 카드 메타("브랜치 · 커밋 제목", #1062) — tool 필드에 담아 저장(스키마 변경 없이).
+    const explainCommit = async (hash: string, info: string) => {
       const list = await post("/api/repo/git-show", { path: root, hash });
       const files = ((list?.files ?? []) as { status: string; path: string }[]).filter((f) => f.status !== "D" && !SKIP_FILE.test(f.path)).slice(0, MAX_FILES);
       let budget = MAX_HUNKS;
@@ -55,7 +62,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           try { const text = await explainDiffText(h.diffText, pid, ps, loc); saveNote(store, h.diffText, text); texts.push(text); } catch { /* 구간 하나 실패 — 다음 구간 */ }
         }
         if (texts.length && alive) {
-          const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: "diff", ts: Date.now(), expl: texts.join("\n\n---\n\n").slice(0, 8000) };
+          const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts: Date.now(), expl: texts.join("\n\n---\n\n").slice(0, 8000) };
           void post("/api/repo/stream", { root, items: [item] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
           window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
         }
@@ -69,10 +76,11 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         let st = read();
         if (!st) { write({ since: Math.floor(Date.now() / 1000), done: [] }); return; } // 처음 켬 → 지금부터
         const j = await post("/api/repo/git-recent", { path: root, since: st.since });
-        const fresh = ((j?.commits ?? []) as { hash: string; ts: number }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
+        const fresh = ((j?.commits ?? []) as { hash: string; ts: number; subject?: string }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
+        const branch = typeof j?.branch === "string" ? j.branch : "";
         for (const c of fresh) {
           if (!alive) return;
-          await explainCommit(c.hash);
+          await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200));
           if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)
           st = { since: Math.max(st.since, c.ts), done: [...st.done, c.hash].slice(-50) }; // 같은 초 커밋은 done으로 중복 차단
           write(st);
