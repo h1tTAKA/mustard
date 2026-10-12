@@ -203,7 +203,8 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
   const btn = "flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-800 disabled:pointer-events-none disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100";
   return (
     <div className={visible ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
-      <div className="flex shrink-0 items-center gap-0.5 border-b border-zinc-200 bg-white py-1 pl-1.5 pr-1.5 dark:border-zinc-800 dark:bg-[var(--s-pane)]">
+      {/* 툴바(#1058) — @container로 자기 폭 기준 반응. 좁으면 포트 바로가기 숨겨 주소창 자리 확보, overflow-hidden으로 옆 패널 침범 방지 */}
+      <div className="@container flex shrink-0 items-center gap-0.5 overflow-hidden border-b border-zinc-200 bg-white py-1 pl-1.5 pr-1.5 dark:border-zinc-800 dark:bg-[var(--s-pane)]">
         <button type="button" className={btn} disabled={!ready || !nav.back} onClick={() => viewRef.current?.goBack()} title={t("browser.back")} aria-label={t("browser.back")}><IconArrowLeft size={14} stroke={2} aria-hidden /></button>
         <button type="button" className={btn} disabled={!ready || !nav.fwd} onClick={() => viewRef.current?.goForward()} title={t("browser.forward")} aria-label={t("browser.forward")}><IconArrowRight size={14} stroke={2} aria-hidden /></button>
         <button type="button" className={btn} disabled={!ready} onClick={() => (loading ? viewRef.current?.stop() : viewRef.current?.reload())} title={loading ? t("browser.stop") : t("browser.reload")} aria-label={loading ? t("browser.stop") : t("browser.reload")}>
@@ -215,10 +216,10 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
             placeholder={t("browser.addressPlaceholder")} aria-label={t("browser.address")} spellCheck={false}
             className="w-full rounded-md border border-zinc-200 bg-white px-2 py-0.5 font-mono text-[11px] text-zinc-700 outline-none focus:border-mustard-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200" />
         </form>
-        {ports.map((p) => (
+        {ports.length > 0 && <div className="hidden shrink-0 items-center gap-0.5 @[28rem]:flex">{ports.map((p) => (
           <button key={p} type="button" onClick={() => go(`:${p}`)} title={`localhost:${p}`}
             className="shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[10px] text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100">:{p}</button>
-        ))}
+        ))}</div>}
         <button type="button" className={`${btn} ${picking ? "bg-mustard-500/20 text-mustard-700 dark:text-mustard-300" : ""}`} disabled={!ready} aria-pressed={picking} onClick={togglePick} title={t("browser.pick")} aria-label={t("browser.pick")}><IconPointer size={14} stroke={2} aria-hidden /></button>
         <button type="button" className={`${btn} ${devtools ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : ""}`} disabled={!ready} aria-pressed={devtools} onClick={() => setDevtools((v) => !v)} title={t("browser.devtools")} aria-label={t("browser.devtools")}><IconCode size={14} stroke={2} aria-hidden /></button>
         {onDock && <button type="button" className={btn} onClick={() => onDock(current, devtools)} title={t("browser.dock")} aria-label={t("browser.dock")}><IconArrowsMinimize size={14} stroke={2} aria-hidden /></button>}
