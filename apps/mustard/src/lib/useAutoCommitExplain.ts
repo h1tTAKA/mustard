@@ -25,12 +25,18 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
   const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
   const diffProvider = useSetting<string>(CUKEYS.diffProvider, ""); // #1062 Diff AI("" = 워크스페이스 기본)
   const diffModel = useSetting<string>(CUKEYS.diffModel, "");
-  const on = autoOn && catchupOn; // #1062 캐치업 전체 끄면 Diff 분석도 중지
+  // #1064 세션 분석 — Diff 분석과 따로 켜고 끔(같은 새 커밋 감시를 공유). AI·모델도 따로.
+  const sessionsOn = useSetting<boolean>(CUKEYS.sessionsAnalyze, CATCHUP_DEFAULTS.sessionsAnalyze);
+  const sessProvider = useSetting<string>(CUKEYS.sessionsProvider, "");
+  const sessModel = useSetting<string>(CUKEYS.sessionsModel, "");
+  const on = catchupOn && (autoOn || sessionsOn); // #1062 캐치업 전체 끄면 전부 중지
   const { locale } = useLocale();
   const pid = (diffProvider || providerId) as AgentProviderKind;
   const ps = useMemo(() => withModel(providerSettings, pid, diffModel), [providerSettings, pid, diffModel]);
-  const cfg = useRef({ providerId: pid, providerSettings: ps, locale });
-  useEffect(() => { cfg.current = { providerId: pid, providerSettings: ps, locale }; }, [pid, ps, locale]);
+  const spid = (sessProvider || providerId) as AgentProviderKind;
+  const sps = useMemo(() => withModel(providerSettings, spid, sessModel), [providerSettings, spid, sessModel]);
+  const cfg = useRef({ providerId: pid, providerSettings: ps, locale, diffOn: autoOn, sessOn: sessionsOn, spid, sps });
+  useEffect(() => { cfg.current = { providerId: pid, providerSettings: ps, locale, diffOn: autoOn, sessOn: sessionsOn, spid, sps }; }, [pid, ps, locale, autoOn, sessionsOn, spid, sps]);
 
   useEffect(() => {
     if (!root) return;
@@ -81,11 +87,11 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         const branch = typeof j?.branch === "string" ? j.branch : "";
         for (const c of fresh) {
           if (!alive) return;
-          await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200));
+          if (cfg.current.diffOn) await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200));
           // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드(원본은 서버에 저장, 카드에서 펼쳐 봄)
-          if (alive) {
-            const { providerId: sp, providerSettings: sps, locale: sl } = cfg.current;
-            const item = await buildSessionItem(root, c.hash, c.ts, c.subject ?? "", branch, sp, sps, sl).catch(() => null);
+          if (alive && cfg.current.sessOn) {
+            const { spid: sp, sps: sset, locale: sl } = cfg.current;
+            const item = await buildSessionItem(root, c.hash, c.ts, c.subject ?? "", branch, sp, sset, sl).catch(() => null);
             if (item && alive) {
               void post("/api/repo/stream", { root, items: [item] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
               window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
