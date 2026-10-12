@@ -103,6 +103,8 @@ export const CUKEYS = {
   commandsShow: "catchup.commandsShow", commandsAnalyze: "catchup.commandsAnalyze",
   diffShow: "catchup.diffShow",
   termsShow: "catchup.termsShow", termsAnalyze: "catchup.termsAnalyze",
+  // 카테고리별 AI(#1062) — "" = 워크스페이스 기본 프로바이더. 용어는 해설·명령어 응답에서 모아서 별도 호출 없음.
+  explainProvider: "catchup.explainProvider", commandsProvider: "catchup.commandsProvider", diffProvider: "catchup.diffProvider",
 } as const;
 
 const KEY = "mustard:settings";

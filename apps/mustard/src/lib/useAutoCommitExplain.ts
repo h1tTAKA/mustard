@@ -22,10 +22,12 @@ const post = (url: string, body: unknown) => fetch(url, { method: "POST", header
 export function useAutoCommitExplain(root: string, providerId: AgentProviderKind, providerSettings: ProviderSettings) {
   const autoOn = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits);
   const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
+  const diffProvider = useSetting<string>(CUKEYS.diffProvider, ""); // #1062 Diff AI("" = 워크스페이스 기본)
   const on = autoOn && catchupOn; // #1062 캐치업 전체 끄면 Diff 분석도 중지
   const { locale } = useLocale();
-  const cfg = useRef({ providerId, providerSettings, locale });
-  useEffect(() => { cfg.current = { providerId, providerSettings, locale }; }, [providerId, providerSettings, locale]);
+  const pid = (diffProvider || providerId) as AgentProviderKind;
+  const cfg = useRef({ providerId: pid, providerSettings, locale });
+  useEffect(() => { cfg.current = { providerId: pid, providerSettings, locale }; }, [pid, providerSettings, locale]);
 
   useEffect(() => {
     if (!root) return;

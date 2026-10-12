@@ -5,7 +5,7 @@ import { snaClaudeProvider, snaCodexProvider } from "@mustard/nunopi/server";
 import type { AgentAnalyzeRequest } from "@mustard/core";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems } from "@/lib/catchupStore";
-import { isNarrationOn } from "@/lib/narrationConfig";
+import { isNarrationOn, narrationProvider } from "@/lib/narrationConfig";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -89,7 +89,7 @@ export async function POST(req: Request): Promise<Response> {
   if (!cwd || delta.trim().length < 40) return Response.json({ ok: false, reason: "no cwd/delta" });
   if (!isNarrationOn()) return Response.json({ ok: true, skipped: "off" }); // #1062 설정 > 캐치업 > 해설 분석 꺼짐
 
-  const useCodex = body.providerId === "codex";
+  const useCodex = body.providerId === "codex" || narrationProvider() === "codex-agent"; // #1062 설정 > 캐치업 > 해설 AI
   const provider = useCodex ? snaCodexProvider : snaClaudeProvider;
   const request: AgentAnalyzeRequest = {
     code: "repo terminal activity",

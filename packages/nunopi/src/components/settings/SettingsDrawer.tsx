@@ -199,6 +199,11 @@ export default function SettingsDrawer({
     diffShow: useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow),
     termsShow: useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow), termsAnalyze: useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze),
   };
+  const cuProv: Record<string, [string, string]> = { // 카테고리 → [키, 값] — "" = 워크스페이스 기본 AI(#1062)
+    explain: [CUKEYS.explainProvider, useSetting<string>(CUKEYS.explainProvider, "")],
+    commands: [CUKEYS.commandsProvider, useSetting<string>(CUKEYS.commandsProvider, "")],
+    diff: [CUKEYS.diffProvider, useSetting<string>(CUKEYS.diffProvider, "")],
+  };
   const gBranchPrefix = useSetting<string>(GKEYS.branchPrefix, GIT_DEFAULTS.branchPrefix);
   // 연동(#958) — GitHub gh auth 상태 + PAT.
   const [ghAuth, setGhAuth] = useState<{ state: string; detail?: string } | null>(null);
@@ -916,6 +921,18 @@ export default function SettingsDrawer({
                 <div className="min-w-0">
                   <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{row.label}</span>
                   <p className="text-xs text-zinc-400 dark:text-zinc-500">{row.desc}</p>
+                  {/* 카테고리별 AI(#1062) — 용어는 해설·명령어 응답에서 모아서 따로 없음 */}
+                  {cuProv[row.id] && (
+                    <div className="relative mt-1.5 w-52">
+                      <select value={cuProv[row.id][1]} onChange={(e) => setSetting(cuProv[row.id][0], e.target.value)} disabled={!cuOn}
+                        aria-label={`${row.label} ${t("settings.catchupProvider")}`}
+                        className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 pr-8 text-xs text-zinc-900 outline-none transition focus:border-zinc-400 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-500">
+                        <option value="">{t("settings.catchupProviderDefault")}</option>
+                        {PROVIDER_CATALOG.map((p) => (<option key={p.id} value={p.id}>{t(`provider.${p.id}`)}</option>))}
+                      </select>
+                      <IconChevronDown size={14} stroke={2} aria-hidden className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
+                    </div>
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   {([["show", t("settings.catchupShow"), row.show], ["analyze", t("settings.catchupAnalyze"), row.analyze]] as const).map(([k, cap, [key, stored]]) => { const on = cuOn && stored; return (

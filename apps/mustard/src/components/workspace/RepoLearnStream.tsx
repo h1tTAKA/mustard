@@ -106,6 +106,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const diffShow = useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow);
   const showTerms = useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow);
   const termsAnalyze = useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze);
+  const explainProvider = useSetting<string>(CUKEYS.explainProvider, ""); // #1062 카테고리별 AI("" = 워크스페이스 기본)
+  const commandsProvider = useSetting<string>(CUKEYS.commandsProvider, "");
   // (실시간 해설 서버 플래그는 WorkspaceView가 보냄 — 캐치업을 끄면 이 패널이 안 떠도 꺼짐을 알려야 해서)
   // #1051 용어 → nunopi 카드 추가. 카드(암기)는 nunopi 학습모듈 기능이라 꺼져 있으면 버튼 없음.
   // 추가는 한 방향(카드 삭제는 갤러리에서) → 토글 아이콘 대신 "+ 추가" / "✓ 카드" 표시, 추가된 건 누르면 카드 확대.
@@ -148,12 +150,14 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const queueRef = useRef<string[]>([]);
   const busyRef = useRef(false);
   const metaRef = useRef(new Map<string, { kind: ConceptKind; target: string; tool: string }>());
-  const cfgRef = useRef({ providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze });
-  useEffect(() => { cfgRef.current = { providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze }; }, [providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze]);
+  const cfgRef = useRef({ providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider });
+  useEffect(() => { cfgRef.current = { providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider }; }, [providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider]);
 
   const explainOne = useCallback(async (key: string) => {
-    const meta = metaRef.current.get(key); const { providerId: pid, providerSettings: ps, locale: loc } = cfgRef.current;
-    if (!meta || !pid) return;
+    const meta = metaRef.current.get(key); const { providerSettings: ps, locale: loc } = cfgRef.current;
+    if (!meta) return;
+    const c = cfgRef.current; const pid = ((isCommand(meta) ? c.commandsProvider : c.explainProvider) || c.providerId) as AgentProviderKind | undefined; // #1062 카테고리별 AI
+    if (!pid) return;
     setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "loading" } : c)));
     try {
       const res = await fetch("/api/agent/analyze", {
