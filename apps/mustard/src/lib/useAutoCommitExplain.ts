@@ -3,7 +3,7 @@
 // diff를 열면 이미 설명이 붙어 있음. 커밋에만(워킹트리 diff X). 설정 > git "커밋 변경 자동 설명".
 // 레포별 상태(localStorage) = { since: 마지막 확인 커밋 시각(초), done: 처리한 hash }. 처음 켜면 지금부터(옛 이력 X), 끄면 상태 삭제.
 import { useEffect, useRef } from "react";
-import { useLocale, useSetting, GKEYS, GIT_DEFAULTS } from "@mustard/core";
+import { useLocale, useSetting, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { parseDiff, groupHunks, noteStoreKey, loadNotes, saveNote, explainDiffText } from "@/lib/hunkNotes";
 
@@ -20,7 +20,9 @@ const SKIP_FILE = /\.(md|mdx|markdown|txt|rst|adoc|lock|png|jpe?g|gif|webp|ico|s
 const post = (url: string, body: unknown) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
 
 export function useAutoCommitExplain(root: string, providerId: AgentProviderKind, providerSettings: ProviderSettings) {
-  const on = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits);
+  const autoOn = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits);
+  const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
+  const on = autoOn && catchupOn; // #1062 캐치업 전체 끄면 Diff 분석도 중지
   const { locale } = useLocale();
   const cfg = useRef({ providerId, providerSettings, locale });
   useEffect(() => { cfg.current = { providerId, providerSettings, locale }; }, [providerId, providerSettings, locale]);

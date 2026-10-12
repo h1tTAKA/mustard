@@ -106,8 +106,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const diffShow = useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow);
   const showTerms = useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow);
   const termsAnalyze = useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze);
-  // 실시간 해설은 서버가 만듦 → 해설 분석 켜짐/꺼짐을 서버에 알림(꺼지면 AI 호출 X).
-  useEffect(() => { void fetch("/api/repo/learn/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narration: explainAnalyze }) }).catch(() => {}); }, [explainAnalyze]);
+  // (실시간 해설 서버 플래그는 WorkspaceView가 보냄 — 캐치업을 끄면 이 패널이 안 떠도 꺼짐을 알려야 해서)
   // #1051 용어 → nunopi 카드 추가. 카드(암기)는 nunopi 학습모듈 기능이라 꺼져 있으면 버튼 없음.
   // 추가는 한 방향(카드 삭제는 갤러리에서) → 토글 아이콘 대신 "+ 추가" / "✓ 카드" 표시, 추가된 건 누르면 카드 확대.
   const { throwCard } = useFlyCard();

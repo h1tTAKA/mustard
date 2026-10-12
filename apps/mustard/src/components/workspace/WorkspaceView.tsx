@@ -3,7 +3,7 @@
 // 골격(커밋1): 4존 셸 [파일트리 | 터미널 | 코드 | 챗]. 각 존은 후속 커밋서 채움(트리·코드·챗·pty터미널).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconMessages, IconCards, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld } from "@tabler/icons-react";
-import { useShortcut, useShortcutHint, withShortcutHint, useT, getSetting, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
+import { useShortcut, useShortcutHint, withShortcutHint, useT, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
 import { isNunopiEnabled } from "@/lib/product";
 import FileTree from "@/components/workspace/FileTree";
@@ -77,7 +77,12 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const [chatW, setChatW] = useState(320);
   const [chatOpen, setChatOpen] = useState(true);  // 우측 챗 패널 열림(#695)
   useAutoCommitExplain(path, providerId, providerSettings); // #1054 새 커밋 diff 미리 설명(설정 > git)
-  const [rightMode, setRightMode] = useState<"chat" | "github" | "learn">("chat"); // 우측 패널 모드(#811·#855) — 질문 ↔ GitHub ↔ 캐치업(#992, 구 학습 스트림)
+  const [rightModeSel, setRightMode] = useState<"chat" | "github" | "learn">("chat");
+  // #1062 캐치업 전체 끄기 — 패널·버튼 숨김(선택돼 있었으면 질문으로), 실시간 해설 서버 플래그도 끔(패널이 안 떠도 여기서 알림).
+  const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
+  const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze);
+  const rightMode = rightModeSel === "learn" && !catchupOn ? "chat" : rightModeSel;
+  useEffect(() => { void fetch("/api/repo/learn/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narration: catchupOn && explainAnalyze }) }).catch(() => {}); }, [catchupOn, explainAnalyze]); // 우측 패널 모드(#811·#855) — 질문 ↔ GitHub ↔ 캐치업(#992, 구 학습 스트림)
   const [leftOpen, setLeftOpen] = useState(true);  // 좌측 사이드바(폴더/아키텍처/깃/문서트리) 펼침(#758)
   const [collapsed, setCollapsed] = useState<Set<PanelId>>(new Set()); // 접힌 중앙 패널(내용 유지·숨김만, #758)
   const [gitOpen, setGitOpen] = useState(false);   // 좌 하단 깃 그래프 열림
@@ -644,11 +649,11 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
         {/* 우측 패널 모드 토글(#811) — 순서: 학습스트림 → 질문(Chat) → GitHub(#908). 우측 패널 열려 있을 때만. */}
         {chatOpen && (
           <>
-            {/* 캐치업(#855·#992) — 에이전트 작업 실시간 해설. */}
-            <button type="button" onClick={() => pickRightMode("learn")} aria-pressed={rightMode === "learn"} title={t("learn.mode")} aria-label={t("learn.mode")}
+            {/* 캐치업(#855·#992) — 에이전트 작업 실시간 해설. 설정에서 끄면 버튼 없음(#1062). */}
+            {catchupOn && <button type="button" onClick={() => pickRightMode("learn")} aria-pressed={rightMode === "learn"} title={t("learn.mode")} aria-label={t("learn.mode")}
               className={`shrink-0 rounded-lg p-1.5 transition ${rightMode === "learn" ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
               <IconActivity size={16} stroke={2} aria-hidden />
-            </button>
+            </button>}
             <button type="button" onClick={() => pickRightMode("chat")} aria-pressed={rightMode === "chat"} title={t("chat.title")} aria-label={t("chat.title")}
               className={`shrink-0 rounded-lg p-1.5 transition ${rightMode === "chat" ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
               <IconMessageCircle size={16} stroke={2} aria-hidden />

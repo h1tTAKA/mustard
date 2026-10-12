@@ -96,8 +96,9 @@ export const GKEYS = {
 // 캐치업(#1049) — 명령어 해설 카드·용어집 켜고 끄기.
 // #1062 카테고리마다 표시(캐치업 창에 보이기)·분석(새로 AI 분석) 분리 — 분석 꺼도 예전 내용은 표시로 계속 봄.
 // Diff 분석 = 커밋 자동 설명(GKEYS.autoExplainCommits, git 설정과 같은 키).
-export const CATCHUP_DEFAULTS = { explainShow: true, explainAnalyze: true, commandsShow: true, commandsAnalyze: true, diffShow: true, termsShow: true, termsAnalyze: true };
+export const CATCHUP_DEFAULTS = { enabled: true, explainShow: true, explainAnalyze: true, commandsShow: true, commandsAnalyze: true, diffShow: true, termsShow: true, termsAnalyze: true };
 export const CUKEYS = {
+  enabled: "catchup.enabled", // 캐치업 전체 — 끄면 패널 숨김 + 모든 분석 중지(카테고리 값은 보존)
   explainShow: "catchup.explainShow", explainAnalyze: "catchup.explainAnalyze",
   commandsShow: "catchup.commandsShow", commandsAnalyze: "catchup.commandsAnalyze",
   diffShow: "catchup.diffShow",
