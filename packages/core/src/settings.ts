@@ -84,12 +84,13 @@ export const APPEARANCE_DEFAULTS = { uiZoom: 1.0, uiFont: "default" as UiFontPre
 export const APKEYS = { uiZoom: "appearance.uiZoom", uiFont: "appearance.uiFont" } as const;
 
 // git/소스컨트롤(#954, 에픽 #943 마무리) — PR 기본값·자동 fetch·브랜치 prefix.
-export const GIT_DEFAULTS = { prBaseDefault: "", prDraftDefault: false, autoFetch: false, branchPrefix: "" };
+export const GIT_DEFAULTS = { prBaseDefault: "", prDraftDefault: false, autoFetch: false, branchPrefix: "", autoExplainCommits: true };
 export const GKEYS = {
   prBaseDefault: "git.prBaseDefault",
   prDraftDefault: "git.prDraftDefault",
   autoFetch: "git.autoFetch",
   branchPrefix: "git.branchPrefix",
+  autoExplainCommits: "git.autoExplainCommits", // #1054 커밋 diff 변경 구간 자동 설명
 } as const;
 
 // 캐치업(#1049) — 명령어 해설 카드·용어집 켜고 끄기.

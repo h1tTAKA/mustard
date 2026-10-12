@@ -190,6 +190,7 @@ export default function SettingsDrawer({
   const gPrBase = useSetting<string>(GKEYS.prBaseDefault, GIT_DEFAULTS.prBaseDefault);
   const gPrDraft = useSetting<boolean>(GKEYS.prDraftDefault, GIT_DEFAULTS.prDraftDefault);
   const gAutoFetch = useSetting<boolean>(GKEYS.autoFetch, GIT_DEFAULTS.autoFetch);
+  const gAutoExplain = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits); // #1054
   const cuCommands = useSetting<boolean>(CUKEYS.commands, CATCHUP_DEFAULTS.commands); // #1049
   const cuTerms = useSetting<boolean>(CUKEYS.terms, CATCHUP_DEFAULTS.terms);
   const gBranchPrefix = useSetting<string>(GKEYS.branchPrefix, GIT_DEFAULTS.branchPrefix);
@@ -866,6 +867,7 @@ export default function SettingsDrawer({
             {([
               { key: GKEYS.prDraftDefault, on: gPrDraft, label: t("settings.gitPrDraft"), desc: t("settings.gitPrDraftDesc") },
               { key: GKEYS.autoFetch, on: gAutoFetch, label: t("settings.gitAutoFetch"), desc: t("settings.gitAutoFetchDesc") },
+              { key: GKEYS.autoExplainCommits, on: gAutoExplain, label: t("settings.gitAutoExplain"), desc: t("settings.gitAutoExplainDesc") },
             ]).map((row) => (
               <div key={row.key} className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
