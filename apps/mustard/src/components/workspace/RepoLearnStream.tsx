@@ -10,7 +10,7 @@ import { isDocEdit } from "@/lib/mcpActivity";
 import { isNunopiEnabled } from "@/lib/product";
 import { mergeTerms, parseNarrationTerms, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
-import { useT, useLocale, useToast, useSetting, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
+import { useT, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { useFlyCard, collectCards } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
@@ -108,6 +108,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const termsAnalyze = useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze);
   const explainProvider = useSetting<string>(CUKEYS.explainProvider, ""); // #1062 카테고리별 AI("" = 워크스페이스 기본)
   const commandsProvider = useSetting<string>(CUKEYS.commandsProvider, "");
+  const explainModel = useSetting<string>(CUKEYS.explainModel, ""); // "" = 그 프로바이더 기본 모델
+  const commandsModel = useSetting<string>(CUKEYS.commandsModel, "");
   // (실시간 해설 서버 플래그는 WorkspaceView가 보냄 — 캐치업을 끄면 이 패널이 안 떠도 꺼짐을 알려야 해서)
   // #1051 용어 → nunopi 카드 추가. 카드(암기)는 nunopi 학습모듈 기능이라 꺼져 있으면 버튼 없음.
   // 추가는 한 방향(카드 삭제는 갤러리에서) → 토글 아이콘 대신 "+ 추가" / "✓ 카드" 표시, 추가된 건 누르면 카드 확대.
@@ -150,14 +152,15 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const queueRef = useRef<string[]>([]);
   const busyRef = useRef(false);
   const metaRef = useRef(new Map<string, { kind: ConceptKind; target: string; tool: string }>());
-  const cfgRef = useRef({ providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider });
-  useEffect(() => { cfgRef.current = { providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider }; }, [providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider]);
+  const cfgRef = useRef({ providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel });
+  useEffect(() => { cfgRef.current = { providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel }; }, [providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel]);
 
   const explainOne = useCallback(async (key: string) => {
-    const meta = metaRef.current.get(key); const { providerSettings: ps, locale: loc } = cfgRef.current;
+    const meta = metaRef.current.get(key); const { locale: loc } = cfgRef.current;
     if (!meta) return;
     const c = cfgRef.current; const pid = ((isCommand(meta) ? c.commandsProvider : c.explainProvider) || c.providerId) as AgentProviderKind | undefined; // #1062 카테고리별 AI
     if (!pid) return;
+    const ps = withModel(c.providerSettings, pid, isCommand(meta) ? c.commandsModel : c.explainModel); // 카테고리별 모델
     setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "loading" } : c)));
     try {
       const res = await fetch("/api/agent/analyze", {

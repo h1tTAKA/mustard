@@ -83,7 +83,8 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze);
   const rightMode = rightModeSel === "learn" && !catchupOn ? "chat" : rightModeSel;
   const explainProvider = useSetting<string>(CUKEYS.explainProvider, "");
-  useEffect(() => { void fetch("/api/repo/learn/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narration: catchupOn && explainAnalyze, provider: explainProvider || providerId }) }).catch(() => {}); }, [catchupOn, explainAnalyze, explainProvider, providerId]); // 우측 패널 모드(#811·#855) — 질문 ↔ GitHub ↔ 캐치업(#992, 구 학습 스트림)
+  const explainModel = useSetting<string>(CUKEYS.explainModel, "");
+  useEffect(() => { void fetch("/api/repo/learn/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narration: catchupOn && explainAnalyze, provider: explainProvider || providerId, model: explainModel }) }).catch(() => {}); }, [catchupOn, explainAnalyze, explainProvider, explainModel, providerId]); // 우측 패널 모드(#811·#855) — 질문 ↔ GitHub ↔ 캐치업(#992, 구 학습 스트림)
   const [leftOpen, setLeftOpen] = useState(true);  // 좌측 사이드바(폴더/아키텍처/깃/문서트리) 펼침(#758)
   const [collapsed, setCollapsed] = useState<Set<PanelId>>(new Set()); // 접힌 중앙 패널(내용 유지·숨김만, #758)
   const [gitOpen, setGitOpen] = useState(false);   // 좌 하단 깃 그래프 열림

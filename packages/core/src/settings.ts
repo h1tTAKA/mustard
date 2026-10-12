@@ -105,7 +105,16 @@ export const CUKEYS = {
   termsShow: "catchup.termsShow", termsAnalyze: "catchup.termsAnalyze",
   // 카테고리별 AI(#1062) — "" = 워크스페이스 기본 프로바이더. 용어는 해설·명령어 응답에서 모아서 별도 호출 없음.
   explainProvider: "catchup.explainProvider", commandsProvider: "catchup.commandsProvider", diffProvider: "catchup.diffProvider",
+  // 카테고리별 모델 — "" = 그 프로바이더 기본 모델. 프로바이더 바꾸면 비움(목록이 달라서).
+  explainModel: "catchup.explainModel", commandsModel: "catchup.commandsModel", diffModel: "catchup.diffModel",
 } as const;
+
+// 프로바이더 설정에 모델만 덮어씀(#1062 캐치업 카테고리별 모델). 빈 모델이면 그대로.
+export function withModel<T extends object | undefined>(ps: T, providerId: string, model: string): T {
+  if (!model) return ps;
+  const cur = ((ps as Record<string, unknown> | undefined)?.[providerId] ?? {}) as Record<string, unknown>;
+  return { ...(ps ?? {}), [providerId]: { ...cur, model } } as T;
+}
 
 const KEY = "mustard:settings";
 type Listener = () => void;

@@ -6,3 +6,6 @@ export const setNarrationOn = (on: boolean) => { g.__mustardNarrationOn = on; };
 // 해설 AI(#1062) — 실시간 해설은 SNA(Claude/Codex)만 지원 → codex-agent면 Codex, 그 외 Claude.
 export const narrationProvider = () => g.__mustardNarrationProvider ?? "";
 export const setNarrationProvider = (p: string) => { g.__mustardNarrationProvider = p; };
+const gm = globalThis as unknown as { __mustardNarrationModel?: string };
+export const narrationModel = () => gm.__mustardNarrationModel ?? "";
+export const setNarrationModel = (m: string) => { gm.__mustardNarrationModel = m; };

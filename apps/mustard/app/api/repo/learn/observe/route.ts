@@ -5,7 +5,7 @@ import { snaClaudeProvider, snaCodexProvider } from "@mustard/nunopi/server";
 import type { AgentAnalyzeRequest } from "@mustard/core";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems } from "@/lib/catchupStore";
-import { isNarrationOn, narrationProvider } from "@/lib/narrationConfig";
+import { isNarrationOn, narrationProvider, narrationModel } from "@/lib/narrationConfig";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -97,6 +97,7 @@ export async function POST(req: Request): Promise<Response> {
     providerId: useCodex ? "codex-agent" : "claude-agent",
     mode: "chat",
     messages: [{ role: "user", content: narrationPrompt(agent, delta, diff) }],
+    ...(narrationModel() ? { providerSettings: { [useCodex ? "codex-agent" : "claude-agent"]: { model: narrationModel() } } } : {}), // #1062 해설 모델
   };
   try {
     const res = await provider.analyze(request, { signal: req.signal });

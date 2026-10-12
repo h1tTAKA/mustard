@@ -3,7 +3,7 @@
 // diff를 열면 이미 설명이 붙어 있음. 커밋에만(워킹트리 diff X). 설정 > git "커밋 변경 자동 설명".
 // 레포별 상태(localStorage) = { since: 마지막 확인 커밋 시각(초), done: 처리한 hash }. 처음 켜면 지금부터(옛 이력 X), 끄면 상태 삭제.
 import { useEffect, useRef } from "react";
-import { useLocale, useSetting, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
+import { useLocale, useSetting, withModel, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { parseDiff, groupHunks, noteStoreKey, loadNotes, saveNote, explainDiffText } from "@/lib/hunkNotes";
 
@@ -23,11 +23,13 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
   const autoOn = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits);
   const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
   const diffProvider = useSetting<string>(CUKEYS.diffProvider, ""); // #1062 Diff AI("" = 워크스페이스 기본)
+  const diffModel = useSetting<string>(CUKEYS.diffModel, "");
   const on = autoOn && catchupOn; // #1062 캐치업 전체 끄면 Diff 분석도 중지
   const { locale } = useLocale();
   const pid = (diffProvider || providerId) as AgentProviderKind;
-  const cfg = useRef({ providerId: pid, providerSettings, locale });
-  useEffect(() => { cfg.current = { providerId: pid, providerSettings, locale }; }, [pid, providerSettings, locale]);
+  const ps = withModel(providerSettings, pid, diffModel);
+  const cfg = useRef({ providerId: pid, providerSettings: ps, locale });
+  useEffect(() => { cfg.current = { providerId: pid, providerSettings: ps, locale }; }, [pid, ps, locale]);
 
   useEffect(() => {
     if (!root) return;
