@@ -1,0 +1,41 @@
+// agentSessionParse 점검 — node --experimental-strip-types src/lib/agentSessionParse.check.ts
+import assert from "node:assert";
+import { parseClaudeLine, parseCodexLine, segmentForCommit, COMMIT_RE } from "./agentSessionParse.ts";
+
+const iso = (s: number) => new Date(s * 1000).toISOString();
+const T = 1_800_000_000; // 커밋 시각(초)
+// Claude: 이전 커밋 → 작업 → 이번 커밋(rtk, 출력에 해시 없음) → 다음 작업
+const cl = (type: string, content: unknown, s: number, extra = {}) => JSON.stringify({ type, message: { content }, timestamp: iso(s), gitBranch: "feature/x", cwd: "/r", ...extra });
+const claude = [
+  cl("assistant", [{ type: "tool_use", name: "Bash", input: { command: "git commit -m old" } }], T - 900),
+  cl("user", [{ type: "tool_result", content: "[feature/x abc1234] old" }], T - 899),
+  cl("user", "버튼 색 바꿔줘", T - 300),
+  cl("assistant", [{ type: "text", text: "Button.tsx를 고칠게요" }, { type: "tool_use", name: "Edit", input: { file_path: "Button.tsx" } }], T - 200),
+  cl("assistant", [{ type: "text", text: "서브" }], T - 150, { isSidechain: true }),
+  cl("assistant", [{ type: "tool_use", name: "Bash", input: { command: "rtk git add a && rtk git commit -m 'fix'" } }], T - 2),
+  cl("user", [{ type: "tool_result", content: "ok" }], T + 1),
+  cl("assistant", [{ type: "tool_use", name: "Bash", input: { command: "open http://x" } }], T + 5),
+  cl("user", "다음 작업", T + 60),
+];
+const seg = segmentForCommit(claude, parseClaudeLine, T)!;
+assert.ok(seg, "커밋 구간 찾음");
+assert.deepStrictEqual(seg.msgs.map((m) => m.role), ["user", "assistant", "tool", "tool", "tool"], "이전 커밋 이후~이번 커밋+결과, 사이드체인 제외");
+assert.ok(seg.msgs[0].text.includes("버튼") && seg.msgs.at(-1)!.text === "ok");
+assert.strictEqual(seg.branch, "feature/x");
+assert.strictEqual(segmentForCommit(claude, parseClaudeLine, T - 3600), null, "커밋 시각 전 15분 안에 호출 없으면 null");
+
+// Codex: event_msg 대화 + function_call git commit
+const cx = (type: string, payload: unknown, s: number) => JSON.stringify({ timestamp: iso(s), type, payload });
+const codex = [
+  cx("session_meta", { cwd: "/r", id: "s1" }, T - 1000),
+  cx("event_msg", { type: "user_message", message: "README 고쳐" }, T - 100),
+  cx("event_msg", { type: "agent_message", message: "고칠게요" }, T - 90),
+  cx("response_item", { type: "function_call", name: "exec_command", arguments: JSON.stringify({ cmd: "git -C /r commit -am docs" }) }, T - 1),
+  cx("response_item", { type: "function_call_output", output: "[main 1234567] docs" }, T),
+];
+const cs = segmentForCommit(codex, parseCodexLine, T)!;
+assert.deepStrictEqual(cs.msgs.map((m) => m.role), ["user", "assistant", "tool", "tool"]);
+assert.strictEqual(cs.cwd, "/r");
+assert.ok(COMMIT_RE.test("rtk git commit -m x") && COMMIT_RE.test("git -C a commit") && !COMMIT_RE.test("git log --grep commit"));
+assert.strictEqual(parseClaudeLine("not json"), null);
+console.log("agentSessionParse ok");

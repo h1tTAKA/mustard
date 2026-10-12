@@ -6,10 +6,10 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renam
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-export type CatchupKind = "symbol" | "file" | "query" | "repo" | "edit" | "narration" | "diff"; // diff = 커밋 변경 자동 설명(#1056)
+export type CatchupKind = "symbol" | "file" | "query" | "repo" | "edit" | "narration" | "diff" | "session"; // session = 커밋을 만든 에이전트 세션(#1064) // diff = 커밋 변경 자동 설명(#1056)
 export interface CatchupItem { key: string; kind: CatchupKind; target: string; tool: string; ts: number; expl: string }
 
-const KINDS = new Set<CatchupKind>(["symbol", "file", "query", "repo", "edit", "narration", "diff"]);
+const KINDS = new Set<CatchupKind>(["symbol", "file", "query", "repo", "edit", "narration", "diff", "session"]);
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const normPath = (p: string) => p.replace(/\/+$/, "");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 32);
@@ -105,6 +105,20 @@ export function searchItems(root: string, q: string, limit: number): CatchupItem
     if (out.length >= limit) break;
   }
   return out.slice(0, limit);
+}
+
+// ── 커밋 세션 원본(#1064) — 커밋을 만든 에이전트 대화 구간. 기록 파일이 지워져도 남게 복사 저장. sessions/<hash>.json
+const HASH_RE = /^[0-9a-f]{7,64}$/i;
+const sessionFile = (root: string, hash: string) => join(repoDir(root), "sessions", `${hash}.json`);
+export function writeSession(root: string, hash: string, data: unknown): boolean {
+  if (!HASH_RE.test(hash)) return false;
+  const dir = join(repoDir(root), "sessions"); mkdirSync(dir, { recursive: true });
+  const f = sessionFile(root, hash); writeFileSync(f + ".tmp", JSON.stringify(data)); renameSync(f + ".tmp", f);
+  return true;
+}
+export function readSession(root: string, hash: string): unknown | null {
+  if (!HASH_RE.test(hash)) return null;
+  try { return JSON.parse(readFileSync(sessionFile(root, hash), "utf8")); } catch { return null; }
 }
 
 // ── 항목 질문 대화(#998) — 항목별 ask/<sha(key)>.json. 기록 폴더 안이라 질문 에이전트가 예전 Q&A도 grep.
