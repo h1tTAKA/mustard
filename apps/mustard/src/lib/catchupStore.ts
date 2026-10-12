@@ -34,7 +34,7 @@ export function sanitize(x: unknown): CatchupItem | null {
   if (typeof o.ts !== "number" || !Number.isFinite(o.ts) || o.ts <= 0) return null;
   const kind = KINDS.has(o.kind as CatchupKind) ? (o.kind as CatchupKind) : null;
   if (!kind) return null;
-  return { key: o.key.slice(0, 300), kind, target: o.target.slice(0, 300), tool: typeof o.tool === "string" ? o.tool.slice(0, 80) : "", ts: o.ts, expl: o.expl.slice(0, 8000) };
+  return { key: o.key.slice(0, 300), kind, target: o.target.slice(0, 300), tool: typeof o.tool === "string" ? o.tool.slice(0, 200) : "", ts: o.ts, expl: o.expl.slice(0, 8000) };
 }
 
 function readDayFile(file: string): CatchupItem[] {

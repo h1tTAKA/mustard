@@ -38,7 +38,8 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
     let alive = true, busy = false;
 
-    const explainCommit = async (hash: string) => {
+    // info = 카드 메타("브랜치 · 커밋 제목", #1062) — tool 필드에 담아 저장(스키마 변경 없이).
+    const explainCommit = async (hash: string, info: string) => {
       const list = await post("/api/repo/git-show", { path: root, hash });
       const files = ((list?.files ?? []) as { status: string; path: string }[]).filter((f) => f.status !== "D" && !SKIP_FILE.test(f.path)).slice(0, MAX_FILES);
       let budget = MAX_HUNKS;
@@ -59,7 +60,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           try { const text = await explainDiffText(h.diffText, pid, ps, loc); saveNote(store, h.diffText, text); texts.push(text); } catch { /* 구간 하나 실패 — 다음 구간 */ }
         }
         if (texts.length && alive) {
-          const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: "diff", ts: Date.now(), expl: texts.join("\n\n---\n\n").slice(0, 8000) };
+          const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts: Date.now(), expl: texts.join("\n\n---\n\n").slice(0, 8000) };
           void post("/api/repo/stream", { root, items: [item] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
           window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
         }
@@ -73,10 +74,11 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         let st = read();
         if (!st) { write({ since: Math.floor(Date.now() / 1000), done: [] }); return; } // 처음 켬 → 지금부터
         const j = await post("/api/repo/git-recent", { path: root, since: st.since });
-        const fresh = ((j?.commits ?? []) as { hash: string; ts: number }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
+        const fresh = ((j?.commits ?? []) as { hash: string; ts: number; subject?: string }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
+        const branch = typeof j?.branch === "string" ? j.branch : "";
         for (const c of fresh) {
           if (!alive) return;
-          await explainCommit(c.hash);
+          await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200));
           if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)
           st = { since: Math.max(st.since, c.ts), done: [...st.done, c.hash].slice(-50) }; // 같은 초 커밋은 done으로 중복 차단
           write(st);

@@ -449,7 +449,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
                       <span className="block break-all text-[12px] font-medium text-zinc-700 dark:text-zinc-100">{c.target}</span>
-                      <span className="block text-[10px] text-zinc-400 dark:text-zinc-500">{/* #1060 모든 카드 = 기록 날짜·시각(예전 "23s"처럼 매초 바뀌는 상대시간 X) */}{c.kind === "narration" ? fmtDateTime(c.ts) : `${c.tool.replace(/^katchup_/, "")} · ${fmtDateTime(c.ts)}`}</span>
+                      <span className="block text-[10px] text-zinc-400 dark:text-zinc-500">{/* #1060 모든 카드 = 기록 날짜·시각. #1062 diff는 "브랜치 · 커밋 제목"(tool) — 커밋 번호는 제목 @hash */}{c.kind === "narration" ? fmtDateTime(c.ts) : c.kind === "diff" && c.tool !== "diff" ? `⎇ ${c.tool} · ${fmtDateTime(c.ts)}` : `${c.tool.replace(/^katchup_/, "")} · ${fmtDateTime(c.ts)}`}</span>
                     </span>
                     {c.status === "loading" && <IconLoader2 size={12} stroke={2} className="mt-0.5 shrink-0 animate-spin text-zinc-400" aria-hidden />}
                   </button>
