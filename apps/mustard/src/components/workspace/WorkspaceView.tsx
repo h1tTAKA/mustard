@@ -11,6 +11,7 @@ import CodePane from "@/components/workspace/CodePane";
 import WorkspaceChat, { type ChatFocus } from "@/components/workspace/WorkspaceChat";
 import GithubPanel from "@/components/workspace/GithubPanel";
 import RepoLearnStream from "@/components/workspace/RepoLearnStream";
+import { useAutoCommitExplain } from "@/lib/useAutoCommitExplain";
 import { useBranchCi } from "@/components/workspace/github/useBranchCi";
 import TerminalPane from "@/components/workspace/TerminalPane";
 import UsageMonitor from "@/components/workspace/UsageMonitor";
@@ -75,6 +76,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const [treeW, setTreeW] = useState(240);
   const [chatW, setChatW] = useState(320);
   const [chatOpen, setChatOpen] = useState(true);  // 우측 챗 패널 열림(#695)
+  useAutoCommitExplain(path, providerId, providerSettings); // #1054 새 커밋 diff 미리 설명(설정 > git)
   const [rightMode, setRightMode] = useState<"chat" | "github" | "learn">("chat"); // 우측 패널 모드(#811·#855) — 질문 ↔ GitHub ↔ 캐치업(#992, 구 학습 스트림)
   const [leftOpen, setLeftOpen] = useState(true);  // 좌측 사이드바(폴더/아키텍처/깃/문서트리) 펼침(#758)
   const [collapsed, setCollapsed] = useState<Set<PanelId>>(new Set()); // 접힌 중앙 패널(내용 유지·숨김만, #758)

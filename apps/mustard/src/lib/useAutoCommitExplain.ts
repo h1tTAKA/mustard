@@ -1,0 +1,74 @@
+"use client";
+// 커밋 자동 설명(#1054) — 새 커밋이 생기면 그 커밋 파일들의 변경 구간을 "이 변경 설명"과 같은 방식으로 미리 설명·저장.
+// diff를 열면 이미 설명이 붙어 있음. 커밋에만(워킹트리 diff X). 설정 > git "커밋 변경 자동 설명".
+// 레포별 상태(localStorage) = { since: 마지막 확인 커밋 시각(초), done: 처리한 hash }. 처음 켜면 지금부터(옛 이력 X), 끄면 상태 삭제.
+import { useEffect, useRef } from "react";
+import { useLocale, useSetting, GKEYS, GIT_DEFAULTS } from "@mustard/core";
+import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
+import { parseDiff, groupHunks, noteStoreKey, loadNotes, saveNote, explainDiffText } from "@/lib/hunkNotes";
+
+const POLL_MS = 30_000;
+const MAX_FILES = 10, MAX_HUNKS = 20; // ponytail: 커밋당 상한(토큰 방어) — 큰 커밋은 앞부분만, 나머지는 diff에서 버튼으로
+// 설명 가치 없는 파일 — 문서·lockfile·이미지 등(삭제 파일은 상태 D로 따로 거름).
+const SKIP_FILE = /\.(md|mdx|markdown|txt|rst|adoc|lock|png|jpe?g|gif|webp|ico|svg|pdf|zip)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$/i;
+
+const post = (url: string, body: unknown) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+
+export function useAutoCommitExplain(root: string, providerId: AgentProviderKind, providerSettings: ProviderSettings) {
+  const on = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits);
+  const { locale } = useLocale();
+  const cfg = useRef({ providerId, providerSettings, locale });
+  useEffect(() => { cfg.current = { providerId, providerSettings, locale }; }, [providerId, providerSettings, locale]);
+
+  useEffect(() => {
+    if (!root) return;
+    const stateKey = `nunopi:auto-explain:${root}`;
+    if (!on) { try { localStorage.removeItem(stateKey); } catch { /* ignore */ } return; } // 다시 켜면 그때부터
+    type State = { since: number; done: string[] };
+    const read = (): State | null => { try { return JSON.parse(localStorage.getItem(stateKey) || "null") as State | null; } catch { return null; } };
+    const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
+    let alive = true, busy = false;
+
+    const explainCommit = async (hash: string) => {
+      const list = await post("/api/repo/git-show", { path: root, hash });
+      const files = ((list?.files ?? []) as { status: string; path: string }[]).filter((f) => f.status !== "D" && !SKIP_FILE.test(f.path)).slice(0, MAX_FILES);
+      let budget = MAX_HUNKS;
+      for (const f of files) {
+        if (!alive || budget <= 0) return;
+        const d = await post("/api/repo/git-show", { path: root, hash, file: f.path });
+        const raw = String(d?.diff ?? "");
+        if (!raw.trim() || /^Binary files /m.test(raw)) continue;
+        const store = noteStoreKey(root, f.path, hash);
+        const have = loadNotes(store);
+        for (const h of groupHunks(parseDiff(raw))) {
+          if (!alive || budget <= 0) return;
+          if (have[h.diffText]) continue; // 이미 설명됨(버튼으로 먼저 눌렀거나 재시도)
+          budget--;
+          const { providerId: pid, providerSettings: ps, locale: loc } = cfg.current;
+          try { saveNote(store, h.diffText, await explainDiffText(h.diffText, pid, ps, loc)); } catch { /* 구간 하나 실패 — 다음 구간 */ }
+        }
+      }
+    };
+
+    const tick = async () => {
+      if (busy || !alive || !cfg.current.providerId) return;
+      busy = true;
+      try {
+        let st = read();
+        if (!st) { write({ since: Math.floor(Date.now() / 1000), done: [] }); return; } // 처음 켬 → 지금부터
+        const j = await post("/api/repo/git-recent", { path: root, since: st.since });
+        const fresh = ((j?.commits ?? []) as { hash: string; ts: number }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
+        for (const c of fresh) {
+          if (!alive) return;
+          await explainCommit(c.hash);
+          if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)
+          st = { since: Math.max(st.since, c.ts), done: [...st.done, c.hash].slice(-50) }; // 같은 초 커밋은 done으로 중복 차단
+          write(st);
+        }
+      } catch { /* 서버 미준비 등 — 다음 주기 */ } finally { busy = false; }
+    };
+    void tick();
+    const id = setInterval(() => void tick(), POLL_MS);
+    return () => { alive = false; clearInterval(id); };
+  }, [on, root]);
+}
