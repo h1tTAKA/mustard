@@ -94,8 +94,15 @@ export const GKEYS = {
 } as const;
 
 // 캐치업(#1049) — 명령어 해설 카드·용어집 켜고 끄기.
-export const CATCHUP_DEFAULTS = { commands: true, terms: true };
-export const CUKEYS = { commands: "catchup.commands", terms: "catchup.terms" } as const;
+// #1062 카테고리마다 표시(캐치업 창에 보이기)·분석(새로 AI 분석) 분리 — 분석 꺼도 예전 내용은 표시로 계속 봄.
+// Diff 분석 = 커밋 자동 설명(GKEYS.autoExplainCommits, git 설정과 같은 키).
+export const CATCHUP_DEFAULTS = { explainShow: true, explainAnalyze: true, commandsShow: true, commandsAnalyze: true, diffShow: true, termsShow: true, termsAnalyze: true };
+export const CUKEYS = {
+  explainShow: "catchup.explainShow", explainAnalyze: "catchup.explainAnalyze",
+  commandsShow: "catchup.commandsShow", commandsAnalyze: "catchup.commandsAnalyze",
+  diffShow: "catchup.diffShow",
+  termsShow: "catchup.termsShow", termsAnalyze: "catchup.termsAnalyze",
+} as const;
 
 const KEY = "mustard:settings";
 type Listener = () => void;
@@ -104,6 +111,8 @@ const listeners = new Set<Listener>();
 // 이름 바뀐 설정 키(옛 → 새). 옛 값이 있고 새 키가 없으면 옮기고 옛 키 삭제 — 유저가 고른 값 유지.
 export const RENAMED_KEYS: Record<string, string> = {
   "notif.suppressWhileFocused": "notif.suppressWhileWatching", // #1021 의미가 '보고 있는 레포 억제'로 바뀜(#973)
+  "catchup.commands": "catchup.commandsAnalyze", // #1062 표시/분석 분리 — 옛 켜기/끄기는 분석으로
+  "catchup.terms": "catchup.termsAnalyze",
 };
 // 순수 이관 — 바뀌었으면 true(호출 측이 저장).
 export function migrateRenamed(obj: Record<string, unknown>): boolean {

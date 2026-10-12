@@ -9,4 +9,7 @@ const b: Record<string, unknown> = { "notif.suppressWhileFocused": false, "notif
 migrateRenamed(b);
 assert.deepStrictEqual(b, { "notif.suppressWhileWatching": true }, "새 키가 이미 있으면 새 값 우선, 옛 키만 삭제");
 assert.strictEqual(migrateRenamed({ x: 1 }), false, "옛 키 없으면 무변경");
+const c: Record<string, unknown> = { "catchup.commands": false, "catchup.terms": true };
+migrateRenamed(c);
+assert.deepStrictEqual(c, { "catchup.commandsAnalyze": false, "catchup.termsAnalyze": true }, "#1062 캐치업 옛 토글 → 분석 키");
 console.log("settings.check OK");

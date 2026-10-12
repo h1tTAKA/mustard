@@ -98,8 +98,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [live, setLive] = useState(false);
   const [autoExplain, setAutoExplain] = useState(true);
   const [termsOpen, setTermsOpen] = useState(true);
-  const showCommands = useSetting<boolean>(CUKEYS.commands, CATCHUP_DEFAULTS.commands); // #1049 설정 > 캐치업
-  const showTerms = useSetting<boolean>(CUKEYS.terms, CATCHUP_DEFAULTS.terms);
+  const showCommands = useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze); // #1049 설정 > 캐치업 (#1062에서 표시/분석으로 분리 예정)
+  const showTerms = useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze);
   // #1051 용어 → nunopi 카드 추가. 카드(암기)는 nunopi 학습모듈 기능이라 꺼져 있으면 버튼 없음.
   // 추가는 한 방향(카드 삭제는 갤러리에서) → 토글 아이콘 대신 "+ 추가" / "✓ 카드" 표시, 추가된 건 누르면 카드 확대.
   const { throwCard } = useFlyCard();

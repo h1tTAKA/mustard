@@ -191,8 +191,13 @@ export default function SettingsDrawer({
   const gPrDraft = useSetting<boolean>(GKEYS.prDraftDefault, GIT_DEFAULTS.prDraftDefault);
   const gAutoFetch = useSetting<boolean>(GKEYS.autoFetch, GIT_DEFAULTS.autoFetch);
   const gAutoExplain = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits); // #1054
-  const cuCommands = useSetting<boolean>(CUKEYS.commands, CATCHUP_DEFAULTS.commands); // #1049
-  const cuTerms = useSetting<boolean>(CUKEYS.terms, CATCHUP_DEFAULTS.terms);
+  // #1062 캐치업 — 카테고리별 [표시][분석]. Diff 분석은 git 자동 설명과 같은 키.
+  const cu = {
+    explainShow: useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow), explainAnalyze: useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze),
+    commandsShow: useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow), commandsAnalyze: useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze),
+    diffShow: useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow),
+    termsShow: useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow), termsAnalyze: useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze),
+  };
   const gBranchPrefix = useSetting<string>(GKEYS.branchPrefix, GIT_DEFAULTS.branchPrefix);
   // 연동(#958) — GitHub gh auth 상태 + PAT.
   const [ghAuth, setGhAuth] = useState<{ state: string; detail?: string } | null>(null);
@@ -884,23 +889,33 @@ export default function SettingsDrawer({
           </section>
           )}
 
-          {/* 캐치업(#1049) — 명령어 해설·용어집 토글. */}
+          {/* 캐치업(#1049·#1062) — 카테고리별 [표시][분석]. 표시 끔 = 창에서 숨김(분석된 것도), 분석 끔 = 새로 분석 안 함. */}
           {activeSection === "set-catchup" && (
           <section id="set-catchup" className="scroll-mt-4 space-y-4 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+            <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.catchupDesc")}</p>
             {([
-              { key: CUKEYS.commands, on: cuCommands, label: t("settings.catchupCommands"), desc: t("settings.catchupCommandsDesc") },
-              { key: CUKEYS.terms, on: cuTerms, label: t("settings.catchupTerms"), desc: t("settings.catchupTermsDesc") },
-            ]).map((row) => (
-              <div key={row.key} className="flex items-center justify-between gap-3">
+              { id: "explain", label: t("settings.catchupExplain"), desc: t("settings.catchupExplainDesc"), show: [CUKEYS.explainShow, cu.explainShow], analyze: [CUKEYS.explainAnalyze, cu.explainAnalyze] },
+              { id: "commands", label: t("settings.catchupCommands"), desc: t("settings.catchupCommandsDesc"), show: [CUKEYS.commandsShow, cu.commandsShow], analyze: [CUKEYS.commandsAnalyze, cu.commandsAnalyze] },
+              { id: "diff", label: t("settings.catchupDiff"), desc: t("settings.catchupDiffDesc"), show: [CUKEYS.diffShow, cu.diffShow], analyze: [GKEYS.autoExplainCommits, gAutoExplain] },
+              { id: "terms", label: t("settings.catchupTerms"), desc: t("settings.catchupTermsDesc"), show: [CUKEYS.termsShow, cu.termsShow], analyze: [CUKEYS.termsAnalyze, cu.termsAnalyze] },
+            ] as { id: string; label: string; desc: string; show: [string, boolean]; analyze: [string, boolean] }[]).map((row) => (
+              <div key={row.id} className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{row.label}</span>
                   <p className="text-xs text-zinc-400 dark:text-zinc-500">{row.desc}</p>
                 </div>
-                <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
-                  onClick={() => setSetting(row.key, !row.on)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
-                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${row.on ? "left-[22px]" : "left-0.5"}`} />
-                </button>
+                <div className="flex shrink-0 items-center gap-3">
+                  {([["show", t("settings.catchupShow"), row.show], ["analyze", t("settings.catchupAnalyze"), row.analyze]] as const).map(([k, cap, [key, on]]) => (
+                    <div key={k} className="flex flex-col items-center gap-1">
+                      <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">{cap}</span>
+                      <button type="button" role="switch" aria-checked={on} aria-label={`${row.label} ${cap}`}
+                        onClick={() => setSetting(key, !on)}
+                        className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </section>
