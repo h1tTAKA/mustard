@@ -7,6 +7,11 @@ import { useLocale, useSetting, GKEYS, GIT_DEFAULTS } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { parseDiff, groupHunks, noteStoreKey, loadNotes, saveNote, explainDiffText } from "@/lib/hunkNotes";
 
+// #1056 캐치업 연동 — 파일 하나 설명이 끝나면 캐치업 카드(kind diff)로. key에 hash·파일을 담아 카드에서 diff를 열 수 있게.
+export const CATCHUP_ITEM_EVENT = "nunopi:catchup-item"; // detail = { root, item } — 같은 창 캐치업이 즉시 추가
+export const diffItemKey = (hash: string, file: string) => `diff|${hash}|${file}`;
+export const parseDiffItemKey = (key: string) => { const m = /^diff\|([0-9a-fA-F]{4,64})\|(.+)$/.exec(key); return m ? { hash: m[1], file: m[2] } : null; };
+
 const POLL_MS = 30_000;
 const MAX_FILES = 10, MAX_HUNKS = 20; // ponytail: 커밋당 상한(토큰 방어) — 큰 커밋은 앞부분만, 나머지는 diff에서 버튼으로
 // 설명 가치 없는 파일 — 문서·lockfile·이미지 등(삭제 파일은 상태 D로 따로 거름).
@@ -40,12 +45,19 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         if (!raw.trim() || /^Binary files /m.test(raw)) continue;
         const store = noteStoreKey(root, f.path, hash);
         const have = loadNotes(store);
+        const texts: string[] = []; // 이 파일 구간 설명(순서대로) — 캐치업 카드 본문
         for (const h of groupHunks(parseDiff(raw))) {
-          if (!alive || budget <= 0) return;
-          if (have[h.diffText]) continue; // 이미 설명됨(버튼으로 먼저 눌렀거나 재시도)
+          if (!alive) return;
+          if (have[h.diffText]) { texts.push(have[h.diffText]); continue; } // 이미 설명됨(버튼으로 먼저 눌렀거나 재시도)
+          if (budget <= 0) break;
           budget--;
           const { providerId: pid, providerSettings: ps, locale: loc } = cfg.current;
-          try { saveNote(store, h.diffText, await explainDiffText(h.diffText, pid, ps, loc)); } catch { /* 구간 하나 실패 — 다음 구간 */ }
+          try { const text = await explainDiffText(h.diffText, pid, ps, loc); saveNote(store, h.diffText, text); texts.push(text); } catch { /* 구간 하나 실패 — 다음 구간 */ }
+        }
+        if (texts.length && alive) {
+          const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: "diff", ts: Date.now(), expl: texts.join("\n\n---\n\n").slice(0, 8000) };
+          void post("/api/repo/stream", { root, items: [item] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
+          window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
         }
       }
     };

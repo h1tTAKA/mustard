@@ -6,10 +6,10 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renam
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-export type CatchupKind = "symbol" | "file" | "query" | "repo" | "edit" | "narration";
+export type CatchupKind = "symbol" | "file" | "query" | "repo" | "edit" | "narration" | "diff"; // diff = 커밋 변경 자동 설명(#1056)
 export interface CatchupItem { key: string; kind: CatchupKind; target: string; tool: string; ts: number; expl: string }
 
-const KINDS = new Set<CatchupKind>(["symbol", "file", "query", "repo", "edit", "narration"]);
+const KINDS = new Set<CatchupKind>(["symbol", "file", "query", "repo", "edit", "narration", "diff"]);
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const normPath = (p: string) => p.replace(/\/+$/, "");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 32);
