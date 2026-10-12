@@ -40,6 +40,8 @@ export default function CatchupDiffCode({ root, hash, file }: { root: string; ha
         : (
           // 길면 상자 안에서 스크롤(가로도) — 카드 목록 흐름을 안 밀어냄
           <div className="nunopi-scroll mt-1 max-h-80 overflow-auto rounded-md border border-zinc-200 bg-white font-mono text-[10.5px] leading-[1.45] dark:border-zinc-800 dark:bg-zinc-950">
+            {/* 안쪽 = 가장 긴 줄 폭(w-max, 최소 상자 폭) → 가로 스크롤해도 줄 배경(빨강/초록)이 끝까지(#1062에서 수정) */}
+            <div className="w-max min-w-full">
             {hunks.map((h, i) => (
               <Fragment key={i}>
                 {i > 0 && <div className="border-t border-dashed border-zinc-200 dark:border-zinc-800" aria-hidden />}
@@ -53,6 +55,7 @@ export default function CatchupDiffCode({ root, hash, file }: { root: string; ha
                 })}
               </Fragment>
             ))}
+            </div>
           </div>
         )
       )}
