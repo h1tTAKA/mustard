@@ -23,7 +23,6 @@ type StreamEvent = { type: string; message?: string; response?: { summary?: stri
 const KIND_ICON: Record<ConceptKind, typeof IconCode> = { symbol: IconCode, file: IconFile, query: IconSearch, repo: IconSitemap, edit: IconPencil, narration: IconBroadcast, diff: IconGitCompare };
 const KIND_VERB: Record<ConceptKind, string> = { symbol: "심볼", file: "파일", query: "주제", repo: "레포 구조", edit: "편집 중인 파일", narration: "실시간", diff: "커밋 변경" };
 const basename = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
-const ago = (ts: number, now: number) => { const s = Math.max(0, Math.round((now - ts) / 1000)); return s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`; };
 // 생성 시점 "MM-DD HH:MM" — 구분선이 있어도 카드 단독으로 날짜가 보이게(유저 요청, #994).
 const fmtDateTime = (ts: number) => { const d = new Date(ts); const p = (n: number) => String(n).padStart(2, "0"); return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
 // 로컬 날짜 키(서버 파일명과 같은 규칙) — 구분선 그룹 기준.
@@ -97,7 +96,6 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [loaded, setLoaded] = useState(false);
   const [terms, setTerms] = useState<Term[]>(() => load<Term>(gKey(root)));
   const [live, setLive] = useState(false);
-  const [now, setNow] = useState(() => 0);
   const [autoExplain, setAutoExplain] = useState(true);
   const [termsOpen, setTermsOpen] = useState(true);
   const showCommands = useSetting<boolean>(CUKEYS.commands, CATCHUP_DEFAULTS.commands); // #1049 설정 > 캐치업
@@ -251,13 +249,6 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   }, [root, connected]);
   // 용어집은 그대로 localStorage(작고 레포별 누적).
   useEffect(() => { try { if (typeof localStorage !== "undefined") localStorage.setItem(gKey(root), JSON.stringify(terms)); } catch { /* 무시 */ } }, [terms, root]);
-
-  useEffect(() => {
-    if (!concepts.length) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 상대시간 초기 스냅
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id);
-  }, [concepts.length]);
 
   const toggleExpand = useCallback((key: string) => { if (!seenRef.current.has(key) && cfgRef.current.providerId) enqueue(key); }, [enqueue]);
 
@@ -418,7 +409,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
             {filter === "terms" && glossary}
             {/* 개념 — 등장한 개념 1회씩(중복 없음), 최근 먼저 */}
             {filter !== "terms" && <ul className="flex flex-col gap-2 p-2.5">
-              {shown.map((c, i) => { const Icon = KIND_ICON[c.kind] ?? IconActivity; const today = dayOf(c.ts) === dayOf(now || Date.now()); return ( // 미지 kind(구버전/영속 데이터)여도 크래시 안 나게 fallback
+              {shown.map((c, i) => { const Icon = KIND_ICON[c.kind] ?? IconActivity; return ( // 미지 kind(구버전/영속 데이터)여도 크래시 안 나게 fallback
                 <Fragment key={c.key}>
                 {/* #994 날짜 구분선(카톡式) — 최신순 목록에서 날짜가 바뀌는 첫 항목 위 */}
                 {(i === 0 || dayOf(shown[i - 1].ts) !== dayOf(c.ts)) && (
@@ -447,7 +438,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
                       <span className="block break-all text-[12px] font-medium text-zinc-700 dark:text-zinc-100">{c.target}</span>
-                      <span className="block text-[10px] text-zinc-400 dark:text-zinc-500">{c.kind === "narration" ? fmtDateTime(c.ts) : `${c.tool.replace(/^katchup_/, "")} · ${today ? ago(c.ts, now || c.ts) : fmtDateTime(c.ts)}`}</span>
+                      <span className="block text-[10px] text-zinc-400 dark:text-zinc-500">{/* #1060 모든 카드 = 기록 날짜·시각(예전 "23s"처럼 매초 바뀌는 상대시간 X) */}{c.kind === "narration" ? fmtDateTime(c.ts) : `${c.tool.replace(/^katchup_/, "")} · ${fmtDateTime(c.ts)}`}</span>
                     </span>
                     {c.status === "loading" && <IconLoader2 size={12} stroke={2} className="mt-0.5 shrink-0 animate-spin text-zinc-400" aria-hidden />}
                   </button>
