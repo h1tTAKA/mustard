@@ -19,6 +19,12 @@ async function tailLines(path: string): Promise<string[]> {
     return size > len ? lines.slice(1) : lines; // 잘린 첫 줄 버림
   } finally { await fh.close(); }
 }
+// 첫 줄(앞 256KB 안) — 파일 전체를 읽지 않음(GB 단위 기록, #1064 리뷰).
+async function headLine(path: string): Promise<string> {
+  const fh = await fs.open(path, "r");
+  try { const buf = Buffer.alloc(256 * 1024); const { bytesRead } = await fh.read(buf, 0, buf.length, 0); return buf.subarray(0, bytesRead).toString("utf8").split("\n")[0]; }
+  catch { return ""; } finally { await fh.close(); }
+}
 // 커밋 뒤에 수정된(=커밋 시점에 살아 있던) 기록 파일, 최근 것부터.
 async function recentFiles(dir: string, sinceMs: number): Promise<string[]> {
   let names: string[]; try { names = (await fs.readdir(dir)).filter((n) => n.endsWith(".jsonl")); } catch { return []; }
@@ -42,7 +48,7 @@ export async function findCommitSession(root: string, commitSec: number): Promis
     const lines = await tailLines(f);
     const seg = segmentForCommit(lines, parseCodexLine, commitSec);
     let cwd = seg?.cwd;
-    if (seg && !cwd) { try { cwd = parseCodexLine((await fs.readFile(f, "utf8")).slice(0, 200_000).split("\n")[0])?.cwd; } catch { /* 첫 줄 못 읽음 */ } }
+    if (seg && !cwd) cwd = parseCodexLine(await headLine(f))?.cwd; // 끝부분에 session_meta가 없으면 파일 첫 줄에서
     if (seg?.msgs.length && cwd && under(cwd, root)) found.push({ agent: "codex", sessionId: f.split("/").pop()!.replace(/\.jsonl$/, ""), branch: seg.branch, messages: seg.msgs, callTs: seg.callTs });
   }
   // 커밋 시각에 가장 가까운 git commit 호출
