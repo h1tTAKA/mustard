@@ -11,6 +11,7 @@ export default function CatchupSessionRaw({ root, hash }: { root: string; hash: 
   const [msgs, setMsgs] = useState<SessionMsg[] | null>(null);
   const [failed, setFailed] = useState(false);
   const loadingRef = useRef(false);
+  const [openTools, setOpenTools] = useState<Set<number>>(() => new Set()); // 펼친 도구 출력(기본은 몇 줄만)
 
   const toggle = () => {
     const next = !open; setOpen(next);
@@ -33,10 +34,17 @@ export default function CatchupSessionRaw({ root, hash }: { root: string; hash: 
         : !msgs ? <div className="flex justify-center py-2"><IconLoader2 size={12} stroke={2} className="animate-spin text-zinc-400" aria-hidden /></div>
         : (
           <div className="nunopi-scroll mt-1 flex max-h-96 flex-col gap-1.5 overflow-y-auto rounded-md border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950">
-            {msgs.map((m, i) => m.role === "tool" ? (
-              // 도구 호출·출력 — 작게, 고정폭, 길면 4줄까지(펼친 상자 안 스크롤로 전체는 원본 파일에)
-              <div key={i} className="line-clamp-4 whitespace-pre-wrap break-all rounded bg-zinc-50 px-1.5 py-1 font-mono text-[10px] leading-snug text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">{m.text}</div>
-            ) : m.role === "user" ? (
+            {msgs.map((m, i) => m.role === "tool" ? (() => {
+              // 도구 호출·출력 — 고정폭, 기본 앞 4줄(누르면 전체). line-clamp(-webkit-box)는 줄마다 배경이 끊겨 보여서 안 씀(#1064 유저 보고).
+              const lines = m.text.split("\n"); const long = lines.length > 4 || m.text.length > 400; const full = openTools.has(i);
+              const shown = full || !long ? m.text : lines.slice(0, 4).join("\n").slice(0, 400) + " …";
+              return (
+                <button key={i} type="button" disabled={!long} onClick={() => setOpenTools((p) => { const n = new Set(p); if (n.has(i)) n.delete(i); else n.add(i); return n; })}
+                  className="block w-full rounded-md border border-zinc-200 px-1.5 py-1 text-left font-mono text-[10px] leading-snug text-zinc-600 transition enabled:hover:border-zinc-300 dark:border-zinc-800 dark:text-zinc-300 dark:enabled:hover:border-zinc-700">
+                  <span className="block whitespace-pre-wrap break-words">{shown}</span>
+                </button>
+              );
+            })() : m.role === "user" ? (
               <div key={i} className="self-end max-w-[90%] whitespace-pre-wrap break-words rounded-lg bg-mustard-500/12 px-2 py-1 text-[11px] leading-snug text-zinc-800 dark:text-zinc-100">{m.text}</div>
             ) : (
               <div key={i} className="whitespace-pre-wrap break-words px-0.5 text-[11px] leading-snug text-zinc-700 dark:text-zinc-200">{m.text}</div>
