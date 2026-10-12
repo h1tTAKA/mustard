@@ -2,24 +2,25 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck } from "@tabler/icons-react";
+import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import { isDocEdit } from "@/lib/mcpActivity";
 import { isNunopiEnabled } from "@/lib/product";
 import { mergeTerms, parseNarrationTerms, type Term } from "@/lib/catchupTerms";
+import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
 import { useT, useLocale, useToast, useSetting, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { useFlyCard, collectCards } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import { stripCardBlock } from "@mustard/core";
-type ConceptKind = "symbol" | "file" | "query" | "repo" | "edit" | "narration";
+type ConceptKind = "symbol" | "file" | "query" | "repo" | "edit" | "narration" | "diff";
 interface ActivityEvent { root: string; tool: string; kind: ConceptKind; target: string; isError: boolean; ts: number; note?: string }
 interface Concept { key: string; kind: ConceptKind; target: string; tool: string; status: "idle" | "loading" | "done" | "error"; expl?: string; ts: number }
 type StreamEvent = { type: string; message?: string; response?: { summary?: string } };
 
-const KIND_ICON: Record<ConceptKind, typeof IconCode> = { symbol: IconCode, file: IconFile, query: IconSearch, repo: IconSitemap, edit: IconPencil, narration: IconBroadcast };
-const KIND_VERB: Record<ConceptKind, string> = { symbol: "심볼", file: "파일", query: "주제", repo: "레포 구조", edit: "편집 중인 파일", narration: "실시간" };
+const KIND_ICON: Record<ConceptKind, typeof IconCode> = { symbol: IconCode, file: IconFile, query: IconSearch, repo: IconSitemap, edit: IconPencil, narration: IconBroadcast, diff: IconGitCompare };
+const KIND_VERB: Record<ConceptKind, string> = { symbol: "심볼", file: "파일", query: "주제", repo: "레포 구조", edit: "편집 중인 파일", narration: "실시간", diff: "커밋 변경" };
 const basename = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
 const ago = (ts: number, now: number) => { const s = Math.max(0, Math.round((now - ts) / 1000)); return s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`; };
 // 생성 시점 "MM-DD HH:MM" — 구분선이 있어도 카드 단독으로 날짜가 보이게(유저 요청, #994).
@@ -80,12 +81,13 @@ async function saveItems(root: string, items: { key: string; kind: ConceptKind; 
   } catch { return false; }
 }
 
-export default function RepoLearnStream({ root, providerId, providerSettings, active = true, agentWorking = false }: {
+export default function RepoLearnStream({ root, providerId, providerSettings, active = true, agentWorking = false, onOpenDiff }: {
   root: string;
   active?: boolean;       // #1043 보이는 레포
   agentWorking?: boolean; // #1043 이 레포 에이전트가 작업 중(숨어 있어도 실시간 해설·설명 큐를 놓치지 않게)
   providerId?: AgentProviderKind;
   providerSettings?: ProviderSettings;
+  onOpenDiff?: (hash: string, file: string) => void; // #1056 diff 카드 → 그 커밋·파일 diff 탭
 }) {
   const t = useT();
   const { locale } = useLocale();
@@ -118,7 +120,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     toast(ok ? t("card.added", { term: x.term }) : t("card.exists"));
   }, [root, t, toast]);
   // #1049 카테고리 필터 — 해설(실시간 해설·파일/심볼 설명) / 명령어 / 용어. 꺼진 카테고리는 칩도 숨김.
-  const [filterSel, setFilter] = useState<"all" | "explain" | "commands" | "terms">("all");
+  const [filterSel, setFilter] = useState<"all" | "explain" | "commands" | "diff" | "terms">("all");
   // #1049 검색 — 서버가 전체 날짜에서 제목·설명을 찾음(입력 멈춘 뒤 250ms). 용어집은 화면에서 거름.
   const [q, setQ] = useState("");
   const [found, setFound] = useState<Concept[] | null>(null); // null = 검색 중
@@ -182,6 +184,18 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     const t = setTimeout(() => setConnected(false), 2 * 60_000);
     return () => clearTimeout(t);
   }, [want]);
+
+  // #1056 커밋 자동 설명 → diff 카드(같은 창 이벤트로 즉시, 서버 기록은 훅이 따로 저장). 이미 설명된 카드라 설명 큐 안 탐.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ root: string; item: Omit<Concept, "status"> }>).detail;
+      if (!d || d.root !== root) return;
+      seenRef.current.add(d.item.key);
+      setConcepts((prev) => [{ ...d.item, status: "done" as const }, ...prev.filter((c) => c.key !== d.item.key)].slice(0, MAX_ITEMS));
+    };
+    window.addEventListener(CATCHUP_ITEM_EVENT, on);
+    return () => window.removeEventListener(CATCHUP_ITEM_EVENT, on);
+  }, [root]);
 
   // SSE — 이벤트 → 개념 upsert(중복은 ts/tool만 갱신) + 새 개념이면 설명 큐.
   useEffect(() => {
@@ -296,7 +310,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     dragCleanup.current = stop;
   }, [askH]);
   const shown = (query ? (found ?? []) : viewDay ? (dayItems ?? []) : concepts).filter((c) => (showCommands || !isCommand(c)) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)) // 끄면 지난 명령 카드도 숨김, 문서 편집 카드는 항상 숨김(#1049)
-    && (filter === "all" || (filter === "commands" ? isCommand(c) : filter === "explain" && !isCommand(c))));
+    && (filter === "all" || (filter === "commands" ? isCommand(c) : filter === "diff" ? c.kind === "diff" : filter === "explain" && !isCommand(c) && c.kind !== "diff")));
   const shownTerms = query ? terms.filter((x) => `${x.term}\n${x.def}`.toLowerCase().includes(query.toLowerCase())) : terms;
   const viewLabel = viewDay ? (() => { try { return new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${viewDay}T00:00:00`)); } catch { return viewDay; } })() : "";
 
@@ -364,7 +378,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       </div>
       {/* #1049 카테고리 필터 칩 */}
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
-        {([["all", t("learn.filterAll")], ["explain", t("learn.filterExplain")], ...(showCommands ? [["commands", t("learn.filterCommands")]] : []), ...(showTerms ? [["terms", t("learn.filterTerms")]] : [])] as [typeof filterSel, string][]).map(([id, label]) => (
+        {([["all", t("learn.filterAll")], ["explain", t("learn.filterExplain")], ...(showCommands ? [["commands", t("learn.filterCommands")]] : []), ["diff", t("learn.filterDiff")], ...(showTerms ? [["terms", t("learn.filterTerms")]] : [])] as [typeof filterSel, string][]).map(([id, label]) => (
           <button key={id} type="button" onClick={() => setFilter(id)} aria-pressed={filter === id}
             className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition ${filter === id ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
             {label}
@@ -414,6 +428,13 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                   </li>
                 )}
                 <li className={`relative rounded-lg border bg-zinc-50/70 dark:bg-zinc-800/40 ${askItem?.key === c.key ? "border-mustard-500/60" : "border-zinc-200 dark:border-zinc-800"}`}>
+                  {/* #1056 diff 카드 — 질문 버튼 왼쪽에 "diff 열기"(키에 담긴 커밋·파일) */}
+                  {c.kind === "diff" && onOpenDiff && (() => { const d = parseDiffItemKey(c.key); return d ? (
+                    <button type="button" onClick={() => onOpenDiff(d.hash, d.file)} title={t("learn.openDiff")} aria-label={t("learn.openDiff")}
+                      className="absolute right-8 top-1.5 z-10 rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400">
+                      <IconExternalLink size={13} stroke={2} aria-hidden />
+                    </button>
+                  ) : null; })()}
                   {/* #998 이 항목에 질문 — 오른쪽 위, 대화 있으면 질문 수 배지 */}
                   {c.status === "done" && c.expl && (
                     <button type="button" onClick={() => setAskItem(c)} title={t("learn.ask")} aria-label={t("learn.ask")}
@@ -421,7 +442,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       <IconMessageCircle size={13} stroke={2} aria-hidden />{askCounts[c.key] ? <span className="font-semibold">{askCounts[c.key]}</span> : null}
                     </button>
                   )}
-                  <button type="button" onClick={() => toggleExpand(c.key)} className="flex w-full items-start gap-2 py-2 pl-3 pr-9 text-left">
+                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" && onOpenDiff ? "pr-16" : "pr-9"}`}>
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
                       <span className="block break-all text-[12px] font-medium text-zinc-700 dark:text-zinc-100">{c.target}</span>
