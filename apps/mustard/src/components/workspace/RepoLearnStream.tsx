@@ -102,7 +102,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [concepts, setConcepts] = useState<Concept[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [terms, setTerms] = useState<Term[]>(() => load<Term>(gKey(root)));
-  const [live, setLive] = useState(false);
+  const [lost, setLost] = useState(false); // #1078 실시간 연결이 몇 초 넘게 끊김(평소엔 표시 없음)
   const [termsOpen, setTermsOpen] = useState(false); // #1076 기본은 무조건 닫힘(다시 들어와도 펼쳐져 있지 않게)
   // #1062 설정 > 캐치업 — 카테고리별 표시(창에 보이기)·분석(새로 만들기). 표시는 렌더, 분석은 cfgRef(콜백)로.
   const explainShow = useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow);
@@ -221,7 +221,12 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   useEffect(() => {
     if (!root || !connected) return;
     const es = new EventSource(`/api/repo/mcp/activity/stream?root=${encodeURIComponent(root)}`);
-    es.onopen = () => setLive(true); es.onerror = () => setLive(false);
+    // #1078 끊김은 5초 넘게 이어질 때만 알림(EventSource 자동 재연결의 잠깐 끊김은 무시)
+    let lostTimer: ReturnType<typeof setTimeout> | null = null;
+    const arm = () => { if (!lostTimer) lostTimer = setTimeout(() => setLost(true), 5000); };
+    arm(); // 처음 연결도 5초 안에 안 되면 알림
+    es.onopen = () => { if (lostTimer) clearTimeout(lostTimer); lostTimer = null; setLost(false); };
+    es.onerror = arm;
     es.onmessage = (m) => {
       let ev: ActivityEvent; try { ev = JSON.parse(m.data) as ActivityEvent; } catch { return; }
       if (!ev?.target) return;
@@ -242,7 +247,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       setConcepts((prev) => { const found = prev.find((c) => c.key === key); if (found) return ev.ts < found.ts ? prev : [{ ...found, tool: ev.tool, ts: ev.ts }, ...prev.filter((c) => c.key !== key)]; /* 재생분(옛 시각)이 최근 카드를 끌어내리지 않게 */ return [{ key, kind: ev.kind, target: ev.target, tool: ev.tool, status: "idle" as const, ts: ev.ts }, ...prev].sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS); });
       const cfg = cfgRef.current; if (cfg.providerId) enqueue(key);
     };
-    return () => es.close();
+    return () => { es.close(); if (lostTimer) clearTimeout(lostTimer); };
   }, [root, enqueue, connected]);
 
   // #994 서버 기록 로드 — ① 옛 localStorage 기록 있으면 1회 이관(서버가 key로 멱등) 후 삭제 ② 최근 100개 로드해
@@ -408,7 +413,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           className={`rounded-md p-1 transition ${calOpen || viewDay ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
           <IconCalendar size={14} stroke={2} aria-hidden />
         </button>
-        <span className={`flex items-center gap-1 text-[10px] ${live ? "text-emerald-500" : "text-zinc-400 dark:text-zinc-500"}`}><IconPointFilled size={10} stroke={2} aria-hidden /> {live ? t("learn.live") : t("learn.idle")}</span>
+        {lost && <span className="flex items-center gap-1 text-[10px] text-rose-500" title={t("learn.disconnected")}><IconPointFilled size={10} stroke={2} aria-hidden /> {t("learn.disconnected")}</span>}
         {calOpen && <CatchupCalendar days={days} selected={viewDay} locale={locale} onPick={pickDay} onClose={closeCal} />}
       </div>
       {/* #1078 질문 화면 — 계속 마운트(답변 스트리밍 중 전환해도 안 끊김), 카드 목록과 배타 표시 */}
