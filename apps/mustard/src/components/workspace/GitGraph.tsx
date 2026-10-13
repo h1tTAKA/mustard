@@ -75,7 +75,8 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
   // dwell 지연: 그래프를 훑으며 지나갈 땐 안 뜨고, 머물러야(HOVER_DELAY_MS) 뜬다(orca식).
   // #1064 캐치업 세션 카드 "그래프에서 보기" — 그 커밋 행으로 스크롤 + 잠깐 강조.
   const [flash, setFlash] = useState<string | null>(null);
-  const [flashFile, setFlashFile] = useState<string | null>(null); // #1074 "hash|파일" — 펼친 커밋 안 그 파일 강조
+  const [flashFile, setFlashFile] = useState<{ hash: string; file: string; n: number } | null>(null); // #1074 펼친 커밋 안 그 파일 강조(n = 요청 번호)
+  const scrolledFor = useRef<number | null>(null); // 이 요청으로 이미 파일 줄까지 스크롤했나(새로고침마다 다시 튀지 않게)
   const graphScrollRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ subject: string; body: string; left: number; top?: number; bottom?: number; maxHeight: number } | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -254,9 +255,9 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
     const hash = model.rows[idx].commit.hash;
     setFlash(hash); // eslint-disable-line react-hooks/set-state-in-effect -- 외부 요청(focus) 시 강조
     // #1074 diff 카드에서 왔으면 그 커밋을 펼쳐 그 파일까지 반짝(스크롤은 파일 목록이 온 뒤 아래 effect에서)
-    if (focus.file) { setExpanded((prev) => (prev.has(hash) ? prev : new Set(prev).add(hash))); void loadFiles(hash); setFlashFile(`${hash}|${focus.file}`); }
+    if (focus.file) { setExpanded((prev) => (prev.has(hash) ? prev : new Set(prev).add(hash))); void loadFiles(hash); setFlashFile({ hash, file: focus.file, n: focus.n }); }
     else graphScrollRef.current?.scrollTo({ top: Math.max(0, rowTop[idx] - ROW_H * 2), behavior: "smooth" });
-    const t = setTimeout(() => { setFlash((f) => (f === hash ? null : f)); setFlashFile(null); }, 2500);
+    const t = setTimeout(() => setFlash((f) => (f === hash ? null : f)), 2500); // 파일 강조는 스크롤한 뒤부터 따로 셈(아래)
     return () => clearTimeout(t);
     // 요청 번호(n)가 바뀔 때만 — model·rowTop 갱신(폴링)마다 다시 튀지 않게
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -264,11 +265,13 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
 
   // #1074 짚은 파일 — 펼친 커밋의 파일 목록이 오면 그 파일 줄로 스크롤
   useEffect(() => {
-    if (!flashFile || !model) return;
-    const cut = flashFile.indexOf("|"); const hash = flashFile.slice(0, cut), file = flashFile.slice(cut + 1);
+    if (!flashFile || !model || scrolledFor.current === flashFile.n) return;
+    const { hash, file, n } = flashFile;
     const idx = model.rows.findIndex((r) => r.commit.hash === hash); const fi = filesByHash[hash]?.findIndex((f) => f.path === file) ?? -1;
-    if (idx < 0 || !filesByHash[hash]) return;
+    if (idx < 0 || !filesByHash[hash]) return; // 파일 목록 오기 전 — 오면 다시 돎
+    scrolledFor.current = n; // 요청당 한 번(#1074 리뷰 — 새로고침으로 rowTop이 바뀔 때마다 다시 튀던 것)
     graphScrollRef.current?.scrollTo({ top: Math.max(0, rowTop[idx] + ROW_H + Math.max(0, fi) * FILE_H - ROW_H * 3), behavior: "smooth" });
+    setTimeout(() => setFlashFile((f) => (f?.n === n ? null : f)), 2500); // 스크롤한 순간부터 2.5초(목록이 늦게 와도 보이게)
   }, [flashFile, filesByHash, model, rowTop]);
 
   // 추적 변경 vs 미추적(untracked) 분리 — 미추적은 접이식 하위그룹(#699).
@@ -521,7 +524,7 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
                     ) : files.map((f) => {
                       const [badge, cls] = STATUS[f.status as keyof typeof STATUS] ?? ["?", "text-zinc-400"];
                       return (
-                        <button key={f.path} type="button" onClick={() => onOpenDiff(row.commit.hash, f.path)} className={`flex w-full items-center text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800 ${flashFile === `${row.commit.hash}|${f.path}` ? "bg-mustard-500/20 ring-1 ring-inset ring-mustard-500/60 dark:bg-mustard-400/15" : ""}`} style={{ height: FILE_H }}>
+                        <button key={f.path} type="button" onClick={() => onOpenDiff(row.commit.hash, f.path)} className={`flex w-full items-center text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800 ${flashFile?.hash === row.commit.hash && flashFile.file === f.path ? "bg-mustard-500/20 ring-1 ring-inset ring-mustard-500/60 dark:bg-mustard-400/15" : ""}`} style={{ height: FILE_H }}>
                           {/* 그래프 열 스페이서(colW) — 선은 위 커밋의 점→점 곡선이 이 구간을 가로질러 지나감(#707). */}
                           <span style={{ width: colW }} className="shrink-0" aria-hidden />
                           <span className="flex min-w-0 flex-1 items-baseline gap-1.5 pl-3 pr-2 text-[11px]">
