@@ -404,9 +404,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         <IconActivity size={14} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
         <span className="mr-auto truncate text-[13px] font-semibold text-zinc-700 dark:text-zinc-200" title={t("learn.mode")}>{t("learn.title")}</span>
         {onToggleChat && ( /* #1078 워크스페이스 질문 — 캐치업 안 질문 화면 ↔ 카드 목록 */
-          <button type="button" onClick={onToggleChat} aria-pressed={chatOpen} title={t("chat.title")} aria-label={t("chat.title")}
-            className={`rounded-md p-1 transition ${chatOpen ? "bg-mustard-500/15 text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
-            <IconMessageCircle size={14} stroke={2} aria-hidden />
+          <button type="button" onClick={onToggleChat} aria-pressed={chatOpen} title={t("learn.chat")}
+            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition ${chatOpen ? "border-mustard-500/50 bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" : "border-zinc-300 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
+            <IconMessageCircle size={13} stroke={2} aria-hidden />{t("learn.chat")}
           </button>
         )}
         <button type="button" data-cal-toggle onClick={openCal} aria-expanded={calOpen} title={t("learn.calendar")} aria-label={t("learn.calendar")}
