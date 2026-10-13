@@ -32,3 +32,15 @@ export function buildCatchupContext({ repo, item, recent, digest }: { repo: stri
     clip(digest?.trim() || "(not built yet)", 6000),
   ].join("\n");
 }
+
+// #1078 레포 전체 질문(캐치업 안 질문 화면)에 붙일 작업 기록 — 최근 항목 요약 + 전체 기록 파일 안내. "오늘 뭐 했지" 류 질문용.
+export function buildWorkHistory(recent: AskItem[]): string {
+  if (!recent.length) return "";
+  const lines = recent.map((x) => `- [${stamp(x.ts)}] (${x.kind}) ${x.target}: ${clip(x.expl.replace(/\s+/g, " "), 160)}`).join("\n");
+  return [
+    "## WORK HISTORY (Catch-up records, newest first)",
+    "This is what AI coding agents did in this repository (live narration, commands, commit diffs, agent sessions). Use it for questions like \"what did I work on today / since yesterday\".",
+    "Older days are in the additional readable directory: one YYYY-MM-DD.jsonl per day (fields kind, target, expl, ts); sessions/<hash>.json are raw agent transcripts. Grep/Read them when the question needs more than the recent items below.",
+    clip(lines, 12000),
+  ].join("\n");
+}

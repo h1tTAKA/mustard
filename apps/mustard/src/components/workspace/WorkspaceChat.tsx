@@ -23,6 +23,7 @@ import type { AgentProviderKind, ChatMessage, ProviderSettings } from "@mustard/
 import type { QuizSession } from "@mustard/core";
 import { isNunopiEnabled } from "@/lib/product";
 import { isCardWorthy } from "@/lib/cardWorthy";
+import { buildWorkHistory, type AskItem } from "@/lib/catchupAskContext";
 type StreamEvent = { type: "progress"; line: string } | { type: "result"; response: { summary: string } } | { type: "error"; message: string };
 
 type SessionKind = "repo" | "file" | "diff" | "branch" | "worktree" | "arch";
@@ -458,7 +459,16 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
       }
     } catch { ctx = ""; }
     if (s.kind !== "worktree" && s.kind !== "arch") ctxCache.current.set(s.key, ctx); // worktree·arch는 캐시 안 함(항상 최신 diff/flow)
+    if (s.kind === "repo") ctx += "\n" + await workHistory(); // #1078 작업 기록은 매번 새로(캐시 X — 질문 사이에도 쌓임)
     return ctx;
+  }
+
+  // #1078 캐치업 작업 기록(최근 100개) — 레포 전체 질문에 붙임. 실패하면 빈 문자열.
+  async function workHistory(): Promise<string> {
+    try {
+      const j = await fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&limit=100`).then((r) => r.json());
+      return j?.ok && Array.isArray(j.items) ? buildWorkHistory(j.items as AskItem[]) : "";
+    } catch { return ""; }
   }
 
   // 레포 전체 컨텍스트 — 구조 요약 + package.json/README + 현재 브랜치.
