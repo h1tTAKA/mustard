@@ -34,10 +34,10 @@ function codexHasSame(tomlText, want) {
 }
 
 async function installBrowserMcp({ userData, execPath, claudePath, codexPath }) {
-  const script = join(userData, "browser-mcp.cjs");
-  const endpoint = join(userData, "mustard-browser-endpoint.json");
+  const script = join(userData, "mustard-mcp.cjs");
+  const endpoint = join(userData, "mustard-mcp-endpoint.json");
   mkdirSync(userData, { recursive: true });
-  const src = readFileSync(join(__dirname, "browser-mcp.cjs"), "utf8");
+  const src = readFileSync(join(__dirname, "mustard-mcp.cjs"), "utf8");
   if (readText(script) !== src) writeFileSync(script, src);
   const want = { command: execPath, args: [script, endpoint] };
   const result = {};

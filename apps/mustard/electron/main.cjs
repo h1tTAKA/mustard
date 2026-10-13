@@ -299,6 +299,7 @@ async function boot() {
   if (DEV_URL) {
     // dev: next dev가 자체 임베드(간섭 방지) → main은 SNA 안 띄움.
     appBase = DEV_URL; // #765 버퍼 드라이버 POST 대상
+    writeMcpEndpoint();
     setupClaudeHooks(DEV_URL, "");
     createWindow(DEV_URL);
     return;
@@ -311,6 +312,7 @@ async function boot() {
     MUSTARD_HOOK_TOKEN: HOOK_TOKEN,
   });
   appBase = base; // #765 버퍼 드라이버 POST 대상
+  writeMcpEndpoint(); // #1070 MCP가 코드그래프 도구를 앱에 물을 주소
   setupClaudeHooks(base, HOOK_TOKEN);
   createWindow(base);
 }
@@ -457,10 +459,19 @@ ipcMain.on("browser:register", (e, { guestId, repo, visible } = {}) => { const g
 ipcMain.on("browser:unregister", (e, { guestId } = {}) => { if (ownGuest(e.sender, guestId)) browserControl.unregister(guestId); });
 // 부팅마다 새 토큰으로 띄우고 주소·토큰을 0600 파일에 — MCP 스크립트가 매 요청 때 읽음(포트가 바뀌어도 OK).
 const BROWSER_TOKEN = require("node:crypto").randomBytes(24).toString("hex");
-const browserEndpointFile = () => join(app.getPath("userData"), "mustard-browser-endpoint.json");
+// #1070 Mustard MCP(브라우저 + 코드그래프) 엔드포인트 — 브라우저 조작 주소·토큰 + Next 앱 주소. 둘 중 정해지는 대로 다시 씀.
+const mcpEndpointFile = () => join(app.getPath("userData"), "mustard-mcp-endpoint.json");
+let browserPort = null;
+function writeMcpEndpoint() {
+  if (!browserPort) return;
+  try {
+    writeFileSync(mcpEndpointFile(), JSON.stringify({ url: `http://127.0.0.1:${browserPort}/call`, token: BROWSER_TOKEN, appUrl: appBase || null }), { mode: 0o600 });
+    chmodSync(mcpEndpointFile(), 0o600);
+  } catch (e) { console.warn("[mustard-mcp] endpoint write failed:", String(e?.message || e)); }
+}
 app.whenReady().then(() => browserControl.listen(BROWSER_TOKEN)).then(({ port }) => {
-  writeFileSync(browserEndpointFile(), JSON.stringify({ url: `http://127.0.0.1:${port}/call`, token: BROWSER_TOKEN }), { mode: 0o600 });
-  chmodSync(browserEndpointFile(), 0o600);
+  browserPort = port;
+  writeMcpEndpoint();
   // Claude·Codex에 MCP 자동 등록(이미 같으면 건너뜀). CLI 없으면 그 쪽만 건너뜀.
   // 패키징 앱에서만 — dev 실행이 등록을 dev 바이너리·dev userData로 덮어 패키징 앱과 번갈아 깨지지 않게(#1041 리뷰).
   if (!app.isPackaged) return;
