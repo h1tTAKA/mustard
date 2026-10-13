@@ -61,7 +61,7 @@ export function parseCodexLine(line: string): ParsedLine | null {
 }
 
 // 줄들 → 커밋(초) 직전 "git commit" 호출까지의 구간(이전 커밋 호출 이후 ~ 이 호출 + 바로 뒤 도구 출력).
-// 커밋 시각보다 늦게 시작된 호출은 다른 커밋. 너무 이른(15분 전) 호출도 제외. 없으면 null.
+// 커밋 시각보다 늦은(2초 넘게) 호출은 다른 커밋. 너무 이른(15분 전) 호출도 제외. 없으면 null.
 export function segmentForCommit(lines: string[], parse: (l: string) => ParsedLine | null, commitSec: number): { msgs: SessionMsg[]; branch?: string; cwd?: string; callTs: number } | null {
   const commitMs = commitSec * 1000;
   let buf: SessionMsg[] = []; let best: { msgs: SessionMsg[]; branch?: string; callTs: number } | null = null; let open: SessionMsg[] | null = null;
@@ -72,7 +72,8 @@ export function segmentForCommit(lines: string[], parse: (l: string) => ParsedLi
     if (open) { if (p.result) { open.push(...p.msgs); open = null; continue; } if (p.msgs.length) open = null; } // 커밋 호출의 출력(바로 다음 결과 줄 하나)만 붙임
     if (p.commitCall) {
       const seg = [...buf, ...p.msgs].slice(-SEG_MAX); buf = [];
-      if (p.ts <= commitMs + 5000 && p.ts >= commitMs - 15 * 60_000) { best = { msgs: seg, branch, callTs: p.ts }; open = seg; }
+      // 호출은 커밋보다 먼저 기록됨 → 여유 2초(시계 오차)만. 커밋 직후의 다른 경계 호출(git pull 등)이 대신 잡히지 않게(#1064 리뷰).
+      if (p.ts <= commitMs + 2000 && p.ts >= commitMs - 15 * 60_000) { best = { msgs: seg, branch, callTs: p.ts }; open = seg; }
       continue;
     }
     if (p.ts > commitMs + 120_000 && best) break; // 지난 뒤 — 더 볼 필요 없음

@@ -49,4 +49,7 @@ const merged = [...claude,
 const ms = segmentForCommit(merged, parseClaudeLine, M)!;
 assert.ok(ms.msgs.some((m) => m.text.includes("리뷰 반영하고 머지")) && !ms.msgs.some((m) => m.text.includes("버튼 색")) && ms.msgs.at(-1)!.text === "✓ Merged", "머지 세션 = 지난 커밋 이후 리뷰·머지 대화(이전 커밋 작업은 제외)");
 assert.strictEqual(parseClaudeLine("not json"), null);
+// 리뷰: 커밋 직후(3초 뒤) git pull 호출이 있어도 커밋 호출을 고름
+const pulled = [...claude.slice(0, 7), cl("assistant", [{ type: "tool_use", name: "Bash", input: { command: "git pull" } }], T + 3)];
+assert.ok(segmentForCommit(pulled, parseClaudeLine, T)!.msgs.some((m) => m.text.includes("버튼 색")), "커밋 직후 pull에 안 끌려감");
 console.log("agentSessionParse ok");
