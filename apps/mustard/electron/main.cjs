@@ -465,8 +465,10 @@ let browserPort = null;
 function writeMcpEndpoint() {
   if (!browserPort) return;
   try {
-    writeFileSync(mcpEndpointFile(), JSON.stringify({ url: `http://127.0.0.1:${browserPort}/call`, token: BROWSER_TOKEN, appUrl: appBase || null }), { mode: 0o600 });
-    chmodSync(mcpEndpointFile(), 0o600);
+    // 앱 주소가 아직이면(부팅 중) 지난 값 유지 — null로 덮으면 그 사이 뜬 에이전트가 코드그래프 도구를 못 봄(#1070 리뷰). 포트는 보통 고정.
+    let prevApp = null; try { prevApp = JSON.parse(readFileSync(mcpEndpointFile(), "utf8")).appUrl || null; } catch { /* 처음 */ }
+    writeFileSync(mcpEndpointFile(), JSON.stringify({ url: `http://127.0.0.1:${browserPort}/call`, token: BROWSER_TOKEN, appUrl: appBase || prevApp }), { mode: 0o600 });
+    chmodSync(mcpEndpointFile(), 0o600); // mode는 새로 만들 때만 적용 — 이미 있던 파일도 0600으로
   } catch (e) { console.warn("[mustard-mcp] endpoint write failed:", String(e?.message || e)); }
 }
 app.whenReady().then(() => browserControl.listen(BROWSER_TOKEN)).then(({ port }) => {
