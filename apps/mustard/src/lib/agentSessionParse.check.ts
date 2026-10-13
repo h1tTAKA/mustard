@@ -58,4 +58,24 @@ assert.strictEqual(cs.cwd, "/r");
 assert.ok(COMMIT_RE.test("rtk git commit -m x") && COMMIT_RE.test("git -C a commit") && !COMMIT_RE.test("git log --grep commit"));
 assert.ok(COMMIT_RE.test("gh pr merge 12 --merge") && COMMIT_RE.test("git checkout main && git pull") && COMMIT_RE.test("git merge feature/x"), "머지도 경계");
 assert.strictEqual(parseClaudeLine("not json"), null);
+// #1064 유저 피드백 — 커밋 a 뒤 질문·수정(pull 포함) → 커밋 b 구간에 전부, 머지 카드는 커밋 b 뒤 ~ "머지했어요"까지
+const A = T, B = T + 7200, MG = T + 9000;
+const flow = [
+  cl("user", "커밋a ㄱㄱ", A - 300), bash("git commit -m a", A - 2), res("ok a", A), cl("assistant", [{ type: "text", text: "커밋 a 완료했습니다" }], A + 3),
+  cl("user", "이거 왜 이렇게 했어?", A + 600), cl("assistant", [{ type: "text", text: "설명: ..." }], A + 610),
+  cl("user", "pull 받아줘", A + 1200), bash("git pull", A + 1210), res("Already up to date.", A + 1211),
+  cl("user", "여기 좀 고쳐", A + 3000), cl("assistant", [{ type: "tool_use", name: "Edit", input: { file_path: "x" } }], A + 3010),
+  cl("user", "커밋b ㄱㄱ", B - 300), bash("git commit -m b", B - 2), res("ok b", B), cl("assistant", [{ type: "text", text: "커밋 b 완료했습니다" }], B + 3),
+  cl("user", "머지 ㄱㄱ", MG - 300), bash("gh pr merge 9 --merge && git checkout main && git pull", MG - 2), res("✓ Merged", MG), cl("assistant", [{ type: "text", text: "머지했습니다 ~~" }], MG + 5),
+  cl("user", "다음", MG + 600),
+];
+const sb = segmentForCommit(flow, parseClaudeLine, B)!;
+const sbt = sb.msgs.map((m) => m.text);
+assert.ok(sbt[0] === "이거 왜 이렇게 했어?" && sbt.includes("pull 받아줘") && sbt.includes("여기 좀 고쳐") && sbt.at(-1) === "커밋 b 완료했습니다", "커밋 b = 커밋 a 다음 질문·pull·수정부터 '커밋 b 완료'까지(pull은 경계 아님)");
+assert.ok(!sbt.includes("커밋 a 완료했습니다"));
+const sm = segmentForCommit(flow, parseClaudeLine, MG, true)!;
+assert.deepStrictEqual(sm.msgs.filter((m) => m.role !== "tool").map((m) => m.text), ["머지 ㄱㄱ", "머지했습니다 ~~"], "머지 카드 = 커밋 b 뒤 ~ '머지했습니다'");
+assert.strictEqual(segmentForCommit(flow, parseClaudeLine, MG, false), null, "머지 시각엔 일반 커밋 호출 없음");
+const big = [cl("user", "시작", T - 800), ...Array.from({ length: 400 }, (_, i) => cl("assistant", [{ type: "text", text: `m${i}` }], T - 700 + i)), bash("git commit -m z", T - 2)];
+assert.strictEqual(segmentForCommit(big, parseClaudeLine, T)!.msgs.length, 402, "메시지 수 상한 없음");
 console.log("agentSessionParse ok");

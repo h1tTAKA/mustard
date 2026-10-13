@@ -22,8 +22,8 @@ export interface LinkedSession { agent: string; sessionId: string; branch?: stri
 // 세션 찾기 → 요약 → 카드 항목. 세션 없으면(사람이 직접 커밋 등) "none".
 // 턴이 아직 안 끝났으면 "wait"(마무리 말까지 담으려고 — 다음 주기에 다시). force면 안 끝났어도 만듦(오래 기다린 경우).
 export async function buildSessionItem(root: string, hash: string, ts: number, subject: string, branch: string,
-  providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string, force = false) {
-  const r = await fetch("/api/repo/session-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, hash, ts }) });
+  providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string, force = false, merge = false) {
+  const r = await fetch("/api/repo/session-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, hash, ts, merge }) });
   const j = await r.json().catch(() => null);
   const s = j?.session as LinkedSession | null | undefined;
   if (!s?.messages?.length) return "none" as const;

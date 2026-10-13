@@ -36,19 +36,19 @@ async function recentFiles(dir: string, sinceMs: number): Promise<string[]> {
 }
 const under = (a: string, b: string) => { const x = a.replace(/\/+$/, ""), y = b.replace(/\/+$/, ""); return x === y || x.startsWith(y + "/") || y.startsWith(x + "/"); };
 
-export async function findCommitSession(root: string, commitSec: number): Promise<CommitSession | null> {
+export async function findCommitSession(root: string, commitSec: number, isMerge = false): Promise<CommitSession | null> {
   const sinceMs = commitSec * 1000 - 1000;
   const found: CommitSession[] = [];
   // Claude Code — 레포 경로별 폴더
   for (const f of await recentFiles(projectDirFor(root), sinceMs)) {
-    const seg = segmentForCommit(await tailLines(f), parseClaudeLine, commitSec) ?? segmentForCommit(await tailLines(f, WIDE_BYTES), parseClaudeLine, commitSec);
+    const seg = segmentForCommit(await tailLines(f), parseClaudeLine, commitSec, isMerge) ?? segmentForCommit(await tailLines(f, WIDE_BYTES), parseClaudeLine, commitSec, isMerge);
     if (seg?.msgs.length) found.push({ agent: "claude", sessionId: f.split("/").pop()!.replace(/\.jsonl$/, ""), branch: seg.branch, messages: seg.msgs, callTs: seg.callTs, closed: seg.closed || Date.now() - await mtimeOf(f) > IDLE_MS });
   }
   // Codex — 날짜 폴더(커밋 날짜·전날, 자정 넘긴 세션), session_meta.cwd로 레포 확인
   const day = (d: Date) => join(homedir(), ".codex", "sessions", String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0"));
   const c = new Date(commitSec * 1000);
   for (const dir of [day(c), day(new Date(c.getTime() - 86_400_000))]) for (const f of await recentFiles(dir, sinceMs)) {
-    const seg = segmentForCommit(await tailLines(f), parseCodexLine, commitSec) ?? segmentForCommit(await tailLines(f, WIDE_BYTES), parseCodexLine, commitSec);
+    const seg = segmentForCommit(await tailLines(f), parseCodexLine, commitSec, isMerge) ?? segmentForCommit(await tailLines(f, WIDE_BYTES), parseCodexLine, commitSec, isMerge);
     let cwd = seg?.cwd;
     if (seg && !cwd) cwd = parseCodexLine(await headLine(f))?.cwd; // 끝부분에 session_meta가 없으면 파일 첫 줄에서
     if (seg?.msgs.length && cwd && under(cwd, root)) found.push({ agent: "codex", sessionId: f.split("/").pop()!.replace(/\.jsonl$/, ""), branch: seg.branch, messages: seg.msgs, callTs: seg.callTs, closed: seg.closed || Date.now() - await mtimeOf(f) > IDLE_MS });
