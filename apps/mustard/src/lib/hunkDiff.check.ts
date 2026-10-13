@@ -19,4 +19,6 @@ assert.strictEqual(noteStoreKey("/r", "x.ts", undefined, "staged"), "nunopi:hunk
 const body = [diffMark(hunks[0]) + "설명 A", diffMark(hunks[1]) + "설명 B"].join(DIFF_SEP);
 assert.deepStrictEqual(diffSections(body), [{ from: 2, to: 2, text: "설명 A" }, { from: 9, to: 9, text: "설명 B" }]);
 assert.strictEqual(diffSections("옛 카드" + DIFF_SEP + "설명"), null, "표지 없음 = 옛 카드");
+const withRule = [diffMark(hunks[0]) + "요약\n\n---\n\n## 코드 흐름\n본문", diffMark(hunks[1]) + "설명 B"].join(DIFF_SEP);
+assert.deepStrictEqual(diffSections(withRule), [{ from: 2, to: 2, text: "요약\n\n---\n\n## 코드 흐름\n본문" }, { from: 9, to: 9, text: "설명 B" }], "설명 안 구분선(---)에서 안 잘림");
 console.log("hunkDiff ok");
