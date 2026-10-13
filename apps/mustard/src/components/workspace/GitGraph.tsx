@@ -242,7 +242,7 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
     const idx = model.rows.findIndex((r) => r.commit.hash.startsWith(focus.hash) || focus.hash.startsWith(r.commit.hash));
     if (idx < 0 && refetchedFor.current !== focus.n) {
       refetchedFor.current = focus.n;
-      void load().then(() => setRefetchTick((x) => x + 1));
+      void load().finally(() => setRefetchTick((x) => x + 1)); // 실패해도 다시 찾아 결과(없음) 알림
       return;
     }
     onFocusResult?.(idx >= 0);
