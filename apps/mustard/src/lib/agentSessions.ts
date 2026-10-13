@@ -81,7 +81,7 @@ export async function activityForRoot(root: string, fromMs: number, toMs: number
   for (let t = fromMs - 7 * 86_400_000; t <= toMs + 86_400_000; t += 86_400_000) for (const f of await recentFiles(day(new Date(t)), fromMs, 50)) { // 폴더 = 세션 시작일 → 며칠 이어진 세션도(최근 7일 시작분)
     const w = activityInWindow(await linesSince(f, fromMs, parseCodexLine), parseCodexLine, fromMs, toMs);
     const cwd = w.cwd ?? parseCodexLine(await headLine(f))?.cwd;
-    if (keep(w) && cwd && under(cwd, root)) out.push({ ...w, agent: "codex", sessionId: id(f) });
+    if (keep(w) && cwd && (cwd.replace(/\/+$/, "") + "/").startsWith(root.replace(/\/+$/, "") + "/")) out.push({ ...w, agent: "codex", sessionId: id(f) });
   }
   return out;
 }
