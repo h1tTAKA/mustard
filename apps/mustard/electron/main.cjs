@@ -1335,6 +1335,8 @@ app.whenReady().then(boot).catch((e) => { console.error("[electron] boot failed"
   app.on("before-quit", () => {
     try { stopAllWatchers(); } catch { /* ignore */ } // 레포 워처 정리(#739)
     try { persistBuffers(); } catch { /* ignore */ } // 터미널 스크롤백 저장(#680)
+    // #1068 정상 종료 = 마지막 생존 시각을 지금으로 → 다음 실행이 "끈 뒤"만 꺼진 구간으로 봄(이미 캐치업된 마지막 작업 재생 X)
+    try { const d = process.env.MUSTARD_STREAM_DIR || require("node:path").join(require("node:os").homedir(), ".nunopi", "stream"); require("node:fs").mkdirSync(d, { recursive: true }); require("node:fs").writeFileSync(require("node:path").join(d, "alive.json"), JSON.stringify({ ts: Date.now() })); } catch { /* ignore */ }
     try { serverProc?.kill(); } catch { /* ignore */ }
     try { snaHandle?.stop(); } catch { /* ignore */ }
     // 터미널 데몬은 안 죽임 — 세션(프로세스) 생존(#682). 유휴 reap로만 종료.

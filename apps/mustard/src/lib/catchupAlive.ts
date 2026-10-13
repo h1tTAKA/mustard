@@ -1,10 +1,10 @@
-// 앱이 꺼져 있던 구간(#1068) — 서버(앱과 함께 뜨고 꺼짐)가 30초마다 하트비트 파일에 시각을 씀.
+// 앱이 꺼져 있던 구간(#1068) — 서버(앱과 함께 뜨고 꺼짐)가 10초마다 하트비트 파일에 시각을 씀.
 // 이 프로세스가 처음 물어볼 때: 이전 하트비트(지난 실행의 마지막 생존) ~ 이번 시작 = 꺼진 구간. 프로세스당 한 번만 돌려줌.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { aliveFile } from "@/lib/catchupStore";
 
-const BEAT_MS = 30_000;
+const BEAT_MS = 10_000; // 튕겼을 때 마지막 박동~튕긴 순간(최대 10초)만 겹침. 정상 종료는 main이 종료 직전에 한 번 더 씀
 const MIN_GAP = 2 * 60_000;            // 이보다 짧으면 재시작 잠깐 — 무시
 const MAX_GAP = 3 * 24 * 60 * 60_000;  // 아주 오래 꺼져 있었으면 최근 3일만
 const g = globalThis as unknown as { __mustardAlive?: { prev: number; boot: number; taken: boolean } };
