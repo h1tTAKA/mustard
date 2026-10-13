@@ -2,7 +2,9 @@
 // 에이전트마다 기록 형식이 달라서 줄 하나 → 공통 메시지로 바꾸는 어댑터를 두고, "git commit" 호출을 경계로 구간을 자름.
 export interface SessionMsg { role: "user" | "assistant" | "tool"; text: string; ts: number }
 export type CallKind = "commit" | "merge" | "pull";
-export interface ParsedLine { msgs: SessionMsg[]; ts: number; commitCall: boolean; callKind?: CallKind; mergeToo?: boolean; callIdx?: number; branch?: string; cwd?: string; result?: boolean; prompt?: boolean } // result = 도구 출력만 있는 줄, prompt = 사람이 입력한 프롬프트(턴 시작)
+// #1068 도구 호출(이름·입력) — 꺼진 동안 활동 재생(편집·명령어 카드)용. Codex는 Claude 이름으로 맞춤(exec_command→Bash, apply_patch→Edit).
+export interface ToolUse { name: string; input: unknown }
+export interface ParsedLine { msgs: SessionMsg[]; ts: number; commitCall: boolean; tools?: ToolUse[]; callKind?: CallKind; mergeToo?: boolean; callIdx?: number; branch?: string; cwd?: string; result?: boolean; prompt?: boolean } // result = 도구 출력만 있는 줄, prompt = 사람이 입력한 프롬프트(턴 시작)
 export type AgentKind = "claude" | "codex";
 
 const MSG_MAX = 4000;  // 메시지 하나 상한(도구 출력이 수만 자일 수 있음)
@@ -28,11 +30,11 @@ export function parseClaudeLine(line: string): ParsedLine | null {
   let o: Record<string, unknown>; try { o = JSON.parse(line); } catch { return null; }
   if ((o.type !== "user" && o.type !== "assistant") || o.isSidechain) return null;
   const ts = tsOf(o.timestamp); const content = (o.message as { content?: unknown } | undefined)?.content;
-  const msgs: SessionMsg[] = []; let commitCall = false; const kinds: CallKind[] = []; const kindText: string[] = []; let callIdx: number | undefined; // 경계 호출 메시지 위치(뒤에 글이 더 붙어도 정확히, #1064 리뷰)
+  const msgs: SessionMsg[] = []; let commitCall = false; const kinds: CallKind[] = []; const kindText: string[] = []; let callIdx: number | undefined; const tools: ToolUse[] = []; // 경계 호출 메시지 위치(뒤에 글이 더 붙어도 정확히, #1064 리뷰)
   if (typeof content === "string") { if (content.trim()) msgs.push({ role: o.type === "user" ? "user" : "assistant", text: clip(content), ts }); }
   else if (Array.isArray(content)) for (const p of content as Record<string, unknown>[]) {
     if (p.type === "text" && typeof p.text === "string" && p.text.trim()) msgs.push({ role: o.type === "user" ? "user" : "assistant", text: clip(p.text), ts });
-    else if (p.type === "tool_use") { const t = toolLine(String(p.name ?? "tool"), p.input); const k = callKindOf(t); if (k) { commitCall = true; kinds.push(k); kindText.push(t); callIdx = msgs.length; } msgs.push({ role: "tool", text: clip(t), ts }); }
+    else if (p.type === "tool_use") { tools.push({ name: String(p.name ?? "tool"), input: p.input }); const t = toolLine(String(p.name ?? "tool"), p.input); const k = callKindOf(t); if (k) { commitCall = true; kinds.push(k); kindText.push(t); callIdx = msgs.length; } msgs.push({ role: "tool", text: clip(t), ts }); }
     else if (p.type === "tool_result") { const t = textOf(p.content); if (t.trim()) msgs.push({ role: "tool", text: clip(t), ts }); }
   }
   const result = o.type === "user" && Array.isArray(content) && content.length > 0 && (content as Record<string, unknown>[]).every((p) => p.type === "tool_result");
@@ -40,7 +42,21 @@ export function parseClaudeLine(line: string): ParsedLine | null {
   const firstUser = msgs.find((m) => m.role === "user")?.text.trimStart() ?? "";
   const prompt = o.type === "user" && !o.isMeta && !!firstUser && !/^(<|\[Request interrupted|Another Claude session sent a message|This session is being continued)/.test(firstUser);
   const callKind: CallKind | undefined = kinds.includes("commit") ? "commit" : kinds.includes("merge") ? "merge" : kinds[0];
-  return { msgs, ts, commitCall, callKind, mergeToo: kindText.some((t) => MERGE_ONLY.test(t)), callIdx, result, prompt, branch: typeof o.gitBranch === "string" ? o.gitBranch : undefined, cwd: typeof o.cwd === "string" ? o.cwd : undefined };
+  return { msgs, ts, commitCall, tools, callKind, mergeToo: kindText.some((t) => MERGE_ONLY.test(t)), callIdx, result, prompt, branch: typeof o.gitBranch === "string" ? o.gitBranch : undefined, cwd: typeof o.cwd === "string" ? o.cwd : undefined };
+}
+
+function codexTools(name: string, args: unknown): ToolUse[] {
+  const a = args && typeof args === "object" ? args as Record<string, unknown> : {};
+  if (name === "exec_command" || name === "shell" || name === "local_shell") {
+    const c = a.cmd ?? a.command; // exec_command {cmd} / shell {command: ["bash","-lc","…"]}
+    const command = typeof c === "string" ? c : Array.isArray(c) ? String(c.at(-1) ?? "") : "";
+    return command ? [{ name: "Bash", input: { command } }] : [];
+  }
+  if (name === "apply_patch") { // 패치 글 안의 파일마다 편집 1건
+    const files = [...String(typeof args === "string" ? args : a.input ?? "").matchAll(/^\*\*\* (?:Update|Add) File: (.+)$/gm)].map((m) => m[1].trim());
+    return files.map((file_path) => ({ name: "Edit", input: { file_path } }));
+  }
+  return [{ name, input: args }];
 }
 
 // Codex — {timestamp, type: session_meta|event_msg|response_item, payload}. 대화는 event_msg, 도구는 response_item.
@@ -58,7 +74,7 @@ export function parseCodexLine(line: string): ParsedLine | null {
       const args = p.type === "function_call" ? (() => { try { return JSON.parse(String(p.arguments ?? "")); } catch { return p.arguments; } })() : p.input;
       const t = toolLine(String(p.name ?? "tool"), args);
       const k = callKindOf(t);
-      return { msgs: [{ role: "tool", text: clip(t), ts }], ts, commitCall: !!k, callKind: k, mergeToo: MERGE_ONLY.test(t) };
+      return { msgs: [{ role: "tool", text: clip(t), ts }], ts, commitCall: !!k, callKind: k, mergeToo: MERGE_ONLY.test(t), tools: codexTools(String(p.name ?? "tool"), args) };
     }
     if (p.type === "function_call_output" || p.type === "custom_tool_call_output") {
       const t = typeof p.output === "string" ? p.output : textOf(p.output);
@@ -106,4 +122,28 @@ export function segmentForCommit(lines: string[], parse: (l: string) => ParsedLi
     msgs = [...turns.slice(k + 1, ti).flatMap((t) => t.msgs), ...T.msgs.slice(0, end)];
   }
   return { msgs, branch: call.branch ?? branch, cwd, callTs: call.ts, closed: ti < turns.length - 1 || !!nextIn };
+}
+
+// #1068 꺼진 동안 활동 — [fromMs, toMs] 안 줄들만: 도구 호출(원래 시각) + 해설 재료 덩어리(턴마다, chunkMax자씩, 원래 시각).
+export interface WindowActivity { tools: (ToolUse & { ts: number })[]; chunks: { ts: number; text: string }[]; cwd?: string }
+const ROLE_LABEL: Record<SessionMsg["role"], string> = { user: "User", assistant: "Agent", tool: "Tool" };
+export function activityInWindow(lines: string[], parse: (l: string) => ParsedLine | null, fromMs: number, toMs: number, chunkMax = 5000): WindowActivity {
+  const tools: WindowActivity["tools"] = []; const chunks: WindowActivity["chunks"] = [];
+  let cwd: string | undefined, cur: { ts: number; text: string } | null = null;
+  const flush = () => { if (cur?.text.trim()) chunks.push(cur); cur = null; };
+  for (const l of lines) {
+    const p = parse(l); if (!p) continue;
+    if (p.cwd) cwd ??= p.cwd;
+    if (!p.ts || p.ts < fromMs || p.ts > toMs) continue;
+    for (const t of p.tools ?? []) tools.push({ ...t, ts: p.ts });
+    if (p.prompt) flush(); // 턴 경계
+    for (const m of p.msgs) {
+      const line = `${ROLE_LABEL[m.role]}: ${m.role === "tool" ? m.text.slice(0, 600) : m.text}\n`; // 도구 출력은 앞부분만(해설 재료)
+      if (cur && cur.text.length + line.length > chunkMax) flush();
+      cur ??= { ts: m.ts || p.ts, text: "" };
+      cur.text += line.slice(0, chunkMax);
+    }
+  }
+  flush();
+  return { tools, chunks, cwd };
 }

@@ -1,6 +1,6 @@
 // agentSessionParse 점검 — node --experimental-strip-types src/lib/agentSessionParse.check.ts
 import assert from "node:assert";
-import { parseClaudeLine, parseCodexLine, segmentForCommit, COMMIT_RE } from "./agentSessionParse.ts";
+import { parseClaudeLine, parseCodexLine, segmentForCommit, COMMIT_RE, activityInWindow } from "./agentSessionParse.ts";
 
 const iso = (s: number) => new Date(s * 1000).toISOString();
 const T = 1_800_000_000; // 커밋 시각(초)
@@ -82,4 +82,21 @@ assert.strictEqual(segmentForCommit(big, parseClaudeLine, T)!.msgs.length, 402, 
 const mixed = [cl("user", "하나 둘", T - 100), cl("assistant", [{ type: "tool_use", name: "Bash", input: { command: "git commit -m x" } }, { type: "text", text: "커밋 호출함" }], T - 50), res("ok x", T - 49),
   bash("git commit -m y", T - 1), res("ok y", T)];
 assert.deepStrictEqual(segmentForCommit(mixed, parseClaudeLine, T - 49)!.msgs.map((m) => m.text), ["하나 둘", "▸ Bash: git commit -m x", "커밋 호출함", "ok x"], "호출 다음 글·결과는 이번 커밋 몫(같은 응답)");
+// #1068 꺼진 구간 활동 — 구간 안 줄만, 도구(원래 시각) + 턴별 해설 덩어리
+const win = activityInWindow(claude, parseClaudeLine, (T - 300) * 1000, (T + 10) * 1000);
+assert.deepStrictEqual(win.tools.map((t) => t.name), ["Edit", "Bash", "Bash"], "구간 안 도구만(이전 커밋 제외, 사이드체인 제외)");
+assert.deepStrictEqual(win.tools[0].input, { file_path: "Button.tsx" });
+assert.strictEqual(win.tools[0].ts, (T - 200) * 1000, "원래 시각");
+assert.strictEqual(win.chunks.length, 1, "한 턴 = 한 덩어리");
+assert.ok(win.chunks[0].text.startsWith("User: 버튼 색 바꿔줘") && win.chunks[0].text.includes("커밋했어요"));
+assert.strictEqual(win.cwd, "/r");
+const small = activityInWindow(claude, parseClaudeLine, (T - 300) * 1000, (T + 10) * 1000, 60);
+assert.ok(small.chunks.length > 1 && small.chunks.every((c) => c.text.length <= 60), "긴 턴은 chunkMax씩 나눔");
+const ri = (payload: unknown, s: number) => JSON.stringify({ timestamp: iso(s), type: "response_item", payload });
+const cxw = activityInWindow([
+  ri({ type: "function_call", name: "exec_command", arguments: JSON.stringify({ cmd: "npm test" }) }, T),
+  ri({ type: "custom_tool_call", name: "apply_patch", input: "*** Begin Patch\n*** Update File: src/a.ts\n@@\n*** Add File: src/b.ts\n*** End Patch" }, T + 1),
+  ri({ type: "function_call", name: "shell", arguments: JSON.stringify({ command: ["bash", "-lc", "ls -la"] }) }, T + 2),
+], parseCodexLine, (T - 1) * 1000, (T + 5) * 1000);
+assert.deepStrictEqual(cxw.tools.map((t) => [t.name, t.input]), [["Bash", { command: "npm test" }], ["Edit", { file_path: "src/a.ts" }], ["Edit", { file_path: "src/b.ts" }], ["Bash", { command: "ls -la" }]], "Codex 도구 → Claude 이름");
 console.log("agentSessionParse ok");
