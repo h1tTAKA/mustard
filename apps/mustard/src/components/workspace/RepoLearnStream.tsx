@@ -460,11 +460,14 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                 )}
                 <li className={`relative rounded-lg border bg-zinc-50/70 dark:bg-zinc-800/40 ${askItem?.key === c.key ? "border-mustard-500/60" : "border-zinc-200 dark:border-zinc-800"}`}>
                   {/* #1056 diff 카드 — 질문 버튼 왼쪽에 "diff 열기"(키에 담긴 커밋·파일) */}
-                  {c.kind === "diff" && onOpenDiff && (() => { const d = parseDiffItemKey(c.key); return d ? (
-                    <button type="button" onClick={() => onOpenDiff(d.hash, d.file)} title={t("learn.openDiff")} aria-label={t("learn.openDiff")}
-                      className="absolute right-8 top-1.5 z-10 rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400">
-                      <IconExternalLink size={13} stroke={2} aria-hidden />
-                    </button>
+                  {/* #1066 + git 그래프에서 그 커밋 짚기(세션 카드와 같은 버튼) */}
+                  {c.kind === "diff" && (onOpenDiff || onFocusCommit) && (() => { const d = parseDiffItemKey(c.key); return d ? (
+                    <span className="absolute right-8 top-1.5 z-10 flex items-center gap-0.5">
+                      {onFocusCommit && <button type="button" onClick={() => onFocusCommit(d.hash)} title={t("learn.focusCommit")} aria-label={t("learn.focusCommit")}
+                        className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconGitCommit size={13} stroke={2} aria-hidden /></button>}
+                      {onOpenDiff && <button type="button" onClick={() => onOpenDiff(d.hash, d.file)} title={t("learn.openDiff")} aria-label={t("learn.openDiff")}
+                        className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconExternalLink size={13} stroke={2} aria-hidden /></button>}
+                    </span>
                   ) : null; })()}
                   {/* #1064 세션 카드 — 에이전트로 보내기 · 그래프에서 커밋 짚기(질문 버튼 왼쪽) */}
                   {c.kind === "session" && c.status === "done" && (
@@ -482,7 +485,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       <IconMessageCircle size={13} stroke={2} aria-hidden />{askCounts[c.key] ? <span className="font-semibold">{askCounts[c.key]}</span> : null}
                     </button>
                   )}
-                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${(c.kind === "diff" && onOpenDiff) || c.kind === "session" ? "pr-20" : "pr-9"}`}>
+                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" || c.kind === "session" ? "pr-20" : "pr-9"}`}>
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
                       {c.kind === "session" ? (() => {
