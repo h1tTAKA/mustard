@@ -403,9 +403,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       <div className="relative flex shrink-0 items-center gap-1.5 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
         <IconActivity size={14} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
         <span className="mr-auto truncate text-[13px] font-semibold text-zinc-700 dark:text-zinc-200" title={t("learn.mode")}>{t("learn.title")}</span>
-        {onToggleChat && ( /* #1078 워크스페이스 질문 — 캐치업 안 질문 화면 ↔ 카드 목록 */
+        {onToggleChat && ( /* #1078 워크스페이스 질문 — 캐치업 안 질문 화면 ↔ 카드 목록. 모양 = nunopi 코드분석 "질문" 버튼, 높이 = 옆 캘린더(22px) */
           <button type="button" onClick={onToggleChat} aria-pressed={chatOpen} title={t("learn.chat")}
-            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition ${chatOpen ? "border-mustard-500/50 bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" : "border-zinc-300 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
+            className={`inline-flex h-[22px] shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2 text-[11px] font-medium leading-none transition ${chatOpen ? "bg-mustard-500 text-zinc-900" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"}`}>
             <IconMessageCircle size={13} stroke={2} aria-hidden />{t("learn.chat")}
           </button>
         )}
