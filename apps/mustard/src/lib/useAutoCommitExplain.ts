@@ -42,7 +42,9 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     if (!root) return;
     const stateKey = `nunopi:auto-explain:${root}`;
     if (!on) { try { localStorage.removeItem(stateKey); } catch { /* ignore */ } return; } // 다시 켜면 그때부터
-    type State = { since: number; done: string[] };
+    // pending = 세션 턴이 아직 안 끝나 카드를 미룬 커밋(#1064) — 다음 주기마다 다시, 20분 지나면 그대로 만듦
+    type Pend = { hash: string; ts: number; subject: string; branch: string; at: number };
+    type State = { since: number; done: string[]; pending?: Pend[] };
     const read = (): State | null => { try { return JSON.parse(localStorage.getItem(stateKey) || "null") as State | null; } catch { return null; } };
     const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
     let alive = true, busy = false;
@@ -83,24 +85,33 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         let st = read();
         if (!st) { write({ since: Math.floor(Date.now() / 1000), done: [] }); return; } // 처음 켬 → 지금부터
         const j = await post("/api/repo/git-recent", { path: root, since: st.since });
+        const pendingAdd: Pend[] = [];
         const fresh = ((j?.commits ?? []) as { hash: string; ts: number; subject?: string; merge?: boolean }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
         const branch = typeof j?.branch === "string" ? j.branch : "";
         for (const c of fresh) {
           if (!alive) return;
           if (cfg.current.diffOn && !c.merge) await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200));
-          // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드(원본은 서버에 저장, 카드에서 펼쳐 봄)
-          if (alive && cfg.current.sessOn) {
-            const { spid: sp, sps: sset, locale: sl } = cfg.current;
-            const item = await buildSessionItem(root, c.hash, c.ts, c.subject ?? "", branch, sp, sset, sl).catch(() => null);
-            if (item && alive) {
-              void post("/api/repo/stream", { root, items: [item] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
-              window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
-            }
-          }
+          // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드. 턴이 끝날 때까지(마무리 말 포함) 미뤘다가 만듦.
+          if (alive && cfg.current.sessOn) pendingAdd.push({ hash: c.hash, ts: c.ts, subject: c.subject ?? "", branch, at: Date.now() });
           if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)
-          st = { since: Math.max(st.since, c.ts), done: [...st.done, c.hash].slice(-50) }; // 같은 초 커밋은 done으로 중복 차단
+          st = { since: Math.max(st.since, c.ts), done: [...st.done, c.hash].slice(-50), pending: [...(st.pending ?? []), ...pendingAdd.splice(0)] }; // 같은 초 커밋은 done으로 중복 차단
           write(st);
         }
+        // 미룬 세션 카드 — 턴 끝났으면(또는 20분 지남) 요약해서 카드로, 세션 없으면 버림
+        const keep: Pend[] = [];
+        for (const pd of st.pending ?? []) {
+          if (!alive) return;
+          if (!cfg.current.sessOn) continue; // 세션 분석 꺼짐 — 미룬 것도 버림
+          if (Date.now() - pd.at > 60 * 60_000) continue; // 1시간 넘게 계속 실패 — 포기
+          const { spid: sp, sps: sset, locale: sl } = cfg.current;
+          const r = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, Date.now() - pd.at > 20 * 60_000).catch(() => "wait" as const);
+          if (r === "wait") { keep.push(pd); continue; }
+          if (r !== "none" && alive) {
+            void post("/api/repo/stream", { root, items: [r] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
+            window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item: r } }));
+          }
+        }
+        if (alive) { st = { ...(read() ?? st), pending: keep }; write(st); }
       } catch { /* 서버 미준비 등 — 다음 주기 */ } finally { busy = false; }
     };
     void tick();

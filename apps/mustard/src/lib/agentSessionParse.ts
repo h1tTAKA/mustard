@@ -1,7 +1,7 @@
 // 에이전트 세션 기록 파싱(#1064) — 순수 함수(의존성 없음, check로 검증). 파일 읽기는 agentSessions.ts.
 // 에이전트마다 기록 형식이 달라서 줄 하나 → 공통 메시지로 바꾸는 어댑터를 두고, "git commit" 호출을 경계로 구간을 자름.
 export interface SessionMsg { role: "user" | "assistant" | "tool"; text: string; ts: number }
-export interface ParsedLine { msgs: SessionMsg[]; ts: number; commitCall: boolean; branch?: string; cwd?: string; result?: boolean } // result = 도구 출력만 있는 줄
+export interface ParsedLine { msgs: SessionMsg[]; ts: number; commitCall: boolean; branch?: string; cwd?: string; result?: boolean; prompt?: boolean } // result = 도구 출력만 있는 줄, prompt = 사람이 입력한 프롬프트(턴 시작)
 export type AgentKind = "claude" | "codex";
 
 const MSG_MAX = 4000;  // 메시지 하나 상한(도구 출력이 수만 자일 수 있음)
@@ -33,7 +33,10 @@ export function parseClaudeLine(line: string): ParsedLine | null {
     else if (p.type === "tool_result") { const t = textOf(p.content); if (t.trim()) msgs.push({ role: "tool", text: clip(t), ts }); }
   }
   const result = o.type === "user" && Array.isArray(content) && content.length > 0 && (content as Record<string, unknown>[]).every((p) => p.type === "tool_result");
-  return { msgs, ts, commitCall, result, branch: typeof o.gitBranch === "string" ? o.gitBranch : undefined, cwd: typeof o.cwd === "string" ? o.cwd : undefined };
+  // 사람이 친 프롬프트만 턴 시작 — 시스템이 끼워 넣는 user 줄(<task-notification>·서브에이전트 보고·중단 표시·메타)은 제외
+  const firstUser = msgs.find((m) => m.role === "user")?.text.trimStart() ?? "";
+  const prompt = o.type === "user" && !o.isMeta && !!firstUser && !/^(<|\[Request interrupted|Another Claude session sent a message|This session is being continued)/.test(firstUser);
+  return { msgs, ts, commitCall, result, prompt, branch: typeof o.gitBranch === "string" ? o.gitBranch : undefined, cwd: typeof o.cwd === "string" ? o.cwd : undefined };
 }
 
 // Codex — {timestamp, type: session_meta|event_msg|response_item, payload}. 대화는 event_msg, 도구는 response_item.
@@ -42,7 +45,7 @@ export function parseCodexLine(line: string): ParsedLine | null {
   const p = (o.payload ?? {}) as Record<string, unknown>; const ts = tsOf(o.timestamp);
   if (o.type === "session_meta") return { msgs: [], ts, commitCall: false, cwd: typeof p.cwd === "string" ? p.cwd : undefined, branch: typeof (p.git as { branch?: unknown } | undefined)?.branch === "string" ? (p.git as { branch: string }).branch : undefined };
   if (o.type === "event_msg") {
-    if (p.type === "user_message" && typeof p.message === "string" && p.message.trim()) return { msgs: [{ role: "user", text: clip(p.message), ts }], ts, commitCall: false };
+    if (p.type === "user_message" && typeof p.message === "string" && p.message.trim()) return { msgs: [{ role: "user", text: clip(p.message), ts }], ts, commitCall: false, prompt: true };
     if (p.type === "agent_message" && typeof p.message === "string" && p.message.trim()) return { msgs: [{ role: "assistant", text: clip(p.message), ts }], ts, commitCall: false };
     return null;
   }
@@ -60,24 +63,40 @@ export function parseCodexLine(line: string): ParsedLine | null {
   return null;
 }
 
-// 줄들 → 커밋(초) 직전 "git commit" 호출까지의 구간(이전 커밋 호출 이후 ~ 이 호출 + 바로 뒤 도구 출력).
-// 커밋 시각보다 늦은(2초 넘게) 호출은 다른 커밋. 너무 이른(15분 전) 호출도 제외. 없으면 null.
-export function segmentForCommit(lines: string[], parse: (l: string) => ParsedLine | null, commitSec: number): { msgs: SessionMsg[]; branch?: string; cwd?: string; callTs: number } | null {
+// 줄들 → 커밋 하나의 대화 구간(#1064, 턴 단위). 턴 = 사람 프롬프트 ~ 다음 프롬프트 직전.
+// 시작 = 이전 커밋이 든 턴 다음의 첫 프롬프트(같은 턴에 커밋이 여러 번이면 이전 커밋 결과 다음부터),
+// 끝 = 이번 커밋이 든 턴의 끝("~했고 커밋했어요, 확인해 보세요"까지). 같은 턴에 다음 커밋이 있으면 이번 커밋 결과까지.
+// 대상 커밋 호출 = 커밋 시각 직전(2초 여유~15분 전) 마지막 경계 호출. closed = 그 턴이 끝났는지(다음 프롬프트·다음 커밋 있음).
+export function segmentForCommit(lines: string[], parse: (l: string) => ParsedLine | null, commitSec: number): { msgs: SessionMsg[]; branch?: string; cwd?: string; callTs: number; closed: boolean } | null {
   const commitMs = commitSec * 1000;
-  let buf: SessionMsg[] = []; let best: { msgs: SessionMsg[]; branch?: string; callTs: number } | null = null; let open: SessionMsg[] | null = null;
+  type Turn = { msgs: SessionMsg[]; calls: { at: number; ts: number; branch?: string }[] }; // at = 그 호출 메시지 위치
+  const turns: Turn[] = []; let cur: Turn = { msgs: [], calls: [] };
   let branch: string | undefined, cwd: string | undefined;
   for (const l of lines) {
     const p = parse(l); if (!p) continue;
     if (p.branch) branch = p.branch; if (p.cwd) cwd ??= p.cwd;
-    if (open) { if (p.result) { open.push(...p.msgs); open = null; continue; } if (p.msgs.length) open = null; } // 커밋 호출의 출력(바로 다음 결과 줄 하나)만 붙임
-    if (p.commitCall) {
-      const seg = [...buf, ...p.msgs].slice(-SEG_MAX); buf = [];
-      // 호출은 커밋보다 먼저 기록됨 → 여유 2초(시계 오차)만. 커밋 직후의 다른 경계 호출(git pull 등)이 대신 잡히지 않게(#1064 리뷰).
-      if (p.ts <= commitMs + 2000 && p.ts >= commitMs - 15 * 60_000) { best = { msgs: seg, branch, callTs: p.ts }; open = seg; }
-      continue;
-    }
-    if (p.ts > commitMs + 120_000 && best) break; // 지난 뒤 — 더 볼 필요 없음
-    buf.push(...p.msgs); if (buf.length > SEG_MAX * 2) buf = buf.slice(-SEG_MAX);
+    if (p.prompt && cur.msgs.length) { turns.push(cur); cur = { msgs: [], calls: [] }; }
+    if (p.commitCall) cur.calls.push({ at: cur.msgs.length + Math.max(0, p.msgs.length - 1), ts: p.ts, branch });
+    cur.msgs.push(...p.msgs);
   }
-  return best ? { ...best, cwd } : null;
+  turns.push(cur);
+  let ti = -1, ci = -1;
+  turns.forEach((t, i) => t.calls.forEach((c, j) => {
+    if (c.ts <= commitMs + 2000 && c.ts >= commitMs - 15 * 60_000 && (ti < 0 || c.ts >= turns[ti].calls[ci].ts)) { ti = i; ci = j; }
+  }));
+  if (ti < 0) return null;
+  const T = turns[ti], call = T.calls[ci];
+  // 끝: 같은 턴에 다음 커밋이 있으면 이번 커밋 결과까지(그 뒤 작업은 다음 커밋 몫), 없으면 턴 끝
+  let end = T.msgs.length;
+  if (ci + 1 < T.calls.length) { end = call.at + 1; if (T.msgs[end]?.role === "tool") end++; }
+  let msgs: SessionMsg[];
+  if (ci > 0) { // 같은 턴의 이전 커밋 뒤부터(그 커밋 결과 한 줄은 이전 커밋 몫)
+    let from = T.calls[ci - 1].at + 1; if (T.msgs[from]?.role === "tool") from++;
+    msgs = T.msgs.slice(from, end);
+  } else {
+    let k = ti - 1; while (k >= 0 && !turns[k].calls.length) k--; // 이전 커밋이 든 턴 다음 턴부터
+    msgs = [...turns.slice(k + 1, ti).flatMap((t) => t.msgs), ...T.msgs.slice(0, end)];
+  }
+  if (msgs.length > SEG_MAX) msgs = [msgs[0], ...msgs.slice(-(SEG_MAX - 1))]; // 길면 첫 프롬프트 + 최근 쪽
+  return { msgs, branch: call.branch ?? branch, cwd, callTs: call.ts, closed: ti < turns.length - 1 || ci + 1 < T.calls.length };
 }

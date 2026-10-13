@@ -17,15 +17,17 @@ export function sessionDigest(msgs: SessionMsg[]): string {
   return all.length > INPUT_MAX ? all.slice(-INPUT_MAX) : all;
 }
 
-export interface LinkedSession { agent: string; sessionId: string; branch?: string; messages: SessionMsg[] }
+export interface LinkedSession { agent: string; sessionId: string; branch?: string; messages: SessionMsg[]; closed?: boolean }
 
-// 세션 찾기 → 요약 → 카드 항목. 세션 없으면(사람이 직접 커밋 등) null.
+// 세션 찾기 → 요약 → 카드 항목. 세션 없으면(사람이 직접 커밋 등) "none".
+// 턴이 아직 안 끝났으면 "wait"(마무리 말까지 담으려고 — 다음 주기에 다시). force면 안 끝났어도 만듦(오래 기다린 경우).
 export async function buildSessionItem(root: string, hash: string, ts: number, subject: string, branch: string,
-  providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string) {
+  providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string, force = false) {
   const r = await fetch("/api/repo/session-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, hash, ts }) });
   const j = await r.json().catch(() => null);
   const s = j?.session as LinkedSession | null | undefined;
-  if (!s?.messages?.length) return null;
+  if (!s?.messages?.length) return "none" as const;
+  if (s.closed === false && !force) return "wait" as const;
   let expl: string;
   try { expl = await askAgent(sessionDigest(s.messages), PROMPT, providerId, providerSettings, locale); }
   catch { expl = s.messages.find((m) => m.role === "user")?.text.slice(0, 400) || "(요약 실패)"; } // 요약 실패해도 원본은 볼 수 있게 카드는 만듦

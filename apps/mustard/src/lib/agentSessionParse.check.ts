@@ -4,27 +4,45 @@ import { parseClaudeLine, parseCodexLine, segmentForCommit, COMMIT_RE } from "./
 
 const iso = (s: number) => new Date(s * 1000).toISOString();
 const T = 1_800_000_000; // 커밋 시각(초)
-// Claude: 이전 커밋 → 작업 → 이번 커밋(rtk, 출력에 해시 없음) → 다음 작업
 const cl = (type: string, content: unknown, s: number, extra = {}) => JSON.stringify({ type, message: { content }, timestamp: iso(s), gitBranch: "feature/x", cwd: "/r", ...extra });
+const bash = (cmd: string, s: number) => cl("assistant", [{ type: "tool_use", name: "Bash", input: { command: cmd } }], s);
+const res = (out: string, s: number) => cl("user", [{ type: "tool_result", content: out }], s);
+// 턴1: 이전 커밋 + 마무리 말 / 턴2: 새 프롬프트 → 작업 → 커밋 → "커밋했어요" / 턴3: 다음 프롬프트
 const claude = [
-  cl("assistant", [{ type: "tool_use", name: "Bash", input: { command: "git commit -m old" } }], T - 900),
-  cl("user", [{ type: "tool_result", content: "[feature/x abc1234] old" }], T - 899),
+  cl("user", "이전 작업 해줘", T - 1000),
+  bash("git commit -m old", T - 900), res("[feature/x abc1234] old", T - 899),
+  cl("assistant", [{ type: "text", text: "이전 커밋 했어요" }], T - 898),
+  cl("user", [{ type: "text", text: "<task-notification>서브 끝</task-notification>" }], T - 500), // 시스템 끼움 — 턴 시작 아님
   cl("user", "버튼 색 바꿔줘", T - 300),
   cl("assistant", [{ type: "text", text: "Button.tsx를 고칠게요" }, { type: "tool_use", name: "Edit", input: { file_path: "Button.tsx" } }], T - 200),
   cl("assistant", [{ type: "text", text: "서브" }], T - 150, { isSidechain: true }),
-  cl("assistant", [{ type: "tool_use", name: "Bash", input: { command: "rtk git add a && rtk git commit -m 'fix'" } }], T - 2),
-  cl("user", [{ type: "tool_result", content: "ok" }], T + 1),
-  cl("assistant", [{ type: "tool_use", name: "Bash", input: { command: "open http://x" } }], T + 5),
+  bash("rtk git add a && rtk git commit -m 'fix'", T - 2), res("ok", T + 1),
+  bash("git pull", T + 3), res("Already up to date.", T + 4), // 커밋 직후 pull — 대상 아님(2초 넘음), 같은 턴 다음 경계
+  cl("assistant", [{ type: "text", text: "고쳤고 커밋했어요, 확인해 보세요" }], T + 5),
   cl("user", "다음 작업", T + 60),
 ];
 const seg = segmentForCommit(claude, parseClaudeLine, T)!;
 assert.ok(seg, "커밋 구간 찾음");
-assert.deepStrictEqual(seg.msgs.map((m) => m.role), ["user", "assistant", "tool", "tool", "tool"], "이전 커밋 이후~이번 커밋+결과, 사이드체인 제외");
-assert.ok(seg.msgs[0].text.includes("버튼") && seg.msgs.at(-1)!.text === "ok");
+assert.ok(seg.msgs[0].text.includes("<task-notification>") || seg.msgs[0].text === "버튼 색 바꿔줘", "이전 커밋 턴 다음부터 시작");
+assert.ok(!seg.msgs.some((m) => m.text.includes("이전 커밋 했어요")), "이전 커밋 마무리 말은 이전 커밋 몫");
+assert.ok(seg.msgs.some((m) => m.text === "ok"), "커밋 결과 포함");
+assert.ok(!seg.msgs.some((m) => m.text.includes("서브")), "사이드체인 제외");
+assert.ok(!seg.msgs.some((m) => m.text === "다음 작업"), "다음 프롬프트 전까지");
+assert.strictEqual(seg.closed, true);
 assert.strictEqual(seg.branch, "feature/x");
 assert.strictEqual(segmentForCommit(claude, parseClaudeLine, T - 3600), null, "커밋 시각 전 15분 안에 호출 없으면 null");
+// 턴이 아직 안 끝남(다음 프롬프트·다음 커밋 없음) → closed false, 마무리 말까지
+const open = segmentForCommit(claude.slice(0, 9).concat(cl("assistant", [{ type: "text", text: "커밋했어요, 확인해 보세요" }], T + 5)), parseClaudeLine, T)!;
+assert.strictEqual(open.closed, false);
+assert.strictEqual(open.msgs.at(-1)!.text, "커밋했어요, 확인해 보세요", "턴 끝 마무리 말 포함");
+// 같은 턴에 커밋 두 번 → 두 번째는 첫 커밋 결과 다음부터
+const two = [cl("user", "둘 다 해줘", T - 100), bash("git commit -m a", T - 50), res("ok a", T - 49), cl("assistant", [{ type: "text", text: "두 번째 작업" }], T - 30), bash("git commit -m b", T - 1), res("ok b", T)];
+const s2 = segmentForCommit(two, parseClaudeLine, T)!;
+assert.deepStrictEqual(s2.msgs.map((m) => m.text), ["두 번째 작업", "▸ Bash: git commit -m b", "ok b"]);
+const s1 = segmentForCommit(two, parseClaudeLine, T - 49)!;
+assert.ok(s1.msgs.at(-1)!.text === "ok a" && s1.closed, "첫 커밋은 다음 커밋 호출 직전까지");
 
-// Codex: event_msg 대화 + function_call git commit
+// Codex
 const cx = (type: string, payload: unknown, s: number) => JSON.stringify({ timestamp: iso(s), type, payload });
 const codex = [
   cx("session_meta", { cwd: "/r", id: "s1" }, T - 1000),
@@ -32,24 +50,12 @@ const codex = [
   cx("event_msg", { type: "agent_message", message: "고칠게요" }, T - 90),
   cx("response_item", { type: "function_call", name: "exec_command", arguments: JSON.stringify({ cmd: "git -C /r commit -am docs" }) }, T - 1),
   cx("response_item", { type: "function_call_output", output: "[main 1234567] docs" }, T),
+  cx("event_msg", { type: "agent_message", message: "커밋했어요" }, T + 2),
 ];
 const cs = segmentForCommit(codex, parseCodexLine, T)!;
-assert.deepStrictEqual(cs.msgs.map((m) => m.role), ["user", "assistant", "tool", "tool"]);
+assert.deepStrictEqual(cs.msgs.map((m) => m.role), ["user", "assistant", "tool", "tool", "assistant"]);
 assert.strictEqual(cs.cwd, "/r");
 assert.ok(COMMIT_RE.test("rtk git commit -m x") && COMMIT_RE.test("git -C a commit") && !COMMIT_RE.test("git log --grep commit"));
-assert.ok(COMMIT_RE.test("gh pr merge 12 --merge --delete-branch") && COMMIT_RE.test("git checkout main && git pull") && COMMIT_RE.test("git merge feature/x"), "머지도 경계");
-// 머지: 커밋 뒤 리뷰 대화 → gh pr merge(머지 커밋 시각 직전) 구간
-const M = T + 3600;
-const merged = [...claude,
-  cl("user", "리뷰 반영하고 머지해", M - 600),
-  cl("assistant", [{ type: "text", text: "리뷰 반영 후 머지할게요" }], M - 500),
-  cl("assistant", [{ type: "tool_use", name: "Bash", input: { command: "gh pr merge 3 --merge" } }], M - 3),
-  cl("user", [{ type: "tool_result", content: "✓ Merged" }], M),
-];
-const ms = segmentForCommit(merged, parseClaudeLine, M)!;
-assert.ok(ms.msgs.some((m) => m.text.includes("리뷰 반영하고 머지")) && !ms.msgs.some((m) => m.text.includes("버튼 색")) && ms.msgs.at(-1)!.text === "✓ Merged", "머지 세션 = 지난 커밋 이후 리뷰·머지 대화(이전 커밋 작업은 제외)");
+assert.ok(COMMIT_RE.test("gh pr merge 12 --merge") && COMMIT_RE.test("git checkout main && git pull") && COMMIT_RE.test("git merge feature/x"), "머지도 경계");
 assert.strictEqual(parseClaudeLine("not json"), null);
-// 리뷰: 커밋 직후(3초 뒤) git pull 호출이 있어도 커밋 호출을 고름
-const pulled = [...claude.slice(0, 7), cl("assistant", [{ type: "tool_use", name: "Bash", input: { command: "git pull" } }], T + 3)];
-assert.ok(segmentForCommit(pulled, parseClaudeLine, T)!.msgs.some((m) => m.text.includes("버튼 색")), "커밋 직후 pull에 안 끌려감");
 console.log("agentSessionParse ok");

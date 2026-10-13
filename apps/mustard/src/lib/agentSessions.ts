@@ -8,7 +8,7 @@ import { parseClaudeLine, parseCodexLine, segmentForCommit, type AgentKind, type
 
 const TAIL_BYTES = 8 * 1024 * 1024; // ponytail: 끝 8MB만 — 커밋 전 작업이 이보다 길면 앞부분이 잘림(상한 있는 기록이라 허용)
 const MAX_FILES = 6;
-export interface CommitSession { agent: AgentKind; sessionId: string; branch?: string; messages: SessionMsg[]; callTs: number }
+export interface CommitSession { agent: AgentKind; sessionId: string; branch?: string; messages: SessionMsg[]; callTs: number; closed: boolean } // closed = 그 턴이 끝남
 
 async function tailLines(path: string): Promise<string[]> {
   const fh = await fs.open(path, "r");
@@ -26,6 +26,8 @@ async function headLine(path: string): Promise<string> {
   catch { return ""; } finally { await fh.close(); }
 }
 // 커밋 뒤에 수정된(=커밋 시점에 살아 있던) 기록 파일, 최근 것부터.
+const IDLE_MS = 2 * 60_000; // 기록이 이만큼 안 바뀌면 턴이 끝난 것으로(에이전트 멈춤·사람 자리 비움)
+const mtimeOf = async (f: string) => { try { return (await fs.stat(f)).mtimeMs; } catch { return 0; } };
 async function recentFiles(dir: string, sinceMs: number): Promise<string[]> {
   let names: string[]; try { names = (await fs.readdir(dir)).filter((n) => n.endsWith(".jsonl")); } catch { return []; }
   const st = await Promise.all(names.map(async (n) => { try { return { p: join(dir, n), m: (await fs.stat(join(dir, n))).mtimeMs }; } catch { return null; } }));
@@ -39,7 +41,7 @@ export async function findCommitSession(root: string, commitSec: number): Promis
   // Claude Code — 레포 경로별 폴더
   for (const f of await recentFiles(projectDirFor(root), sinceMs)) {
     const seg = segmentForCommit(await tailLines(f), parseClaudeLine, commitSec);
-    if (seg?.msgs.length) found.push({ agent: "claude", sessionId: f.split("/").pop()!.replace(/\.jsonl$/, ""), branch: seg.branch, messages: seg.msgs, callTs: seg.callTs });
+    if (seg?.msgs.length) found.push({ agent: "claude", sessionId: f.split("/").pop()!.replace(/\.jsonl$/, ""), branch: seg.branch, messages: seg.msgs, callTs: seg.callTs, closed: seg.closed || Date.now() - await mtimeOf(f) > IDLE_MS });
   }
   // Codex — 날짜 폴더(커밋 날짜·전날, 자정 넘긴 세션), session_meta.cwd로 레포 확인
   const day = (d: Date) => join(homedir(), ".codex", "sessions", String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0"));
@@ -49,7 +51,7 @@ export async function findCommitSession(root: string, commitSec: number): Promis
     const seg = segmentForCommit(lines, parseCodexLine, commitSec);
     let cwd = seg?.cwd;
     if (seg && !cwd) cwd = parseCodexLine(await headLine(f))?.cwd; // 끝부분에 session_meta가 없으면 파일 첫 줄에서
-    if (seg?.msgs.length && cwd && under(cwd, root)) found.push({ agent: "codex", sessionId: f.split("/").pop()!.replace(/\.jsonl$/, ""), branch: seg.branch, messages: seg.msgs, callTs: seg.callTs });
+    if (seg?.msgs.length && cwd && under(cwd, root)) found.push({ agent: "codex", sessionId: f.split("/").pop()!.replace(/\.jsonl$/, ""), branch: seg.branch, messages: seg.msgs, callTs: seg.callTs, closed: seg.closed || Date.now() - await mtimeOf(f) > IDLE_MS });
   }
   // 커밋 시각에 가장 가까운 git commit 호출
   return found.sort((a, b) => Math.abs(a.callTs - commitSec * 1000) - Math.abs(b.callTs - commitSec * 1000))[0] ?? null;
