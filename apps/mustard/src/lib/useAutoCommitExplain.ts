@@ -50,7 +50,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     let alive = true, busy = false;
 
     // info = 카드 메타("브랜치 · 커밋 제목", #1062) — tool 필드에 담아 저장(스키마 변경 없이).
-    const explainCommit = async (hash: string, info: string) => {
+    const explainCommit = async (hash: string, info: string, ts: number) => {
       const list = await post("/api/repo/git-show", { path: root, hash });
       const files = ((list?.files ?? []) as { status: string; path: string }[]).filter((f) => f.status !== "D" && !SKIP_FILE.test(f.path)).slice(0, MAX_FILES);
       let budget = MAX_HUNKS;
@@ -71,7 +71,8 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           try { const text = await explainDiffText(h.diffText, pid, ps, loc); saveNote(store, h.diffText, text); texts.push(diffMark(h) + text); } catch { /* 구간 하나 실패 — 다음 구간 */ }
         }
         if (texts.length && alive) {
-          const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts: Date.now(), expl: texts.join(DIFF_SEP).slice(0, 8000) };
+          // #1068 카드 시각 = 커밋 시각(앱이 꺼져 있다가 몰아서 처리해도 그때 자리에)
+          const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts, expl: texts.join(DIFF_SEP).slice(0, 8000) };
           void post("/api/repo/stream", { root, items: [item] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
           window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
         }
@@ -86,11 +87,12 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         if (!st) { write({ since: Math.floor(Date.now() / 1000), done: [] }); return; } // 처음 켬 → 지금부터
         const j = await post("/api/repo/git-recent", { path: root, since: st.since });
         const pendingAdd: Pend[] = [];
-        const fresh = ((j?.commits ?? []) as { hash: string; ts: number; subject?: string; merge?: boolean }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
-        const branch = typeof j?.branch === "string" ? j.branch : "";
+        const fresh = ((j?.commits ?? []) as { hash: string; ts: number; subject?: string; merge?: boolean; branch?: string }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
+        const head = typeof j?.branch === "string" ? j.branch : "";
         for (const c of fresh) {
           if (!alive) return;
-          if (cfg.current.diffOn && !c.merge) await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200));
+          const branch = c.branch || head; // #1068 그 커밋을 만들 때 브랜치(reflog)
+          if (cfg.current.diffOn && !c.merge) await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200), c.ts * 1000);
           // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드. 턴이 끝날 때까지(마무리 말 포함) 미뤘다가 만듦.
           if (alive && cfg.current.sessOn) pendingAdd.push({ hash: c.hash, ts: c.ts, subject: c.subject ?? "", branch, at: Date.now(), merge: !!c.merge });
           if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)

@@ -211,7 +211,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       const d = (e as CustomEvent<{ root: string; item: Omit<Concept, "status"> }>).detail;
       if (!d || d.root !== root) return;
       seenRef.current.add(d.item.key);
-      setConcepts((prev) => [{ ...d.item, status: "done" as const }, ...prev.filter((c) => c.key !== d.item.key)].slice(0, MAX_ITEMS));
+      setConcepts((prev) => [{ ...d.item, status: "done" as const }, ...prev.filter((c) => c.key !== d.item.key)].sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS)); // #1068 카드 시각 = 커밋 시각 → 몰아서 만든 카드도 제자리
     };
     window.addEventListener(CATCHUP_ITEM_EVENT, on);
     return () => window.removeEventListener(CATCHUP_ITEM_EVENT, on);

@@ -33,6 +33,6 @@ export async function buildSessionItem(root: string, hash: string, ts: number, s
   catch { expl = s.messages.find((m) => m.role === "user")?.text.slice(0, 400) || "(요약 실패)"; } // 요약 실패해도 원본은 볼 수 있게 카드는 만듦
   return {
     key: sessionItemKey(hash), kind: "session", target: `${subject || hash.slice(0, 7)} @${hash.slice(0, 7)}`,
-    tool: [AGENT_LABEL[s.agent] ?? s.agent, s.branch || branch].filter(Boolean).join(" · ").slice(0, 200), ts: Date.now(), expl: expl.slice(0, 8000),
+    tool: [AGENT_LABEL[s.agent] ?? s.agent, s.branch || branch].filter(Boolean).join(" · ").slice(0, 200), ts: ts * 1000, expl: expl.slice(0, 8000),
   };
 }
