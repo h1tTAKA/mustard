@@ -299,6 +299,7 @@ async function boot() {
   if (DEV_URL) {
     // dev: next dev가 자체 임베드(간섭 방지) → main은 SNA 안 띄움.
     appBase = DEV_URL; // #765 버퍼 드라이버 POST 대상
+    writeMcpEndpoint();
     setupClaudeHooks(DEV_URL, "");
     createWindow(DEV_URL);
     return;
@@ -311,6 +312,7 @@ async function boot() {
     MUSTARD_HOOK_TOKEN: HOOK_TOKEN,
   });
   appBase = base; // #765 버퍼 드라이버 POST 대상
+  writeMcpEndpoint(); // #1070 MCP가 코드그래프 도구를 앱에 물을 주소
   setupClaudeHooks(base, HOOK_TOKEN);
   createWindow(base);
 }
@@ -426,7 +428,7 @@ ipcMain.handle("browser:devtools-close", (e, { guestId } = {}) => {
   if (guest) closeDevtoolsView(guest.id);
   return { ok: true };
 });
-// 에이전트용 브라우저 조작(#1041) — 렌더러가 탭(guest)을 레포와 함께 등록, browser-mcp.cjs가 HTTP로 조작 요청.
+// 에이전트용 브라우저 조작(#1041) — 렌더러가 탭(guest)을 레포와 함께 등록, mustard-mcp.cjs가 HTTP로 조작 요청.
 const browserControl = require("./browser-control.cjs").createBrowserControl({
   getGuest: (id) => { const wc = webContents.fromId(Number(id)); return wc && !wc.isDestroyed() && wc.getType() === "webview" ? wc : null; },
   // 그 레포 브라우저가 안 열려 있으면 모든 창에 "열어줘" — 그 레포 WorkspaceView가 받아서 엶.
@@ -457,20 +459,33 @@ ipcMain.on("browser:register", (e, { guestId, repo, visible } = {}) => { const g
 ipcMain.on("browser:unregister", (e, { guestId } = {}) => { if (ownGuest(e.sender, guestId)) browserControl.unregister(guestId); });
 // 부팅마다 새 토큰으로 띄우고 주소·토큰을 0600 파일에 — MCP 스크립트가 매 요청 때 읽음(포트가 바뀌어도 OK).
 const BROWSER_TOKEN = require("node:crypto").randomBytes(24).toString("hex");
-const browserEndpointFile = () => join(app.getPath("userData"), "mustard-browser-endpoint.json");
+// #1070 Mustard MCP(브라우저 + 코드그래프) 엔드포인트 — 브라우저 조작 주소·토큰 + Next 앱 주소. 둘 중 정해지는 대로 다시 씀.
+const mcpEndpointFile = () => join(app.getPath("userData"), "mustard-mcp-endpoint.json");
+let browserPort = null;
+function writeMcpEndpoint() {
+  if (!browserPort) return;
+  try {
+    // 앱 주소가 아직이면(부팅 중) 지난 값 유지 — null로 덮으면 그 사이 뜬 에이전트가 코드그래프 도구를 못 봄(#1070 리뷰). 포트는 보통 고정.
+    let prevApp = null; try { prevApp = JSON.parse(readFileSync(mcpEndpointFile(), "utf8")).appUrl || null; } catch { /* 처음 */ }
+    writeFileSync(mcpEndpointFile(), JSON.stringify({ url: `http://127.0.0.1:${browserPort}/call`, token: BROWSER_TOKEN, appUrl: appBase || prevApp }), { mode: 0o600 });
+    chmodSync(mcpEndpointFile(), 0o600); // mode는 새로 만들 때만 적용 — 이미 있던 파일도 0600으로
+  } catch (e) { console.warn("[mustard-mcp] endpoint write failed:", String(e?.message || e)); }
+}
 app.whenReady().then(() => browserControl.listen(BROWSER_TOKEN)).then(({ port }) => {
-  writeFileSync(browserEndpointFile(), JSON.stringify({ url: `http://127.0.0.1:${port}/call`, token: BROWSER_TOKEN }), { mode: 0o600 });
-  chmodSync(browserEndpointFile(), 0o600);
-  // Claude·Codex에 MCP 자동 등록(이미 같으면 건너뜀). CLI 없으면 그 쪽만 건너뜀.
+  browserPort = port;
+  writeMcpEndpoint();
+  // 유저 에이전트들에 Mustard MCP 자동 등록(이미 같으면 건너뜀). 안 깔린 에이전트는 건너뜀.
   // 패키징 앱에서만 — dev 실행이 등록을 dev 바이너리·dev userData로 덮어 패키징 앱과 번갈아 깨지지 않게(#1041 리뷰).
   if (!app.isPackaged) return;
   const rp = loadSavedRuntimePaths();
-  return require("./browser-mcp-install.cjs").installBrowserMcp({
+  const grok = join(require("node:os").homedir(), ".grok", "bin", "grok");
+  return require("./mustard-mcp-install.cjs").installMustardMcp({ // #1070 깔린 에이전트 전부(Claude·Codex·Grok·OpenCode·Cursor·Gemini)
     userData: app.getPath("userData"),
     execPath: process.execPath,
     claudePath: rp.claudeCode || process.env.NUNOPI_CLAUDE_COMMAND?.trim() || safeResolve(resolveClaudeCli),
     codexPath: rp.codex || process.env.NUNOPI_CODEX_COMMAND?.trim() || safeResolve(resolveCodexCli),
-  }).then((r) => console.log("[browser-mcp]", JSON.stringify(r)));
+    grokPath: existsSync(grok) ? grok : null,
+  }).then((r) => console.log("[mustard-mcp]", JSON.stringify(r)));
 }).catch((err) => console.warn("[browser-control] setup failed:", String(err?.message || err)));
 ipcMain.on("browser:set-chords", (e, list) => { trackChordHost(e.sender); setAppChords(e.sender.id, list); });
 // 탭 쪽 모드 점유/해제/조회(#789) — 메인 창 렌더러가 모드 탭 추가·닫기·복원 시 호출.

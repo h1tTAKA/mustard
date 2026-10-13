@@ -1,5 +1,5 @@
-// 코드그래프 MCP 툴 실행 라우트(#853) — stdio 브릿지(bridge.cjs)가 호출.
-// GET: 툴 정의(name/description/inputSchema) — 브릿지 tools/list용. POST {root,name,args}: 툴 실행.
+// 코드그래프 MCP 툴 실행 라우트(#853) — Mustard MCP(electron/mustard-mcp.cjs, #1070)가 호출.
+// GET: 툴 정의(name/description/inputSchema) — MCP tools/list용. POST {root,name,args}: 툴 실행.
 // 툴은 Next 안에서 돌아 lib 해석 정상. 서브7 seam: 여기서 툴콜 이벤트를 앱으로 흘릴 수 있음(미구현).
 import { existsSync, statSync } from "node:fs";
 import { TOOLS, callTool } from "@/lib/repo/mcp/tools";

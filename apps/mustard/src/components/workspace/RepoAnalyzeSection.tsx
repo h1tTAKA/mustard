@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { IconSitemap, IconSparkles, IconLoader2, IconChevronRight, IconRefresh, IconBinaryTree2, IconPlugConnected, IconCheck } from "@tabler/icons-react";
+import { IconSitemap, IconSparkles, IconLoader2, IconChevronRight, IconRefresh, IconBinaryTree2 } from "@tabler/icons-react";
 import { useT, useLocale } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { stripCardBlock } from "@mustard/core";
@@ -63,39 +63,6 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
   const [detail, setDetail] = useState<string | null>(null); // 실패 원인 상세(디버깅·안내)
   const [confirm, setConfirm] = useState<null | "reanalyze" | "update">(null); // 확인 모달(내용 바뀜·추가 경고)
   const [running, setRunning] = useState<null | "reanalyze" | "update">(null); // 지금 도는 액션(그 버튼만 스핀)
-  // 에이전트 MCP 연결(#853, opt-in) — 우리 코드그래프를 터미널 에이전트에 등록.
-  const [mcpOpen, setMcpOpen] = useState(false);
-  const [mcpTargets, setMcpTargets] = useState<Set<"claude" | "codex">>(new Set());
-  const [mcpBusy, setMcpBusy] = useState(false);
-  const [mcpDone, setMcpDone] = useState<string | null>(null);
-  const [mcpErr, setMcpErr] = useState<string | null>(null);
-
-  const openMcp = useCallback(async () => {
-    setMcpOpen(true); setMcpDone(null); setMcpErr(null);
-    try { // 감지 결과로 기본 선택
-      const r = await fetch(`/api/repo/mcp/connect?root=${encodeURIComponent(root)}`);
-      const d = await r.json().catch(() => null);
-      if (d?.agents) setMcpTargets(new Set((["claude", "codex"] as const).filter((k) => d.agents[k])));
-    } catch { /* 감지 실패 → 유저가 직접 선택 */ }
-  }, [root]);
-
-  const doConnect = useCallback(async () => {
-    const targets = [...mcpTargets];
-    if (!targets.length) { setMcpErr(t("mcp.needTarget")); return; }
-    setMcpBusy(true); setMcpErr(null); setMcpDone(null);
-    try {
-      const r = await fetch("/api/repo/mcp/connect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, targets, appUrl: window.location.origin }) });
-      const d = await r.json().catch(() => null);
-      if (!r.ok || !d?.ok) { setMcpErr(d?.error ? String(d.error) : `HTTP ${r.status}`); return; }
-      { // MCP 설정 + 룰 파일(사용 지침) 둘 다 표시
-        const row = (x: { target: string; path: string; action: string }) => `${x.target}: ${x.action} (${x.path})`;
-        const mcp = (d.results as Array<{ target: string; path: string; action: string }>).map(row);
-        const rules = ((d.rules ?? []) as Array<{ target: string; path: string; action: string }>).map(row);
-        setMcpDone([...mcp, ...(rules.length ? ["", "사용 지침(룰):", ...rules] : [])].join("\n"));
-      }
-    } catch (e) { setMcpErr(e instanceof Error ? e.message : String(e)); }
-    finally { setMcpBusy(false); }
-  }, [mcpTargets, root, t]);
   const catsKey = root ? `nunopi:ws:${root}:analyze-cats` : null; // 레포별 카테고리 영속 키(#743)
 
   // 저장된 카테고리 복원 — 새로고침/재시작/레포 재진입 시 재분석 없이 바로 목록 표시.
@@ -178,11 +145,6 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
             <IconBinaryTree2 size={13} stroke={2} aria-hidden />
           </button>
         )}
-        {/* 코드그래프를 터미널 에이전트에 연결(#853, opt-in) */}
-        <button type="button" onClick={() => void openMcp()} title={t("mcp.connect")} aria-label={t("mcp.connect")}
-          className="shrink-0 rounded p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:hover:bg-zinc-800 dark:hover:text-mustard-400">
-          <IconPlugConnected size={13} stroke={2} aria-hidden />
-        </button>
         {hasCats ? (
           <>
             {/* 갱신 — 이미 있는 목록에 새로 생긴 것만 추가(모달 확인). */}
@@ -229,36 +191,6 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
           <p className="px-1 py-2 text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("repo.analyzeSoon")}</p>
         )}
       </div>
-      {/* 에이전트 MCP 연결 모달(#853, opt-in) — 대상 선택 후 설정 주입. */}
-      {mcpOpen && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setMcpOpen(false)}>
-          <div onClick={(e) => e.stopPropagation()} className="nunopi-scroll flex max-h-[85%] w-full max-w-[20rem] flex-col overflow-y-auto rounded-lg border border-zinc-200 bg-white p-3 shadow-xl dark:border-zinc-700 dark:bg-[var(--s-bar)]">
-            <p className="flex items-center gap-1.5 text-[12px] font-semibold text-zinc-700 dark:text-zinc-100"><IconPlugConnected size={13} stroke={2} aria-hidden /> {t("mcp.title")}</p>
-            <p className="mt-1.5 shrink-0 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">{t("mcp.desc")}</p>
-            <div className="mt-2.5 flex shrink-0 flex-col gap-1.5">
-              {(["claude", "codex"] as const).map((k) => (
-                <label key={k} className="flex cursor-pointer items-center gap-2 text-[12px] text-zinc-700 dark:text-zinc-200">
-                  <input type="checkbox" checked={mcpTargets.has(k)} disabled={mcpBusy}
-                    onChange={(e) => setMcpTargets((prev) => { const n = new Set(prev); if (e.target.checked) n.add(k); else n.delete(k); return n; })} />
-                  {t(`mcp.${k}`)}
-                </label>
-              ))}
-            </div>
-            {mcpDone && <pre className="mt-2 shrink-0 whitespace-pre-wrap break-all rounded bg-emerald-500/10 p-1.5 text-[10px] text-emerald-700 dark:text-emerald-400">{mcpDone}</pre>}
-            {mcpErr && <p className="mt-2 shrink-0 break-words text-[10px] text-rose-500">{mcpErr}</p>}
-            <div className="mt-3 flex shrink-0 justify-end gap-1.5">
-              <button type="button" onClick={() => setMcpOpen(false)}
-                className="rounded-md px-2.5 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">{mcpDone ? t("mem.close") : t("confirm.cancel")}</button>
-              {!mcpDone && (
-                <button type="button" onClick={() => void doConnect()} disabled={mcpBusy}
-                  className="inline-flex items-center gap-1 rounded-md bg-mustard-500/12 px-2.5 py-1 text-[11px] font-semibold text-mustard-700 ring-1 ring-inset ring-mustard-500/35 transition hover:bg-mustard-500/20 disabled:opacity-50 dark:bg-mustard-400/12 dark:text-mustard-400 dark:ring-mustard-400/30 dark:hover:bg-mustard-400/20">
-                  {mcpBusy ? <IconLoader2 size={12} stroke={2} className="animate-spin" aria-hidden /> : <IconCheck size={12} stroke={2} aria-hidden />} {mcpBusy ? t("mcp.connecting") : t("mcp.doConnect")}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
       {/* 재분석·갱신 확인 모달 — 내용이 바뀌거나 추가될 수 있어 먼저 물어봄(#743). */}
       {confirm && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setConfirm(null)}>
