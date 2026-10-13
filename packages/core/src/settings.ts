@@ -96,13 +96,15 @@ export const GKEYS = {
 // 캐치업(#1049) — 명령어 해설 카드·용어집 켜고 끄기.
 // #1062 카테고리마다 표시(캐치업 창에 보이기)·분석(새로 AI 분석) 분리 — 분석 꺼도 예전 내용은 표시로 계속 봄.
 // Diff 분석 = 커밋 자동 설명(GKEYS.autoExplainCommits, git 설정과 같은 키).
-export const CATCHUP_DEFAULTS = { enabled: true, explainShow: true, explainAnalyze: true, commandsShow: true, commandsAnalyze: true, diffShow: true, termsShow: true, termsAnalyze: true };
+export const CATCHUP_DEFAULTS = { enabled: true, explainShow: true, explainAnalyze: true, commandsShow: true, commandsAnalyze: true, diffShow: true, termsShow: true, termsAnalyze: true, sessionsShow: true, sessionsAnalyze: true };
 export const CUKEYS = {
   enabled: "catchup.enabled", // 캐치업 전체 — 끄면 패널 숨김 + 모든 분석 중지(카테고리 값은 보존)
   explainShow: "catchup.explainShow", explainAnalyze: "catchup.explainAnalyze",
   commandsShow: "catchup.commandsShow", commandsAnalyze: "catchup.commandsAnalyze",
   diffShow: "catchup.diffShow",
   termsShow: "catchup.termsShow", termsAnalyze: "catchup.termsAnalyze",
+  sessionsShow: "catchup.sessionsShow", sessionsAnalyze: "catchup.sessionsAnalyze", // #1064 커밋을 만든 에이전트 세션
+  sessionsProvider: "catchup.sessionsProvider", sessionsModel: "catchup.sessionsModel",
   // 카테고리별 AI(#1062) — "" = 워크스페이스 기본 프로바이더. 용어는 해설·명령어 응답에서 모아서 별도 호출 없음.
   explainProvider: "catchup.explainProvider", commandsProvider: "catchup.commandsProvider", diffProvider: "catchup.diffProvider",
   // 카테고리별 모델 — "" = 그 프로바이더 기본 모델. 프로바이더 바꾸면 비움(목록이 달라서).

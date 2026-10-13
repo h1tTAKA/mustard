@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useLocale, useSetting, withModel, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { parseDiff, groupHunks, noteStoreKey, loadNotes, saveNote, explainDiffText } from "@/lib/hunkNotes";
+import { buildSessionItem } from "@/lib/sessionCard";
 
 // #1056 캐치업 연동 — 파일 하나 설명이 끝나면 캐치업 카드(kind diff)로. key에 hash·파일을 담아 카드에서 diff를 열 수 있게.
 export const CATCHUP_ITEM_EVENT = "nunopi:catchup-item"; // detail = { root, item } — 같은 창 캐치업이 즉시 추가
@@ -24,18 +25,26 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
   const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
   const diffProvider = useSetting<string>(CUKEYS.diffProvider, ""); // #1062 Diff AI("" = 워크스페이스 기본)
   const diffModel = useSetting<string>(CUKEYS.diffModel, "");
-  const on = autoOn && catchupOn; // #1062 캐치업 전체 끄면 Diff 분석도 중지
+  // #1064 세션 분석 — Diff 분석과 따로 켜고 끔(같은 새 커밋 감시를 공유). AI·모델도 따로.
+  const sessionsOn = useSetting<boolean>(CUKEYS.sessionsAnalyze, CATCHUP_DEFAULTS.sessionsAnalyze);
+  const sessProvider = useSetting<string>(CUKEYS.sessionsProvider, "");
+  const sessModel = useSetting<string>(CUKEYS.sessionsModel, "");
+  const on = catchupOn && (autoOn || sessionsOn); // #1062 캐치업 전체 끄면 전부 중지
   const { locale } = useLocale();
   const pid = (diffProvider || providerId) as AgentProviderKind;
   const ps = useMemo(() => withModel(providerSettings, pid, diffModel), [providerSettings, pid, diffModel]);
-  const cfg = useRef({ providerId: pid, providerSettings: ps, locale });
-  useEffect(() => { cfg.current = { providerId: pid, providerSettings: ps, locale }; }, [pid, ps, locale]);
+  const spid = (sessProvider || providerId) as AgentProviderKind;
+  const sps = useMemo(() => withModel(providerSettings, spid, sessModel), [providerSettings, spid, sessModel]);
+  const cfg = useRef({ providerId: pid, providerSettings: ps, locale, diffOn: autoOn, sessOn: sessionsOn, spid, sps });
+  useEffect(() => { cfg.current = { providerId: pid, providerSettings: ps, locale, diffOn: autoOn, sessOn: sessionsOn, spid, sps }; }, [pid, ps, locale, autoOn, sessionsOn, spid, sps]);
 
   useEffect(() => {
     if (!root) return;
     const stateKey = `nunopi:auto-explain:${root}`;
     if (!on) { try { localStorage.removeItem(stateKey); } catch { /* ignore */ } return; } // 다시 켜면 그때부터
-    type State = { since: number; done: string[] };
+    // pending = 세션 턴이 아직 안 끝나 카드를 미룬 커밋(#1064) — 다음 주기마다 다시, 20분 지나면 그대로 만듦
+    type Pend = { hash: string; ts: number; subject: string; branch: string; at: number; merge?: boolean };
+    type State = { since: number; done: string[]; pending?: Pend[] };
     const read = (): State | null => { try { return JSON.parse(localStorage.getItem(stateKey) || "null") as State | null; } catch { return null; } };
     const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
     let alive = true, busy = false;
@@ -76,15 +85,33 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         let st = read();
         if (!st) { write({ since: Math.floor(Date.now() / 1000), done: [] }); return; } // 처음 켬 → 지금부터
         const j = await post("/api/repo/git-recent", { path: root, since: st.since });
-        const fresh = ((j?.commits ?? []) as { hash: string; ts: number; subject?: string }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
+        const pendingAdd: Pend[] = [];
+        const fresh = ((j?.commits ?? []) as { hash: string; ts: number; subject?: string; merge?: boolean }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
         const branch = typeof j?.branch === "string" ? j.branch : "";
         for (const c of fresh) {
           if (!alive) return;
-          await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200));
+          if (cfg.current.diffOn && !c.merge) await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200));
+          // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드. 턴이 끝날 때까지(마무리 말 포함) 미뤘다가 만듦.
+          if (alive && cfg.current.sessOn) pendingAdd.push({ hash: c.hash, ts: c.ts, subject: c.subject ?? "", branch, at: Date.now(), merge: !!c.merge });
           if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)
-          st = { since: Math.max(st.since, c.ts), done: [...st.done, c.hash].slice(-50) }; // 같은 초 커밋은 done으로 중복 차단
+          st = { since: Math.max(st.since, c.ts), done: [...st.done, c.hash].slice(-50), pending: [...(st.pending ?? []), ...pendingAdd.splice(0)] }; // 같은 초 커밋은 done으로 중복 차단
           write(st);
         }
+        // 미룬 세션 카드 — 턴 끝났으면(또는 20분 지남) 요약해서 카드로, 세션 없으면 버림
+        const keep: Pend[] = [];
+        for (const pd of st.pending ?? []) {
+          if (!alive) return;
+          if (!cfg.current.sessOn) continue; // 세션 분석 꺼짐 — 미룬 것도 버림
+          if (Date.now() - pd.at > 60 * 60_000) continue; // 1시간 넘게 계속 실패 — 포기
+          const { spid: sp, sps: sset, locale: sl } = cfg.current;
+          const r = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, Date.now() - pd.at > 20 * 60_000, !!pd.merge).catch(() => "wait" as const);
+          if (r === "wait") { keep.push(pd); continue; }
+          if (r !== "none" && alive) {
+            void post("/api/repo/stream", { root, items: [r] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
+            window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item: r } }));
+          }
+        }
+        if (alive) { st = { ...(read() ?? st), pending: keep }; write(st); }
       } catch { /* 서버 미준비 등 — 다음 주기 */ } finally { busy = false; }
     };
     void tick();

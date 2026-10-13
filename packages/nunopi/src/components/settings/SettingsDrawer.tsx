@@ -198,12 +198,14 @@ export default function SettingsDrawer({
     commandsShow: useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow), commandsAnalyze: useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze),
     diffShow: useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow),
     termsShow: useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow), termsAnalyze: useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze),
+    sessionsShow: useSetting<boolean>(CUKEYS.sessionsShow, CATCHUP_DEFAULTS.sessionsShow), sessionsAnalyze: useSetting<boolean>(CUKEYS.sessionsAnalyze, CATCHUP_DEFAULTS.sessionsAnalyze),
   };
   // 카테고리 → [프로바이더 키, 값, 모델 키, 모델 값] — "" = 워크스페이스 기본 AI / 그 AI 기본 모델(#1062)
   const cuProv: Record<string, [string, string, string, string]> = {
     explain: [CUKEYS.explainProvider, useSetting<string>(CUKEYS.explainProvider, ""), CUKEYS.explainModel, useSetting<string>(CUKEYS.explainModel, "")],
     commands: [CUKEYS.commandsProvider, useSetting<string>(CUKEYS.commandsProvider, ""), CUKEYS.commandsModel, useSetting<string>(CUKEYS.commandsModel, "")],
     diff: [CUKEYS.diffProvider, useSetting<string>(CUKEYS.diffProvider, ""), CUKEYS.diffModel, useSetting<string>(CUKEYS.diffModel, "")],
+    session: [CUKEYS.sessionsProvider, useSetting<string>(CUKEYS.sessionsProvider, ""), CUKEYS.sessionsModel, useSetting<string>(CUKEYS.sessionsModel, "")],
   };
   // 캐치업 카테고리 모델 목록(#1062) — 캐치업 섹션 열 때 쓰이는 프로바이더만 같은 캐시로 조회.
   const cuProviders = [...new Set(Object.values(cuProv).map(([, v]) => (v || resolveModeProvider(modeProviders, "default")) as AgentProviderKind))].sort().join(",");
@@ -930,6 +932,7 @@ export default function SettingsDrawer({
               { id: "explain", label: t("settings.catchupExplain"), desc: t("settings.catchupExplainDesc"), show: [CUKEYS.explainShow, cu.explainShow], analyze: [CUKEYS.explainAnalyze, cu.explainAnalyze] },
               { id: "commands", label: t("settings.catchupCommands"), desc: t("settings.catchupCommandsDesc"), show: [CUKEYS.commandsShow, cu.commandsShow], analyze: [CUKEYS.commandsAnalyze, cu.commandsAnalyze] },
               { id: "diff", label: t("settings.catchupDiff"), desc: t("settings.catchupDiffDesc"), show: [CUKEYS.diffShow, cu.diffShow], analyze: [GKEYS.autoExplainCommits, gAutoExplain] },
+              { id: "session", label: t("settings.catchupSessions"), desc: t("settings.catchupSessionsDesc"), show: [CUKEYS.sessionsShow, cu.sessionsShow], analyze: [CUKEYS.sessionsAnalyze, cu.sessionsAnalyze] },
               { id: "terms", label: t("settings.catchupTerms"), desc: t("settings.catchupTermsDesc"), show: [CUKEYS.termsShow, cu.termsShow], analyze: [CUKEYS.termsAnalyze, cu.termsAnalyze] },
             ] as { id: string; label: string; desc: string; show: [string, boolean]; analyze: [string, boolean] }[]).map((row) => (
               <div key={row.id} className={`flex items-center justify-between gap-3 ${cuOn ? "" : "opacity-50"}`}>

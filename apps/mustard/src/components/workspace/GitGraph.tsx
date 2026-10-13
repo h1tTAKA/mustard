@@ -53,7 +53,7 @@ function changeBadge(c: Change): { ch: string; cls: string } {
   return { ch: "M", cls: staged ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500" };
 }
 
-export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange, onRefreshed, refreshNonce }: { root: string; onOpenDiff: (hash: string, file: string) => void; onFocusBranch: (branch: string) => void; onOpenChange?: (file: string, kind: WorktreeKind) => void; onRefreshed?: () => void; refreshNonce?: number }) {
+export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange, onRefreshed, refreshNonce, focus, onFocusResult }: { root: string; onOpenDiff: (hash: string, file: string) => void; onFocusBranch: (branch: string) => void; onOpenChange?: (file: string, kind: WorktreeKind) => void; onRefreshed?: () => void; refreshNonce?: number; focus?: { hash: string; n: number }; onFocusResult?: (found: boolean) => void }) {
   const t = useT();
   const toast = useToast();
   const [model, setModel] = useState<GitGraphModel | null>(null);
@@ -73,6 +73,9 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
   const [untrackedOpen, setUntrackedOpen] = useState(false); // 미추적 하위그룹(기본 접힘, #699)
   // 커밋 호버 팝오버(#685) — 전체 메세지(제목+본문). fixed라 스크롤 컨테이너 잘림 회피.
   // dwell 지연: 그래프를 훑으며 지나갈 땐 안 뜨고, 머물러야(HOVER_DELAY_MS) 뜬다(orca식).
+  // #1064 캐치업 세션 카드 "그래프에서 보기" — 그 커밋 행으로 스크롤 + 잠깐 강조.
+  const [flash, setFlash] = useState<string | null>(null);
+  const graphScrollRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ subject: string; body: string; left: number; top?: number; bottom?: number; maxHeight: number } | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null); // 행→툴팁 이동 여유(호버 브릿지, #834)
@@ -230,6 +233,20 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
     });
     return { rowIndexByHash: idxMap, rowTop: tops };
   }, [model, expanded, filesByHash]);
+  const focusN = focus?.n;
+  useEffect(() => {
+    if (!focus || !model) return;
+    const idx = model.rows.findIndex((r) => r.commit.hash.startsWith(focus.hash) || focus.hash.startsWith(r.commit.hash));
+    onFocusResult?.(idx >= 0);
+    if (idx < 0) return; // 그래프가 보여주는 최근 범위 밖
+    const hash = model.rows[idx].commit.hash;
+    setFlash(hash); // eslint-disable-line react-hooks/set-state-in-effect -- 외부 요청(focus) 시 강조
+    graphScrollRef.current?.scrollTo({ top: Math.max(0, rowTop[idx] - ROW_H * 2), behavior: "smooth" });
+    const t = setTimeout(() => setFlash((f) => (f === hash ? null : f)), 2500);
+    return () => clearTimeout(t);
+    // 요청 번호(n)가 바뀔 때만 — model·rowTop 갱신(폴링)마다 다시 튀지 않게
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusN, model ? 1 : 0]);
 
   // 추적 변경 vs 미추적(untracked) 분리 — 미추적은 접이식 하위그룹(#699).
   const tracked = useMemo(() => changes.filter((c) => changeKind(c) !== "untracked"), [changes]);
@@ -393,7 +410,7 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
               className="absolute inset-y-0 z-10 -ml-0.5 w-1 cursor-col-resize bg-transparent transition hover:bg-[#3B34E2]/40 dark:hover:bg-[#8b86f5]/40" />
           )}
           {/* container-type: 배지 max-width(cqw)가 스크롤되는 행 폭이 아니라 "보이는 패널 폭" 기준이 되게(#752). */}
-          <div className="nunopi-scroll h-full overflow-auto" style={{ containerType: "inline-size" }}>
+          <div ref={graphScrollRef} className="nunopi-scroll h-full overflow-auto" style={{ containerType: "inline-size" }}>
           {model?.rows.map((row, idx) => {
             const dotY = ROW_H / 2;
             // 각 부모로 향하는 선을 "점→점" 곡선으로(#707) — 반행 stub 없이 점에서 점까지 한 번에 부드럽게(orca식).
@@ -431,7 +448,7 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
                     }, HOVER_DELAY_MS); // 머물러야 뜸
                   }}
                   onMouseLeave={leaveRow}
-                  className="flex w-max min-w-full items-center text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50" style={{ height: ROW_H }}>
+                  className={`flex w-max min-w-full items-center text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${flash === row.commit.hash ? "bg-mustard-500/20 ring-1 ring-inset ring-mustard-500/60 dark:bg-mustard-400/15" : ""}`} style={{ height: ROW_H }}>
                   {/* 그래프 셀 — 가로는 colW로 클립(overflow-x:clip), 세로는 visible(점→점 곡선이 부모 행까지 뻗음, #707). */}
                   <div className="shrink-0" style={{ width: colW, height: ROW_H, overflowX: "clip", overflowY: "visible" }}>
                     <svg width={graphW} height={ROW_H} style={{ minWidth: graphW, overflow: "visible" }} aria-hidden>

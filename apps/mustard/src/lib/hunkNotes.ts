@@ -20,10 +20,14 @@ const PROMPT = "아래는 코드 변경(diff)입니다(- 삭제, + 추가). 다�
 type StreamEvent = { type: "progress"; line: string } | { type: "result"; response: { summary: string } } | { type: "error"; message: string };
 
 // 구간 하나 설명 — analyze mode:chat 재사용(서버 변경 0). 실패면 throw.
-export async function explainDiffText(diffText: string, providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string): Promise<string> {
+export const explainDiffText = (diffText: string, providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string) =>
+  askAgent(diffText, PROMPT, providerId, providerSettings, locale);
+
+// 자료(code) + 지시(prompt) → 답(카드 블록 제거). 커밋 세션 요약(#1064)도 같은 경로.
+export async function askAgent(code: string, prompt: string, providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string): Promise<string> {
   const res = await fetch("/api/agent/analyze", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ providerId, request: { code: diffText, locale, providerId, mode: "chat", messages: [{ role: "user", content: PROMPT }], providerSettings } }),
+    body: JSON.stringify({ providerId, request: { code, locale, providerId, mode: "chat", messages: [{ role: "user", content: prompt }], providerSettings } }),
   });
   if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
   const reader = res.body.getReader(); const dec = new TextDecoder();
