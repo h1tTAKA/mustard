@@ -78,4 +78,8 @@ assert.deepStrictEqual(sm.msgs.filter((m) => m.role !== "tool").map((m) => m.tex
 assert.strictEqual(segmentForCommit(flow, parseClaudeLine, MG, false), null, "머지 시각엔 일반 커밋 호출 없음");
 const big = [cl("user", "시작", T - 800), ...Array.from({ length: 400 }, (_, i) => cl("assistant", [{ type: "text", text: `m${i}` }], T - 700 + i)), bash("git commit -m z", T - 2)];
 assert.strictEqual(segmentForCommit(big, parseClaudeLine, T)!.msgs.length, 402, "메시지 수 상한 없음");
+// 리뷰: 한 응답에 [커밋 호출, 글] 순서 — 호출 위치가 정확해야 결과·마무리 경계가 맞음
+const mixed = [cl("user", "하나 둘", T - 100), cl("assistant", [{ type: "tool_use", name: "Bash", input: { command: "git commit -m x" } }, { type: "text", text: "커밋 호출함" }], T - 50), res("ok x", T - 49),
+  bash("git commit -m y", T - 1), res("ok y", T)];
+assert.deepStrictEqual(segmentForCommit(mixed, parseClaudeLine, T - 49)!.msgs.map((m) => m.text), ["하나 둘", "▸ Bash: git commit -m x", "커밋 호출함", "ok x"], "호출 다음 글·결과는 이번 커밋 몫(같은 응답)");
 console.log("agentSessionParse ok");
