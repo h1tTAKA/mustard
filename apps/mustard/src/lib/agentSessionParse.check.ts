@@ -37,5 +37,16 @@ const cs = segmentForCommit(codex, parseCodexLine, T)!;
 assert.deepStrictEqual(cs.msgs.map((m) => m.role), ["user", "assistant", "tool", "tool"]);
 assert.strictEqual(cs.cwd, "/r");
 assert.ok(COMMIT_RE.test("rtk git commit -m x") && COMMIT_RE.test("git -C a commit") && !COMMIT_RE.test("git log --grep commit"));
+assert.ok(COMMIT_RE.test("gh pr merge 12 --merge --delete-branch") && COMMIT_RE.test("git checkout main && git pull") && COMMIT_RE.test("git merge feature/x"), "머지도 경계");
+// 머지: 커밋 뒤 리뷰 대화 → gh pr merge(머지 커밋 시각 직전) 구간
+const M = T + 3600;
+const merged = [...claude,
+  cl("user", "리뷰 반영하고 머지해", M - 600),
+  cl("assistant", [{ type: "text", text: "리뷰 반영 후 머지할게요" }], M - 500),
+  cl("assistant", [{ type: "tool_use", name: "Bash", input: { command: "gh pr merge 3 --merge" } }], M - 3),
+  cl("user", [{ type: "tool_result", content: "✓ Merged" }], M),
+];
+const ms = segmentForCommit(merged, parseClaudeLine, M)!;
+assert.ok(ms.msgs.some((m) => m.text.includes("리뷰 반영하고 머지")) && !ms.msgs.some((m) => m.text.includes("버튼 색")) && ms.msgs.at(-1)!.text === "✓ Merged", "머지 세션 = 지난 커밋 이후 리뷰·머지 대화(이전 커밋 작업은 제외)");
 assert.strictEqual(parseClaudeLine("not json"), null);
 console.log("agentSessionParse ok");

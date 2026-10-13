@@ -6,8 +6,9 @@ export type AgentKind = "claude" | "codex";
 
 const MSG_MAX = 4000;  // 메시지 하나 상한(도구 출력이 수만 자일 수 있음)
 const SEG_MAX = 300;   // 구간 메시지 상한(최근 것 유지)
-// "git commit", "rtk git commit", "git -C dir commit" — 커밋 출력이 압축돼 해시가 안 남아도 명령으로 알아봄.
-export const COMMIT_RE = /\bgit\s+(?:-C\s+\S+\s+)?commit\b/;
+// 커밋을 만드는 명령 — "git commit"(rtk·-C 포함), 머지("git merge", "gh pr merge", 머지 반영 "git pull"). 출력이 압축돼
+// 해시가 안 남아도 명령으로 알아봄. 이 호출들이 구간 경계(#1064 머지 세션도 저장 — 커밋 이후 리뷰·머지까지 오간 대화).
+export const COMMIT_RE = /\bgit\s+(?:-C\s+\S+\s+)?(?:commit|merge|pull)\b|\bgh\s+pr\s+merge\b/;
 
 const clip = (s: string) => (s.length > MSG_MAX ? s.slice(0, MSG_MAX) + "…" : s);
 const tsOf = (v: unknown) => { const n = typeof v === "string" ? Date.parse(v) : NaN; return Number.isFinite(n) ? n : 0; };

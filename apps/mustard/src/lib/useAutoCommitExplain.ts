@@ -83,11 +83,11 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         let st = read();
         if (!st) { write({ since: Math.floor(Date.now() / 1000), done: [] }); return; } // 처음 켬 → 지금부터
         const j = await post("/api/repo/git-recent", { path: root, since: st.since });
-        const fresh = ((j?.commits ?? []) as { hash: string; ts: number; subject?: string }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
+        const fresh = ((j?.commits ?? []) as { hash: string; ts: number; subject?: string; merge?: boolean }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
         const branch = typeof j?.branch === "string" ? j.branch : "";
         for (const c of fresh) {
           if (!alive) return;
-          if (cfg.current.diffOn) await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200));
+          if (cfg.current.diffOn && !c.merge) await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200));
           // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드(원본은 서버에 저장, 카드에서 펼쳐 봄)
           if (alive && cfg.current.sessOn) {
             const { spid: sp, sps: sset, locale: sl } = cfg.current;
