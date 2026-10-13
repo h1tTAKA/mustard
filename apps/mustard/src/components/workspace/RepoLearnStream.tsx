@@ -405,7 +405,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         <span className="mr-auto truncate text-[13px] font-semibold text-zinc-700 dark:text-zinc-200" title={t("learn.mode")}>{t("learn.title")}</span>
         {onToggleChat && ( /* #1078 워크스페이스 질문 — 캐치업 안 질문 화면 ↔ 카드 목록. 모양 = nunopi 코드분석 "질문" 버튼. 캘린더와 같은 flex 상자(h-6)로 — 인라인 svg는 글자 기준선에 앉아 아이콘이 위로 떠 보임 */
           <button type="button" onClick={onToggleChat} aria-pressed={chatOpen} title={t("learn.chat")}
-            className={`inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2 text-[11px] font-medium leading-none transition ${chatOpen ? "bg-mustard-500 text-zinc-900" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"}`}>
+            className={`inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2 text-[11px] font-medium leading-none transition ${chatOpen ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"}`}>
             <IconMessageCircle size={13} stroke={2} aria-hidden />{t("learn.chat")}
           </button>
         )}

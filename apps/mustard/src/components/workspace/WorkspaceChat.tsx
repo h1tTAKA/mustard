@@ -643,7 +643,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
           const on = s.key === activeKey;
           return (
             <button key={s.key} type="button" onClick={() => setActiveKey(s.key)} title={s.key}
-              className={`group inline-flex min-w-0 shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium transition ${on ? "bg-mustard-500 text-brown-900 dark:bg-mustard-500 dark:text-brown-900" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"}`}>
+              className={`group inline-flex min-w-0 shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium transition ${on ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" /* #1078 캐치업 필터 칩과 같은 강조색 */ : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"}`}>
               {kindGlyph(s.kind, 11, "shrink-0")}
               <span className="max-w-[92px] truncate">{s.label}</span>
               {s.key !== REPO_KEY && (
