@@ -2,7 +2,7 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit } from "@tabler/icons-react";
+import { IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
@@ -103,7 +103,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [terms, setTerms] = useState<Term[]>(() => load<Term>(gKey(root)));
   const [live, setLive] = useState(false);
   const [autoExplain, setAutoExplain] = useState(true);
-  const [termsOpen, setTermsOpen] = useState(true);
+  const [termsOpen, setTermsOpen] = useState(false); // #1076 기본은 무조건 닫힘(다시 들어와도 펼쳐져 있지 않게)
   // #1062 설정 > 캐치업 — 카테고리별 표시(창에 보이기)·분석(새로 만들기). 표시는 렌더, 분석은 cfgRef(콜백)로.
   const explainShow = useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow);
   const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze);
@@ -286,6 +286,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       .then((j) => { if (j?.ok && Array.isArray(j.days)) setDays(new Set(j.days as string[])); }).catch(() => { /* 오늘만 */ });
   }, [root, calOpen]);
   const listRef = useRef<HTMLDivElement>(null);
+  const [farDown, setFarDown] = useState(false); // #1076 많이 내려가면 맨 위로 버튼
   const daySeqRef = useRef(0); // 요청 번호표(#996 리뷰) — 날짜를 빠르게 바꾸면 늦게 온 옛 응답이 새 선택을 덮지 않게
   const pickDay = useCallback((day: string | null) => {
     const seq = ++daySeqRef.current;
@@ -432,7 +433,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         </div>
       )}
       {filter === "all" && glossary && <div className="shrink-0">{glossary}</div>}
-      <div ref={listRef} className="nunopi-scroll min-h-0 flex-1 overflow-y-auto">
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div ref={listRef} onScroll={(e) => { const far = e.currentTarget.scrollTop > 400; if (far !== farDown) setFarDown(far); }} className="nunopi-scroll min-h-0 flex-1 overflow-y-auto">
         {query && found === null && filter !== "terms" ? (
           <div className="flex justify-center py-6"><IconLoader2 size={14} stroke={2} className="animate-spin text-zinc-400" aria-hidden /></div>
         ) : query && !shown.length && !(showTerms && filter !== "explain" && filter !== "commands" && shownTerms.length) ? (
@@ -564,6 +566,13 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
             </ul>}
           </>
         )}
+      </div>
+      {farDown && ( /* #1076 맨 위로 — 한참 내려 본 뒤 한 번에 최신(맨 위)으로 */
+        <button type="button" onClick={() => listRef.current?.scrollTo({ top: 0, behavior: "smooth" })} title={t("learn.scrollTop")} aria-label={t("learn.scrollTop")}
+          className="absolute bottom-3 right-3 z-20 rounded-full border border-zinc-200 bg-white/95 p-1.5 text-zinc-500 shadow-md backdrop-blur transition hover:text-mustard-600 dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-400 dark:hover:text-mustard-400">
+          <IconArrowUp size={15} stroke={2} aria-hidden />
+        </button>
+      )}
       </div>
       {/* #998 하단 질문 패널 — 경계선 드래그로 높이 조절 */}
       {askItem && (
