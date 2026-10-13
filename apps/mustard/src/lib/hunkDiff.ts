@@ -2,7 +2,8 @@
 export interface DLine { kind: "hunk" | "add" | "del" | "ctx" | "meta"; oldN: number | null; newN: number | null; text: string; ctxLabel?: string }
 // 변경 구간(우리의 "hunk") — 연속 add/del 런. 사이 컨텍스트가 짧으면 한 구간으로 병합(주석 폭발 방지).
 // -U100000이라 파일당 @@가 1개뿐 → 표준 hunk 대신 실제 바뀐 블록을 단위로.
-export interface Hunk { id: number; startLine: number; endLine: number; diffText: string }
+// newFrom~newTo = 새 파일 기준 줄 범위(삭제만이면 삭제 지점 한 줄), ctxFrom~ctxTo = 컨텍스트 포함 lines 인덱스(#1066 캐치업 구간별 표시)
+export interface Hunk { id: number; startLine: number; endLine: number; diffText: string; newFrom: number; newTo: number; ctxFrom: number; ctxTo: number }
 const MERGE_GAP = 3;   // 변경 사이 컨텍스트 줄이 이 이하면 같은 구간
 const CTX_LINES = 3;   // diffText에 실을 앞뒤 컨텍스트 줄 수
 const MAX_DIFF = 4000; // diffText 상한(토큰 방어)
@@ -39,7 +40,9 @@ export function groupHunks(lines: DLine[]): Hunk[] {
       .filter((l) => l.kind === "add" || l.kind === "del" || l.kind === "ctx")
       .map((l) => (l.kind === "add" ? "+ " : l.kind === "del" ? "- " : "  ") + l.text)
       .join("\n").slice(0, MAX_DIFF);
-    hunks.push({ id: hunks.length, startLine: start, endLine: lastChange, diffText });
+    const nums = lines.slice(start, lastChange + 1).map((l) => l.newN).filter((n): n is number => n != null);
+    const at = nums.length ? 0 : lines.slice(lastChange + 1).find((l) => l.newN != null)?.newN ?? (lines.slice(0, start).reverse().find((l) => l.newN != null)?.newN ?? 0) + 1;
+    hunks.push({ id: hunks.length, startLine: start, endLine: lastChange, diffText, newFrom: nums.length ? Math.min(...nums) : at, newTo: nums.length ? Math.max(...nums) : at, ctxFrom: from, ctxTo: to });
     start = -1; lastChange = -1;
   };
   lines.forEach((l, i) => {
