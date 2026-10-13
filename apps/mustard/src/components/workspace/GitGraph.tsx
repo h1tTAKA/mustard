@@ -253,11 +253,11 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
     onFocusResult?.(idx >= 0);
     if (idx < 0) return; // 그래프가 보여주는 최근 범위 밖
     const hash = model.rows[idx].commit.hash;
-    setFlash(hash); // eslint-disable-line react-hooks/set-state-in-effect -- 외부 요청(focus) 시 강조
-    // #1074 diff 카드에서 왔으면 그 커밋을 펼쳐 그 파일까지 반짝(스크롤은 파일 목록이 온 뒤 아래 effect에서)
-    if (focus.file) { setExpanded((prev) => (prev.has(hash) ? prev : new Set(prev).add(hash))); void loadFiles(hash); setFlashFile({ hash, file: focus.file, n: focus.n }); }
-    else graphScrollRef.current?.scrollTo({ top: Math.max(0, rowTop[idx] - ROW_H * 2), behavior: "smooth" });
-    const t = setTimeout(() => setFlash((f) => (f === hash ? null : f)), 2500); // 파일 강조는 스크롤한 뒤부터 따로 셈(아래)
+    // #1074 diff 카드에서 왔으면 커밋은 강조하지 않고 펼쳐서 그 파일만 반짝(유저 피드백 — 둘 다 강조하면 지저분). 스크롤은 파일 목록이 온 뒤 아래 effect에서
+    if (focus.file) { setExpanded((prev) => (prev.has(hash) ? prev : new Set(prev).add(hash))); void loadFiles(hash); setFlashFile({ hash, file: focus.file, n: focus.n }); return; } // eslint-disable-line react-hooks/set-state-in-effect -- 외부 요청(focus) 시 펼침·강조
+    setFlash(hash);
+    graphScrollRef.current?.scrollTo({ top: Math.max(0, rowTop[idx] - ROW_H * 2), behavior: "smooth" });
+    const t = setTimeout(() => setFlash((f) => (f === hash ? null : f)), 2500);
     return () => clearTimeout(t);
     // 요청 번호(n)가 바뀔 때만 — model·rowTop 갱신(폴링)마다 다시 튀지 않게
     // eslint-disable-next-line react-hooks/exhaustive-deps
