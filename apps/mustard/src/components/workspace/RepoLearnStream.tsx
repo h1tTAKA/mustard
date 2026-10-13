@@ -6,6 +6,7 @@ import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFil
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
+import { diffSections } from "@/lib/hunkDiff";
 import CatchupSessionRaw from "@/components/workspace/CatchupSessionRaw";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import { sendToAgent } from "@/lib/browser/sendToAgent";
@@ -524,7 +525,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                   {(c.status === "done" || c.status === "error") && (
                     <div className="border-t border-zinc-200/70 px-3 py-2 text-[11.5px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">
                       {/* #1060 변경 코드는 제목 바로 밑·설명 위 */}
-                      {c.kind === "diff" && (() => { const d = parseDiffItemKey(c.key); return d ? <CatchupDiffCode root={root} hash={d.hash} file={d.file} /> : null; })()}
+                      {/* #1066 새 카드(구간 표지 있음)는 구간마다 아래에서 따로 — 여긴 옛 카드만 */}
+                      {c.kind === "diff" && !(c.status === "done" && diffSections(c.expl ?? "")) && (() => { const d = parseDiffItemKey(c.key); return d ? <CatchupDiffCode root={root} hash={d.hash} file={d.file} /> : null; })()}
                       {/* #1064 세션 원본 대화도 제목 밑·요약 위 */}
                       {c.kind === "session" && handoffKey === c.key && ( /* 에이전트에게 넘길 요청 — ⌘Enter 보내기 */
                         <div className="mb-2 flex flex-col gap-1.5 rounded-md border border-mustard-500/40 p-1.5">
@@ -539,7 +541,18 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                         </div>
                       )}
                       {c.kind === "session" && c.key.startsWith("session|") && <CatchupSessionRaw root={root} hash={c.key.slice(8)} />}
-                      {c.status === "done" ? <Markdown>{c.expl ?? ""}</Markdown> : <span className="text-[10px] text-rose-500">{t("learn.explainError")}</span>}
+                      {c.status === "done" ? (() => {
+                        // #1066 diff 구간별: [N~M번째 줄 ▸ 그 구간 코드 펼치기] + 설명. 한 파일 여러 변경이 한 카드여도 어느 설명이 어느 줄인지 보임
+                        const d = c.kind === "diff" ? parseDiffItemKey(c.key) : null; const secs = d ? diffSections(c.expl ?? "") : null;
+                        if (!d || !secs) return <Markdown>{c.expl ?? ""}</Markdown>;
+                        return secs.map((sec, i) => (
+                          <div key={i} className={i > 0 ? "mt-3 border-t border-zinc-200/70 pt-2 dark:border-zinc-800" : ""}>
+                            <CatchupDiffCode root={root} hash={d.hash} file={d.file} range={sec}
+                              label={sec.from === sec.to ? t("learn.diffLine", { n: sec.from }) : t("learn.diffLines", { from: sec.from, to: sec.to })} />
+                            <Markdown>{sec.text}</Markdown>
+                          </div>
+                        ));
+                      })() : <span className="text-[10px] text-rose-500">{t("learn.explainError")}</span>}
                     </div>
                   )}
                 </li>

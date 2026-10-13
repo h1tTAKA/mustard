@@ -58,3 +58,17 @@ export function groupHunks(lines: DLine[]): Hunk[] {
 // 저장 키 — 커밋 diff는 hash, 워킹트리 diff는 "wt:종류". 구간 키 = 구간 내용(diffText) 자체(재오픈 매칭, 편집되면 자연 미스).
 export const noteStoreKey = (root: string, file: string, hash?: string, worktree?: string) =>
   `nunopi:hunk-notes:${root}:${hash ?? (worktree ? "wt:" + worktree : "")}:${file}`;
+
+// #1066 캐치업 diff 카드 본문 = 구간 설명들을 "---"로 이음. 새 카드는 구간마다 앞에 줄 범위 표지 → 카드가 "N~M번째 줄" + 그 구간 코드 펼치기.
+export const DIFF_SEP = "\n\n---\n\n";
+export const diffMark = (h: { newFrom: number; newTo: number }) => `[[L ${h.newFrom}-${h.newTo}]]\n`;
+// 표지 없는 구간이 하나라도 있으면(옛 카드·잘림) null → 카드 전체를 예전처럼.
+export function diffSections(expl: string): { from: number; to: number; text: string }[] | null {
+  const out: { from: number; to: number; text: string }[] = [];
+  for (const part of expl.split(DIFF_SEP)) {
+    const m = /^\[\[L (\d+)-(\d+)\]\]\n/.exec(part);
+    if (!m) return null;
+    out.push({ from: Number(m[1]), to: Number(m[2]), text: part.slice(m[0].length) });
+  }
+  return out;
+}
