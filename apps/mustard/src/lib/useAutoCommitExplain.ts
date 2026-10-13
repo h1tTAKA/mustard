@@ -16,7 +16,7 @@ export const parseDiffItemKey = (key: string) => { const m = /^diff\|([0-9a-fA-F
 const POLL_MS = 30_000;
 const MAX_FILES = 10, MAX_HUNKS = 20; // ponytail: 커밋당 상한(토큰 방어) — 큰 커밋은 앞부분만, 나머지는 diff에서 버튼으로
 // 설명 가치 없는 파일 — 문서·lockfile·이미지 등(삭제 파일은 상태 D로 따로 거름).
-const SKIP_FILE = /\.(md|mdx|markdown|txt|rst|adoc|lock|png|jpe?g|gif|webp|ico|svg|pdf|zip)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$/i;
+const SKIP_FILE = /\.(md|mdx|markdown|txt|rst|adoc|lock|png|jpe?g|gif|webp|avif|bmp|ico|svg|pdf|zip|gz|tgz|7z|rar|mp3|wav|ogg|flac|m4a|aac|mp4|mov|webm|avi|mkv|woff2?|ttf|otf|eot|wasm|exe|dll|so|dylib|bin)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$/i;
 
 const post = (url: string, body: unknown) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
 
@@ -52,13 +52,15 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     // info = 카드 메타("브랜치 · 커밋 제목", #1062) — tool 필드에 담아 저장(스키마 변경 없이).
     const explainCommit = async (hash: string, info: string, ts: number) => {
       const list = await post("/api/repo/git-show", { path: root, hash });
-      const files = ((list?.files ?? []) as { status: string; path: string }[]).filter((f) => f.status !== "D" && !SKIP_FILE.test(f.path)).slice(0, MAX_FILES);
+      const files = ((list?.files ?? []) as { status: string; path: string }[]).filter((f) => f.status !== "D" && !SKIP_FILE.test(f.path));
+      let explained = 0; // #1068 상한은 실제 설명한 파일만 셈 — 바이너리가 앞자리를 다 먹어 뒤의 코드·설정 파일이 빠지던 것
       let budget = MAX_HUNKS;
       for (const f of files) {
         if (!alive || budget <= 0) return;
         const d = await post("/api/repo/git-show", { path: root, hash, file: f.path });
         const raw = String(d?.diff ?? "");
         if (!raw.trim() || /^Binary files /m.test(raw)) continue;
+        if (++explained > MAX_FILES) return;
         const store = noteStoreKey(root, f.path, hash);
         const have = loadNotes(store);
         const texts: string[] = []; // 이 파일 구간 설명(순서대로) — 캐치업 카드 본문
