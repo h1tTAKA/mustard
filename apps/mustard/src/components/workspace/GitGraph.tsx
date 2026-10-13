@@ -234,9 +234,17 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
     return { rowIndexByHash: idxMap, rowTop: tops };
   }, [model, expanded, filesByHash]);
   const focusN = focus?.n;
+  // #1066 그래프가 아직 새 커밋을 모르면(새로고침 전) 한 번 다시 불러와서 찾음 — 그래도 없으면 그때 "없음"
+  const refetchedFor = useRef<number | null>(null);
+  const [refetchTick, setRefetchTick] = useState(0);
   useEffect(() => {
     if (!focus || !model) return;
     const idx = model.rows.findIndex((r) => r.commit.hash.startsWith(focus.hash) || focus.hash.startsWith(r.commit.hash));
+    if (idx < 0 && refetchedFor.current !== focus.n) {
+      refetchedFor.current = focus.n;
+      void load().then(() => setRefetchTick((x) => x + 1));
+      return;
+    }
     onFocusResult?.(idx >= 0);
     if (idx < 0) return; // 그래프가 보여주는 최근 범위 밖
     const hash = model.rows[idx].commit.hash;
@@ -246,7 +254,7 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
     return () => clearTimeout(t);
     // 요청 번호(n)가 바뀔 때만 — model·rowTop 갱신(폴링)마다 다시 튀지 않게
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusN, model ? 1 : 0]);
+  }, [focusN, model ? 1 : 0, refetchTick]);
 
   // 추적 변경 vs 미추적(untracked) 분리 — 미추적은 접이식 하위그룹(#699).
   const tracked = useMemo(() => changes.filter((c) => changeKind(c) !== "untracked"), [changes]);
