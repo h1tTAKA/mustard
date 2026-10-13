@@ -230,7 +230,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         if (!ev.note) return;
         const nkey = `narration|${ev.ts}|${ev.target}`;                 // ts+제목 = 고유 키(같은 ms 충돌 방지)
         setConcepts((prev) => (prev.some((c) => c.key === nkey) ? prev  // 이미 있으면 스킵(SSE 재연결 replay 중복 방지)
-          : [{ key: nkey, kind: "narration" as const, target: ev.target, tool: "narration", status: "done" as const, ts: ev.ts, expl: ev.note }, ...prev].slice(0, MAX_ITEMS)));
+          : [{ key: nkey, kind: "narration" as const, target: ev.target, tool: "narration", status: "done" as const, ts: ev.ts, expl: ev.note }, ...prev].sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS))); // #1068 꺼진 동안 재생분은 원래 시각 자리에
         // #1051 실시간 해설 본문의 "용어" 목록도 용어집으로(서버 프롬프트가 개발·IT 용어만 쓰게 함)
         const nt = cfgRef.current.termsAnalyze ? parseNarrationTerms(ev.note) : [];
         if (nt.length) setTerms((prev) => mergeTerms(prev, nt, normalizeCardFront));
@@ -239,7 +239,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       if (isCommand(ev) ? !cfgRef.current.commandsAnalyze : !cfgRef.current.explainAnalyze) return; // #1062 분석 끔 → 새 카드·설명 안 만듦
       const key = `${ev.kind}|${ev.target}`;
       metaRef.current.set(key, { kind: ev.kind, target: ev.target, tool: ev.tool });
-      setConcepts((prev) => { const found = prev.find((c) => c.key === key); if (found) return [{ ...found, tool: ev.tool, ts: ev.ts }, ...prev.filter((c) => c.key !== key)]; return [{ key, kind: ev.kind, target: ev.target, tool: ev.tool, status: "idle" as const, ts: ev.ts }, ...prev].slice(0, MAX_ITEMS); });
+      setConcepts((prev) => { const found = prev.find((c) => c.key === key); if (found) return ev.ts < found.ts ? prev : [{ ...found, tool: ev.tool, ts: ev.ts }, ...prev.filter((c) => c.key !== key)]; /* 재생분(옛 시각)이 최근 카드를 끌어내리지 않게 */ return [{ key, kind: ev.kind, target: ev.target, tool: ev.tool, status: "idle" as const, ts: ev.ts }, ...prev].sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS); });
       const cfg = cfgRef.current; if (cfg.autoExplain && cfg.providerId) enqueue(key);
     };
     return () => es.close();
