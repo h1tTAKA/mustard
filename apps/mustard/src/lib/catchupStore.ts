@@ -33,6 +33,8 @@ export function dayKey(ts: number): string {
 }
 
 // 신뢰 경계(클라 POST) — 필드 타입·길이 검증. 잘못된 항목은 버림.
+// #1074 본문 상한 — 큰 커밋 diff 카드는 구간 설명이 수십 개라 8000자에서 뒤가 잘림. 안전 상한만(한 카드 200K).
+const EXPL_MAX = 200_000;
 export function sanitize(x: unknown): CatchupItem | null {
   if (!x || typeof x !== "object") return null;
   const o = x as Record<string, unknown>;
@@ -40,7 +42,7 @@ export function sanitize(x: unknown): CatchupItem | null {
   if (typeof o.ts !== "number" || !Number.isFinite(o.ts) || o.ts <= 0) return null;
   const kind = KINDS.has(o.kind as CatchupKind) ? (o.kind as CatchupKind) : null;
   if (!kind) return null;
-  return { key: o.key.slice(0, 300), kind, target: o.target.slice(0, 300), tool: typeof o.tool === "string" ? o.tool.slice(0, 200) : "", ts: o.ts, expl: o.expl.slice(0, 8000) };
+  return { key: o.key.slice(0, 300), kind, target: o.target.slice(0, 300), tool: typeof o.tool === "string" ? o.tool.slice(0, 200) : "", ts: o.ts, expl: o.expl.slice(0, EXPL_MAX) };
 }
 
 function readDayFile(file: string): CatchupItem[] {
