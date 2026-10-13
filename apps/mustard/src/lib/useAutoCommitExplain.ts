@@ -43,7 +43,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     const stateKey = `nunopi:auto-explain:${root}`;
     if (!on) { try { localStorage.removeItem(stateKey); } catch { /* ignore */ } return; } // 다시 켜면 그때부터
     // pending = 세션 턴이 아직 안 끝나 카드를 미룬 커밋(#1064) — 다음 주기마다 다시, 20분 지나면 그대로 만듦
-    type Pend = { hash: string; ts: number; subject: string; branch: string; at: number; merge?: boolean };
+    type Pend = { hash: string; ts: number; subject: string; branch: string; at: number; merge?: boolean; seq?: number }; // seq = 같은 초 커밋 순서(#1072)
     type State = { since: number; done: string[]; pending?: Pend[] };
     const read = (): State | null => { try { return JSON.parse(localStorage.getItem(stateKey) || "null") as State | null; } catch { return null; } };
     const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
@@ -89,14 +89,17 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         if (!st) { write({ since: Math.floor(Date.now() / 1000), done: [] }); return; } // 처음 켬 → 지금부터
         const j = await post("/api/repo/git-recent", { path: root, since: st.since });
         const pendingAdd: Pend[] = [];
-        const fresh = ((j?.commits ?? []) as { hash: string; ts: number; subject?: string; merge?: boolean; branch?: string }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
+        const all = ((j?.commits ?? []) as { hash: string; ts: number; subject?: string; merge?: boolean; branch?: string }[]).reverse(); // 오래된 것부터
+        const fresh = all.filter((c) => !st!.done.includes(c.hash));
         const head = typeof j?.branch === "string" ? j.branch : "";
         for (const c of fresh) {
           if (!alive) return;
+          // #1072 같은 초에 여러 커밋(에이전트가 한 명령으로 연달아) — 카드 시각에 ms로 순서를 더해 나중 커밋이 위로(표시 시각은 같음)
+          const seq = all.slice(0, all.indexOf(c)).filter((x) => x.ts === c.ts).length; // 이미 처리한 같은 초 커밋까지 세서(재시작 후 이어서 해도 순서 유지)
           const branch = c.branch || head; // #1068 그 커밋을 만들 때 브랜치(reflog)
-          if (cfg.current.diffOn && !c.merge) await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200), c.ts * 1000);
+          if (cfg.current.diffOn && !c.merge) await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200), c.ts * 1000 + seq);
           // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드. 턴이 끝날 때까지(마무리 말 포함) 미뤘다가 만듦.
-          if (alive && cfg.current.sessOn) pendingAdd.push({ hash: c.hash, ts: c.ts, subject: c.subject ?? "", branch, at: Date.now(), merge: !!c.merge });
+          if (alive && cfg.current.sessOn) pendingAdd.push({ hash: c.hash, ts: c.ts, subject: c.subject ?? "", branch, at: Date.now(), merge: !!c.merge, seq });
           if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)
           st = { since: Math.max(st.since, c.ts), done: [...st.done, c.hash].slice(-50), pending: [...(st.pending ?? []), ...pendingAdd.splice(0)] }; // 같은 초 커밋은 done으로 중복 차단
           write(st);
@@ -108,7 +111,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           if (!cfg.current.sessOn) continue; // 세션 분석 꺼짐 — 미룬 것도 버림
           if (Date.now() - pd.at > 60 * 60_000) continue; // 1시간 넘게 계속 실패 — 포기
           const { spid: sp, sps: sset, locale: sl } = cfg.current;
-          const r = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, Date.now() - pd.at > 20 * 60_000, !!pd.merge).catch(() => "wait" as const);
+          const r = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, Date.now() - pd.at > 20 * 60_000, !!pd.merge, pd.seq ?? 0).catch(() => "wait" as const);
           if (r === "wait") { keep.push(pd); continue; }
           if (r !== "none" && alive) {
             void post("/api/repo/stream", { root, items: [r] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
