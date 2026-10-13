@@ -14,14 +14,15 @@ import { narrate } from "@/lib/narrate";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const KATCHUP = "mcp__mustard-katchup__";
+const KATCHUP = /^mcp__mustard(?:-katchup)?__(katchup_\w+)$/; // #1070 통합 MCP(mcp__mustard__) + 옛 이름
 
 async function backfill(from: number, to: number) {
   for (const root of catchupRoots()) {
     let acts; try { acts = await activityForRoot(root, from, to); } catch { continue; }
     for (const a of acts) for (const t of a.tools) {
       const args = t.input && typeof t.input === "object" ? t.input as Record<string, unknown> : {};
-      if (t.name.startsWith(KATCHUP)) emitToolCall(root, t.name.slice(KATCHUP.length), args, false, t.ts);
+      const k = KATCHUP.exec(t.name);
+      if (k) emitToolCall(root, k[1], args, false, t.ts);
       else if (EDIT_TOOLS.has(t.name)) { const target = shortToolInput(t.input); if (target) emitEdit(root, t.name, target, false, t.ts); }
     }
     if (!isNarrationOn()) continue;
