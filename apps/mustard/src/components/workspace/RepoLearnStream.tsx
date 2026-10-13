@@ -328,7 +328,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [handoffText, setHandoffText] = useState("");
   const [handoffBusy, setHandoffBusy] = useState(false);
   const sendHandoff = useCallback(async (c: Concept) => {
-    if (!handoffText.trim() || handoffBusy) return;
+    if (handoffBusy) return; // 요청은 선택 — 비워도 세션만 공유
     setHandoffBusy(true);
     try {
       const hash = c.key.slice("session|".length);
@@ -470,7 +470,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                     <span className="absolute right-8 top-1.5 z-10 flex items-center gap-0.5">
                       {onFocusCommit && <button type="button" onClick={() => onFocusCommit(c.key.slice("session|".length))} title={t("learn.focusCommit")} aria-label={t("learn.focusCommit")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconGitCommit size={13} stroke={2} aria-hidden /></button>}
-                      <button type="button" onClick={() => { setHandoffKey((k) => (k === c.key ? null : c.key)); setHandoffText(""); }} title={t("browser.pickSend")} aria-label={t("browser.pickSend")} aria-expanded={handoffKey === c.key}
+                      <button type="button" onClick={() => { setHandoffKey((k) => (k === c.key ? null : c.key)); setHandoffText(""); }} title={t("learn.handoffSend")} aria-label={t("learn.handoffSend")} aria-expanded={handoffKey === c.key}
                         className={`rounded-md p-0.5 transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${handoffKey === c.key ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:text-mustard-600 dark:text-zinc-500 dark:hover:text-mustard-400"}`}><IconSend size={13} stroke={2} aria-hidden /></button>
                     </span>
                   )}
@@ -528,13 +528,13 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {/* #1064 세션 원본 대화도 제목 밑·요약 위 */}
                       {c.kind === "session" && handoffKey === c.key && ( /* 에이전트에게 넘길 요청 — ⌘Enter 보내기 */
                         <div className="mb-2 flex flex-col gap-1.5 rounded-md border border-mustard-500/40 p-1.5">
-                          <textarea autoFocus value={handoffText} onChange={(e) => setHandoffText(e.target.value)} rows={3} placeholder={t("browser.pickPlaceholder")}
+                          <textarea autoFocus value={handoffText} onChange={(e) => setHandoffText(e.target.value)} rows={3} placeholder={t("learn.handoffPlaceholder")}
                             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void sendHandoff(c); } if (e.key === "Escape") setHandoffKey(null); }}
                             className="w-full resize-none rounded border border-zinc-200 bg-white px-2 py-1 text-[11.5px] text-zinc-800 outline-none focus:border-mustard-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
                           <div className="flex justify-end gap-1.5">
                             <button type="button" onClick={() => setHandoffKey(null)} className="rounded-md px-2 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">{t("common.cancel")}</button>
-                            <button type="button" onClick={() => void sendHandoff(c)} disabled={!handoffText.trim() || handoffBusy}
-                              className="rounded-md bg-mustard-500 px-2 py-0.5 text-[11px] font-medium text-zinc-900 transition hover:bg-mustard-400 disabled:opacity-50">{t("browser.pickSend")}</button>
+                            <button type="button" onClick={() => void sendHandoff(c)} disabled={handoffBusy}
+                              className="rounded-md bg-mustard-500 px-2 py-0.5 text-[11px] font-medium text-zinc-900 transition hover:bg-mustard-400 disabled:opacity-50">{t("learn.handoffSend")}</button>
                           </div>
                         </div>
                       )}

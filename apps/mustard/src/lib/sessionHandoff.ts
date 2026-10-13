@@ -12,7 +12,7 @@ export function formatSessionHandoff(o: { request: string; subject: string; hash
   return sanitizePaste([
     `## Catch-up session: ${o.subject}`,
     "",
-    `**Request:** ${o.request.trim()}`,
+    o.request.trim() ? `**Request:** ${o.request.trim()}` : "아래 세션 내용을 참고하세요(이 커밋을 만든 작업).",
     "",
     `- Commit: ${o.hash} (${o.subject})`,
     o.branch ? `- Branch: ${o.branch}` : "",
