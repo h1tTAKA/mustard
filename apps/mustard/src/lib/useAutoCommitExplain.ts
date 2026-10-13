@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useLocale, useSetting, withModel, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
-import { parseDiff, groupHunks, noteStoreKey, loadNotes, saveNote, explainDiffText } from "@/lib/hunkNotes";
+import { parseDiff, groupHunks, diffMark, DIFF_SEP, noteStoreKey, loadNotes, saveNote, explainDiffText } from "@/lib/hunkNotes";
 import { buildSessionItem } from "@/lib/sessionCard";
 
 // #1056 캐치업 연동 — 파일 하나 설명이 끝나면 캐치업 카드(kind diff)로. key에 hash·파일을 담아 카드에서 diff를 열 수 있게.
@@ -64,14 +64,14 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         const texts: string[] = []; // 이 파일 구간 설명(순서대로) — 캐치업 카드 본문
         for (const h of groupHunks(parseDiff(raw))) {
           if (!alive) return;
-          if (have[h.diffText]) { texts.push(have[h.diffText]); continue; } // 이미 설명됨(버튼으로 먼저 눌렀거나 재시도)
+          if (have[h.diffText]) { texts.push(diffMark(h) + have[h.diffText]); continue; } // 이미 설명됨(버튼으로 먼저 눌렀거나 재시도)
           if (budget <= 0) break;
           budget--;
           const { providerId: pid, providerSettings: ps, locale: loc } = cfg.current;
-          try { const text = await explainDiffText(h.diffText, pid, ps, loc); saveNote(store, h.diffText, text); texts.push(text); } catch { /* 구간 하나 실패 — 다음 구간 */ }
+          try { const text = await explainDiffText(h.diffText, pid, ps, loc); saveNote(store, h.diffText, text); texts.push(diffMark(h) + text); } catch { /* 구간 하나 실패 — 다음 구간 */ }
         }
         if (texts.length && alive) {
-          const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts: Date.now(), expl: texts.join("\n\n---\n\n").slice(0, 8000) };
+          const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts: Date.now(), expl: texts.join(DIFF_SEP).slice(0, 8000) };
           void post("/api/repo/stream", { root, items: [item] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
           window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
         }

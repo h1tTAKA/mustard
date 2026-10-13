@@ -2,7 +2,8 @@
 export interface DLine { kind: "hunk" | "add" | "del" | "ctx" | "meta"; oldN: number | null; newN: number | null; text: string; ctxLabel?: string }
 // 변경 구간(우리의 "hunk") — 연속 add/del 런. 사이 컨텍스트가 짧으면 한 구간으로 병합(주석 폭발 방지).
 // -U100000이라 파일당 @@가 1개뿐 → 표준 hunk 대신 실제 바뀐 블록을 단위로.
-export interface Hunk { id: number; startLine: number; endLine: number; diffText: string }
+// newFrom~newTo = 새 파일 기준 줄 범위(삭제만이면 삭제 지점 한 줄), ctxFrom~ctxTo = 컨텍스트 포함 lines 인덱스(#1066 캐치업 구간별 표시)
+export interface Hunk { id: number; startLine: number; endLine: number; diffText: string; newFrom: number; newTo: number; ctxFrom: number; ctxTo: number }
 const MERGE_GAP = 3;   // 변경 사이 컨텍스트 줄이 이 이하면 같은 구간
 const CTX_LINES = 3;   // diffText에 실을 앞뒤 컨텍스트 줄 수
 const MAX_DIFF = 4000; // diffText 상한(토큰 방어)
@@ -39,7 +40,9 @@ export function groupHunks(lines: DLine[]): Hunk[] {
       .filter((l) => l.kind === "add" || l.kind === "del" || l.kind === "ctx")
       .map((l) => (l.kind === "add" ? "+ " : l.kind === "del" ? "- " : "  ") + l.text)
       .join("\n").slice(0, MAX_DIFF);
-    hunks.push({ id: hunks.length, startLine: start, endLine: lastChange, diffText });
+    const nums = lines.slice(start, lastChange + 1).map((l) => l.newN).filter((n): n is number => n != null);
+    const at = nums.length ? 0 : lines.slice(lastChange + 1).find((l) => l.newN != null)?.newN ?? (lines.slice(0, start).reverse().find((l) => l.newN != null)?.newN ?? 0) + 1;
+    hunks.push({ id: hunks.length, startLine: start, endLine: lastChange, diffText, newFrom: nums.length ? Math.min(...nums) : at, newTo: nums.length ? Math.max(...nums) : at, ctxFrom: from, ctxTo: to });
     start = -1; lastChange = -1;
   };
   lines.forEach((l, i) => {
@@ -55,3 +58,17 @@ export function groupHunks(lines: DLine[]): Hunk[] {
 // 저장 키 — 커밋 diff는 hash, 워킹트리 diff는 "wt:종류". 구간 키 = 구간 내용(diffText) 자체(재오픈 매칭, 편집되면 자연 미스).
 export const noteStoreKey = (root: string, file: string, hash?: string, worktree?: string) =>
   `nunopi:hunk-notes:${root}:${hash ?? (worktree ? "wt:" + worktree : "")}:${file}`;
+
+// #1066 캐치업 diff 카드 본문 = 구간 설명들을 "---"로 이음. 새 카드는 구간마다 앞에 줄 범위 표지 → 카드가 "N~M번째 줄" + 그 구간 코드 펼치기.
+export const DIFF_SEP = "\n\n---\n\n";
+export const diffMark = (h: { newFrom: number; newTo: number }) => `[[L ${h.newFrom}-${h.newTo}]]\n`;
+// 표지 없는 구간이 하나라도 있으면(옛 카드·잘림) null → 카드 전체를 예전처럼.
+export function diffSections(expl: string): { from: number; to: number; text: string }[] | null {
+  const out: { from: number; to: number; text: string }[] = [];
+  for (const part of expl.split(DIFF_SEP)) {
+    const m = /^\[\[L (\d+)-(\d+)\]\]\n/.exec(part);
+    if (!m) return null;
+    out.push({ from: Number(m[1]), to: Number(m[2]), text: part.slice(m[0].length) });
+  }
+  return out;
+}

@@ -6,6 +6,7 @@ import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFil
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
+import { diffSections } from "@/lib/hunkDiff";
 import CatchupSessionRaw from "@/components/workspace/CatchupSessionRaw";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import { sendToAgent } from "@/lib/browser/sendToAgent";
@@ -459,11 +460,14 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                 )}
                 <li className={`relative rounded-lg border bg-zinc-50/70 dark:bg-zinc-800/40 ${askItem?.key === c.key ? "border-mustard-500/60" : "border-zinc-200 dark:border-zinc-800"}`}>
                   {/* #1056 diff 카드 — 질문 버튼 왼쪽에 "diff 열기"(키에 담긴 커밋·파일) */}
-                  {c.kind === "diff" && onOpenDiff && (() => { const d = parseDiffItemKey(c.key); return d ? (
-                    <button type="button" onClick={() => onOpenDiff(d.hash, d.file)} title={t("learn.openDiff")} aria-label={t("learn.openDiff")}
-                      className="absolute right-8 top-1.5 z-10 rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400">
-                      <IconExternalLink size={13} stroke={2} aria-hidden />
-                    </button>
+                  {/* #1066 + git 그래프에서 그 커밋 짚기(세션 카드와 같은 버튼) */}
+                  {c.kind === "diff" && (onOpenDiff || onFocusCommit) && (() => { const d = parseDiffItemKey(c.key); return d ? (
+                    <span className="absolute right-8 top-1.5 z-10 flex items-center gap-0.5">
+                      {onFocusCommit && <button type="button" onClick={() => onFocusCommit(d.hash)} title={t("learn.focusCommit")} aria-label={t("learn.focusCommit")}
+                        className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconGitCommit size={13} stroke={2} aria-hidden /></button>}
+                      {onOpenDiff && <button type="button" onClick={() => onOpenDiff(d.hash, d.file)} title={t("learn.openDiff")} aria-label={t("learn.openDiff")}
+                        className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconExternalLink size={13} stroke={2} aria-hidden /></button>}
+                    </span>
                   ) : null; })()}
                   {/* #1064 세션 카드 — 에이전트로 보내기 · 그래프에서 커밋 짚기(질문 버튼 왼쪽) */}
                   {c.kind === "session" && c.status === "done" && (
@@ -481,7 +485,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       <IconMessageCircle size={13} stroke={2} aria-hidden />{askCounts[c.key] ? <span className="font-semibold">{askCounts[c.key]}</span> : null}
                     </button>
                   )}
-                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${(c.kind === "diff" && onOpenDiff) || c.kind === "session" ? "pr-20" : "pr-9"}`}>
+                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" || c.kind === "session" ? "pr-20" : "pr-9"}`}>
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
                       {c.kind === "session" ? (() => {
@@ -524,7 +528,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                   {(c.status === "done" || c.status === "error") && (
                     <div className="border-t border-zinc-200/70 px-3 py-2 text-[11.5px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">
                       {/* #1060 변경 코드는 제목 바로 밑·설명 위 */}
-                      {c.kind === "diff" && (() => { const d = parseDiffItemKey(c.key); return d ? <CatchupDiffCode root={root} hash={d.hash} file={d.file} /> : null; })()}
+                      {/* #1066 새 카드(구간 표지 있음)는 구간마다 아래에서 따로 — 여긴 옛 카드만 */}
+                      {c.kind === "diff" && !(c.status === "done" && diffSections(c.expl ?? "")) && (() => { const d = parseDiffItemKey(c.key); return d ? <CatchupDiffCode root={root} hash={d.hash} file={d.file} /> : null; })()}
                       {/* #1064 세션 원본 대화도 제목 밑·요약 위 */}
                       {c.kind === "session" && handoffKey === c.key && ( /* 에이전트에게 넘길 요청 — ⌘Enter 보내기 */
                         <div className="mb-2 flex flex-col gap-1.5 rounded-md border border-mustard-500/40 p-1.5">
@@ -539,7 +544,18 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                         </div>
                       )}
                       {c.kind === "session" && c.key.startsWith("session|") && <CatchupSessionRaw root={root} hash={c.key.slice(8)} />}
-                      {c.status === "done" ? <Markdown>{c.expl ?? ""}</Markdown> : <span className="text-[10px] text-rose-500">{t("learn.explainError")}</span>}
+                      {c.status === "done" ? (() => {
+                        // #1066 diff 구간별: [N~M번째 줄 ▸ 그 구간 코드 펼치기] + 설명. 한 파일 여러 변경이 한 카드여도 어느 설명이 어느 줄인지 보임
+                        const d = c.kind === "diff" ? parseDiffItemKey(c.key) : null; const secs = d ? diffSections(c.expl ?? "") : null;
+                        if (!d || !secs) return <Markdown>{c.expl ?? ""}</Markdown>;
+                        return secs.map((sec, i) => (
+                          <div key={i} className={i > 0 ? "mt-3 border-t border-zinc-200/70 pt-2 dark:border-zinc-800" : ""}>
+                            <CatchupDiffCode root={root} hash={d.hash} file={d.file} range={sec}
+                              label={sec.from === sec.to ? t("learn.diffLine", { n: sec.from }) : t("learn.diffLines", { from: sec.from, to: sec.to })} />
+                            <Markdown>{sec.text}</Markdown>
+                          </div>
+                        ));
+                      })() : <span className="text-[10px] text-rose-500">{t("learn.explainError")}</span>}
                     </div>
                   )}
                 </li>
