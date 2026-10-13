@@ -2,11 +2,14 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages } from "@tabler/icons-react";
+import { IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
 import CatchupSessionRaw from "@/components/workspace/CatchupSessionRaw";
+import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
+import { sendToAgent } from "@/lib/browser/sendToAgent";
+import { formatSessionHandoff } from "@/lib/sessionHandoff";
 import { isDocEdit } from "@/lib/mcpActivity";
 import { isNunopiEnabled } from "@/lib/product";
 import { mergeTerms, parseNarrationTerms, type Term } from "@/lib/catchupTerms";
@@ -82,13 +85,14 @@ async function saveItems(root: string, items: { key: string; kind: ConceptKind; 
   } catch { return false; }
 }
 
-export default function RepoLearnStream({ root, providerId, providerSettings, active = true, agentWorking = false, onOpenDiff }: {
+export default function RepoLearnStream({ root, providerId, providerSettings, active = true, agentWorking = false, onOpenDiff, onFocusCommit }: {
   root: string;
   active?: boolean;       // #1043 보이는 레포
   agentWorking?: boolean; // #1043 이 레포 에이전트가 작업 중(숨어 있어도 실시간 해설·설명 큐를 놓치지 않게)
   providerId?: AgentProviderKind;
   providerSettings?: ProviderSettings;
   onOpenDiff?: (hash: string, file: string) => void; // #1056 diff 카드 → 그 커밋·파일 diff 탭
+  onFocusCommit?: (hash: string) => void; // #1064 세션 카드 → git 그래프에서 그 커밋 짚기
 }) {
   const t = useT();
   const { locale } = useLocale();
@@ -319,6 +323,24 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   }, [askH]);
   const shown = (query ? (found ?? []) : viewDay ? (dayItems ?? []) : concepts).filter((c) => (isCommand(c) ? showCommands : c.kind === "diff" ? diffShow : c.kind === "session" ? sessionsShow : explainShow) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)) // #1062 표시 끔 = 분석된 것도 숨김, 문서 편집 카드는 항상 숨김(#1049)
     && (filter === "all" || (filter === "commands" ? isCommand(c) : filter === "diff" ? c.kind === "diff" : filter === "session" ? c.kind === "session" : filter === "explain" && !isCommand(c) && c.kind !== "diff" && c.kind !== "session")));
+  // #1064 세션 → 에이전트로 넘기기(인앱 브라우저 피드백과 같은 경로). 카드 하나에 요청 입력창.
+  const [handoffKey, setHandoffKey] = useState<string | null>(null);
+  const [handoffText, setHandoffText] = useState("");
+  const [handoffBusy, setHandoffBusy] = useState(false);
+  const sendHandoff = useCallback(async (c: Concept) => {
+    if (!handoffText.trim() || handoffBusy) return;
+    setHandoffBusy(true);
+    try {
+      const hash = c.key.slice("session|".length);
+      const j = await fetch(`/api/repo/session-link?root=${encodeURIComponent(root)}&hash=${encodeURIComponent(hash)}`).then((r) => r.json()).catch(() => null);
+      const m = /^(.*) @[0-9a-f]{4,40}$/i.exec(c.target); const cut = c.tool.indexOf(" · ");
+      const md = formatSessionHandoff({ request: handoffText, subject: m ? m[1] : c.target, hash, agent: cut >= 0 ? c.tool.slice(0, cut) : c.tool, branch: cut >= 0 ? c.tool.slice(cut + 3) : "", summary: c.expl ?? "", messages: Array.isArray(j?.session?.messages) ? j.session.messages : [] });
+      const r = await sendToAgent(root, md);
+      if (!r.ok) { toast(t("browser.pickNoAgent")); return; }
+      setHandoffKey(null); setHandoffText("");
+      requestTerminalFocus(root, r.id); // 보낸 터미널 탭으로
+    } finally { setHandoffBusy(false); }
+  }, [handoffText, handoffBusy, root, t, toast]);
   const shownTerms = query ? terms.filter((x) => `${x.term}\n${x.def}`.toLowerCase().includes(query.toLowerCase())) : terms;
   const viewLabel = viewDay ? (() => { try { return new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${viewDay}T00:00:00`)); } catch { return viewDay; } })() : "";
 
@@ -443,6 +465,15 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       <IconExternalLink size={13} stroke={2} aria-hidden />
                     </button>
                   ) : null; })()}
+                  {/* #1064 세션 카드 — 에이전트로 보내기 · 그래프에서 커밋 짚기(질문 버튼 왼쪽) */}
+                  {c.kind === "session" && c.status === "done" && (
+                    <span className="absolute right-8 top-1.5 z-10 flex items-center gap-0.5">
+                      {onFocusCommit && <button type="button" onClick={() => onFocusCommit(c.key.slice("session|".length))} title={t("learn.focusCommit")} aria-label={t("learn.focusCommit")}
+                        className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconGitCommit size={13} stroke={2} aria-hidden /></button>}
+                      <button type="button" onClick={() => { setHandoffKey((k) => (k === c.key ? null : c.key)); setHandoffText(""); }} title={t("browser.pickSend")} aria-label={t("browser.pickSend")} aria-expanded={handoffKey === c.key}
+                        className={`rounded-md p-0.5 transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${handoffKey === c.key ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:text-mustard-600 dark:text-zinc-500 dark:hover:text-mustard-400"}`}><IconSend size={13} stroke={2} aria-hidden /></button>
+                    </span>
+                  )}
                   {/* #998 이 항목에 질문 — 오른쪽 위, 대화 있으면 질문 수 배지 */}
                   {c.status === "done" && c.expl && (
                     <button type="button" onClick={() => setAskItem(c)} title={t("learn.ask")} aria-label={t("learn.ask")}
@@ -450,7 +481,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       <IconMessageCircle size={13} stroke={2} aria-hidden />{askCounts[c.key] ? <span className="font-semibold">{askCounts[c.key]}</span> : null}
                     </button>
                   )}
-                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" && onOpenDiff ? "pr-16" : "pr-9"}`}>
+                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${(c.kind === "diff" && onOpenDiff) || c.kind === "session" ? "pr-20" : "pr-9"}`}>
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
                       {c.kind === "session" ? (() => {
@@ -495,6 +526,18 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {/* #1060 변경 코드는 제목 바로 밑·설명 위 */}
                       {c.kind === "diff" && (() => { const d = parseDiffItemKey(c.key); return d ? <CatchupDiffCode root={root} hash={d.hash} file={d.file} /> : null; })()}
                       {/* #1064 세션 원본 대화도 제목 밑·요약 위 */}
+                      {c.kind === "session" && handoffKey === c.key && ( /* 에이전트에게 넘길 요청 — ⌘Enter 보내기 */
+                        <div className="mb-2 flex flex-col gap-1.5 rounded-md border border-mustard-500/40 p-1.5">
+                          <textarea autoFocus value={handoffText} onChange={(e) => setHandoffText(e.target.value)} rows={3} placeholder={t("browser.pickPlaceholder")}
+                            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void sendHandoff(c); } if (e.key === "Escape") setHandoffKey(null); }}
+                            className="w-full resize-none rounded border border-zinc-200 bg-white px-2 py-1 text-[11.5px] text-zinc-800 outline-none focus:border-mustard-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+                          <div className="flex justify-end gap-1.5">
+                            <button type="button" onClick={() => setHandoffKey(null)} className="rounded-md px-2 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">{t("common.cancel")}</button>
+                            <button type="button" onClick={() => void sendHandoff(c)} disabled={!handoffText.trim() || handoffBusy}
+                              className="rounded-md bg-mustard-500 px-2 py-0.5 text-[11px] font-medium text-zinc-900 transition hover:bg-mustard-400 disabled:opacity-50">{t("browser.pickSend")}</button>
+                          </div>
+                        </div>
+                      )}
                       {c.kind === "session" && c.key.startsWith("session|") && <CatchupSessionRaw root={root} hash={c.key.slice(8)} />}
                       {c.status === "done" ? <Markdown>{c.expl ?? ""}</Markdown> : <span className="text-[10px] text-rose-500">{t("learn.explainError")}</span>}
                     </div>
