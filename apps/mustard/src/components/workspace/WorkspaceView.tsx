@@ -82,7 +82,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
   const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze);
   const rightMode = rightModeSel === "learn" && !catchupOn ? "chat" : rightModeSel;
-  const [gitFocus, setGitFocus] = useState<{ hash: string; n: number } | null>(null); // #1064 캐치업 세션 → git 그래프 커밋 짚기
+  const [gitFocus, setGitFocus] = useState<{ hash: string; n: number; file?: string } | null>(null); // #1064·#1074(diff 카드면 그 파일까지) 캐치업 세션 → git 그래프 커밋 짚기
   const toast = useToast();
   const explainProvider = useSetting<string>(CUKEYS.explainProvider, "");
   const explainModel = useSetting<string>(CUKEYS.explainModel, "");
@@ -793,7 +793,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
               ) : rightMode === "learn" ? (
                 /* #1051 캐치업 용어 → 추가된 카드 클릭 시 확대(throwCard) — 질문 패널과 같은 FlyCardProvider */
                 <FlyCardProvider active={active} providerId={providerId} providerSettings={providerSettings} sourceIds={flyNoSources} onGoToSource={() => {}}>
-                  <RepoLearnStream key={path} root={path} active={active} agentWorking={agentWorking} providerId={providerId} providerSettings={providerSettings} onOpenDiff={(hash, file) => openCodeTab({ kind: "diff", hash, file })} onFocusCommit={(hash) => setGitFocus((f) => ({ hash, n: (f?.n ?? 0) + 1 }))} />
+                  <RepoLearnStream key={path} root={path} active={active} agentWorking={agentWorking} providerId={providerId} providerSettings={providerSettings} onOpenDiff={(hash, file) => openCodeTab({ kind: "diff", hash, file })} onFocusCommit={(hash, file) => setGitFocus((f) => ({ hash, file, n: (f?.n ?? 0) + 1 }))} />
                 </FlyCardProvider>
               ) : (
                 /* FlyCardProvider(#750) — 세션 카드 목록에서 카드 클릭 시 확대·상세(throwCard). 워크스페이스 카드는 출처이동 없음(빈 sourceIds). */

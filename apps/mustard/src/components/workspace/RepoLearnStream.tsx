@@ -93,7 +93,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   providerId?: AgentProviderKind;
   providerSettings?: ProviderSettings;
   onOpenDiff?: (hash: string, file: string) => void; // #1056 diff 카드 → 그 커밋·파일 diff 탭
-  onFocusCommit?: (hash: string) => void; // #1064 세션 카드 → git 그래프에서 그 커밋 짚기
+  onFocusCommit?: (hash: string, file?: string) => void; // #1064 세션 카드 → git 그래프에서 그 커밋 짚기
 }) {
   const t = useT();
   const { locale } = useLocale();
@@ -463,7 +463,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                   {/* #1066 + git 그래프에서 그 커밋 짚기(세션 카드와 같은 버튼) */}
                   {c.kind === "diff" && (onOpenDiff || onFocusCommit) && (() => { const d = parseDiffItemKey(c.key); return d ? (
                     <span className="absolute right-8 top-1.5 z-10 flex items-center gap-0.5">
-                      {onFocusCommit && <button type="button" onClick={() => onFocusCommit(d.hash)} title={t("learn.focusCommit")} aria-label={t("learn.focusCommit")}
+                      {onFocusCommit && <button type="button" onClick={() => onFocusCommit(d.hash, d.file)} title={t("learn.focusCommit")} aria-label={t("learn.focusCommit")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconGitCommit size={13} stroke={2} aria-hidden /></button>}
                       {onOpenDiff && <button type="button" onClick={() => onOpenDiff(d.hash, d.file)} title={t("learn.openDiff")} aria-label={t("learn.openDiff")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconExternalLink size={13} stroke={2} aria-hidden /></button>}
