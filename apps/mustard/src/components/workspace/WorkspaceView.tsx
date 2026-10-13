@@ -522,9 +522,8 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   // 코드/diff 탭(#714) — 문서 탭과 동형. 그 탭 컨텍스트로 챗 포커스도 맞춘다.
   const focusForTab = (tb: CodeTab) => {
     const name = tb.file.split("/").pop() ?? tb.file;
+    // #1078 diff 질문은 캐치업 diff 카드에서 — 탭 연결은 파일만(diff·커밋 전 변경 탭은 질문 대상을 안 바꿈, 유저 결정)
     if (tb.kind === "file") focusChat(`file:${tb.file}`, "file", name);
-    else if (tb.hash) focusChat(`diff:${tb.hash}:${tb.file}`, "diff", `${name} @${tb.hash.slice(0, 7)}`);
-    else { const f = tb.file.replace(/\\/g, "/"); focusChat(`wt:${f}`, "worktree", `${f.split("/").pop() ?? f} · 변경`); }
   };
   function openCodeTab(tb: CodeTab) {
     const key = codeTabKey(tb);
