@@ -53,7 +53,7 @@ function changeBadge(c: Change): { ch: string; cls: string } {
   return { ch: "M", cls: staged ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500" };
 }
 
-export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange, onRefreshed, refreshNonce, focus, onFocusResult }: { root: string; onOpenDiff: (hash: string, file: string) => void; onFocusBranch: (branch: string) => void; onOpenChange?: (file: string, kind: WorktreeKind) => void; onRefreshed?: () => void; refreshNonce?: number; focus?: { hash: string; n: number }; onFocusResult?: (found: boolean) => void }) {
+export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange, onRefreshed, refreshNonce, focus, onFocusResult }: { root: string; onOpenDiff: (hash: string, file: string) => void; onFocusBranch: (branch: string) => void; onOpenChange?: (file: string, kind: WorktreeKind) => void; onRefreshed?: () => void; refreshNonce?: number; focus?: { hash: string; n: number; file?: string }; onFocusResult?: (found: boolean) => void }) {
   const t = useT();
   const toast = useToast();
   const [model, setModel] = useState<GitGraphModel | null>(null);
@@ -75,6 +75,7 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
   // dwell 지연: 그래프를 훑으며 지나갈 땐 안 뜨고, 머물러야(HOVER_DELAY_MS) 뜬다(orca식).
   // #1064 캐치업 세션 카드 "그래프에서 보기" — 그 커밋 행으로 스크롤 + 잠깐 강조.
   const [flash, setFlash] = useState<string | null>(null);
+  const [flashFile, setFlashFile] = useState<string | null>(null); // #1074 "hash|파일" — 펼친 커밋 안 그 파일 강조
   const graphScrollRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ subject: string; body: string; left: number; top?: number; bottom?: number; maxHeight: number } | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -164,8 +165,7 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
   // eslint-disable-next-line react-hooks/set-state-in-effect -- root 변경 시 펼침·캐시 리셋
   useEffect(() => { setExpanded(new Set()); setFilesByHash({}); }, [root]);
 
-  const toggle = async (hash: string) => {
-    setExpanded((prev) => { const n = new Set(prev); if (n.has(hash)) n.delete(hash); else n.add(hash); return n; });
+  const loadFiles = async (hash: string) => {
     if (!filesByHash[hash]) {
       try {
         const r = await fetch("/api/repo/git-show", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, hash }) });
@@ -173,6 +173,10 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
         setFilesByHash((prev) => ({ ...prev, [hash]: d.ok && Array.isArray(d.files) ? d.files : [] }));
       } catch { setFilesByHash((prev) => ({ ...prev, [hash]: [] })); }
     }
+  };
+  const toggle = async (hash: string) => {
+    setExpanded((prev) => { const n = new Set(prev); if (n.has(hash)) n.delete(hash); else n.add(hash); return n; });
+    await loadFiles(hash);
   };
 
   const graphW = useMemo(() => (model ? Math.max(1, model.laneCount) * LANE_W : LANE_W), [model]);
@@ -249,12 +253,23 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
     if (idx < 0) return; // 그래프가 보여주는 최근 범위 밖
     const hash = model.rows[idx].commit.hash;
     setFlash(hash); // eslint-disable-line react-hooks/set-state-in-effect -- 외부 요청(focus) 시 강조
-    graphScrollRef.current?.scrollTo({ top: Math.max(0, rowTop[idx] - ROW_H * 2), behavior: "smooth" });
-    const t = setTimeout(() => setFlash((f) => (f === hash ? null : f)), 2500);
+    // #1074 diff 카드에서 왔으면 그 커밋을 펼쳐 그 파일까지 반짝(스크롤은 파일 목록이 온 뒤 아래 effect에서)
+    if (focus.file) { setExpanded((prev) => (prev.has(hash) ? prev : new Set(prev).add(hash))); void loadFiles(hash); setFlashFile(`${hash}|${focus.file}`); }
+    else graphScrollRef.current?.scrollTo({ top: Math.max(0, rowTop[idx] - ROW_H * 2), behavior: "smooth" });
+    const t = setTimeout(() => { setFlash((f) => (f === hash ? null : f)); setFlashFile(null); }, 2500);
     return () => clearTimeout(t);
     // 요청 번호(n)가 바뀔 때만 — model·rowTop 갱신(폴링)마다 다시 튀지 않게
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusN, model ? 1 : 0, refetchTick]);
+
+  // #1074 짚은 파일 — 펼친 커밋의 파일 목록이 오면 그 파일 줄로 스크롤
+  useEffect(() => {
+    if (!flashFile || !model) return;
+    const cut = flashFile.indexOf("|"); const hash = flashFile.slice(0, cut), file = flashFile.slice(cut + 1);
+    const idx = model.rows.findIndex((r) => r.commit.hash === hash); const fi = filesByHash[hash]?.findIndex((f) => f.path === file) ?? -1;
+    if (idx < 0 || !filesByHash[hash]) return;
+    graphScrollRef.current?.scrollTo({ top: Math.max(0, rowTop[idx] + ROW_H + Math.max(0, fi) * FILE_H - ROW_H * 3), behavior: "smooth" });
+  }, [flashFile, filesByHash, model, rowTop]);
 
   // 추적 변경 vs 미추적(untracked) 분리 — 미추적은 접이식 하위그룹(#699).
   const tracked = useMemo(() => changes.filter((c) => changeKind(c) !== "untracked"), [changes]);
@@ -506,7 +521,7 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
                     ) : files.map((f) => {
                       const [badge, cls] = STATUS[f.status as keyof typeof STATUS] ?? ["?", "text-zinc-400"];
                       return (
-                        <button key={f.path} type="button" onClick={() => onOpenDiff(row.commit.hash, f.path)} className="flex w-full items-center text-left hover:bg-zinc-100 dark:hover:bg-zinc-800" style={{ height: FILE_H }}>
+                        <button key={f.path} type="button" onClick={() => onOpenDiff(row.commit.hash, f.path)} className={`flex w-full items-center text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800 ${flashFile === `${row.commit.hash}|${f.path}` ? "bg-mustard-500/20 ring-1 ring-inset ring-mustard-500/60 dark:bg-mustard-400/15" : ""}`} style={{ height: FILE_H }}>
                           {/* 그래프 열 스페이서(colW) — 선은 위 커밋의 점→점 곡선이 이 구간을 가로질러 지나감(#707). */}
                           <span style={{ width: colW }} className="shrink-0" aria-hidden />
                           <span className="flex min-w-0 flex-1 items-baseline gap-1.5 pl-3 pr-2 text-[11px]">
