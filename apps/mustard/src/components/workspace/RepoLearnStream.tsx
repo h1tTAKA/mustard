@@ -1,7 +1,7 @@
 "use client";
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
@@ -86,7 +86,7 @@ async function saveItems(root: string, items: { key: string; kind: ConceptKind; 
   } catch { return false; }
 }
 
-export default function RepoLearnStream({ root, providerId, providerSettings, active = true, agentWorking = false, onOpenDiff, onFocusCommit }: {
+export default function RepoLearnStream({ root, providerId, providerSettings, active = true, agentWorking = false, onOpenDiff, onFocusCommit, chat, chatOpen = false, onToggleChat }: {
   root: string;
   active?: boolean;       // #1043 보이는 레포
   agentWorking?: boolean; // #1043 이 레포 에이전트가 작업 중(숨어 있어도 실시간 해설·설명 큐를 놓치지 않게)
@@ -94,6 +94,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   providerSettings?: ProviderSettings;
   onOpenDiff?: (hash: string, file: string) => void; // #1056 diff 카드 → 그 커밋·파일 diff 탭
   onFocusCommit?: (hash: string, file?: string) => void; // #1064 세션 카드 → git 그래프에서 그 커밋 짚기
+  chat?: ReactNode; chatOpen?: boolean; onToggleChat?: () => void; // #1078 워크스페이스 질문을 캐치업 안에(헤더 버튼으로 전환)
 }) {
   const t = useT();
   const { locale } = useLocale();
@@ -102,7 +103,6 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [loaded, setLoaded] = useState(false);
   const [terms, setTerms] = useState<Term[]>(() => load<Term>(gKey(root)));
   const [live, setLive] = useState(false);
-  const [autoExplain, setAutoExplain] = useState(true);
   const [termsOpen, setTermsOpen] = useState(false); // #1076 기본은 무조건 닫힘(다시 들어와도 펼쳐져 있지 않게)
   // #1062 설정 > 캐치업 — 카테고리별 표시(창에 보이기)·분석(새로 만들기). 표시는 렌더, 분석은 cfgRef(콜백)로.
   const explainShow = useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow);
@@ -159,8 +159,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const queueRef = useRef<string[]>([]);
   const busyRef = useRef(false);
   const metaRef = useRef(new Map<string, { kind: ConceptKind; target: string; tool: string }>());
-  const cfgRef = useRef({ providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel });
-  useEffect(() => { cfgRef.current = { providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel }; }, [providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel]);
+  const cfgRef = useRef({ providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel });
+  useEffect(() => { cfgRef.current = { providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel }; }, [providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel]);
 
   const explainOne = useCallback(async (key: string) => {
     const meta = metaRef.current.get(key); const { locale: loc } = cfgRef.current;
@@ -240,7 +240,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       const key = `${ev.kind}|${ev.target}`;
       metaRef.current.set(key, { kind: ev.kind, target: ev.target, tool: ev.tool });
       setConcepts((prev) => { const found = prev.find((c) => c.key === key); if (found) return ev.ts < found.ts ? prev : [{ ...found, tool: ev.tool, ts: ev.ts }, ...prev.filter((c) => c.key !== key)]; /* 재생분(옛 시각)이 최근 카드를 끌어내리지 않게 */ return [{ key, kind: ev.kind, target: ev.target, tool: ev.tool, status: "idle" as const, ts: ev.ts }, ...prev].sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS); });
-      const cfg = cfgRef.current; if (cfg.autoExplain && cfg.providerId) enqueue(key);
+      const cfg = cfgRef.current; if (cfg.providerId) enqueue(key);
     };
     return () => es.close();
   }, [root, enqueue, connected]);
@@ -398,16 +398,22 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       <div className="relative flex shrink-0 items-center gap-1.5 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
         <IconActivity size={14} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
         <span className="mr-auto truncate text-[13px] font-semibold text-zinc-700 dark:text-zinc-200" title={t("learn.mode")}>{t("learn.title")}</span>
+        {onToggleChat && ( /* #1078 워크스페이스 질문 — 캐치업 안 질문 화면 ↔ 카드 목록 */
+          <button type="button" onClick={onToggleChat} aria-pressed={chatOpen} title={t("chat.title")} aria-label={t("chat.title")}
+            className={`rounded-md p-1 transition ${chatOpen ? "bg-mustard-500/15 text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
+            <IconMessageCircle size={14} stroke={2} aria-hidden />
+          </button>
+        )}
         <button type="button" data-cal-toggle onClick={openCal} aria-expanded={calOpen} title={t("learn.calendar")} aria-label={t("learn.calendar")}
           className={`rounded-md p-1 transition ${calOpen || viewDay ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
           <IconCalendar size={14} stroke={2} aria-hidden />
         </button>
-        <label className="flex cursor-pointer items-center gap-1 text-[10px] text-zinc-500 dark:text-zinc-400" title={t("learn.autoExplain")}>
-          <input type="checkbox" checked={autoExplain} onChange={(e) => setAutoExplain(e.target.checked)} /> {t("learn.autoExplain")}
-        </label>
         <span className={`flex items-center gap-1 text-[10px] ${live ? "text-emerald-500" : "text-zinc-400 dark:text-zinc-500"}`}><IconPointFilled size={10} stroke={2} aria-hidden /> {live ? t("learn.live") : t("learn.idle")}</span>
         {calOpen && <CatchupCalendar days={days} selected={viewDay} locale={locale} onPick={pickDay} onClose={closeCal} />}
       </div>
+      {/* #1078 질문 화면 — 계속 마운트(답변 스트리밍 중 전환해도 안 끊김), 카드 목록과 배타 표시 */}
+      {chat && <div className={chatOpen ? "flex min-h-0 flex-1 flex-col" : "hidden"}>{chat}</div>}
+      <div className={chatOpen ? "hidden" : "contents"}>
       {/* #1049 카테고리 필터 칩 */}
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
         {([["all", t("learn.filterAll")], ...(explainShow ? [["explain", t("learn.filterExplain")]] : []), ...(showCommands ? [["commands", t("learn.filterCommands")]] : []), ...(diffShow ? [["diff", t("learn.filterDiff")]] : []), ...(sessionsShow ? [["session", t("learn.filterSessions")]] : []), ...(showTerms ? [["terms", t("learn.filterTerms")]] : [])] as [typeof filterSel, string][]).map(([id, label]) => (
@@ -585,6 +591,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }

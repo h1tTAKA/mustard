@@ -78,10 +78,14 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const [chatOpen, setChatOpen] = useState(true);  // 우측 챗 패널 열림(#695)
   useAutoCommitExplain(path, providerId, providerSettings); // #1054 새 커밋 diff 미리 설명(설정 > git)
   const [rightModeSel, setRightMode] = useState<"chat" | "github" | "learn">("chat");
+  const [catchupChat, setCatchupChat] = useState(false); // #1078 캐치업 안 질문 화면 열림
   // #1062 캐치업 전체 끄기 — 패널·버튼 숨김(선택돼 있었으면 질문으로), 실시간 해설 서버 플래그도 끔(패널이 안 떠도 여기서 알림).
   const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
   const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze);
-  const rightMode = rightModeSel === "learn" && !catchupOn ? "chat" : rightModeSel;
+  // #1078 질문은 캐치업 안 — 캐치업 켜짐이면 GitHub 아니면 캐치업, 꺼짐이면 질문 단독 모드
+  const rightMode = rightModeSel === "github" ? "github" : catchupOn ? "learn" : "chat";
+  // #1078 질문은 캐치업 안 — 명시적으로 물을 때(브랜치·아키텍처)만 우측 패널을 질문 화면으로. 탭 전환 동기화(focusForTab)는 화면을 안 바꿈.
+  const askChat = (key: string, kind: ChatFocus["kind"], label: string) => { focusChat(key, kind, label); setCatchupChat(true); setRightMode(catchupOn ? "learn" : "chat"); };
   const [gitFocus, setGitFocus] = useState<{ hash: string; n: number; file?: string } | null>(null); // #1064·#1074(diff 카드면 그 파일까지) 캐치업 세션 → git 그래프 커밋 짚기
   const toast = useToast();
   const explainProvider = useSetting<string>(CUKEYS.explainProvider, "");
@@ -385,12 +389,12 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   // 활성 탭 바뀔 때만 ref 재부착(콜백 identity 안정) → 그때 nearest로 최소 스크롤. 이미 보이면 no-op.
   const scrollTabIntoView = useCallback((el: HTMLElement | null) => { el?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, []);
   // 이 아키텍처(기능)에 대해 질문(#746) — 우측 챗에 arch 세션 열고(focus) 챗 패널 펴기.
-  const askArch = (feature: string) => { focusChat(`arch:${feature}`, "arch", feature); setChatOpen(true); try { localStorage.setItem("nunopi:ws-chat-open", "1"); } catch { /* ignore */ } };
+  const askArch = (feature: string) => { askChat(`arch:${feature}`, "arch", feature); setChatOpen(true); try { localStorage.setItem("nunopi:ws-chat-open", "1"); } catch { /* ignore */ } };
   // 카드→좌표 삽입(#746) — 챗 패널이 열려 있으면 이 기능의 arch 세션으로 전환 + 지칭 문구를 입력창에.
   // (챗 닫혀 있으면 카드 클릭=포커스만. 질문할 땐 챗이 열려 있음.)
   const quoteNode = (text: string) => {
     if (!chatOpen || flowFeature == null) return;
-    focusChat(`arch:${flowFeature}`, "arch", flowFeature); // arch 세션 활성(없으면 생성)
+    askChat(`arch:${flowFeature}`, "arch", flowFeature); // arch 세션 활성(없으면 생성)
     setChatPrefill((p) => ({ text, n: (p?.n ?? 0) + 1 }));
   };
 
@@ -407,6 +411,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   }, []);
   // 변경 파일 경로 집합(챗 승계 판별용, #689) — fileStatus 바뀔 때만 새 identity(effect 무한루프 방지).
   const changedFileSet = useMemo(() => new Set(Object.keys(fileStatus)), [fileStatus]);
+  const chatEl = <WorkspaceChat root={path} files={files} focus={chatFocus} prefill={chatPrefill} changedFiles={changedFileSet} providerId={providerId} providerSettings={providerSettings} />; // #1078 캐치업 안·단독 모드 공용
   // 깃 그래프 새로고침 시 상태맵도 갱신 — stable(inline이면 GitGraph load가 매 렌더 재생성→무한 fetch).
   const handleGitRefreshed = useCallback(() => { if (path) void loadGitStatus(path); }, [path, loadGitStatus]);
 
@@ -662,10 +667,10 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
               className={`shrink-0 rounded-lg p-1.5 transition ${rightMode === "learn" ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
               <IconActivity size={16} stroke={2} aria-hidden />
             </button>}
-            <button type="button" onClick={() => pickRightMode("chat")} aria-pressed={rightMode === "chat"} title={t("chat.title")} aria-label={t("chat.title")}
+            {!catchupOn && <button type="button" onClick={() => pickRightMode("chat")} aria-pressed={rightMode === "chat"} title={t("chat.title")} aria-label={t("chat.title")}
               className={`shrink-0 rounded-lg p-1.5 transition ${rightMode === "chat" ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
               <IconMessageCircle size={16} stroke={2} aria-hidden />
-            </button>
+            </button>} {/* #1078 캐치업 켜짐이면 질문은 캐치업 헤더 버튼으로 */}
             <button type="button" onClick={() => pickRightMode("github")} aria-pressed={rightMode === "github"} title="GitHub" aria-label="GitHub"
               className={`relative shrink-0 rounded-lg p-1.5 transition ${rightMode === "github" ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
               <IconBrandGithub size={16} stroke={2} aria-hidden />
@@ -711,7 +716,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
           {gitOpen && (
             <>
               {leftFill !== "git" && <div onMouseDown={startDrag("gitH", gitH)} className="h-1 shrink-0 cursor-row-resize transition hover:bg-mustard-500/40 dark:hover:bg-mustard-400/40" />}
-              <div style={leftFill === "git" ? undefined : { height: gitH }} className={`overflow-hidden border-t border-zinc-200 dark:border-zinc-800 ${leftFill === "git" ? "min-h-0 flex-1" : "shrink-0"}`}><GitGraph root={path} onOpenDiff={(hash, file) => openCodeTab({ kind: "diff", hash, file })} onFocusBranch={(b) => focusChat(`branch:${b}`, "branch", b)} onOpenChange={(file, worktree) => openCodeTab({ kind: "diff", file, worktree })} onRefreshed={handleGitRefreshed} refreshNonce={gitNonce} focus={gitFocus ?? undefined} onFocusResult={(found) => { if (!found) toast(t("learn.focusCommitMissing")); }} /></div>
+              <div style={leftFill === "git" ? undefined : { height: gitH }} className={`overflow-hidden border-t border-zinc-200 dark:border-zinc-800 ${leftFill === "git" ? "min-h-0 flex-1" : "shrink-0"}`}><GitGraph root={path} onOpenDiff={(hash, file) => openCodeTab({ kind: "diff", hash, file })} onFocusBranch={(b) => askChat(`branch:${b}`, "branch", b)} onOpenChange={(file, worktree) => openCodeTab({ kind: "diff", file, worktree })} onRefreshed={handleGitRefreshed} refreshNonce={gitNonce} focus={gitFocus ?? undefined} onFocusResult={(found) => { if (!found) toast(t("learn.focusCommitMissing")); }} /></div>
             </>
           )}
           {/* 문서 폴더 브라우저(#693) — .md/.txt 클릭 시 뷰어에 표시(뷰어는 커밋2). */}
@@ -793,12 +798,12 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
               ) : rightMode === "learn" ? (
                 /* #1051 캐치업 용어 → 추가된 카드 클릭 시 확대(throwCard) — 질문 패널과 같은 FlyCardProvider */
                 <FlyCardProvider active={active} providerId={providerId} providerSettings={providerSettings} sourceIds={flyNoSources} onGoToSource={() => {}}>
-                  <RepoLearnStream key={path} root={path} active={active} agentWorking={agentWorking} providerId={providerId} providerSettings={providerSettings} onOpenDiff={(hash, file) => openCodeTab({ kind: "diff", hash, file })} onFocusCommit={(hash, file) => setGitFocus((f) => ({ hash, file, n: (f?.n ?? 0) + 1 }))} />
+                  <RepoLearnStream key={path} root={path} active={active} agentWorking={agentWorking} providerId={providerId} providerSettings={providerSettings} onOpenDiff={(hash, file) => openCodeTab({ kind: "diff", hash, file })} onFocusCommit={(hash, file) => setGitFocus((f) => ({ hash, file, n: (f?.n ?? 0) + 1 }))}  chat={chatEl} chatOpen={catchupChat} onToggleChat={() => setCatchupChat((v) => !v)} />
                 </FlyCardProvider>
               ) : (
                 /* FlyCardProvider(#750) — 세션 카드 목록에서 카드 클릭 시 확대·상세(throwCard). 워크스페이스 카드는 출처이동 없음(빈 sourceIds). */
                 <FlyCardProvider active={active} providerId={providerId} providerSettings={providerSettings} sourceIds={flyNoSources} onGoToSource={() => {}}>
-                  <WorkspaceChat root={path} files={files} focus={chatFocus} prefill={chatPrefill} changedFiles={changedFileSet} providerId={providerId} providerSettings={providerSettings} />
+                  {chatEl}
                 </FlyCardProvider>
               )}
             </aside>
