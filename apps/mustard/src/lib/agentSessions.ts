@@ -6,14 +6,15 @@ import { join } from "node:path";
 import { projectDirFor } from "@/lib/subagents";
 import { parseClaudeLine, parseCodexLine, segmentForCommit, type AgentKind, type SessionMsg } from "@/lib/agentSessionParse";
 
-const TAIL_BYTES = 8 * 1024 * 1024; // ponytail: 끝 8MB만 — 커밋 전 작업이 이보다 길면 앞부분이 잘림(상한 있는 기록이라 허용)
+const TAIL_BYTES = 8 * 1024 * 1024;   // 보통은 끝 8MB — 방금 커밋이라 끝에 있음
+const WIDE_BYTES = 64 * 1024 * 1024;  // 못 찾으면 64MB까지 넓혀 한 번 더(앱이 꺼져 있다 나중에 몰아 처리할 때, #1064 정합성 점검)
 const MAX_FILES = 6;
 export interface CommitSession { agent: AgentKind; sessionId: string; branch?: string; messages: SessionMsg[]; callTs: number; closed: boolean } // closed = 그 턴이 끝남
 
-async function tailLines(path: string): Promise<string[]> {
+async function tailLines(path: string, bytes = TAIL_BYTES): Promise<string[]> {
   const fh = await fs.open(path, "r");
   try {
-    const { size } = await fh.stat(); const len = Math.min(size, TAIL_BYTES);
+    const { size } = await fh.stat(); const len = Math.min(size, bytes);
     const buf = Buffer.alloc(len); await fh.read(buf, 0, len, size - len);
     const lines = buf.toString("utf8").split("\n");
     return size > len ? lines.slice(1) : lines; // 잘린 첫 줄 버림
@@ -40,15 +41,14 @@ export async function findCommitSession(root: string, commitSec: number): Promis
   const found: CommitSession[] = [];
   // Claude Code — 레포 경로별 폴더
   for (const f of await recentFiles(projectDirFor(root), sinceMs)) {
-    const seg = segmentForCommit(await tailLines(f), parseClaudeLine, commitSec);
+    const seg = segmentForCommit(await tailLines(f), parseClaudeLine, commitSec) ?? segmentForCommit(await tailLines(f, WIDE_BYTES), parseClaudeLine, commitSec);
     if (seg?.msgs.length) found.push({ agent: "claude", sessionId: f.split("/").pop()!.replace(/\.jsonl$/, ""), branch: seg.branch, messages: seg.msgs, callTs: seg.callTs, closed: seg.closed || Date.now() - await mtimeOf(f) > IDLE_MS });
   }
   // Codex — 날짜 폴더(커밋 날짜·전날, 자정 넘긴 세션), session_meta.cwd로 레포 확인
   const day = (d: Date) => join(homedir(), ".codex", "sessions", String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0"));
   const c = new Date(commitSec * 1000);
   for (const dir of [day(c), day(new Date(c.getTime() - 86_400_000))]) for (const f of await recentFiles(dir, sinceMs)) {
-    const lines = await tailLines(f);
-    const seg = segmentForCommit(lines, parseCodexLine, commitSec);
+    const seg = segmentForCommit(await tailLines(f), parseCodexLine, commitSec) ?? segmentForCommit(await tailLines(f, WIDE_BYTES), parseCodexLine, commitSec);
     let cwd = seg?.cwd;
     if (seg && !cwd) cwd = parseCodexLine(await headLine(f))?.cwd; // 끝부분에 session_meta가 없으면 파일 첫 줄에서
     if (seg?.msgs.length && cwd && under(cwd, root)) found.push({ agent: "codex", sessionId: f.split("/").pop()!.replace(/\.jsonl$/, ""), branch: seg.branch, messages: seg.msgs, callTs: seg.callTs, closed: seg.closed || Date.now() - await mtimeOf(f) > IDLE_MS });
