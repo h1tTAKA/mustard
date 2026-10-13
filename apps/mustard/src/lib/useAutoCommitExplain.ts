@@ -16,7 +16,7 @@ export const parseDiffItemKey = (key: string) => { const m = /^diff\|([0-9a-fA-F
 const POLL_MS = 30_000;
 const MAX_FILES = 10, MAX_HUNKS = 20; // ponytail: 커밋당 상한(토큰 방어) — 큰 커밋은 앞부분만, 나머지는 diff에서 버튼으로
 // 설명 가치 없는 파일 — 문서·lockfile·이미지 등(삭제 파일은 상태 D로 따로 거름).
-const SKIP_FILE = /\.(md|mdx|markdown|txt|rst|adoc|lock|png|jpe?g|gif|webp|ico|svg|pdf|zip)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$/i;
+const SKIP_FILE = /\.(md|mdx|markdown|txt|rst|adoc|lock|png|jpe?g|gif|webp|avif|bmp|ico|svg|pdf|zip|gz|tgz|7z|rar|mp3|wav|ogg|flac|m4a|aac|mp4|mov|webm|avi|mkv|woff2?|ttf|otf|eot|wasm|exe|dll|so|dylib|bin)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$/i;
 
 const post = (url: string, body: unknown) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
 
@@ -50,15 +50,17 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     let alive = true, busy = false;
 
     // info = 카드 메타("브랜치 · 커밋 제목", #1062) — tool 필드에 담아 저장(스키마 변경 없이).
-    const explainCommit = async (hash: string, info: string) => {
+    const explainCommit = async (hash: string, info: string, ts: number) => {
       const list = await post("/api/repo/git-show", { path: root, hash });
-      const files = ((list?.files ?? []) as { status: string; path: string }[]).filter((f) => f.status !== "D" && !SKIP_FILE.test(f.path)).slice(0, MAX_FILES);
+      const files = ((list?.files ?? []) as { status: string; path: string }[]).filter((f) => f.status !== "D" && !SKIP_FILE.test(f.path));
+      let explained = 0; // #1068 상한은 실제 설명한 파일만 셈 — 바이너리가 앞자리를 다 먹어 뒤의 코드·설정 파일이 빠지던 것
       let budget = MAX_HUNKS;
       for (const f of files) {
         if (!alive || budget <= 0) return;
         const d = await post("/api/repo/git-show", { path: root, hash, file: f.path });
         const raw = String(d?.diff ?? "");
         if (!raw.trim() || /^Binary files /m.test(raw)) continue;
+        if (++explained > MAX_FILES) return;
         const store = noteStoreKey(root, f.path, hash);
         const have = loadNotes(store);
         const texts: string[] = []; // 이 파일 구간 설명(순서대로) — 캐치업 카드 본문
@@ -71,7 +73,8 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           try { const text = await explainDiffText(h.diffText, pid, ps, loc); saveNote(store, h.diffText, text); texts.push(diffMark(h) + text); } catch { /* 구간 하나 실패 — 다음 구간 */ }
         }
         if (texts.length && alive) {
-          const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts: Date.now(), expl: texts.join(DIFF_SEP).slice(0, 8000) };
+          // #1068 카드 시각 = 커밋 시각(앱이 꺼져 있다가 몰아서 처리해도 그때 자리에)
+          const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts, expl: texts.join(DIFF_SEP).slice(0, 8000) };
           void post("/api/repo/stream", { root, items: [item] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
           window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
         }
@@ -86,11 +89,12 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         if (!st) { write({ since: Math.floor(Date.now() / 1000), done: [] }); return; } // 처음 켬 → 지금부터
         const j = await post("/api/repo/git-recent", { path: root, since: st.since });
         const pendingAdd: Pend[] = [];
-        const fresh = ((j?.commits ?? []) as { hash: string; ts: number; subject?: string; merge?: boolean }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
-        const branch = typeof j?.branch === "string" ? j.branch : "";
+        const fresh = ((j?.commits ?? []) as { hash: string; ts: number; subject?: string; merge?: boolean; branch?: string }[]).filter((c) => !st!.done.includes(c.hash)).reverse(); // 오래된 것부터
+        const head = typeof j?.branch === "string" ? j.branch : "";
         for (const c of fresh) {
           if (!alive) return;
-          if (cfg.current.diffOn && !c.merge) await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200));
+          const branch = c.branch || head; // #1068 그 커밋을 만들 때 브랜치(reflog)
+          if (cfg.current.diffOn && !c.merge) await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200), c.ts * 1000);
           // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드. 턴이 끝날 때까지(마무리 말 포함) 미뤘다가 만듦.
           if (alive && cfg.current.sessOn) pendingAdd.push({ hash: c.hash, ts: c.ts, subject: c.subject ?? "", branch, at: Date.now(), merge: !!c.merge });
           if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)

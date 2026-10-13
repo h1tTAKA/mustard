@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { projectDirFor } from "@/lib/subagents";
-import { parseClaudeLine, parseCodexLine, segmentForCommit, type AgentKind, type SessionMsg } from "@/lib/agentSessionParse";
+import { parseClaudeLine, parseCodexLine, segmentForCommit, activityInWindow, type AgentKind, type SessionMsg, type WindowActivity } from "@/lib/agentSessionParse";
 
 const TAIL_BYTES = 8 * 1024 * 1024;   // 보통은 끝 8MB — 방금 커밋이라 끝에 있음
 const WIDE_BYTES = 64 * 1024 * 1024;  // 못 찾으면 64MB까지 넓혀 한 번 더(앱이 꺼져 있다 나중에 몰아 처리할 때, #1064 정합성 점검)
@@ -29,10 +29,10 @@ async function headLine(path: string): Promise<string> {
 // 커밋 뒤에 수정된(=커밋 시점에 살아 있던) 기록 파일, 최근 것부터.
 const IDLE_MS = 2 * 60_000; // 기록이 이만큼 안 바뀌면 턴이 끝난 것으로(에이전트 멈춤·사람 자리 비움)
 const mtimeOf = async (f: string) => { try { return (await fs.stat(f)).mtimeMs; } catch { return 0; } };
-async function recentFiles(dir: string, sinceMs: number): Promise<string[]> {
+async function recentFiles(dir: string, sinceMs: number, max = MAX_FILES): Promise<string[]> {
   let names: string[]; try { names = (await fs.readdir(dir)).filter((n) => n.endsWith(".jsonl")); } catch { return []; }
   const st = await Promise.all(names.map(async (n) => { try { return { p: join(dir, n), m: (await fs.stat(join(dir, n))).mtimeMs }; } catch { return null; } }));
-  return st.filter((x): x is { p: string; m: number } => !!x && x.m >= sinceMs).sort((a, b) => b.m - a.m).slice(0, MAX_FILES).map((x) => x.p);
+  return st.filter((x): x is { p: string; m: number } => !!x && x.m >= sinceMs).sort((a, b) => b.m - a.m).slice(0, max).map((x) => x.p);
 }
 const under = (a: string, b: string) => { const x = a.replace(/\/+$/, ""), y = b.replace(/\/+$/, ""); return x === y || x.startsWith(y + "/") || y.startsWith(x + "/"); };
 
@@ -55,4 +55,33 @@ export async function findCommitSession(root: string, commitSec: number, isMerge
   }
   // 커밋 시각에 가장 가까운 git commit 호출
   return found.sort((a, b) => Math.abs(a.callTs - commitSec * 1000) - Math.abs(b.callTs - commitSec * 1000))[0] ?? null;
+}
+
+// #1068 기록 끝에서 fromMs 이전 줄이 나올 때까지 넓혀 읽음(8MB → 64MB → 256MB). 기록이 GB라 통째로는 못 읽음(문자열 한계 512MB).
+// ponytail: 256MB 넘게 쌓일 만큼 오래·많이 꺼져 있었으면 그 앞은 놓침 — 필요하면 줄 단위 역방향 스트리밍으로.
+async function linesSince(path: string, fromMs: number, parse: (l: string) => { ts: number } | null): Promise<string[]> {
+  let lines: string[] = [];
+  for (const bytes of [TAIL_BYTES, WIDE_BYTES, 256 * 1024 * 1024]) {
+    lines = await tailLines(path, bytes);
+    const first = lines.slice(0, 50).map((l) => parse(l)?.ts ?? 0).find((t) => t > 0) ?? 0; // 사이드체인·메타 줄은 null일 수 있어 앞 몇 줄에서
+    if ((first && first <= fromMs) || (await fs.stat(path)).size <= bytes) break;
+  }
+  return lines;
+}
+// #1068 꺼진 구간 [fromMs, toMs]에 이 레포에서 에이전트가 한 일 — 세션별(도구 호출 + 해설 재료). 구간에 수정된 기록 파일만.
+export async function activityForRoot(root: string, fromMs: number, toMs: number): Promise<(WindowActivity & { agent: AgentKind; sessionId: string })[]> {
+  const out: (WindowActivity & { agent: AgentKind; sessionId: string })[] = [];
+  const id = (f: string) => f.split("/").pop()!.replace(/\.jsonl$/, "");
+  const keep = (w: WindowActivity) => w.tools.length > 0 || w.chunks.length > 0;
+  for (const f of await recentFiles(projectDirFor(root), fromMs, 50)) {
+    const w = activityInWindow(await linesSince(f, fromMs, parseClaudeLine), parseClaudeLine, fromMs, toMs);
+    if (keep(w)) out.push({ ...w, agent: "claude", sessionId: id(f) });
+  }
+  const day = (d: Date) => join(homedir(), ".codex", "sessions", String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0"));
+  for (let t = fromMs - 7 * 86_400_000; t <= toMs + 86_400_000; t += 86_400_000) for (const f of await recentFiles(day(new Date(t)), fromMs, 50)) { // 폴더 = 세션 시작일 → 며칠 이어진 세션도(최근 7일 시작분)
+    const w = activityInWindow(await linesSince(f, fromMs, parseCodexLine), parseCodexLine, fromMs, toMs);
+    const cwd = w.cwd ?? parseCodexLine(await headLine(f))?.cwd;
+    if (keep(w) && cwd && (cwd.replace(/\/+$/, "") + "/").startsWith(root.replace(/\/+$/, "") + "/")) out.push({ ...w, agent: "codex", sessionId: id(f) });
+  }
+  return out;
 }
