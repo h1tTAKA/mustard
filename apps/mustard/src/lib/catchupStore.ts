@@ -179,3 +179,15 @@ export function findItem(root: string, key: string): CatchupItem | null {
   for (const day of listDays(root)) { const hit = readDay(root, day).find((x) => x.key === key); if (hit) return hit; }
   return null;
 }
+
+// #1081 커밋 해시(앞 7자 이상)로 diff·세션 카드 찾기 — 질문 답변에 해시만 나오고 링크가 빠졌을 때 앱이 "관련 카드"를 붙이려고.
+export function itemsForHashes(root: string, hashes: string[], limit = 30): CatchupItem[] {
+  const hs = hashes.map((h) => h.toLowerCase()).filter((h) => /^[0-9a-f]{7,40}$/.test(h));
+  if (!hs.length) return [];
+  const out: CatchupItem[] = [];
+  for (const day of listDays(root)) for (const x of readDay(root, day)) {
+    const m = /^(?:diff|session)\|([0-9a-f]{7,40})/i.exec(x.key);
+    if (m && hs.some((h) => m[1].toLowerCase().startsWith(h) || h.startsWith(m[1].toLowerCase()))) { out.push(x); if (out.length >= limit) return out; }
+  }
+  return out;
+}

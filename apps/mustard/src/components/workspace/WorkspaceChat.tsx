@@ -24,6 +24,7 @@ import type { QuizSession } from "@mustard/core";
 import { isNunopiEnabled } from "@/lib/product";
 import { isCardWorthy } from "@/lib/cardWorthy";
 import { buildWorkHistory, type AskItem } from "@/lib/catchupAskContext";
+import { commitHashesIn, withRelatedCards } from "@/lib/catchupMarkdown";
 type StreamEvent = { type: "progress"; line: string } | { type: "result"; response: { summary: string } } | { type: "error"; message: string };
 
 type SessionKind = "repo" | "file" | "diff" | "branch" | "worktree" | "arch";
@@ -585,6 +586,14 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
         }
       }
       // raw 저장(nunopi-cards 블록 보존) — 렌더 시 parseCardSuggestions로 본문/칩 분리.
+      // #1081 답변에 커밋 해시만 나오고 카드 링크가 빠졌으면 앱이 "관련 카드"를 붙임(시간대 질문에서 자주 빠짐)
+      if (answer && onOpenCard) {
+        const hs = commitHashesIn(answer);
+        if (hs.length) {
+          const j = await fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&hashes=${hs.join(",")}`).then((r) => r.json()).catch(() => null);
+          if (Array.isArray(j?.items)) answer = withRelatedCards(answer, j.items as { key: string; kind: string; target: string }[], t("learn.relatedCards"));
+        }
+      }
       writeSub(sk, subId, [...thread, { role: "assistant", content: answer || "(빈 응답)" }]);
     } catch {
       writeSub(sk, subId, [...thread, { role: "assistant", content: "(오류)" }]);

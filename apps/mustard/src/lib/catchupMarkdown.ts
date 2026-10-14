@@ -24,3 +24,19 @@ export function sessionCardMarkdown(o: { subject: string; hash: string; branch: 
     "### Summary", "", o.summary.trim(), "",
     ...(raw ? ["### Conversation", "", block("text", raw)] : [])]);
 }
+
+// #1081 답변에 나온 커밋 해시(링크로 안 단 것) — 앱이 "관련 카드"를 붙일 대상. 이미 catchup 링크가 있는 해시는 뺌.
+export function commitHashesIn(answer: string): string[] {
+  const linked = new Set([...answer.matchAll(/catchup:(?:diff|session)\|([0-9a-f]{7,40})/gi)].map((m) => m[1].toLowerCase().slice(0, 7)));
+  const found = [...answer.matchAll(/(?<![0-9a-zA-Z_/])[0-9a-f]{7,40}(?![0-9a-zA-Z_])/g)].map((m) => m[0].toLowerCase())
+    .filter((h) => /[a-f]/.test(h) && /\d/.test(h)); // 숫자만·글자만인 단어 제외(해시 오탐 줄이기)
+  return [...new Set(found.map((h) => h.slice(0, 7)))].filter((h) => !linked.has(h));
+}
+// 관련 카드 목록을 답변 끝에(카드 제안 블록이 있으면 그 앞에) 붙임.
+export function withRelatedCards(answer: string, items: { key: string; kind: string; target: string }[], title: string): string {
+  if (!items.length) return answer;
+  const lines = items.map((x) => `- [${x.kind === "session" ? "💬 " : ""}${x.target.replace(/[[\]]/g, "")}](<catchup:${x.key}>)`).join("\n");
+  const footer = `\n\n**${title}**\n${lines}\n`;
+  const at = answer.indexOf("```nunopi-cards");
+  return at >= 0 ? answer.slice(0, at).trimEnd() + footer + "\n" + answer.slice(at) : answer.trimEnd() + footer;
+}
