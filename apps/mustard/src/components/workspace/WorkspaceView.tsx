@@ -2,10 +2,9 @@
 // 워크스페이스 모드(#647) — 누노피 안에서 화면전환 없이 에이전트 코딩+즉시 학습.
 // 골격(커밋1): 4존 셸 [파일트리 | 터미널 | 코드 | 챗]. 각 존은 후속 커밋서 채움(트리·코드·챗·pty터미널).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconMessages, IconCards, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld } from "@tabler/icons-react";
+import { IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld } from "@tabler/icons-react";
 import { useShortcut, useShortcutHint, withShortcutHint, useT, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, withModel } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
-import { isNunopiEnabled } from "@/lib/product";
 import FileTree from "@/components/workspace/FileTree";
 import CodePane from "@/components/workspace/CodePane";
 import WorkspaceChat, { type ChatFocus } from "@/components/workspace/WorkspaceChat";
@@ -50,7 +49,7 @@ function ZonePlaceholder({ Icon, label }: { Icon: typeof IconFiles; label: strin
 }
 
 // path(레포)는 WorkspaceTabs가 소유해 prop로 내려준다(#731). key={path}로 탭마다 인스턴스 분리.
-export default function WorkspaceView({ path, active = true, agentWorking = false, providerId, providerSettings, onExitWorkspace, onOpenMemorize, onOpenSettings, tabStrip }: { path: string; active?: boolean; agentWorking?: boolean; providerId: AgentProviderKind; providerSettings: ProviderSettings; onExitWorkspace?: () => void; onOpenMemorize?: () => void; onOpenSettings?: () => void; tabStrip?: ReactNode }) {
+export default function WorkspaceView({ path, active = true, agentWorking = false, providerId, providerSettings, onOpenSettings, tabStrip }: { path: string; active?: boolean; agentWorking?: boolean; providerId: AgentProviderKind; providerSettings: ProviderSettings; onOpenSettings?: () => void; tabStrip?: ReactNode }) {
   const t = useT();
   const fullscreen = useFullscreen(); // 타이틀바 통합(#779) — 신호등 자리 좌측 패딩 토글
   const [picking, setPicking] = useState(false);
@@ -648,23 +647,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
         </div>
         <span className="h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />
         {tabStrip}
-        {/* 영역 컨트롤(#721) — 질문·분석으로 나가기 / 암기(카드덱) / 설정 / 챗 토글. */}
-        {isNunopiEnabled() && (onExitWorkspace || onOpenMemorize) && <span className="mx-0.5 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />}
-        {isNunopiEnabled() && onExitWorkspace && (
-          <button type="button" onClick={onExitWorkspace} title={t("workspace.toQA")} aria-label={t("workspace.toQA")}
-            className="shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
-            <IconMessages size={16} stroke={2} aria-hidden />
-          </button>
-        )}
-        {isNunopiEnabled() && onOpenMemorize && (
-          <button type="button" onClick={onOpenMemorize} title={t("mode.memorize")} aria-label={t("mode.memorize")}
-            className="shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
-            <IconCards size={16} stroke={2} aria-hidden />
-          </button>
-        )}
-        {/* 설정은 워크스페이스에선 하단 바(토큰 사용량 옆)로 이동(#752). */}
-        {/* 영역 nav(질문·분석/암기) ↔ 패널 유틸(챗 토글) 구분선(#785) — AppShell 헤더와 동일 패턴. nunopi off면 위 nav가 없어 구분선도 숨김(#908). */}
-        {isNunopiEnabled() && (onExitWorkspace || onOpenMemorize) && <span className="mx-0.5 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />}
+        {/* #1083 nunopi로 가는 질문·분석/암기 아이콘은 헤더의 nunopi 전환(ModeSwapToggle) 하나로 통일 */}
         {/* 우측 패널 모드 토글(#811) — 순서: 학습스트림 → 질문(Chat) → GitHub(#908). 우측 패널 열려 있을 때만. */}
         {chatOpen && (
           <>
