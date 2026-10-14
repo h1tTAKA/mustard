@@ -101,6 +101,7 @@ export function buildDeckAgentPrompt(request: AgentAnalyzeRequest): string {
     transcript,
     "",
     `Reply to the user's last message in ${name}. Be concise. Output the fenced block ONLY when actually building/sorting decks (exactly as the context above specifies).`,
+    `Write NEW deck titles in ${name} too (even though the context above is in Korean); when assigning to EXISTING decks keep their names exactly as listed.`, // #1091
     "Assistant:",
   ].join("\n");
 }

@@ -69,7 +69,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         const d = await post("/api/repo/git-show", { path: root, hash, file: f.path });
         const raw = String(d?.diff ?? "");
         if (!raw.trim() || /^Binary files /m.test(raw)) continue;
-        const store = noteStoreKey(root, f.path, hash); const have = loadNotes(store);
+        const store = noteStoreKey(root, f.path, hash, undefined, cfg.current.locale); const have = loadNotes(store);
         const hunks = groupHunks(parseDiff(raw));
         const file: FileJob = { path: f.path, store, texts: hunks.map((h) => (have[h.diffText] ? diffMark(h) + have[h.diffText] : null)), left: 0 };
         hunks.forEach((h, i) => { if (!file.texts[i]) { file.left++; jobs.push({ file, i, h }); } }); // 이미 설명된 구간(버튼·재시도)은 건너뜀

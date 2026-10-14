@@ -16,6 +16,7 @@ const close = groupHunks(parseDiff(["@@ -1,5 +1,5 @@", "-a", "+A", " x", "-b", "
 assert.strictEqual(close.length, 1, "간격 3줄 이하 → 한 구간");
 assert.strictEqual(noteStoreKey("/r", "x.ts", "abc"), "nunopi:hunk-notes:/r:abc:x.ts");
 assert.strictEqual(noteStoreKey("/r", "x.ts", undefined, "staged"), "nunopi:hunk-notes:/r:wt:staged:x.ts", "워킹트리 키 기존과 동일");
+assert.strictEqual(noteStoreKey("/r", "x.ts", "abc", undefined, "ja"), "nunopi:hunk-notes:/r:abc:x.ts@ja", "#1091 언어별 키");
 const body = [diffMark(hunks[0]) + "설명 A", diffMark(hunks[1]) + "설명 B"].join(DIFF_SEP);
 assert.deepStrictEqual(diffSections(body), [{ from: 2, to: 2, text: "설명 A" }, { from: 9, to: 9, text: "설명 B" }]);
 assert.strictEqual(diffSections("옛 카드" + DIFF_SEP + "설명"), null, "표지 없음 = 옛 카드");
