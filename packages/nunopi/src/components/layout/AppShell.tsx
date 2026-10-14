@@ -38,7 +38,7 @@ interface AppShellProps {
   // 모드 전용 창(#789) — ?win=<kind>로 뜬 별도 Electron 창. 헤더를 로고+모드명만으로 최소화하고
   // 영역전환(modeToggle)·하위세그(subToggle)·홈 진입을 숨긴다. windowTitle=그 모드명.
   windowMode?: boolean;
-  subToggleInMemorize?: boolean; // #1083 하위 세그에 카드 갤러리가 있으면 암기 화면에서도 보임
+  subToggleInMemorize?: boolean; // #1083 하위 세그에 카드 갤러리가 있으면 암기·학습 히스토리 화면에서도 보임(어디서든 전환)
   windowTitle?: string;
 }
 
@@ -174,7 +174,7 @@ export default function AppShell({ editor, learningPanel, modeToggle, subToggle,
             )}
           </div>
           {/* 가운데: 질문·분석 하위 세그(질문·코드·글) — 원래 중앙 위치(#725). 암기·홈 뷰에선 숨김(하위 없음)(#729). */}
-          <div className="justify-self-center">{(!memorize || subToggleInMemorize) && !history && !windowMode && subToggle}</div>
+          <div className="justify-self-center">{(subToggleInMemorize || (!memorize && !history)) && !windowMode && subToggle}</div>
           {/* 우: 영역 전환 토글(워크스페이스│질문·분석│암기) │ 설정. 모드 전용 창은 영역전환 숨김. */}
           <div className="flex items-center gap-1.5 justify-self-end">
             {!windowMode && modeToggle}
