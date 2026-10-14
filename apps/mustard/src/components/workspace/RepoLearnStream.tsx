@@ -349,6 +349,13 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       requestTerminalFocus(root, r.id); // 보낸 터미널 탭으로
     } finally { setHandoffBusy(false); }
   }, [handoffText, handoffBusy, root, t, toast]);
+  // #998 이 항목에 질문 — 대화 있으면 질문 수 배지. #1078 diff·세션은 다른 버튼들과 한 줄(같은 간격)에, 그 밖엔 오른쪽 위 단독
+  const askBtn = (c: Concept, alone: boolean) => c.status === "done" && c.expl ? (
+    <button type="button" onClick={() => setAskItem(c)} title={t("learn.ask")} aria-label={t("learn.ask")}
+      className={`${alone ? "absolute right-1.5 top-1.5 z-10 " : ""}flex items-center gap-0.5 rounded-md p-0.5 text-[10px] transition ${askCounts[c.key] || askItem?.key === c.key ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-300 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
+      <IconMessageCircle size={13} stroke={2} aria-hidden />{askCounts[c.key] ? <span className="font-semibold">{askCounts[c.key]}</span> : null}
+    </button>
+  ) : null;
   // #1078 카드 → 마크다운 복사. diff = 구간별 줄 범위·바뀐 코드·설명(코드는 git에서), 세션 = 요약 + 원본 대화 전체.
   const copyCard = useCallback(async (c: Concept) => {
     const m = /^(.*) @([0-9a-f]{4,40})$/i.exec(c.target);
@@ -497,7 +504,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                   {/* #1056 diff 카드 — 질문 버튼 왼쪽에 "diff 열기"(키에 담긴 커밋·파일) */}
                   {/* #1066 + git 그래프에서 그 커밋 짚기(세션 카드와 같은 버튼) */}
                   {c.kind === "diff" && (() => { const d = parseDiffItemKey(c.key); return d ? (
-                    <span className="absolute right-8 top-1.5 z-10 flex items-center gap-0.5">
+                    <span className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5">
                       {onFocusCommit && <button type="button" onClick={() => onFocusCommit(d.hash, d.file)} title={t("learn.focusCommit")} aria-label={t("learn.focusCommit")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconGitCommit size={13} stroke={2} aria-hidden /></button>}
                       {onOpenDiff && <button type="button" onClick={() => onOpenDiff(d.hash, d.file)} title={t("learn.openDiff")} aria-label={t("learn.openDiff")}
@@ -505,11 +512,12 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {/* #1078 마크다운 복사 */}
                       <button type="button" onClick={() => void copyCard(c)} title={t("learn.copyMd")} aria-label={t("learn.copyMd")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconCopy size={13} stroke={2} aria-hidden /></button>
+                      {askBtn(c, false)}
                     </span>
                   ) : null; })()}
                   {/* #1064 세션 카드 — 에이전트로 보내기 · 그래프에서 커밋 짚기(질문 버튼 왼쪽) */}
                   {c.kind === "session" && c.status === "done" && (
-                    <span className="absolute right-8 top-1.5 z-10 flex items-center gap-0.5">
+                    <span className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5">
                       {onFocusCommit && <button type="button" onClick={() => onFocusCommit(c.key.slice("session|".length))} title={t("learn.focusCommit")} aria-label={t("learn.focusCommit")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconGitCommit size={13} stroke={2} aria-hidden /></button>}
                       <button type="button" onClick={() => { setHandoffKey((k) => (k === c.key ? null : c.key)); setHandoffText(""); }} title={t("learn.handoffSend")} aria-label={t("learn.handoffSend")} aria-expanded={handoffKey === c.key}
@@ -517,15 +525,10 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {/* #1078 마크다운 복사(요약 + 원본 대화 전체) */}
                       <button type="button" onClick={() => void copyCard(c)} title={t("learn.copyMd")} aria-label={t("learn.copyMd")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconCopy size={13} stroke={2} aria-hidden /></button>
+                      {askBtn(c, false)}
                     </span>
                   )}
-                  {/* #998 이 항목에 질문 — 오른쪽 위, 대화 있으면 질문 수 배지 */}
-                  {c.status === "done" && c.expl && (
-                    <button type="button" onClick={() => setAskItem(c)} title={t("learn.ask")} aria-label={t("learn.ask")}
-                      className={`absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[10px] transition ${askCounts[c.key] || askItem?.key === c.key ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-300 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
-                      <IconMessageCircle size={13} stroke={2} aria-hidden />{askCounts[c.key] ? <span className="font-semibold">{askCounts[c.key]}</span> : null}
-                    </button>
-                  )}
+                  {!(c.kind === "diff" && parseDiffItemKey(c.key)) && !(c.kind === "session" && c.status === "done") && askBtn(c, true)}
                   <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" || c.kind === "session" ? "pr-24" : "pr-9"}`}>
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
