@@ -24,8 +24,7 @@ export default function ModeSwapToggle({ viewMode, onEnterNunopi, onEnterWorkspa
     <button type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label} className={ICON_BTN}>
       {inWorkspace ? (
         // #1083 nunopi 심볼을 단색으로 — png 알파 모양을 마스크로 쓰고 글자색(currentColor)으로 칠함 → 옆 헤더 아이콘과 같은 회색·호버
-        <span aria-hidden className="block h-[18px] w-[18px] bg-current"
-          style={{ WebkitMaskImage: "url(/brand/nunopi-symbol-transparent.png)", maskImage: "url(/brand/nunopi-symbol-transparent.png)", WebkitMaskSize: "contain", maskSize: "contain", WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskPosition: "center", maskPosition: "center" }} />
+        <NunopiGlyph />
       ) : (
         <MustardMark size={20} />
       )}
@@ -37,4 +36,10 @@ export default function ModeSwapToggle({ viewMode, onEnterNunopi, onEnterWorkspa
       )}
     </button>
   );
+}
+
+// #1083 nunopi 심볼 단색 — png 알파 모양을 마스크로 쓰고 글자색(currentColor)으로 칠함 → 옆 헤더 아이콘과 같은 회색·호버
+const MASK = "url(/brand/nunopi-symbol-transparent.png)";
+export function NunopiGlyph({ size = 18 }: { size?: number }) {
+  return <span aria-hidden className="block bg-current" style={{ width: size, height: size, WebkitMaskImage: MASK, maskImage: MASK, WebkitMaskSize: "contain", maskSize: "contain", WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskPosition: "center", maskPosition: "center" }} />;
 }
