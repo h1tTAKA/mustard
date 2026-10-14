@@ -17,5 +17,6 @@ assert.strictEqual(buildWorkHistory([]), "", "기록 없으면 빈 문자열");
 const wh = buildWorkHistory([{ key: "diff|abc1234|src/x.ts", kind: "diff", target: "src/x.ts @abc1234", expl: "버튼 색\n바꿈", ts: 0 }], 0, "Asia/Seoul");
 assert.ok(wh.includes("WORK HISTORY") && wh.includes("(diff) src/x.ts @abc1234: 버튼 색 바꿈") && wh.includes("YYYY-MM-DD.jsonl"));
 assert.ok(wh.includes("ref: catchup:diff|abc1234|src/x.ts") && wh.includes("[short label](<catchup:KEY>)"), "#1081 카드 ref + 링크 규칙");
+assert.ok(wh.includes("TIMING:") && wh.includes("UTC"), "#1081 해설 시각 지연·원본 시각 대조 안내");
 assert.ok(/Now: \d{4}-\d{2}-\d{2} \d{2}:\d{2} \(Asia\/Seoul, UTC[+-]\d{2}:\d{2}\)/.test(wh), "#1081 지금 시각·시간대");
 console.log("catchupAskContext ok");
