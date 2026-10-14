@@ -1,12 +1,13 @@
 "use client";
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit } from "@tabler/icons-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
-import { diffSections } from "@/lib/hunkDiff";
+import { diffSections, groupHunks, parseDiff } from "@/lib/hunkDiff";
+import { diffCardMarkdown, sessionCardMarkdown } from "@/lib/catchupMarkdown";
 import CatchupSessionRaw from "@/components/workspace/CatchupSessionRaw";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import { sendToAgent } from "@/lib/browser/sendToAgent";
@@ -86,7 +87,7 @@ async function saveItems(root: string, items: { key: string; kind: ConceptKind; 
   } catch { return false; }
 }
 
-export default function RepoLearnStream({ root, providerId, providerSettings, active = true, agentWorking = false, onOpenDiff, onFocusCommit }: {
+export default function RepoLearnStream({ root, providerId, providerSettings, active = true, agentWorking = false, onOpenDiff, onFocusCommit, chat, chatOpen = false, onToggleChat }: {
   root: string;
   active?: boolean;       // #1043 보이는 레포
   agentWorking?: boolean; // #1043 이 레포 에이전트가 작업 중(숨어 있어도 실시간 해설·설명 큐를 놓치지 않게)
@@ -94,6 +95,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   providerSettings?: ProviderSettings;
   onOpenDiff?: (hash: string, file: string) => void; // #1056 diff 카드 → 그 커밋·파일 diff 탭
   onFocusCommit?: (hash: string, file?: string) => void; // #1064 세션 카드 → git 그래프에서 그 커밋 짚기
+  chat?: ReactNode; chatOpen?: boolean; onToggleChat?: () => void; // #1078 워크스페이스 질문을 캐치업 안에(헤더 버튼으로 전환)
 }) {
   const t = useT();
   const { locale } = useLocale();
@@ -101,8 +103,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [concepts, setConcepts] = useState<Concept[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [terms, setTerms] = useState<Term[]>(() => load<Term>(gKey(root)));
-  const [live, setLive] = useState(false);
-  const [autoExplain, setAutoExplain] = useState(true);
+  const [lost, setLost] = useState(false); // #1078 실시간 연결이 몇 초 넘게 끊김(평소엔 표시 없음)
   const [termsOpen, setTermsOpen] = useState(false); // #1076 기본은 무조건 닫힘(다시 들어와도 펼쳐져 있지 않게)
   // #1062 설정 > 캐치업 — 카테고리별 표시(창에 보이기)·분석(새로 만들기). 표시는 렌더, 분석은 cfgRef(콜백)로.
   const explainShow = useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow);
@@ -159,8 +160,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const queueRef = useRef<string[]>([]);
   const busyRef = useRef(false);
   const metaRef = useRef(new Map<string, { kind: ConceptKind; target: string; tool: string }>());
-  const cfgRef = useRef({ providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel });
-  useEffect(() => { cfgRef.current = { providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel }; }, [providerId, providerSettings, locale, autoExplain, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel]);
+  const cfgRef = useRef({ providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel });
+  useEffect(() => { cfgRef.current = { providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel }; }, [providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel]);
 
   const explainOne = useCallback(async (key: string) => {
     const meta = metaRef.current.get(key); const { locale: loc } = cfgRef.current;
@@ -221,7 +222,12 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   useEffect(() => {
     if (!root || !connected) return;
     const es = new EventSource(`/api/repo/mcp/activity/stream?root=${encodeURIComponent(root)}`);
-    es.onopen = () => setLive(true); es.onerror = () => setLive(false);
+    // #1078 끊김은 5초 넘게 이어질 때만 알림(EventSource 자동 재연결의 잠깐 끊김은 무시)
+    let lostTimer: ReturnType<typeof setTimeout> | null = null;
+    const arm = () => { if (!lostTimer) lostTimer = setTimeout(() => setLost(true), 5000); };
+    arm(); // 처음 연결도 5초 안에 안 되면 알림
+    es.onopen = () => { if (lostTimer) clearTimeout(lostTimer); lostTimer = null; setLost(false); };
+    es.onerror = arm;
     es.onmessage = (m) => {
       let ev: ActivityEvent; try { ev = JSON.parse(m.data) as ActivityEvent; } catch { return; }
       if (!ev?.target) return;
@@ -240,9 +246,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       const key = `${ev.kind}|${ev.target}`;
       metaRef.current.set(key, { kind: ev.kind, target: ev.target, tool: ev.tool });
       setConcepts((prev) => { const found = prev.find((c) => c.key === key); if (found) return ev.ts < found.ts ? prev : [{ ...found, tool: ev.tool, ts: ev.ts }, ...prev.filter((c) => c.key !== key)]; /* 재생분(옛 시각)이 최근 카드를 끌어내리지 않게 */ return [{ key, kind: ev.kind, target: ev.target, tool: ev.tool, status: "idle" as const, ts: ev.ts }, ...prev].sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS); });
-      const cfg = cfgRef.current; if (cfg.autoExplain && cfg.providerId) enqueue(key);
+      const cfg = cfgRef.current; if (cfg.providerId) enqueue(key);
     };
-    return () => es.close();
+    return () => { es.close(); if (lostTimer) clearTimeout(lostTimer); };
   }, [root, enqueue, connected]);
 
   // #994 서버 기록 로드 — ① 옛 localStorage 기록 있으면 1회 이관(서버가 key로 멱등) 후 삭제 ② 최근 100개 로드해
@@ -343,6 +349,33 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       requestTerminalFocus(root, r.id); // 보낸 터미널 탭으로
     } finally { setHandoffBusy(false); }
   }, [handoffText, handoffBusy, root, t, toast]);
+  // #998 이 항목에 질문 — 대화 있으면 질문 수 배지. #1078 diff·세션은 다른 버튼들과 한 줄(같은 간격)에, 그 밖엔 오른쪽 위 단독
+  const askBtn = (c: Concept, alone: boolean) => c.status === "done" && c.expl ? (
+    <button type="button" onClick={() => setAskItem(c)} title={t("learn.ask")} aria-label={t("learn.ask")}
+      className={`${alone ? "absolute right-1.5 top-1.5 z-10 " : ""}flex items-center gap-0.5 rounded-md p-0.5 text-[10px] transition ${askCounts[c.key] || askItem?.key === c.key ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-300 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
+      <IconMessageCircle size={13} stroke={2} aria-hidden />{askCounts[c.key] ? <span className="font-semibold">{askCounts[c.key]}</span> : null}
+    </button>
+  ) : null;
+  // #1078 카드 → 마크다운 복사. diff = 구간별 줄 범위·바뀐 코드·설명(코드는 git에서), 세션 = 요약 + 원본 대화 전체.
+  const copyCard = useCallback(async (c: Concept) => {
+    const m = /^(.*) @([0-9a-f]{4,40})$/i.exec(c.target);
+    let md = "";
+    if (c.kind === "diff") {
+      const d = parseDiffItemKey(c.key); if (!d) return;
+      const info = c.tool !== "diff" ? c.tool : ""; const cut = info.indexOf(" · ");
+      const j = await fetch("/api/repo/git-show", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, hash: d.hash, file: d.file }) }).then((r) => r.json()).catch(() => null);
+      const hunks = j?.ok ? groupHunks(parseDiff(String(j.diff ?? ""))) : [];
+      const secs = diffSections(c.expl ?? "");
+      md = diffCardMarkdown({ path: d.file, hash: d.hash, branch: cut >= 0 ? info.slice(0, cut) : info, subject: cut >= 0 ? info.slice(cut + 3) : "", ts: c.ts, expl: c.expl ?? "",
+        sections: secs && secs.map((x) => ({ ...x, code: hunks.find((h) => h.newFrom === x.from && h.newTo === x.to)?.diffText })), codes: hunks.map((h) => h.diffText) });
+    } else if (c.kind === "session") {
+      const hash = c.key.slice("session|".length);
+      const j = await fetch(`/api/repo/session-link?root=${encodeURIComponent(root)}&hash=${encodeURIComponent(hash)}`).then((r) => r.json()).catch(() => null);
+      const cut = c.tool.indexOf(" · ");
+      md = sessionCardMarkdown({ subject: m ? m[1] : c.target, hash, agent: cut >= 0 ? c.tool.slice(0, cut) : c.tool, branch: cut >= 0 ? c.tool.slice(cut + 3) : "", ts: c.ts, summary: c.expl ?? "", messages: j?.session?.messages ?? [] });
+    } else return;
+    try { await navigator.clipboard.writeText(md); toast(t("learn.copiedMd")); } catch { toast(t("learn.copyFailed")); }
+  }, [root, t, toast]);
   const shownTerms = query ? terms.filter((x) => `${x.term}\n${x.def}`.toLowerCase().includes(query.toLowerCase())) : terms;
   const viewLabel = viewDay ? (() => { try { return new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${viewDay}T00:00:00`)); } catch { return viewDay; } })() : "";
 
@@ -397,17 +430,24 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     <div ref={rootRef} className="flex h-full min-h-0 w-full flex-col bg-white dark:bg-[var(--s-pane)]">
       <div className="relative flex shrink-0 items-center gap-1.5 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
         <IconActivity size={14} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
-        <span className="mr-auto truncate text-[13px] font-semibold text-zinc-700 dark:text-zinc-200" title={t("learn.mode")}>{t("learn.title")}</span>
+        <span className="truncate text-[13px] font-semibold text-zinc-700 dark:text-zinc-200" title={t("learn.mode")}>{t("learn.title")}</span>
+        {/* #1078 캘린더는 제목 바로 옆(유저 피드백) */}
         <button type="button" data-cal-toggle onClick={openCal} aria-expanded={calOpen} title={t("learn.calendar")} aria-label={t("learn.calendar")}
-          className={`rounded-md p-1 transition ${calOpen || viewDay ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
+          className={`mr-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition ${calOpen || viewDay ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
           <IconCalendar size={14} stroke={2} aria-hidden />
         </button>
-        <label className="flex cursor-pointer items-center gap-1 text-[10px] text-zinc-500 dark:text-zinc-400" title={t("learn.autoExplain")}>
-          <input type="checkbox" checked={autoExplain} onChange={(e) => setAutoExplain(e.target.checked)} /> {t("learn.autoExplain")}
-        </label>
-        <span className={`flex items-center gap-1 text-[10px] ${live ? "text-emerald-500" : "text-zinc-400 dark:text-zinc-500"}`}><IconPointFilled size={10} stroke={2} aria-hidden /> {live ? t("learn.live") : t("learn.idle")}</span>
+        {onToggleChat && ( /* #1078 워크스페이스 질문 — 캐치업 안 질문 화면 ↔ 카드 목록. 헤더 오른쪽 끝, 배경 있는 작은 버튼(켜지면 은은한 머스타드) */
+          <button type="button" onClick={onToggleChat} aria-pressed={chatOpen} title={t("learn.chat")}
+            className={`inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-[11px] font-medium leading-none transition ${chatOpen ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"}`}>
+            <IconMessageCircle size={12} stroke={2} aria-hidden />{t("learn.chat")}
+          </button>
+        )}
+        {lost && <span className="flex items-center gap-1 text-[10px] text-rose-500" title={t("learn.disconnected")}><IconPointFilled size={10} stroke={2} aria-hidden /> {t("learn.disconnected")}</span>}
         {calOpen && <CatchupCalendar days={days} selected={viewDay} locale={locale} onPick={pickDay} onClose={closeCal} />}
       </div>
+      {/* #1078 질문 화면 — 계속 마운트(답변 스트리밍 중 전환해도 안 끊김), 카드 목록과 배타 표시 */}
+      {chat && <div className={chatOpen ? "flex min-h-0 flex-1 flex-col" : "hidden"}>{chat}</div>}
+      <div className={chatOpen ? "hidden" : "contents"}>
       {/* #1049 카테고리 필터 칩 */}
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
         {([["all", t("learn.filterAll")], ...(explainShow ? [["explain", t("learn.filterExplain")]] : []), ...(showCommands ? [["commands", t("learn.filterCommands")]] : []), ...(diffShow ? [["diff", t("learn.filterDiff")]] : []), ...(sessionsShow ? [["session", t("learn.filterSessions")]] : []), ...(showTerms ? [["terms", t("learn.filterTerms")]] : [])] as [typeof filterSel, string][]).map(([id, label]) => (
@@ -463,31 +503,33 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                 <li className={`relative rounded-lg border bg-zinc-50/70 dark:bg-zinc-800/40 ${askItem?.key === c.key ? "border-mustard-500/60" : "border-zinc-200 dark:border-zinc-800"}`}>
                   {/* #1056 diff 카드 — 질문 버튼 왼쪽에 "diff 열기"(키에 담긴 커밋·파일) */}
                   {/* #1066 + git 그래프에서 그 커밋 짚기(세션 카드와 같은 버튼) */}
-                  {c.kind === "diff" && (onOpenDiff || onFocusCommit) && (() => { const d = parseDiffItemKey(c.key); return d ? (
-                    <span className="absolute right-8 top-1.5 z-10 flex items-center gap-0.5">
+                  {c.kind === "diff" && (() => { const d = parseDiffItemKey(c.key); return d ? (
+                    <span className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5">
                       {onFocusCommit && <button type="button" onClick={() => onFocusCommit(d.hash, d.file)} title={t("learn.focusCommit")} aria-label={t("learn.focusCommit")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconGitCommit size={13} stroke={2} aria-hidden /></button>}
                       {onOpenDiff && <button type="button" onClick={() => onOpenDiff(d.hash, d.file)} title={t("learn.openDiff")} aria-label={t("learn.openDiff")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconExternalLink size={13} stroke={2} aria-hidden /></button>}
+                      {/* #1078 마크다운 복사 */}
+                      <button type="button" onClick={() => void copyCard(c)} title={t("learn.copyMd")} aria-label={t("learn.copyMd")}
+                        className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconCopy size={13} stroke={2} aria-hidden /></button>
+                      {askBtn(c, false)}
                     </span>
                   ) : null; })()}
                   {/* #1064 세션 카드 — 에이전트로 보내기 · 그래프에서 커밋 짚기(질문 버튼 왼쪽) */}
                   {c.kind === "session" && c.status === "done" && (
-                    <span className="absolute right-8 top-1.5 z-10 flex items-center gap-0.5">
+                    <span className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5">
                       {onFocusCommit && <button type="button" onClick={() => onFocusCommit(c.key.slice("session|".length))} title={t("learn.focusCommit")} aria-label={t("learn.focusCommit")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconGitCommit size={13} stroke={2} aria-hidden /></button>}
                       <button type="button" onClick={() => { setHandoffKey((k) => (k === c.key ? null : c.key)); setHandoffText(""); }} title={t("learn.handoffSend")} aria-label={t("learn.handoffSend")} aria-expanded={handoffKey === c.key}
                         className={`rounded-md p-0.5 transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${handoffKey === c.key ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:text-mustard-600 dark:text-zinc-500 dark:hover:text-mustard-400"}`}><IconSend size={13} stroke={2} aria-hidden /></button>
+                      {/* #1078 마크다운 복사(요약 + 원본 대화 전체) */}
+                      <button type="button" onClick={() => void copyCard(c)} title={t("learn.copyMd")} aria-label={t("learn.copyMd")}
+                        className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconCopy size={13} stroke={2} aria-hidden /></button>
+                      {askBtn(c, false)}
                     </span>
                   )}
-                  {/* #998 이 항목에 질문 — 오른쪽 위, 대화 있으면 질문 수 배지 */}
-                  {c.status === "done" && c.expl && (
-                    <button type="button" onClick={() => setAskItem(c)} title={t("learn.ask")} aria-label={t("learn.ask")}
-                      className={`absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[10px] transition ${askCounts[c.key] || askItem?.key === c.key ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-300 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
-                      <IconMessageCircle size={13} stroke={2} aria-hidden />{askCounts[c.key] ? <span className="font-semibold">{askCounts[c.key]}</span> : null}
-                    </button>
-                  )}
-                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" || c.kind === "session" ? "pr-20" : "pr-9"}`}>
+                  {!(c.kind === "diff" && parseDiffItemKey(c.key)) && !(c.kind === "session" && c.status === "done") && askBtn(c, true)}
+                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" || c.kind === "session" ? "pr-24" : "pr-9"}`}>
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
                       {c.kind === "session" ? (() => {
@@ -585,6 +627,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }

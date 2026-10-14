@@ -1,6 +1,7 @@
 // 커밋을 만든 에이전트 세션 찾기(#1064) — 서버 전용(node fs). 파싱·구간은 agentSessionParse(순수).
 // 기록 파일은 수백MB~GB라 끝부분(TAIL_BYTES)만 읽음 — 커밋은 방금 일어난 일이라 끝 쪽에 있음.
-import { promises as fs } from "node:fs";
+import { promises as fs, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { projectDirFor } from "@/lib/subagents";
@@ -84,4 +85,18 @@ export async function activityForRoot(root: string, fromMs: number, toMs: number
     if (keep(w) && cwd && (cwd.replace(/\/+$/, "") + "/").startsWith(root.replace(/\/+$/, "") + "/")) out.push({ ...w, agent: "codex", sessionId: id(f) });
   }
   return out;
+}
+
+// #1078 질문 화면 에이전트가 참조할 이 레포의 에이전트 대화 기록 폴더(있는 것만). 캐치업이 1차, 이건 대조·보충용.
+// Claude·Grok·Gemini는 레포별 폴더, Codex는 날짜 폴더 전체라 session_meta.cwd로 걸러야 함(안내문에 명시).
+export function agentTranscriptDirs(root: string): { agent: string; dir: string; hint: string }[] {
+  const r = root.replace(/\/+$/, "");
+  const home = homedir();
+  const cands = [
+    { agent: "Claude Code", dir: projectDirFor(r), hint: "<session>.jsonl per session; lines have type user/assistant, message.content, timestamp, gitBranch" },
+    { agent: "Codex", dir: join(process.env.CODEX_HOME?.trim() || join(home, ".codex"), "sessions"), hint: `YYYY/MM/DD/rollout-*.jsonl for ALL repos — only use files whose first line (session_meta) has cwd "${r}" or a subfolder` },
+    { agent: "Grok Build", dir: join(home, ".grok", "sessions", encodeURIComponent(r)), hint: "<session>/chat_history.jsonl per session" },
+    { agent: "Gemini CLI", dir: join(home, ".gemini", "tmp", createHash("sha256").update(r).digest("hex")), hint: "chats/*.json per session" },
+  ];
+  return cands.filter((c) => existsSync(c.dir));
 }

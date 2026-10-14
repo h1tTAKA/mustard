@@ -17,6 +17,7 @@ import { existsSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute } from "node:path";
 import { streamDirFor } from "@/lib/catchupStore";
+import { agentTranscriptDirs } from "@/lib/agentSessions";
 
 interface AgentAnalyzeHttpRequest {
   providerId: AgentProviderKind;
@@ -108,6 +109,9 @@ export async function POST(
       try {
         // 시간 제한 없음 — 클라이언트가 fetch를 abort하면 request.signal이 fire되어
         // provider가 진행 중인 CLI 프로세스/HTTP 요청을 중단한다.
+        // #1078 질문 화면 — 캐치업(1차) + 이 레포 에이전트 전체 대화 기록(대조·보충) 읽기 범위
+        const workspace = resolveWorkspace(providerRequest, request.headers.get("sec-fetch-site"));
+        const askRequest = workspace?.transcripts.length ? { ...providerRequest, code: providerRequest.code + transcriptNote(workspace.transcripts) } : providerRequest;
         const callOptions = {
           signal: request.signal,
           onProgress: (line: string) => send({ type: "progress", line }),
@@ -120,14 +124,14 @@ export async function POST(
           onChunkProgress: (done: number, total: number) =>
             send({ type: "chunk-progress", done, total }),
           // #998 캐치업 질문 — 레포 루트가 실제 폴더일 때만 읽기 전용 범위(cwd + 기록 폴더). chat만.
-          workspace: resolveWorkspace(providerRequest, request.headers.get("sec-fetch-site")),
+          workspace,
         };
         // 큰 코드(code 모드 + LLM provider)는 병렬 청크 2단계로 분석해 wall-clock을 줄인다.
         // 글(text)은 호출 1번이 압도적으로 싸고 빠르다(본문 짧음·용어 적음 → 청크 고정비용이 이득 압도).
         // 그 외/글은 단일 호출.
         const response = shouldChunkCodeAnalysis(providerRequest, provider.provider)
-          ? await analyzeCodeChunked(provider.provider, providerRequest, callOptions)
-          : await provider.provider.analyze(providerRequest, callOptions);
+          ? await analyzeCodeChunked(provider.provider, askRequest, callOptions)
+          : await provider.provider.analyze(askRequest, callOptions);
         // 코드 모드: 고정 어휘(키워드+연산자)를 결정적으로 스캔해 모델 토큰과 병합한다(#505).
         // LLM이 목록에 있어도 흘리는 키워드/연산자 누락을 100% 막는다.
         if ((providerRequest.mode ?? "code") === "code") {
@@ -216,7 +220,14 @@ function parseAnalyzeHttpRequest(value: unknown): AgentAnalyzeHttpRequest | null
 //   Read/Grep/Glob뿐이라 외부로 내보낼 수단(Bash·WebFetch)이 없고, 결과는 이 응답(앱 화면)으로만 감.
 // - 위험 경로 = 다른 사이트 페이지가 127.0.0.1 앱 포트로 위조 요청. 응답은 SOP로 못 읽지만, 그래도 cross-site면 범위 거부.
 // - realpath로 심볼릭 링크 해소, 루트(/)·홈 디렉터리 자체는 레포로 인정 안 함.
-function resolveWorkspace(req: AgentAnalyzeRequest, fetchSite: string | null): { cwd: string; addDirs: string[] } | undefined {
+// #1078 에이전트 대화 기록 안내 — 캐치업 먼저, 세션 흐름은 원본 대화로 대조.
+function transcriptNote(ts: { agent: string; dir: string; hint: string }[]): string {
+  return ["", "", "## AGENT TRANSCRIPTS (read-only, this repository)",
+    "Full conversation logs of the coding agents that worked here. Use the Catch-up records first; open these to cross-check or fill gaps about a session's flow (what the user asked, what the agent decided and why). They are large — Grep for keywords/dates instead of reading whole files.",
+    ...ts.map((t) => `- ${t.agent}: ${t.dir} — ${t.hint}`)].join("\n");
+}
+
+function resolveWorkspace(req: AgentAnalyzeRequest, fetchSite: string | null): { cwd: string; addDirs: string[]; transcripts: { agent: string; dir: string; hint: string }[] } | undefined {
   const raw = req.workspaceRoot;
   if (req.mode !== "chat" || typeof raw !== "string" || !isAbsolute(raw)) return undefined;
   if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") return undefined; // cross-site·same-site 타 출처 거부
@@ -224,7 +235,8 @@ function resolveWorkspace(req: AgentAnalyzeRequest, fetchSite: string | null): {
   try { root = realpathSync(raw); if (!statSync(root).isDirectory()) return undefined; home = realpathSync(homedir()); } catch { return undefined; }
   if (root === "/" || root === home) return undefined;
   const dir = streamDirFor(raw); // 저장 키는 유저가 연 경로 그대로(클라와 동일 해시)
-  return { cwd: root, addDirs: existsSync(dir) ? [dir] : [] };
+  const transcripts = agentTranscriptDirs(raw); // #1078 에이전트 대화 기록(있는 것만)
+  return { cwd: root, addDirs: [...(existsSync(dir) ? [dir] : []), ...transcripts.map((t) => t.dir)], transcripts };
 }
 
 function isValidAnalyzeRequestPayload(

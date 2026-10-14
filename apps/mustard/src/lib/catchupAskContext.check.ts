@@ -1,6 +1,6 @@
 // catchupAskContext 점검 — node --experimental-strip-types src/lib/catchupAskContext.check.ts
 import assert from "node:assert";
-import { buildCatchupContext } from "./catchupAskContext.ts";
+import { buildCatchupContext, buildWorkHistory } from "./catchupAskContext.ts";
 
 const item = { key: "n|1|게이트", target: "머지 전 게이트", expl: "74단계 게이트 설명", ts: new Date(2026, 9, 6, 1, 13).getTime(), kind: "narration" };
 const other = { key: "n|2|플레이키", target: "플레이키 테스트", expl: "REAP_GRACE ".repeat(50), ts: new Date(2026, 9, 5, 14, 50).getTime(), kind: "narration" };
@@ -12,4 +12,8 @@ assert.ok(ctx.includes("- [2026-10-05 14:50] 플레이키 테스트:"), "이력 
 assert.ok(ctx.split("REAP_GRACE").length - 1 < 50, "이력 항목 길이 자름");
 assert.ok(ctx.includes("(not built yet)"), "지도 없음 표시");
 assert.ok(buildCatchupContext({ repo: "r", item: { ...item, expl: "x".repeat(20000) }, recent: [], digest: null }).length < 12000, "항목 해설 상한");
+// #1078 레포 질문 작업 기록
+assert.strictEqual(buildWorkHistory([]), "", "기록 없으면 빈 문자열");
+const wh = buildWorkHistory([{ key: "a", kind: "diff", target: "src/x.ts @abc1234", expl: "버튼 색\n바꿈", ts: 0 }]);
+assert.ok(wh.includes("WORK HISTORY") && wh.includes("(diff) src/x.ts @abc1234: 버튼 색 바꿈") && wh.includes("YYYY-MM-DD.jsonl"));
 console.log("catchupAskContext ok");

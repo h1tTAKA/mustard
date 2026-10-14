@@ -23,6 +23,7 @@ import type { AgentProviderKind, ChatMessage, ProviderSettings } from "@mustard/
 import type { QuizSession } from "@mustard/core";
 import { isNunopiEnabled } from "@/lib/product";
 import { isCardWorthy } from "@/lib/cardWorthy";
+import { buildWorkHistory, type AskItem } from "@/lib/catchupAskContext";
 type StreamEvent = { type: "progress"; line: string } | { type: "result"; response: { summary: string } } | { type: "error"; message: string };
 
 type SessionKind = "repo" | "file" | "diff" | "branch" | "worktree" | "arch";
@@ -458,7 +459,16 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
       }
     } catch { ctx = ""; }
     if (s.kind !== "worktree" && s.kind !== "arch") ctxCache.current.set(s.key, ctx); // worktree·arch는 캐시 안 함(항상 최신 diff/flow)
+    if (s.kind === "repo") ctx += "\n" + await workHistory(); // #1078 작업 기록은 매번 새로(캐시 X — 질문 사이에도 쌓임)
     return ctx;
+  }
+
+  // #1078 캐치업 작업 기록(최근 100개) — 레포 전체 질문에 붙임. 실패하면 빈 문자열.
+  async function workHistory(): Promise<string> {
+    try {
+      const j = await fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&limit=100`).then((r) => r.json());
+      return j?.ok && Array.isArray(j.items) ? buildWorkHistory(j.items as AskItem[]) : "";
+    } catch { return ""; }
   }
 
   // 레포 전체 컨텍스트 — 구조 요약 + package.json/README + 현재 브랜치.
@@ -633,7 +643,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
           const on = s.key === activeKey;
           return (
             <button key={s.key} type="button" onClick={() => setActiveKey(s.key)} title={s.key}
-              className={`group inline-flex min-w-0 shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium transition ${on ? "bg-mustard-500 text-brown-900 dark:bg-mustard-500 dark:text-brown-900" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"}`}>
+              className={`group inline-flex min-w-0 shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium transition ${on ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" /* #1078 캐치업 필터 칩과 같은 강조색 */ : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"}`}>
               {kindGlyph(s.kind, 11, "shrink-0")}
               <span className="max-w-[92px] truncate">{s.label}</span>
               {s.key !== REPO_KEY && (
@@ -711,8 +721,19 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
       <div ref={scrollRef} className="nunopi-scroll h-full overflow-y-auto px-3 py-3">
         {messages.length === 0 && !loading ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-300 dark:text-zinc-600">
-            <IconMessageCircle size={24} stroke={1.5} aria-hidden />
-            <span className="whitespace-pre-line text-[11px] leading-relaxed">{t("workspace.chatEmpty")}</span>
+            {/* #1078 활용 도움말 — 첫 줄 제목 + "· " 항목 목록(내어쓰기로 줄바꿈 정렬) */}
+            {(() => { const [title, ...items] = t("workspace.chatEmpty").split("\n"); return (
+              <div className="w-full max-w-[17rem] text-left text-zinc-400 dark:text-zinc-500">
+                {/* 흔한 빈 화면 패턴 — 둥근 배지 아이콘 + 가운데 제목, 그 아래 예시 목록 */}
+                <span className="mx-auto mb-2.5 flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500" aria-hidden>
+                  <IconMessageCircle size={20} stroke={1.75} />
+                </span>
+                <p className="mb-3 text-center text-[12px] font-semibold text-zinc-500 dark:text-zinc-400">{title}</p>
+                <ul className="flex flex-col gap-1.5 text-[11px] leading-snug">
+                  {items.map((x, i) => <li key={i} className="flex gap-1.5"><span className="shrink-0 text-zinc-300 dark:text-zinc-600" aria-hidden>•</span><span>{x.replace(/^·\s*/, "")}</span></li>)}
+                </ul>
+              </div>
+            ); })()}
           </div>
         ) : (
           <div className="flex flex-col gap-3">
@@ -861,10 +882,10 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
             rows={1}
             placeholder={t("workspace.chatPlaceholder")}
-            className="nunopi-scroll max-h-28 min-h-0 flex-1 resize-none bg-transparent text-[12px] leading-relaxed text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+            className="nunopi-scroll max-h-28 min-h-0 flex-1 resize-none bg-transparent py-0.5 text-[12px] leading-5 text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
           />
           <button type="button" onClick={() => void send()} disabled={!input.trim() || loading}
-            className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-mustard-500 text-brown-900 transition hover:bg-mustard-400 disabled:opacity-40 dark:bg-mustard-500 dark:text-brown-900">
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-mustard-500 text-brown-900 transition hover:bg-mustard-400 disabled:opacity-40 dark:bg-mustard-500 dark:text-brown-900">
             {loading ? <IconLoader2 size={13} stroke={2.5} className="animate-spin" aria-hidden /> : <IconArrowUp size={14} stroke={2.5} aria-hidden />}
           </button>
         </div>

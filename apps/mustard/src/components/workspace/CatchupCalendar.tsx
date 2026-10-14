@@ -44,9 +44,10 @@ export default function CatchupCalendar({ days, selected, locale, onPick, onClos
   const cells = monthCells(ym.y, ym.m);
   const move = (dm: number) => setYm(({ y, m }) => { const d = new Date(y, m + dm, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
 
+  // #1078 캘린더 버튼이 제목 옆(왼쪽)으로 와서 팝업도 왼쪽 정렬
   return (
     <div ref={ref} role="dialog" aria-label={t("learn.calendar")}
-      className="absolute right-2 top-full z-30 mt-1 w-60 rounded-xl border border-zinc-200 bg-white p-2.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+      className="absolute left-2 top-full z-30 mt-1 w-60 rounded-xl border border-zinc-200 bg-white p-2.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
       <div className="mb-1.5 flex items-center gap-1">
         <button type="button" onClick={() => move(-1)} aria-label={t("learn.prevMonth")} className="rounded-md p-1 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"><IconChevronLeft size={14} stroke={2} aria-hidden /></button>
         <span className="flex-1 text-center text-[12px] font-semibold text-zinc-700 dark:text-zinc-200">{title}</span>
