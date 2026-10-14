@@ -649,20 +649,10 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
         </div>
         <span className="h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />
         {tabStrip}
-        {/* #1083 nunopi로 가는 길은 단색 nunopi 심볼 하나 — 첫 화면 = 카드 갤러리(질문·분석·암기 아이콘 대체, 나머지는 nunopi 상단 전환) */}
-        {isNunopiEnabled() && onOpenMemorize && (
-          <>
-            <span className="mx-0.5 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />
-            <button type="button" onClick={onOpenMemorize} title={t("mode.openLearning")} aria-label={t("mode.openLearning")}
-              className="shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
-              <NunopiGlyph size={16} />
-            </button>
-            <span className="mx-0.5 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />
-          </>
-        )}
         {/* 우측 패널 모드 토글(#811) — 순서: 학습스트림 → 질문(Chat) → GitHub(#908). 우측 패널 열려 있을 때만. */}
         {chatOpen && (
           <>
+            <span className="mx-0.5 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />
             {/* 캐치업(#855·#992) — 에이전트 작업 실시간 해설. 설정에서 끄면 버튼 없음(#1062). */}
             {catchupOn && <button type="button" onClick={() => pickRightMode("learn")} aria-pressed={rightMode === "learn"} title={t("learn.mode")} aria-label={t("learn.mode")}
               className={`shrink-0 rounded-lg p-1.5 transition ${rightMode === "learn" ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
@@ -677,6 +667,17 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
               <IconBrandGithub size={16} stroke={2} aria-hidden />
               {/* CI 상태 도트(#812) — 진행(노랑,깜빡)/통과(초록)/실패(빨강). PR 없음·끝남이면 숨김. */}
               {ciDot && <span aria-hidden className={`absolute right-0.5 top-0.5 h-2 w-2 rounded-full ring-2 ring-white dark:ring-[var(--s-pane)] ${ciDot === "running" ? "animate-pulse bg-amber-400" : ciDot === "failure" ? "bg-rose-500" : "bg-emerald-500"}`} />}
+            </button>
+            <span className="mx-0.5 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />
+          </>
+        )}
+        {/* #1083 nunopi로 가는 길은 단색 nunopi 심볼 하나 — 첫 화면 = 카드 갤러리. 캐치업·GitHub 오른쪽(유저 요청)(질문·분석·암기 아이콘 대체, 나머지는 nunopi 상단 전환) */}
+        {isNunopiEnabled() && onOpenMemorize && (
+          <>
+            {!chatOpen && <span className="mx-0.5 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />}
+            <button type="button" onClick={onOpenMemorize} title={t("mode.openLearning")} aria-label={t("mode.openLearning")}
+              className="shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+              <NunopiGlyph size={16} />
             </button>
             <span className="mx-0.5 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />
           </>
