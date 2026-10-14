@@ -724,8 +724,11 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
             {/* #1078 활용 도움말 — 첫 줄 제목 + "· " 항목 목록(내어쓰기로 줄바꿈 정렬) */}
             {(() => { const [title, ...items] = t("workspace.chatEmpty").split("\n"); return (
               <div className="w-full max-w-[17rem] text-left text-zinc-400 dark:text-zinc-500">
-                <IconMessageCircle size={28} stroke={1.5} className="mx-auto mb-4 block" aria-hidden />
-                <p className="mb-2 text-[11.5px] font-semibold text-zinc-500 dark:text-zinc-400">{title}</p>
+                {/* 흔한 빈 화면 패턴 — 둥근 배지 아이콘 + 가운데 제목, 그 아래 예시 목록 */}
+                <span className="mx-auto mb-2.5 flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500" aria-hidden>
+                  <IconMessageCircle size={20} stroke={1.75} />
+                </span>
+                <p className="mb-3 text-center text-[12px] font-semibold text-zinc-500 dark:text-zinc-400">{title}</p>
                 <ul className="flex flex-col gap-1.5 text-[11px] leading-snug">
                   {items.map((x, i) => <li key={i} className="flex gap-1.5"><span className="shrink-0 text-zinc-300 dark:text-zinc-600" aria-hidden>•</span><span>{x.replace(/^·\s*/, "")}</span></li>)}
                 </ul>
