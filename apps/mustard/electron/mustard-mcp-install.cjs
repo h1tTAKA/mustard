@@ -1,7 +1,7 @@
 // Mustard MCP를 유저 에이전트들에 자동 등록(#1041 → #1070 통합) — 부팅 시 1회(패키징 앱), 실패해도 앱 정상.
 // - 스크립트를 userData에 복사(앱 번들 안 경로는 업데이트·이동으로 바뀜) → 그 경로를 등록.
 // - 실행 = Mustard 실행파일을 node로(ELECTRON_RUN_AS_NODE=1) — 에이전트 환경에 node가 없어도 됨.
-// - 깔려 있는 에이전트만: Claude·Codex·Grok은 각 CLI로(설정 파일은 읽기만), OpenCode·Cursor·Gemini는 설정 JSON에 우리 항목만.
+// - 깔려 있는 에이전트만: Claude·Codex·Grok은 각 CLI로(설정 파일은 읽기만), OpenCode·Cursor·Gemini·Antigravity는 설정 JSON에 우리 항목만.
 // - 이미 같은 설정이면 건너뜀. 옛 Mustard 항목(mustard-browser·mustard-katchup)만 지움 — 다른 MCP는 절대 안 건드림.
 // - 주의: claude의 -e는 값을 여러 개 받는 옵션이라 이름을 -e 뒤에 두면 이름까지 env로 먹음(#1041 리뷰) → 이름 먼저.
 const { readFileSync, writeFileSync, mkdirSync, existsSync } = require("node:fs");
@@ -119,6 +119,8 @@ async function installMustardMcp({ userData, execPath, claudePath, codexPath, gr
   result.opencode = viaJson(join(home, ".config", "opencode", "opencode.json"), "mcp", { type: "local", command: [want.command, ...want.args], environment: ENV, enabled: true });
   result.cursor = viaJson(join(home, ".cursor", "mcp.json"), "mcpServers", std);
   result.gemini = viaJson(join(home, ".gemini", "settings.json"), "mcpServers", std);
+  // #1086 Antigravity(IDE·CLI 공용 — ~/.gemini/antigravity/mcp_config.json이 이 파일을 가리킴). 안 깔렸으면 폴더 없음 → 건너뜀
+  result.antigravity = viaJson(join(home, ".gemini", "config", "mcp_config.json"), "mcpServers", std);
   return result;
 }
 
