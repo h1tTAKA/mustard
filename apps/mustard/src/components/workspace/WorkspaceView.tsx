@@ -3,7 +3,7 @@
 // 골격(커밋1): 4존 셸 [파일트리 | 터미널 | 코드 | 챗]. 각 존은 후속 커밋서 채움(트리·코드·챗·pty터미널).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconMessages, IconCards, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld } from "@tabler/icons-react";
-import { useShortcut, useShortcutHint, withShortcutHint, useT, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
+import { useShortcut, useShortcutHint, withShortcutHint, useT, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, withModel } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
 import { isNunopiEnabled } from "@/lib/product";
 import FileTree from "@/components/workspace/FileTree";
@@ -79,6 +79,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   useAutoCommitExplain(path, providerId, providerSettings); // #1054 새 커밋 diff 미리 설명(설정 > git)
   const [rightModeSel, setRightMode] = useState<"chat" | "github" | "learn">("chat");
   const [catchupChat, setCatchupChat] = useState(false); // #1078 캐치업 안 질문 화면 열림
+  const [cardJump, setCardJump] = useState<{ key: string; n: number } | null>(null); // #1081 질문 답변 링크 → 캐치업 카드
   // #1062 캐치업 전체 끄기 — 패널·버튼 숨김(선택돼 있었으면 질문으로), 실시간 해설 서버 플래그도 끔(패널이 안 떠도 여기서 알림).
   const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
   const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze);
@@ -90,6 +91,12 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const toast = useToast();
   const explainProvider = useSetting<string>(CUKEYS.explainProvider, "");
   const explainModel = useSetting<string>(CUKEYS.explainModel, "");
+  // #1081 질문 화면 AI·모델·카드 칩(설정 > 캐치업 > 질문). "" = 워크스페이스 기본 AI / 그 AI 기본 모델
+  const chatProvider = useSetting<string>(CUKEYS.chatProvider, "");
+  const chatModel = useSetting<string>(CUKEYS.chatModel, "");
+  const chatCards = useSetting<boolean>(CUKEYS.chatCards, CATCHUP_DEFAULTS.chatCards);
+  const chatPid = (chatProvider || providerId) as AgentProviderKind;
+  const chatPs = useMemo(() => withModel(providerSettings, chatPid, chatModel), [providerSettings, chatPid, chatModel]);
   useEffect(() => {
     void fetch("/api/repo/learn/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narration: catchupOn && explainAnalyze, provider: explainProvider || providerId, model: explainModel }) })
       // #1068 설정이 서버에 반영된 뒤 꺼진 동안 활동 채우기(서버가 프로세스당 한 번만 실제로 돎)
@@ -411,7 +418,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   }, []);
   // 변경 파일 경로 집합(챗 승계 판별용, #689) — fileStatus 바뀔 때만 새 identity(effect 무한루프 방지).
   const changedFileSet = useMemo(() => new Set(Object.keys(fileStatus)), [fileStatus]);
-  const chatEl = <WorkspaceChat root={path} files={files} focus={chatFocus} prefill={chatPrefill} changedFiles={changedFileSet} providerId={providerId} providerSettings={providerSettings} />; // #1078 캐치업 안·단독 모드 공용
+  const chatEl = <WorkspaceChat root={path} files={files} focus={chatFocus} prefill={chatPrefill} changedFiles={changedFileSet} providerId={chatPid} providerSettings={chatPs} cardsEnabled={chatCards} onOpenCard={catchupOn ? (key) => { setCatchupChat(false); setRightMode("learn"); setCardJump((j) => ({ key, n: (j?.n ?? 0) + 1 })); } : undefined} />; // #1078 캐치업 안·단독 모드 공용, #1081 카드 링크
   // 깃 그래프 새로고침 시 상태맵도 갱신 — stable(inline이면 GitGraph load가 매 렌더 재생성→무한 fetch).
   const handleGitRefreshed = useCallback(() => { if (path) void loadGitStatus(path); }, [path, loadGitStatus]);
 
@@ -797,7 +804,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
               ) : rightMode === "learn" ? (
                 /* #1051 캐치업 용어 → 추가된 카드 클릭 시 확대(throwCard) — 질문 패널과 같은 FlyCardProvider */
                 <FlyCardProvider active={active} providerId={providerId} providerSettings={providerSettings} sourceIds={flyNoSources} onGoToSource={() => {}}>
-                  <RepoLearnStream key={path} root={path} active={active} agentWorking={agentWorking} providerId={providerId} providerSettings={providerSettings} onOpenDiff={(hash, file) => openCodeTab({ kind: "diff", hash, file })} onFocusCommit={(hash, file) => setGitFocus((f) => ({ hash, file, n: (f?.n ?? 0) + 1 }))}  chat={chatEl} chatOpen={catchupChat} onToggleChat={() => setCatchupChat((v) => !v)} />
+                  <RepoLearnStream key={path} root={path} active={active} agentWorking={agentWorking} providerId={providerId} providerSettings={providerSettings} onOpenDiff={(hash, file) => openCodeTab({ kind: "diff", hash, file })} onFocusCommit={(hash, file) => setGitFocus((f) => ({ hash, file, n: (f?.n ?? 0) + 1 }))}  chat={chatEl} chatOpen={catchupChat} onToggleChat={() => setCatchupChat((v) => !v)} jump={cardJump} />
                 </FlyCardProvider>
               ) : (
                 /* FlyCardProvider(#750) — 세션 카드 목록에서 카드 클릭 시 확대·상세(throwCard). 워크스페이스 카드는 출처이동 없음(빈 sourceIds). */

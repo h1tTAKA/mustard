@@ -1,6 +1,6 @@
 "use client";
 
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 
@@ -20,10 +20,13 @@ const fixCjkEmphasis = (s: string) =>
 // detect: 언어 태그 없는 펜스(``` 만)도 자동 감지해 하이라이팅 — 모델 출력의 언어 표기가
 // 들쭉날쭉해도 색이 입혀진다. (미등록 언어 태그는 rehype-highlight v7이 에러 없이 스킵 — 기본 동작.)
 // 스타일은 globals.css의 .nunopi-md로 스코프한다(표/코드/목록/제목/링크 등).
-export default function Markdown({ children, className }: { children: string; className?: string }) {
+// onLink(선택, #1081): 링크 클릭을 앱이 먼저 처리(true 반환 = 처리함, 기본 이동 막음). catchup: 같은 앱 내부 스킴은 지우지 않음.
+const keepAppLinks = (url: string) => (/^catchup:/i.test(url) ? url : defaultUrlTransform(url));
+export default function Markdown({ children, className, onLink }: { children: string; className?: string; onLink?: (href: string) => boolean }) {
   return (
     <div className={className ? `nunopi-md ${className}` : "nunopi-md"}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { detect: true }]]}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { detect: true }]]} urlTransform={keepAppLinks}
+        components={onLink ? { a: ({ href, children: c, ...rest }) => <a {...rest} href={href} onClick={(e) => { if (href && onLink(href)) e.preventDefault(); }}>{c}</a> } : undefined}>
         {fixCjkEmphasis(children)}
       </ReactMarkdown>
     </div>

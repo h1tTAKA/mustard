@@ -24,6 +24,7 @@ import type { QuizSession } from "@mustard/core";
 import { isNunopiEnabled } from "@/lib/product";
 import { isCardWorthy } from "@/lib/cardWorthy";
 import { buildWorkHistory, type AskItem } from "@/lib/catchupAskContext";
+import { commitHashesIn, withRelatedCards } from "@/lib/catchupMarkdown";
 type StreamEvent = { type: "progress"; line: string } | { type: "result"; response: { summary: string } } | { type: "error"; message: string };
 
 type SessionKind = "repo" | "file" | "diff" | "branch" | "worktree" | "arch";
@@ -122,7 +123,7 @@ function kindGlyph(k: SessionKind, size: number, className?: string) {
   return k === "repo" ? <IconStack2 {...p} /> : k === "branch" ? <IconGitBranch {...p} /> : k === "diff" ? <IconGitCommit {...p} /> : k === "worktree" ? <IconPencil {...p} /> : k === "arch" ? <IconSitemap {...p} /> : <IconFileCode {...p} />;
 }
 
-export default function WorkspaceChat({ root, files, focus, prefill, changedFiles, providerId, providerSettings }: {
+export default function WorkspaceChat({ root, files, focus, prefill, changedFiles, providerId, providerSettings, onOpenCard, cardsEnabled = true }: {
   root: string;
   files: string[];
   focus: ChatFocus | null;
@@ -130,9 +131,17 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
   changedFiles?: Set<string>; // 현재 워킹트리 변경 파일 경로(#689 승계 트리거)
   providerId: AgentProviderKind;
   providerSettings: ProviderSettings;
+  cardsEnabled?: boolean; // #1081 설정 > 캐치업 > 질문 > 카드 칩
+  onOpenCard?: (key: string) => void; // #1081 답변의 catchup: 링크 → 그 캐치업 카드로
 }) {
   const t = useT();
   const { locale } = useLocale();
+  // #1081 catchup:KEY 링크 클릭 → 캐치업 카드로 이동(앱 안). 그 밖 링크는 기본 동작.
+  const onLink = useCallback((href: string) => {
+    if (!/^catchup:/i.test(href) || !onOpenCard) return false;
+    let key = href.slice("catchup:".length); try { key = decodeURIComponent(key); } catch { /* 이미 평문 */ }
+    onOpenCard(key); return true;
+  }, [onOpenCard]);
   const confirm = useConfirm();
   const toast = useToast();
   const store = `nunopi:ws-chat:${root}`;
@@ -169,7 +178,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
   }, [files]);
   // 카드로 만들 만한가? 파일명·경로·레포 파일 stem·코드 식별자 제외(공용 isCardWorthy, #998).
   // 카드(암기) = nunopi 학습모듈 기능 → 꺼져 있으면 칩 전부 숨김 + 요청에 noCards(#998).
-  const cardsOn = isNunopiEnabled();
+  const cardsOn = isNunopiEnabled() && cardsEnabled; // #1081 질문 설정에서 카드 칩 끄면 제안 자체를 안 받음(noCards)
   const keepCard = useCallback((c: SuggestedCard) => cardsOn && isCardWorthy(c.term, fileStems), [fileStems, cardsOn]);
   const messages = activeSub.messages;
 
@@ -578,6 +587,14 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
         }
       }
       // raw 저장(nunopi-cards 블록 보존) — 렌더 시 parseCardSuggestions로 본문/칩 분리.
+      // #1081 답변에 커밋 해시만 나오고 카드 링크가 빠졌으면 앱이 "관련 카드"를 붙임(시간대 질문에서 자주 빠짐)
+      if (answer && onOpenCard) {
+        const hs = commitHashesIn(answer);
+        if (hs.length) {
+          const j = await fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&hashes=${hs.join(",")}`).then((r) => r.json()).catch(() => null);
+          if (Array.isArray(j?.items)) answer = withRelatedCards(answer, j.items as { key: string; kind: string; target: string }[], t("learn.relatedCards"));
+        }
+      }
       writeSub(sk, subId, [...thread, { role: "assistant", content: answer || "(빈 응답)" }]);
     } catch {
       writeSub(sk, subId, [...thread, { role: "assistant", content: "(오류)" }]);
@@ -747,7 +764,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
               const cards = parsedCards.cards.filter(keepCard);
               return (
                 <div key={i} className="flex max-w-full flex-col items-start gap-1.5 text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-200">
-                  <div className="max-w-full"><Markdown>{text}</Markdown></div>
+                  <div className="max-w-full"><Markdown onLink={onLink}>{text}</Markdown></div>
                   {cards.length > 0 && (
                     <div className="flex flex-wrap items-center gap-1.5">
                       {cards.map((c) => bookmarkedTermExists(c.term) ? (
@@ -774,7 +791,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
             {streaming != null && (
               <div className="max-w-full text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-200">
                 {streaming
-                  ? <div className="max-w-full"><Markdown>{stripStreamingCardBlock(streaming)}</Markdown></div>
+                  ? <div className="max-w-full"><Markdown onLink={onLink}>{stripStreamingCardBlock(streaming)}</Markdown></div>
                   : <span className="flex items-center gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500"><IconLoader2 size={13} stroke={2} className="animate-spin" aria-hidden /> {t("chat.replying")}</span>}
               </div>
             )}
@@ -879,7 +896,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
             ref={taRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} // 한글 조합 중 Enter는 조합 확정용 — 보내면 마지막 글자가 입력창에 남음
             rows={1}
             placeholder={t("workspace.chatPlaceholder")}
             className="nunopi-scroll max-h-28 min-h-0 flex-1 resize-none bg-transparent py-0.5 text-[12px] leading-5 text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"

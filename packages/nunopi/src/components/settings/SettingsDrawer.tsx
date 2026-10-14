@@ -199,6 +199,7 @@ export default function SettingsDrawer({
     diffShow: useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow),
     termsShow: useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow), termsAnalyze: useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze),
     sessionsShow: useSetting<boolean>(CUKEYS.sessionsShow, CATCHUP_DEFAULTS.sessionsShow), sessionsAnalyze: useSetting<boolean>(CUKEYS.sessionsAnalyze, CATCHUP_DEFAULTS.sessionsAnalyze),
+    chatCards: useSetting<boolean>(CUKEYS.chatCards, CATCHUP_DEFAULTS.chatCards), // #1081
   };
   // 카테고리 → [프로바이더 키, 값, 모델 키, 모델 값] — "" = 워크스페이스 기본 AI / 그 AI 기본 모델(#1062)
   const cuProv: Record<string, [string, string, string, string]> = {
@@ -206,6 +207,7 @@ export default function SettingsDrawer({
     commands: [CUKEYS.commandsProvider, useSetting<string>(CUKEYS.commandsProvider, ""), CUKEYS.commandsModel, useSetting<string>(CUKEYS.commandsModel, "")],
     diff: [CUKEYS.diffProvider, useSetting<string>(CUKEYS.diffProvider, ""), CUKEYS.diffModel, useSetting<string>(CUKEYS.diffModel, "")],
     session: [CUKEYS.sessionsProvider, useSetting<string>(CUKEYS.sessionsProvider, ""), CUKEYS.sessionsModel, useSetting<string>(CUKEYS.sessionsModel, "")],
+    chat: [CUKEYS.chatProvider, useSetting<string>(CUKEYS.chatProvider, ""), CUKEYS.chatModel, useSetting<string>(CUKEYS.chatModel, "")], // #1081 질문 화면
   };
   // 캐치업 카테고리 모델 목록(#1062) — 캐치업 섹션 열 때 쓰이는 프로바이더만 같은 캐시로 조회.
   const cuProviders = [...new Set(Object.values(cuProv).map(([, v]) => (v || resolveModeProvider(modeProviders, "default")) as AgentProviderKind))].sort().join(",");
@@ -934,7 +936,9 @@ export default function SettingsDrawer({
               { id: "diff", label: t("settings.catchupDiff"), desc: t("settings.catchupDiffDesc"), show: [CUKEYS.diffShow, cu.diffShow], analyze: [GKEYS.autoExplainCommits, gAutoExplain] },
               { id: "session", label: t("settings.catchupSessions"), desc: t("settings.catchupSessionsDesc"), show: [CUKEYS.sessionsShow, cu.sessionsShow], analyze: [CUKEYS.sessionsAnalyze, cu.sessionsAnalyze] },
               { id: "terms", label: t("settings.catchupTerms"), desc: t("settings.catchupTermsDesc"), show: [CUKEYS.termsShow, cu.termsShow], analyze: [CUKEYS.termsAnalyze, cu.termsAnalyze] },
-            ] as { id: string; label: string; desc: string; show: [string, boolean]; analyze: [string, boolean] }[]).map((row) => (
+              // #1081 질문 화면 — AI·모델 + 카드 추가 칩(표시/분석 대신 스위치 하나)
+              { id: "chat", label: t("settings.catchupChat"), desc: t("settings.catchupChatDesc"), toggles: [["cards", t("settings.catchupChatCards"), [CUKEYS.chatCards, cu.chatCards]]] },
+            ] as { id: string; label: string; desc: string; show?: [string, boolean]; analyze?: [string, boolean]; toggles?: [string, string, [string, boolean]][] }[]).map((row) => (
               <div key={row.id} className={`flex items-center justify-between gap-3 ${cuOn ? "" : "opacity-50"}`}>
                 <div className="min-w-0">
                   <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{row.label}</span>
@@ -965,7 +969,7 @@ export default function SettingsDrawer({
                   ); })()}
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
-                  {([["show", t("settings.catchupShow"), row.show], ["analyze", t("settings.catchupAnalyze"), row.analyze]] as const).map(([k, cap, [key, stored]]) => { const on = cuOn && stored; return (
+                  {(row.toggles ?? [["show", t("settings.catchupShow"), row.show!], ["analyze", t("settings.catchupAnalyze"), row.analyze!]]).map(([k, cap, [key, stored]]) => { const on = cuOn && stored; return (
                     <div key={k} className="flex flex-col items-center gap-1">
                       <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">{cap}</span>
                       <button type="button" role="switch" aria-checked={on} aria-label={`${row.label} ${cap}`} disabled={!cuOn}

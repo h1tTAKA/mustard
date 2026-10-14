@@ -87,7 +87,7 @@ async function saveItems(root: string, items: { key: string; kind: ConceptKind; 
   } catch { return false; }
 }
 
-export default function RepoLearnStream({ root, providerId, providerSettings, active = true, agentWorking = false, onOpenDiff, onFocusCommit, chat, chatOpen = false, onToggleChat }: {
+export default function RepoLearnStream({ root, providerId, providerSettings, active = true, agentWorking = false, onOpenDiff, onFocusCommit, chat, chatOpen = false, onToggleChat, jump }: {
   root: string;
   active?: boolean;       // #1043 보이는 레포
   agentWorking?: boolean; // #1043 이 레포 에이전트가 작업 중(숨어 있어도 실시간 해설·설명 큐를 놓치지 않게)
@@ -95,6 +95,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   providerSettings?: ProviderSettings;
   onOpenDiff?: (hash: string, file: string) => void; // #1056 diff 카드 → 그 커밋·파일 diff 탭
   onFocusCommit?: (hash: string, file?: string) => void; // #1064 세션 카드 → git 그래프에서 그 커밋 짚기
+  jump?: { key: string; n: number } | null; // #1081 질문 답변 링크 → 이 카드로 이동·강조
   chat?: ReactNode; chatOpen?: boolean; onToggleChat?: () => void; // #1078 워크스페이스 질문을 캐치업 안에(헤더 버튼으로 전환)
 }) {
   const t = useT();
@@ -356,6 +357,35 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       <IconMessageCircle size={13} stroke={2} aria-hidden />{askCounts[c.key] ? <span className="font-semibold">{askCounts[c.key]}</span> : null}
     </button>
   ) : null;
+  // #1081 카드로 이동 — 전체 필터·검색 해제 → 지금 목록에 있으면 그대로, 없으면 서버에서 키로 찾아 그 날짜를 연 뒤 스크롤·2.5초 강조
+  const [flashKey, setFlashKey] = useState<string | null>(null);
+  const pendingJump = useRef<string | null>(null);
+  const jumpN = jump?.n;
+  useEffect(() => {
+    if (!jump) return;
+    setFilter("all"); setQ(""); // eslint-disable-line react-hooks/set-state-in-effect -- 외부 요청(링크 클릭) 시 보기 초기화
+    pendingJump.current = jump.key;
+    if (concepts.some((c) => c.key === jump.key)) { pickDay(null); return; }
+    const key = jump.key;
+    fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&key=${encodeURIComponent(key)}`).then((r) => r.json())
+      .then((j) => { if (pendingJump.current !== key) return; // 그새 다른 링크를 눌렀으면 옛 응답 무시(#1081 리뷰)
+        const it = j?.item as { ts?: number } | null; if (!it?.ts) { pendingJump.current = null; toast(t("learn.cardMissing")); return; }
+        const d = new Date(it.ts); const p = (n: number) => String(n).padStart(2, "0"); pickDay(`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`); })
+      .catch(() => { pendingJump.current = null; });
+    // 요청 번호(n)가 바뀔 때만
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpN]);
+  // 목록에 그 카드가 그려지면 스크롤·강조(날짜 불러오기가 끝난 뒤에도 다시 돎)
+  useEffect(() => {
+    const key = pendingJump.current; if (!key) return;
+    const el = listRef.current?.querySelector(`[data-ckey="${CSS.escape(key)}"]`);
+    if (!el) return;
+    pendingJump.current = null;
+    requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "center" }));
+    setFlashKey(key);
+    setTimeout(() => setFlashKey((k) => (k === key ? null : k)), 2500);
+  }, [concepts, dayItems, viewDay, filterSel, q]);
+
   // #1078 카드 → 마크다운 복사. diff = 구간별 줄 범위·바뀐 코드·설명(코드는 git에서), 세션 = 요약 + 원본 대화 전체.
   const copyCard = useCallback(async (c: Concept) => {
     const m = /^(.*) @([0-9a-f]{4,40})$/i.exec(c.target);
@@ -500,7 +530,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                     <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" aria-hidden />
                   </li>
                 )}
-                <li className={`relative rounded-lg border bg-zinc-50/70 dark:bg-zinc-800/40 ${askItem?.key === c.key ? "border-mustard-500/60" : "border-zinc-200 dark:border-zinc-800"}`}>
+                <li data-ckey={c.key} className={`relative rounded-lg border bg-zinc-50/70 transition-shadow dark:bg-zinc-800/40 ${flashKey === c.key ? "border-mustard-500 ring-2 ring-mustard-500/40" : askItem?.key === c.key ? "border-mustard-500/60" : "border-zinc-200 dark:border-zinc-800"}`}>
                   {/* #1056 diff 카드 — 질문 버튼 왼쪽에 "diff 열기"(키에 담긴 커밋·파일) */}
                   {/* #1066 + git 그래프에서 그 커밋 짚기(세션 카드와 같은 버튼) */}
                   {c.kind === "diff" && (() => { const d = parseDiffItemKey(c.key); return d ? (
@@ -578,7 +608,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {c.kind === "session" && handoffKey === c.key && ( /* 에이전트에게 넘길 요청 — ⌘Enter 보내기 */
                         <div className="mb-2 flex flex-col gap-1.5 rounded-md border border-mustard-500/40 p-1.5">
                           <textarea autoFocus value={handoffText} onChange={(e) => setHandoffText(e.target.value)} rows={3} placeholder={t("learn.handoffPlaceholder")}
-                            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void sendHandoff(c); } if (e.key === "Escape") setHandoffKey(null); }}
+                            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) { e.preventDefault(); void sendHandoff(c); } if (e.key === "Escape") setHandoffKey(null); }}
                             className="w-full resize-none rounded border border-zinc-200 bg-white px-2 py-1 text-[11.5px] text-zinc-800 outline-none focus:border-mustard-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
                           <div className="flex justify-end gap-1.5">
                             <button type="button" onClick={() => setHandoffKey(null)} className="rounded-md px-2 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">{t("common.cancel")}</button>

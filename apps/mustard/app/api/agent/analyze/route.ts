@@ -224,6 +224,8 @@ function parseAnalyzeHttpRequest(value: unknown): AgentAnalyzeHttpRequest | null
 function transcriptNote(ts: { agent: string; dir: string; hint: string }[]): string {
   return ["", "", "## AGENT TRANSCRIPTS (read-only, this repository)",
     "Full conversation logs of the coding agents that worked here. Use the Catch-up records first; open these to cross-check or fill gaps about a session's flow (what the user asked, what the agent decided and why). They are large — Grep for keywords/dates instead of reading whole files.",
+    "When an answer comes from these logs, still link the related catch-up card if there is one (diff/session key from the Catch-up records) — [label](<catchup:KEY>).",
+    "These logs carry the real time of each message/tool call (timestamp fields, usually UTC) — use them to pin down exact timing; catch-up narration is written a bit later than the activity.",
     ...ts.map((t) => `- ${t.agent}: ${t.dir} — ${t.hint}`)].join("\n");
 }
 

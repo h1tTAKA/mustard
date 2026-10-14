@@ -3,7 +3,7 @@
 // 컨텍스트 = 항목 → 캐치업 이력 → 레포(지도 + 읽기 전용 도구, 서버가 workspaceRoot 검증). 카드칩은 nunopi 켜짐일 때만.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconMessageCircle, IconX, IconArrowUp, IconLoader2, IconPlus, IconCheck } from "@tabler/icons-react";
-import { useT, useLocale, useToast, Markdown, parseCardSuggestions, stripStreamingCardBlock, stripCardBlock, removeSuggestedCard, createChatCard, bookmarkedTermExists, type SuggestedCard } from "@mustard/core";
+import { useT, useLocale, useToast, useSetting, CUKEYS, CATCHUP_DEFAULTS, Markdown, parseCardSuggestions, stripStreamingCardBlock, stripCardBlock, removeSuggestedCard, createChatCard, bookmarkedTermExists, type SuggestedCard } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { isNunopiEnabled } from "@/lib/product";
 import { isCardWorthy } from "@/lib/cardWorthy";
@@ -30,7 +30,8 @@ export default function CatchupAskPanel({ root, item, providerId, providerSettin
   const [streaming, setStreaming] = useState<string | null>(null);
   const curKey = useRef(item.key);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const cardsOn = isNunopiEnabled(); // 카드(암기) = nunopi 학습모듈 기능 → 꺼지면 칩·카드 지시 없음
+  const chatCards = useSetting<boolean>(CUKEYS.chatCards, CATCHUP_DEFAULTS.chatCards); // #1081 설정 > 캐치업 > 질문 > 카드 칩(질문 화면과 같은 스위치)
+  const cardsOn = isNunopiEnabled() && chatCards; // 카드(암기) = nunopi 학습모듈 기능 → 꺼지면 칩·카드 지시 없음
 
   // 항목 바뀌면 그 항목 대화 복원.
   useEffect(() => {

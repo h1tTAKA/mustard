@@ -131,6 +131,8 @@ async function runViaSna(
       : { model }; // codex/opencode: 모델만 명시(claude 플래그 미전달). opencode는 쓰기 제한 불확실 → 도구 범위 미전달
 
   let full = "";
+
+  let segStart = 0; // #1081 마지막 도구 호출 뒤 답 시작 위치
   let think = ""; // 추론 누적
   let streamed = false;
   let usage: AgentUsage | undefined;
@@ -145,11 +147,15 @@ async function runViaSna(
   })) {
     if (opts.signal?.aborted) throw new Error("분석이 취소되었습니다.");
     const type = ev.type as string | undefined;
-    if (type === "assistant_delta") {
+    if (type === "tool_use" || type === "tool_call" || type === "tool_result") {
+      // #1081 도구를 쓰는 대화(질문 화면): 도구 호출 전에 쓴 중간 혼잣말("찾아볼게요", "Lines are long…")은 답이 아님 →
+      // 마지막 도구 뒤에 쓴 글만 최종 답. 도구 없으면 segStart=0 그대로(기존과 동일).
+      segStart = full.length;
+    } else if (type === "assistant_delta") {
       streamed = true;
       full += (ev.delta as string | undefined) ?? "";
       // 비-full(코드/explain 진행 라벨)은 누적 끝 200자만 — runClaudeCli와 동일(델타 조각 X).
-      opts.onProgress?.(opts.fullProgress ? full : full.slice(-200));
+      opts.onProgress?.(opts.fullProgress ? full.slice(segStart) : full.slice(-200));
     } else if (type === "thinking_delta") {
       // 추론 조각 — 답변과 별개로 흘려 대기 구간에 "생각 중" 활동 표시.
       think += (ev.message as string | undefined) ?? "";
@@ -164,7 +170,8 @@ async function runViaSna(
     }
   }
 
-  return { text: full, usage };
+  const answer = full.slice(segStart).trim();
+  return { text: answer || full, usage }; // 마지막 도구 뒤 글이 비면(드묾) 전체로
 }
 
 // SNA 도달 불가 시 모드별 에러 응답.
