@@ -34,13 +34,19 @@ export function buildCatchupContext({ repo, item, recent, digest }: { repo: stri
 }
 
 // #1078 레포 전체 질문(캐치업 안 질문 화면)에 붙일 작업 기록 — 최근 항목 요약 + 전체 기록 파일 안내. "오늘 뭐 했지" 류 질문용.
-export function buildWorkHistory(recent: AskItem[]): string {
+// #1081 줄마다 카드 ref(key) + 지금 시각·시간대 + 링크 규칙 → 답변에서 카드로 이동, "어제 2시쯤" 같은 시간대 질문.
+export function buildWorkHistory(recent: AskItem[], now = Date.now(), tz = Intl.DateTimeFormat().resolvedOptions().timeZone): string {
   if (!recent.length) return "";
-  const lines = recent.map((x) => `- [${stamp(x.ts)}] (${x.kind}) ${x.target}: ${clip(x.expl.replace(/\s+/g, " "), 160)}`).join("\n");
+  const off = -new Date(now).getTimezoneOffset(); const sign = off >= 0 ? "+" : "-";
+  const zone = `${tz}, UTC${sign}${String(Math.floor(Math.abs(off) / 60)).padStart(2, "0")}:${String(Math.abs(off) % 60).padStart(2, "0")}`;
+  const lines = recent.map((x) => `- [${stamp(x.ts)}] (${x.kind}) ${x.target}: ${clip(x.expl.replace(/\s+/g, " "), 160)} — ref: catchup:${x.key}`).join("\n");
   return [
     "## WORK HISTORY (Catch-up records, newest first)",
-    "This is what AI coding agents did in this repository (live narration, commands, commit diffs, agent sessions). Use it for questions like \"what did I work on today / since yesterday\".",
-    "Older days are in the additional readable directory: one YYYY-MM-DD.jsonl per day (fields kind, target, expl, ts); sessions/<hash>.json are raw agent transcripts. Grep/Read them when the question needs more than the recent items below.",
-    clip(lines, 12000),
+    `Now: ${stamp(now)} (${zone}). All times below are local. Resolve "today/yesterday/around 2pm" against this.`,
+    "This is what AI coding agents did in this repository (live narration, commands, commit diffs (kind diff), agent sessions per commit (kind session)). Use it for questions like \"what did I work on today / since yesterday\" or \"what did I do around 2pm yesterday\".",
+    "For a time-window question, gather the commits (diff + session items) closest to that time, plus nearby narration, and explain them together: what changed in code (diff), what the user asked and why the agent did it (session).",
+    "LINKS: whenever you mention a specific card, link it so the user can jump to it: [short label](<catchup:KEY>) with KEY exactly as its ref (keep the angle brackets). For lists of changed code, give one linked bullet per diff card. Never invent keys.",
+    "Older days are in the additional readable directory: one YYYY-MM-DD.jsonl per day (fields key, kind, target, expl, ts in ms); sessions/<hash>.json are raw agent transcripts per commit. Grep/Read them when the question needs more than the recent items below — use each record's key field for links.",
+    clip(lines, 16000),
   ].join("\n");
 }
