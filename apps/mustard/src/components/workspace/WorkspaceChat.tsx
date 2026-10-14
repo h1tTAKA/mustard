@@ -895,7 +895,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
             ref={taRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} // 한글 조합 중 Enter는 조합 확정용 — 보내면 마지막 글자가 입력창에 남음
             rows={1}
             placeholder={t("workspace.chatPlaceholder")}
             className="nunopi-scroll max-h-28 min-h-0 flex-1 resize-none bg-transparent py-0.5 text-[12px] leading-5 text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"

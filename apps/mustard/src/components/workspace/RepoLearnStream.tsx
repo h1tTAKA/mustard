@@ -608,7 +608,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {c.kind === "session" && handoffKey === c.key && ( /* 에이전트에게 넘길 요청 — ⌘Enter 보내기 */
                         <div className="mb-2 flex flex-col gap-1.5 rounded-md border border-mustard-500/40 p-1.5">
                           <textarea autoFocus value={handoffText} onChange={(e) => setHandoffText(e.target.value)} rows={3} placeholder={t("learn.handoffPlaceholder")}
-                            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void sendHandoff(c); } if (e.key === "Escape") setHandoffKey(null); }}
+                            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) { e.preventDefault(); void sendHandoff(c); } if (e.key === "Escape") setHandoffKey(null); }}
                             className="w-full resize-none rounded border border-zinc-200 bg-white px-2 py-1 text-[11.5px] text-zinc-800 outline-none focus:border-mustard-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
                           <div className="flex justify-end gap-1.5">
                             <button type="button" onClick={() => setHandoffKey(null)} className="rounded-md px-2 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">{t("common.cancel")}</button>
