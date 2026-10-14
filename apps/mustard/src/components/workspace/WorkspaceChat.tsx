@@ -123,7 +123,7 @@ function kindGlyph(k: SessionKind, size: number, className?: string) {
   return k === "repo" ? <IconStack2 {...p} /> : k === "branch" ? <IconGitBranch {...p} /> : k === "diff" ? <IconGitCommit {...p} /> : k === "worktree" ? <IconPencil {...p} /> : k === "arch" ? <IconSitemap {...p} /> : <IconFileCode {...p} />;
 }
 
-export default function WorkspaceChat({ root, files, focus, prefill, changedFiles, providerId, providerSettings, onOpenCard }: {
+export default function WorkspaceChat({ root, files, focus, prefill, changedFiles, providerId, providerSettings, onOpenCard, cardsEnabled = true }: {
   root: string;
   files: string[];
   focus: ChatFocus | null;
@@ -131,6 +131,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
   changedFiles?: Set<string>; // 현재 워킹트리 변경 파일 경로(#689 승계 트리거)
   providerId: AgentProviderKind;
   providerSettings: ProviderSettings;
+  cardsEnabled?: boolean; // #1081 설정 > 캐치업 > 질문 > 카드 칩
   onOpenCard?: (key: string) => void; // #1081 답변의 catchup: 링크 → 그 캐치업 카드로
 }) {
   const t = useT();
@@ -177,7 +178,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
   }, [files]);
   // 카드로 만들 만한가? 파일명·경로·레포 파일 stem·코드 식별자 제외(공용 isCardWorthy, #998).
   // 카드(암기) = nunopi 학습모듈 기능 → 꺼져 있으면 칩 전부 숨김 + 요청에 noCards(#998).
-  const cardsOn = isNunopiEnabled();
+  const cardsOn = isNunopiEnabled() && cardsEnabled; // #1081 질문 설정에서 카드 칩 끄면 제안 자체를 안 받음(noCards)
   const keepCard = useCallback((c: SuggestedCard) => cardsOn && isCardWorthy(c.term, fileStems), [fileStems, cardsOn]);
   const messages = activeSub.messages;
 
