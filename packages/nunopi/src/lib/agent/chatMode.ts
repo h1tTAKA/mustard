@@ -50,6 +50,9 @@ export function buildChatPrompt(request: AgentAnalyzeRequest): string {
     `Answer the user's last question about the code above in ${name}. Be friendly and to the point,`,
     `and format the answer as clean, scannable markdown per the style guide above (headings, bold, bullets,`,
     `fenced code with a language tag, a table when comparing) — but keep short answers short.`,
+    // #1091 지시·코드 주석·대화가 다른 언어(캐치업 프롬프트는 한국어)여도 답은 설정 언어로 — 맨 끝이라 가장 강함.
+    `OUTPUT LANGUAGE (CRITICAL): Write your ENTIRE answer — title line, headings, explanations, term lists and card definitions — in ${name},`,
+    `even if the instructions, code comments or conversation above are in another language. Translate headings like "용어" too. Keep code and identifiers unchanged.`,
     ...(request.noCards ? ["Tutor:"] : cardInstruction(name)),
   ].join("\n");
 }

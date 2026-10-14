@@ -9,3 +9,7 @@ export const setNarrationProvider = (p: string) => { g.__mustardNarrationProvide
 const gm = globalThis as unknown as { __mustardNarrationModel?: string };
 export const narrationModel = () => gm.__mustardNarrationModel ?? "";
 export const setNarrationModel = (m: string) => { gm.__mustardNarrationModel = m; };
+// 해설 언어(#1091) — 앱 언어 설정(ko/ja/en). 캐치업이 config POST로 알려줌, 그 전엔 ko.
+const gl = globalThis as unknown as { __mustardNarrationLocale?: "ko" | "ja" | "en" };
+export const narrationLocale = () => gl.__mustardNarrationLocale ?? "ko";
+export const setNarrationLocale = (l: "ko" | "ja" | "en") => { gl.__mustardNarrationLocale = l; };

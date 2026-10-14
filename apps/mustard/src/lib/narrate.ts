@@ -3,7 +3,7 @@ import { snaClaudeProvider, snaCodexProvider, snaOpenCodeProvider } from "@musta
 import type { AgentAnalyzeRequest } from "@mustard/core";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems } from "@/lib/catchupStore";
-import { narrationProvider, narrationModel } from "@/lib/narrationConfig";
+import { narrationProvider, narrationModel, narrationLocale } from "@/lib/narrationConfig";
 
 function narrationPrompt(agent: string, delta: string, diff: string): string {
   const hasDiff = diff.trim().length > 0;
@@ -84,7 +84,7 @@ export async function narrate(cwd: string, agent: string, delta: string, diff: s
   const model = pid === chosen ? narrationModel() : ""; // 다른 AI로 대체되면 그 모델 id는 안 맞음 → 기본 모델
   const request: AgentAnalyzeRequest = {
     code: "repo terminal activity",
-    locale: "ko",
+    locale: narrationLocale(), // #1091 앱 언어(본문 지시는 한국어여도 buildChatPrompt 끝 지시가 이김)
     providerId: pid,
     mode: "chat",
     messages: [{ role: "user", content: narrationPrompt(agent, delta, diff) }],
