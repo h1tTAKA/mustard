@@ -142,6 +142,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [filterSel, setFilter] = useState<"all" | "explain" | "commands" | "diff" | "session" | "terms">("all");
   // #1049 검색 — 서버가 전체 날짜에서 제목·설명을 찾음(입력 멈춘 뒤 250ms). 용어집은 화면에서 거름.
   const [q, setQ] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false); // #1088 돋보기 버튼 → 입력칸
   const [found, setFound] = useState<Concept[] | null>(null); // null = 검색 중
   const query = q.trim();
   useEffect(() => {
@@ -502,11 +503,20 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
             {label}
           </button>
         ))}
-        <label className="ml-auto flex min-w-[8rem] flex-1 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 focus-within:border-mustard-500/60 dark:border-zinc-700">
-          <IconSearch size={11} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
-          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("learn.search")} aria-label={t("learn.search")}
-            className="min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none placeholder:text-zinc-400 dark:text-zinc-200" />
-        </label>
+        {/* #1088 검색 — 평소엔 돋보기 버튼만, 누르면 입력칸(검색어가 있으면 계속 열림). 비운 채 포커스 잃거나 Esc면 닫힘 */}
+        {searchOpen || q ? (
+          <label className="ml-auto flex min-w-[8rem] flex-1 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 focus-within:border-mustard-500/60 dark:border-zinc-700">
+            <IconSearch size={11} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
+            <input type="search" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("learn.search")} aria-label={t("learn.search")}
+              onBlur={() => { if (!q) setSearchOpen(false); }} onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); setSearchOpen(false); } }}
+              className="min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none placeholder:text-zinc-400 dark:text-zinc-200" />
+          </label>
+        ) : (
+          <button type="button" onClick={() => setSearchOpen(true)} title={t("learn.search")} aria-label={t("learn.search")}
+            className="ml-auto rounded-full p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+            <IconSearch size={13} stroke={2} aria-hidden />
+          </button>
+        )}
       </div>
       {/* #1088 칩 필터 표시 — ✕로 해제 */}
       {tag && (
