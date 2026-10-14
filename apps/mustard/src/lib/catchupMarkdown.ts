@@ -28,7 +28,7 @@ export function sessionCardMarkdown(o: { subject: string; hash: string; branch: 
 // #1081 답변에 나온 커밋 해시(링크로 안 단 것) — 앱이 "관련 카드"를 붙일 대상. 이미 catchup 링크가 있는 해시는 뺌.
 export function commitHashesIn(answer: string): string[] {
   const linked = new Set([...answer.matchAll(/catchup:(?:diff|session)\|([0-9a-f]{7,40})/gi)].map((m) => m[1].toLowerCase().slice(0, 7)));
-  const found = [...answer.matchAll(/(?<![0-9a-zA-Z_/])[0-9a-f]{7,40}(?![0-9a-zA-Z_])/g)].map((m) => m[0].toLowerCase())
+  const found = [...answer.matchAll(/(?<![0-9a-zA-Z_/#-])[0-9a-f]{7,40}(?![0-9a-zA-Z_-])/g)].map((m) => m[0].toLowerCase())
     .filter((h) => /[a-f]/.test(h) && /\d/.test(h)); // 숫자만·글자만인 단어 제외(해시 오탐 줄이기)
   return [...new Set(found.map((h) => h.slice(0, 7)))].filter((h) => !linked.has(h));
 }

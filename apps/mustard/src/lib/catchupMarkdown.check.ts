@@ -13,5 +13,6 @@ assert.ok(s.includes("### Conversation") && s.includes("````text") && s.includes
 assert.deepStrictEqual(commitHashesIn("2시쯤 9f677d4 커밋과 [x](<catchup:session|0f9a13fabc>) 그리고 deadbeef1 이 있었고 1234567 은 숫자"), ["9f677d4", "deadbee"], "링크 단 해시·숫자만 제외");
 const wr = withRelatedCards("답\n```nunopi-cards\n[]\n```", [{ key: "diff|9f677d4|a.ts", kind: "diff", target: "a.ts @9f677d4" }], "관련 카드");
 assert.ok(wr.indexOf("관련 카드") < wr.indexOf("```nunopi-cards") && wr.includes("[a.ts @9f677d4](<catchup:diff|9f677d4|a.ts>)"), "카드 블록 앞에");
+assert.deepStrictEqual(commitHashesIn("color: #deadbe1f; var(--abc1234a)"), [], "CSS 색·변수 제외(리뷰)");
 assert.strictEqual(withRelatedCards("답", [], "관련 카드"), "답");
 console.log("catchupMarkdown ok");
