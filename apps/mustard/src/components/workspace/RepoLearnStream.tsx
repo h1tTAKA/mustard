@@ -2,7 +2,7 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit } from "@tabler/icons-react";
+import { IconX, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
@@ -142,6 +142,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [filterSel, setFilter] = useState<"all" | "explain" | "commands" | "diff" | "session" | "terms">("all");
   // #1049 검색 — 서버가 전체 날짜에서 제목·설명을 찾음(입력 멈춘 뒤 250ms). 용어집은 화면에서 거름.
   const [q, setQ] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false); // #1088 돋보기 버튼 → 입력칸
   const [found, setFound] = useState<Concept[] | null>(null); // null = 검색 중
   const query = q.trim();
   useEffect(() => {
@@ -330,8 +331,24 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
     dragCleanup.current = stop;
   }, [askH]);
+  // #1088 칩 필터 — diff·세션 카드의 [에이전트][⎇ 브랜치][해시] 칩을 누르면 그 값의 diff·세션 카드만(같은 칩 다시·✕로 해제)
+  type Tag = { type: "agent" | "branch" | "hash"; value: string };
+  const [tag, setTag] = useState<Tag | null>(null);
+  const toggleTag = (t2: Tag) => setTag((cur) => (cur && cur.type === t2.type && cur.value === t2.value ? null : t2));
+  const cardMeta = (c: { kind: string; key: string; tool: string }) => {
+    const cut = c.tool.indexOf(" · ");
+    if (c.kind === "diff") { const h = c.key.split("|")[1] ?? ""; const info = c.tool !== "diff" ? c.tool : ""; return { hash: h.slice(0, 7), branch: cut >= 0 ? info.slice(0, cut) : info, agent: "" }; }
+    if (c.kind === "session") return { hash: c.key.slice("session|".length, "session|".length + 7), agent: cut >= 0 ? c.tool.slice(0, cut) : c.tool, branch: cut >= 0 ? c.tool.slice(cut + 3) : "" };
+    return null;
+  };
+  const tagMatch = (c: { kind: string; key: string; tool: string }) => { if (!tag) return true; const m = cardMeta(c); return !!m && (tag.type === "hash" ? m.hash === tag.value.slice(0, 7) : m[tag.type] === tag.value); };
+  // 칩을 버튼처럼(카드 헤더 버튼 안이라 span + 전파 막기)
+  const chipProps = (t2: Tag) => ({ role: "button" as const, tabIndex: 0, title: t("learn.chipFilter"),
+    onClick: (e: React.MouseEvent) => { e.stopPropagation(); toggleTag(t2); },
+    onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggleTag(t2); } } });
+  const chipOn = (t2: Tag) => (tag && tag.type === t2.type && tag.value === t2.value ? " ring-1 ring-mustard-500/70" : "");
   const shown = (query ? (found ?? []) : viewDay ? (dayItems ?? []) : concepts).filter((c) => (isCommand(c) ? showCommands : c.kind === "diff" ? diffShow : c.kind === "session" ? sessionsShow : explainShow) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)) // #1062 표시 끔 = 분석된 것도 숨김, 문서 편집 카드는 항상 숨김(#1049)
-    && (filter === "all" || (filter === "commands" ? isCommand(c) : filter === "diff" ? c.kind === "diff" : filter === "session" ? c.kind === "session" : filter === "explain" && !isCommand(c) && c.kind !== "diff" && c.kind !== "session")));
+    && (filter === "all" || (filter === "commands" ? isCommand(c) : filter === "diff" ? c.kind === "diff" : filter === "session" ? c.kind === "session" : filter === "explain" && !isCommand(c) && c.kind !== "diff" && c.kind !== "session"))).filter(tagMatch);
   // #1064 세션 → 에이전트로 넘기기(인앱 브라우저 피드백과 같은 경로). 카드 하나에 요청 입력창.
   const [handoffKey, setHandoffKey] = useState<string | null>(null);
   const [handoffText, setHandoffText] = useState("");
@@ -486,12 +503,33 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
             {label}
           </button>
         ))}
-        <label className="ml-auto flex min-w-[8rem] flex-1 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 focus-within:border-mustard-500/60 dark:border-zinc-700">
-          <IconSearch size={11} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
-          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("learn.search")} aria-label={t("learn.search")}
-            className="min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none placeholder:text-zinc-400 dark:text-zinc-200" />
-        </label>
+        {/* #1088 검색 — 평소엔 돋보기 버튼만, 누르면 입력칸(검색어가 있으면 계속 열림). 비운 채 포커스 잃거나 Esc면 닫힘 */}
+        {searchOpen || q ? (
+          <label className="ml-auto flex min-w-[8rem] flex-1 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 focus-within:border-mustard-500/60 dark:border-zinc-700">
+            <IconSearch size={11} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
+            <input type="search" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("learn.search")} aria-label={t("learn.search")}
+              onBlur={() => { if (!q) setSearchOpen(false); }} onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); setSearchOpen(false); } }}
+              className="min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none placeholder:text-zinc-400 dark:text-zinc-200" />
+          </label>
+        ) : (
+          <button type="button" onClick={() => setSearchOpen(true)} title={t("learn.search")} aria-label={t("learn.search")}
+            className="ml-auto rounded-full p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+            <IconSearch size={13} stroke={2} aria-hidden />
+          </button>
+        )}
       </div>
+      {/* #1088 칩 필터 표시 — ✕로 해제 */}
+      {tag && (
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-zinc-200 px-3 py-1.5 text-[11px] dark:border-zinc-800">
+          <span className="text-zinc-400 dark:text-zinc-500">{t("learn.chipFilterOn")}</span>
+          <button type="button" onClick={() => setTag(null)} aria-label={t("learn.chipFilterClear")}
+            className="inline-flex min-w-0 items-center gap-1 rounded-full bg-mustard-500/15 px-2 py-0.5 font-medium text-mustard-700 transition hover:bg-mustard-500/25 dark:text-mustard-400">
+            {tag.type === "branch" ? <IconGitBranch size={11} stroke={2} className="shrink-0" aria-hidden /> : null}
+            <span className={`truncate ${tag.type === "hash" ? "font-mono" : ""}`}>{tag.value}</span>
+            <IconX size={11} stroke={2} className="shrink-0" aria-hidden />
+          </button>
+        </div>
+      )}
       {/* 지난 날 보는 중 안내 바 — 오늘로 복귀(그사이 실시간 항목 바로 보임) */}
       {viewDay && (
         <div className="flex shrink-0 items-center gap-1.5 border-b border-mustard-500/30 bg-mustard-500/10 px-3 py-1.5 text-[11px] text-mustard-700 dark:text-mustard-400">
@@ -569,9 +607,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                         return (<>
                           <span className="block break-words text-[12px] font-medium text-zinc-700 dark:text-zinc-100">{subject}</span>
                           <span className="mt-1 flex flex-wrap items-center gap-1">
-                            {agent && <span className="rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">{agent}</span>}
-                            {branch && <span className="inline-flex max-w-full items-center gap-0.5 truncate rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"><IconGitBranch size={10} stroke={2} className="shrink-0" aria-hidden /><span className="truncate">{branch}</span></span>}
-                            {hash && <span className="rounded-md bg-mustard-500/10 px-1.5 py-0.5 font-mono text-[10px] text-mustard-700 dark:text-mustard-400">{hash}</span>}
+                            {agent && <span {...chipProps({ type: "agent", value: agent })} className={`cursor-pointer rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 transition hover:bg-blue-500/20 dark:text-blue-300${chipOn({ type: "agent", value: agent })}`}>{agent}</span>}
+                            {branch && <span {...chipProps({ type: "branch", value: branch })} className={`inline-flex max-w-full cursor-pointer items-center gap-0.5 truncate rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 transition hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700${chipOn({ type: "branch", value: branch })}`}><IconGitBranch size={10} stroke={2} className="shrink-0" aria-hidden /><span className="truncate">{branch}</span></span>}
+                            {hash && <span {...chipProps({ type: "hash", value: hash })} className={`cursor-pointer rounded-md bg-mustard-500/10 px-1.5 py-0.5 font-mono text-[10px] text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400${chipOn({ type: "hash", value: hash })}`}>{hash}</span>}
                             <span className="text-[10px] text-zinc-400 dark:text-zinc-500">{fmtDateTime(c.ts)}</span>
                           </span>
                         </>);
@@ -586,8 +624,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                             {slash >= 0 && <span className="font-normal text-zinc-400 dark:text-zinc-500">{path.slice(0, slash + 1)}</span>}{path.slice(slash + 1)}
                           </span>
                           <span className="mt-1 flex flex-wrap items-center gap-1">
-                            {branch && <span className="inline-flex max-w-full items-center gap-0.5 truncate rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"><IconGitBranch size={10} stroke={2} className="shrink-0" aria-hidden /><span className="truncate">{branch}</span></span>}
-                            {hash && <span className="rounded-md bg-mustard-500/10 px-1.5 py-0.5 font-mono text-[10px] text-mustard-700 dark:text-mustard-400">{hash}</span>}
+                            {branch && <span {...chipProps({ type: "branch", value: branch })} className={`inline-flex max-w-full cursor-pointer items-center gap-0.5 truncate rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 transition hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700${chipOn({ type: "branch", value: branch })}`}><IconGitBranch size={10} stroke={2} className="shrink-0" aria-hidden /><span className="truncate">{branch}</span></span>}
+                            {hash && <span {...chipProps({ type: "hash", value: hash })} className={`cursor-pointer rounded-md bg-mustard-500/10 px-1.5 py-0.5 font-mono text-[10px] text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400${chipOn({ type: "hash", value: hash })}`}>{hash}</span>}
                             <span className="text-[10px] text-zinc-400 dark:text-zinc-500">{fmtDateTime(c.ts)}</span>
                           </span>
                           {subject && <span className="mt-1 line-clamp-2 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{subject}</span>}
