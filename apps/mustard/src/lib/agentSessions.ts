@@ -5,7 +5,8 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { projectDirFor } from "@/lib/subagents";
-import { parseClaudeLine, parseCodexLine, segmentForCommit, activityInWindow, type AgentKind, type SessionMsg, type WindowActivity } from "@/lib/agentSessionParse";
+import { parseClaudeLine, parseCodexLine, segmentForCommit, activityInWindow, parseCursorMessages, parseAntigravitySteps, asIs, type AgentKind, type SessionMsg, type WindowActivity, type ParsedLine } from "@/lib/agentSessionParse";
+import { DatabaseSync } from "node:sqlite"; // #1086 Cursor·Antigravity 기록(SQLite) — Node 22+/Electron 내장, 추가 의존성 없음
 
 const TAIL_BYTES = 8 * 1024 * 1024;   // 보통은 끝 8MB — 방금 커밋이라 끝에 있음
 const WIDE_BYTES = 64 * 1024 * 1024;  // 못 찾으면 64MB까지 넓혀 한 번 더(앱이 꺼져 있다 나중에 몰아 처리할 때, #1064 정합성 점검)
@@ -37,6 +38,52 @@ async function recentFiles(dir: string, sinceMs: number, max = MAX_FILES): Promi
 }
 const under = (a: string, b: string) => { const x = a.replace(/\/+$/, ""), y = b.replace(/\/+$/, ""); return x === y || x.startsWith(y + "/") || y.startsWith(x + "/"); };
 
+// ── #1086 SQLite 기록 에이전트(Cursor·Antigravity) — 레포(cwd)가 맞고 sinceMs 이후 바뀐 대화만, 공통 ParsedLine 배열로.
+const underRoot = (cwd: string, root: string) => (cwd.replace(/\/+$/, "") + "/").startsWith(root.replace(/\/+$/, "") + "/");
+type SqlSession = { agent: AgentKind; sessionId: string; lines: ParsedLine[]; mtime: number };
+async function sqlSessions(root: string, sinceMs: number): Promise<SqlSession[]> {
+  const out: SqlSession[] = []; const home = homedir();
+  // Cursor CLI: ~/.cursor/chats/<hash>/<agentId>/{meta.json(cwd), store.db}
+  const cbase = join(home, ".cursor", "chats");
+  for (const h of await fs.readdir(cbase).catch(() => [] as string[])) for (const a of await fs.readdir(join(cbase, h)).catch(() => [] as string[])) {
+    const dir = join(cbase, h, a);
+    try {
+      const mtime = await mtimeOf(join(dir, "store.db"));
+      if (mtime < sinceMs) continue; // 시각부터 — 오래된 대화는 meta.json도 안 읽음(30초 주기 재시도 부담, #1086 리뷰)
+      const meta = JSON.parse(await fs.readFile(join(dir, "meta.json"), "utf8")) as { cwd?: string; createdAtMs?: number };
+      if (!meta.cwd || !underRoot(meta.cwd, root)) continue;
+      const db = new DatabaseSync(join(dir, "store.db"), { readOnly: true });
+      try {
+        const head = JSON.parse(Buffer.from(String((db.prepare("select value from meta limit 1").get() as { value: string }).value), "hex").toString()) as { latestRootBlobId?: string };
+        const blob = (id: string) => { const r = db.prepare("select data from blobs where id = ?").get(id) as { data: Uint8Array } | undefined; return r ? Buffer.from(r.data) : null; };
+        const rootBlob = head.latestRootBlobId ? blob(head.latestRootBlobId) : null; if (!rootBlob) continue;
+        const msgs: { role?: string; content?: unknown }[] = [];
+        for (let i = 0; i < rootBlob.length;) { // 루트 = field 1 반복(메시지 blob id 32바이트) — 대화 순서
+          const tag = rootBlob[i++]; let len = 0, mul = 1, b: number; do { b = rootBlob[i++]; len += (b & 0x7f) * mul; mul *= 128; } while (b & 0x80 && i < rootBlob.length); // 잘린 blob에서 끝을 넘지 않게(#1086 리뷰)
+          if (tag === 0x0a) { const m = blob(rootBlob.subarray(i, i + len).toString("hex")); if (m) { try { msgs.push(JSON.parse(m.toString())); } catch { /* 메시지 아닌 blob */ } } }
+          i += len;
+        }
+        out.push({ agent: "cursor", sessionId: a, lines: parseCursorMessages(msgs, meta.createdAtMs ?? mtime), mtime });
+      } finally { db.close(); }
+    } catch { /* 깨진·잠긴 대화 — 건너뜀 */ }
+  }
+  // Antigravity CLI: ~/.gemini/antigravity-cli/conversations/<id>.db (WAL이라 -wal 시각도 봄)
+  const abase = join(home, ".gemini", "antigravity-cli", "conversations");
+  for (const f of (await fs.readdir(abase).catch(() => [] as string[])).filter((n) => n.endsWith(".db"))) {
+    const p = join(abase, f); const mtime = Math.max(await mtimeOf(p), await mtimeOf(p + "-wal"));
+    if (mtime < sinceMs) continue;
+    try {
+      const db = new DatabaseSync(p, { readOnly: true });
+      try {
+        const rows = db.prepare("select idx, step_type as type, metadata, step_payload as payload from steps order by idx").all() as { idx: number; type: number; metadata: Uint8Array | null; payload: Uint8Array | null }[];
+        const { lines, cwd } = parseAntigravitySteps(rows);
+        if (cwd && underRoot(cwd, root)) out.push({ agent: "antigravity", sessionId: f.replace(/\.db$/, ""), lines, mtime });
+      } finally { db.close(); }
+    } catch { /* 쓰는 중·스키마 다름 — 건너뜀 */ }
+  }
+  return out;
+}
+
 export async function findCommitSession(root: string, commitSec: number, isMerge = false): Promise<CommitSession | null> {
   const sinceMs = commitSec * 1000 - 1000;
   const found: CommitSession[] = [];
@@ -55,6 +102,11 @@ export async function findCommitSession(root: string, commitSec: number, isMerge
     if (seg?.msgs.length && cwd && under(cwd, root)) found.push({ agent: "codex", sessionId: f.split("/").pop()!.replace(/\.jsonl$/, ""), branch: seg.branch, messages: seg.msgs, callTs: seg.callTs, closed: seg.closed || Date.now() - await mtimeOf(f) > IDLE_MS });
   }
   // 커밋 시각에 가장 가까운 git commit 호출
+  // #1086 Cursor·Antigravity
+  for (const q of await sqlSessions(root, sinceMs)) {
+    const seg = segmentForCommit(q.lines, asIs, commitSec, isMerge);
+    if (seg?.msgs.length) found.push({ agent: q.agent, sessionId: q.sessionId, branch: seg.branch, messages: seg.msgs, callTs: seg.callTs, closed: seg.closed || Date.now() - q.mtime > IDLE_MS });
+  }
   return found.sort((a, b) => Math.abs(a.callTs - commitSec * 1000) - Math.abs(b.callTs - commitSec * 1000))[0] ?? null;
 }
 
@@ -83,6 +135,10 @@ export async function activityForRoot(root: string, fromMs: number, toMs: number
     const w = activityInWindow(await linesSince(f, fromMs, parseCodexLine), parseCodexLine, fromMs, toMs);
     const cwd = w.cwd ?? parseCodexLine(await headLine(f))?.cwd;
     if (keep(w) && cwd && (cwd.replace(/\/+$/, "") + "/").startsWith(root.replace(/\/+$/, "") + "/")) out.push({ ...w, agent: "codex", sessionId: id(f) });
+  }
+  for (const q of await sqlSessions(root, fromMs)) { // #1086
+    const w = activityInWindow(q.lines, asIs, fromMs, toMs);
+    if (keep(w)) out.push({ ...w, agent: q.agent, sessionId: q.sessionId });
   }
   return out;
 }
