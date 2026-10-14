@@ -4,7 +4,7 @@ import { askAgent } from "@/lib/hunkNotes";
 import type { SessionMsg } from "@/lib/agentSessionParse";
 
 export const sessionItemKey = (hash: string) => `session|${hash}`;
-export const AGENT_LABEL: Record<string, string> = { claude: "Claude Code", codex: "Codex" };
+export const AGENT_LABEL: Record<string, string> = { claude: "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity" };
 const TOOL_CLIP = 300, INPUT_MAX = 14_000; // 요약 입력 — 도구 출력은 짧게, 대화는 그대로, 전체 상한(최근 쪽 유지)
 
 const PROMPT = "아래는 AI 코딩 에이전트와 사용자의 대화 기록입니다(커밋 하나를 만든 구간). 이 작업을 개발 초보도 이해하게 요약해줘:\n"
