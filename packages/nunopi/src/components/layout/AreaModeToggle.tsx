@@ -83,14 +83,15 @@ const SUB_OPTIONS: { value: ViewMode; tKey: string; Icon: typeof IconCode }[] = 
 interface QASubToggleProps {
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
+  withCards?: boolean; // #1083 맨 앞에 카드 갤러리(암기) — Mustard에서 nunopi 진입 = 카드 갤러리
   disabled?: boolean;
 }
 
-export function QASubToggle({ viewMode, onViewModeChange, disabled = false }: QASubToggleProps) {
+export function QASubToggle({ viewMode, onViewModeChange, disabled = false, withCards = false }: QASubToggleProps) {
   const t = useT();
   return (
     <div role="tablist" aria-label={t("nav.qaSub")} className={SEG_WRAP}>
-      {SUB_OPTIONS.map((opt) => {
+      {(withCards ? [{ value: "memorize" as ViewMode, tKey: "mode.memorize", Icon: IconCards }, ...SUB_OPTIONS] : SUB_OPTIONS).map((opt) => {
         const selected = viewMode === opt.value;
         const { Icon } = opt;
         const label = t(opt.tKey);

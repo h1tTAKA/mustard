@@ -224,6 +224,7 @@ export default function LearningHome() {
     // 코드/글은 분석 모드와 연동(암기는 분석 상태 보존).
     if (next === "code" || next === "text") ca.handleModeChange(next);
   }
+  const enterQAArea = () => handleViewModeChange(lastQAViewRef.current);
   // 브랜드 토글(#912): 워크스페이스 → 마지막 학습뷰 복원(없으면 history 기본).
   const enterNunopi = () => handleViewModeChange(lastLearnViewRef.current);
 
@@ -265,6 +266,7 @@ export default function LearningHome() {
     <ConfirmProvider>
     <ToastProvider>
       <AppShell
+        subToggleInMemorize
         onOpenSettings={() => setIsSettingsOpen(true)}
         onLogoClick={() => handleViewModeChange("history")}
         editorCollapsed={editorCollapsed}
@@ -281,7 +283,7 @@ export default function LearningHome() {
         history={vm === "history"}
         historyView={<HistoryView active={vm === "history"} onNavigate={handleGoToHistory} providerId={resolveModeProvider(modeProviders, "history")} providerSettings={viewPs.history} />}
         workspace={vm === "workspace"}
-        workspaceView={<WorkspaceTabs ref={wsRef} active={vm === "workspace"} providerId={resolveModeProvider(modeProviders, "default")} providerSettings={viewPs.default} onExitWorkspace={enterNunopi} onOpenMemorize={() => handleViewModeChange("memorize")} onOpenSettings={() => setIsSettingsOpen(true)} />}
+        workspaceView={<WorkspaceTabs ref={wsRef} active={vm === "workspace"} providerId={resolveModeProvider(modeProviders, "default")} providerSettings={viewPs.default} onExitWorkspace={enterQAArea} onOpenMemorize={() => handleViewModeChange("memorize")} onOpenSettings={() => setIsSettingsOpen(true)} />}
         modeToggle={
           <ModeSwapToggle
             viewMode={vm}
@@ -295,6 +297,7 @@ export default function LearningHome() {
           <QASubToggle
             viewMode={viewMode}
             onViewModeChange={handleViewModeChange}
+            withCards // #1083 카드 갤러리 = nunopi 첫 화면
             disabled={ca.isLoading}
           />
         }

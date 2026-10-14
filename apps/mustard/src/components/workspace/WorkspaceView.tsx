@@ -51,7 +51,7 @@ function ZonePlaceholder({ Icon, label }: { Icon: typeof IconFiles; label: strin
 }
 
 // path(레포)는 WorkspaceTabs가 소유해 prop로 내려준다(#731). key={path}로 탭마다 인스턴스 분리.
-export default function WorkspaceView({ path, active = true, agentWorking = false, providerId, providerSettings, onExitWorkspace, onOpenSettings, tabStrip }: { path: string; active?: boolean; agentWorking?: boolean; providerId: AgentProviderKind; providerSettings: ProviderSettings; onExitWorkspace?: () => void; onOpenSettings?: () => void; tabStrip?: ReactNode }) {
+export default function WorkspaceView({ path, active = true, agentWorking = false, providerId, providerSettings, onOpenMemorize, onOpenSettings, tabStrip }: { path: string; active?: boolean; agentWorking?: boolean; providerId: AgentProviderKind; providerSettings: ProviderSettings; onOpenMemorize?: () => void; onOpenSettings?: () => void; tabStrip?: ReactNode }) {
   const t = useT();
   const fullscreen = useFullscreen(); // 타이틀바 통합(#779) — 신호등 자리 좌측 패딩 토글
   const [picking, setPicking] = useState(false);
@@ -649,11 +649,11 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
         </div>
         <span className="h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />
         {tabStrip}
-        {/* #1083 nunopi로 가는 길은 단색 nunopi 심볼 하나 — 마지막으로 보던 nunopi 화면으로(질문·분석·암기 아이콘 대체) */}
-        {isNunopiEnabled() && onExitWorkspace && (
+        {/* #1083 nunopi로 가는 길은 단색 nunopi 심볼 하나 — 첫 화면 = 카드 갤러리(질문·분석·암기 아이콘 대체, 나머지는 nunopi 상단 전환) */}
+        {isNunopiEnabled() && onOpenMemorize && (
           <>
             <span className="mx-0.5 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />
-            <button type="button" onClick={onExitWorkspace} title={t("mode.openLearning")} aria-label={t("mode.openLearning")}
+            <button type="button" onClick={onOpenMemorize} title={t("mode.openLearning")} aria-label={t("mode.openLearning")}
               className="shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
               <NunopiGlyph size={16} />
             </button>
