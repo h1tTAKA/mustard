@@ -721,9 +721,15 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
       <div ref={scrollRef} className="nunopi-scroll h-full overflow-y-auto px-3 py-3">
         {messages.length === 0 && !loading ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-300 dark:text-zinc-600">
-            {/* #1078 활용 도움말 — 목록이라 왼쪽 정렬 */}
-            <IconMessageCircle size={24} stroke={1.5} aria-hidden />
-            <span className="max-w-[18rem] whitespace-pre-line text-left text-[11px] leading-relaxed">{t("workspace.chatEmpty")}</span>
+            {/* #1078 활용 도움말 — 첫 줄 제목 + "· " 항목 목록(내어쓰기로 줄바꿈 정렬) */}
+            {(() => { const [title, ...items] = t("workspace.chatEmpty").split("\n"); return (
+              <div className="w-full max-w-[17rem] text-left text-zinc-400 dark:text-zinc-500">
+                <p className="mb-2 text-[11.5px] font-semibold text-zinc-500 dark:text-zinc-400">{title}</p>
+                <ul className="flex flex-col gap-1.5 text-[11px] leading-snug">
+                  {items.map((x, i) => <li key={i} className="flex gap-1.5"><span className="shrink-0 text-zinc-300 dark:text-zinc-600" aria-hidden>•</span><span>{x.replace(/^·\s*/, "")}</span></li>)}
+                </ul>
+              </div>
+            ); })()}
           </div>
         ) : (
           <div className="flex flex-col gap-3">
