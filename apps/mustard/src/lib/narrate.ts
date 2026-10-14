@@ -5,7 +5,10 @@ import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems } from "@/lib/catchupStore";
 import { narrationProvider, narrationModel, narrationLocale } from "@/lib/narrationConfig";
 
-function narrationPrompt(agent: string, delta: string, diff: string): string {
+// #1091 출력 언어 — 본문 지시가 한국어라 ko 아니면 맨 앞·끝에 못박음(제목 줄·소제목까지).
+const LANG_NAME = { ko: "한국어", ja: "일본어(日本語)", en: "영어(English)" } as const;
+const langRule = (loc: keyof typeof LANG_NAME) => `⚠️ 출력 언어: 제목 줄·소제목(용어 소제목 포함)·본문 전부 ${LANG_NAME[loc]}로 써. 아래 지시가 한국어여도 답은 ${LANG_NAME[loc]}.`;
+function narrationPrompt(agent: string, delta: string, diff: string, loc: keyof typeof LANG_NAME): string {
   const hasDiff = diff.trim().length > 0;
   const task = hasDiff
     ? `위 **git diff가 방금까지 바뀐 진짜 코드**야. 이 diff를 중심으로 가르쳐:
@@ -25,7 +28,8 @@ ${delta}`
     : `## 터미널 로그
 ${delta}`;
 
-  return `너는 유저의 코드베이스를 가르치는 **선생님**이야. 유저가 에이전틱 코딩(${agent})하며 놓치는 **"이 코드가 뭐고 어떻게 동작하는지, 얽힌 프로그래밍·아키텍처 개념"**을 가르쳐줘.
+  const rule = loc === "ko" ? "" : `${langRule(loc)}\n\n`;
+  return `${rule}너는 유저의 코드베이스를 가르치는 **선생님**이야. 유저가 에이전틱 코딩(${agent})하며 놓치는 **"이 코드가 뭐고 어떻게 동작하는지, 얽힌 프로그래밍·아키텍처 개념"**을 가르쳐줘.
 
 📏 길이: 소제목 2~3개, 각 2~4문장, 전체 400~700자로 **완결**(시작한 소제목·문장 반드시 끝맺기).
 
@@ -39,7 +43,7 @@ ${task}
 
 맨 앞 줄: 아주 짧은 제목(코드/개념 중심 명사구 25자 안팎). "제목:" 라벨·#·** 금지. JSON·코드블록으로 용어 출력 금지.
 
-${material}`;
+${material}${rule ? `\n\n${langRule(loc)}` : ""}`;
 }
 
 // 모델이 그래도 끝에 JSON terms 배열을 붙이면 파싱해 읽기 좋은 목록으로 교체(백스톱).
@@ -87,7 +91,7 @@ export async function narrate(cwd: string, agent: string, delta: string, diff: s
     locale: narrationLocale(), // #1091 앱 언어(본문 지시는 한국어여도 buildChatPrompt 끝 지시가 이김)
     providerId: pid,
     mode: "chat",
-    messages: [{ role: "user", content: narrationPrompt(agent, delta, diff) }],
+    messages: [{ role: "user", content: narrationPrompt(agent, delta, diff, narrationLocale()) }],
     ...(model ? { providerSettings: { [pid]: { model } } } : {}), // #1062 해설 모델
   };
   const res = await provider.analyze(request, { signal: opts.signal });
