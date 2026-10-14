@@ -724,6 +724,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
             {/* #1078 활용 도움말 — 첫 줄 제목 + "· " 항목 목록(내어쓰기로 줄바꿈 정렬) */}
             {(() => { const [title, ...items] = t("workspace.chatEmpty").split("\n"); return (
               <div className="w-full max-w-[17rem] text-left text-zinc-400 dark:text-zinc-500">
+                <IconMessageCircle size={28} stroke={1.5} className="mx-auto mb-4 block" aria-hidden />
                 <p className="mb-2 text-[11.5px] font-semibold text-zinc-500 dark:text-zinc-400">{title}</p>
                 <ul className="flex flex-col gap-1.5 text-[11px] leading-snug">
                   {items.map((x, i) => <li key={i} className="flex gap-1.5"><span className="shrink-0 text-zinc-300 dark:text-zinc-600" aria-hidden>•</span><span>{x.replace(/^·\s*/, "")}</span></li>)}
@@ -878,10 +879,10 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
             rows={1}
             placeholder={t("workspace.chatPlaceholder")}
-            className="nunopi-scroll max-h-28 min-h-0 flex-1 resize-none bg-transparent text-[12px] leading-relaxed text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+            className="nunopi-scroll max-h-28 min-h-0 flex-1 resize-none bg-transparent py-0.5 text-[12px] leading-5 text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
           />
           <button type="button" onClick={() => void send()} disabled={!input.trim() || loading}
-            className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-mustard-500 text-brown-900 transition hover:bg-mustard-400 disabled:opacity-40 dark:bg-mustard-500 dark:text-brown-900">
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-mustard-500 text-brown-900 transition hover:bg-mustard-400 disabled:opacity-40 dark:bg-mustard-500 dark:text-brown-900">
             {loading ? <IconLoader2 size={13} stroke={2.5} className="animate-spin" aria-hidden /> : <IconArrowUp size={14} stroke={2.5} aria-hidden />}
           </button>
         </div>
