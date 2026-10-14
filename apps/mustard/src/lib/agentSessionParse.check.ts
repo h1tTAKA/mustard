@@ -1,6 +1,6 @@
 // agentSessionParse 점검 — node --experimental-strip-types src/lib/agentSessionParse.check.ts
 import assert from "node:assert";
-import { parseClaudeLine, parseCodexLine, segmentForCommit, COMMIT_RE, activityInWindow } from "./agentSessionParse.ts";
+import { parseClaudeLine, parseCodexLine, segmentForCommit, COMMIT_RE, activityInWindow, parseCursorMessages, parseAntigravitySteps, cursorTimestamp, asIs } from "./agentSessionParse.ts";
 
 const iso = (s: number) => new Date(s * 1000).toISOString();
 const T = 1_800_000_000; // 커밋 시각(초)
@@ -99,4 +99,37 @@ const cxw = activityInWindow([
   ri({ type: "function_call", name: "shell", arguments: JSON.stringify({ command: ["bash", "-lc", "ls -la"] }) }, T + 2),
 ], parseCodexLine, (T - 1) * 1000, (T + 5) * 1000);
 assert.deepStrictEqual(cxw.tools.map((t) => [t.name, t.input]), [["Bash", { command: "npm test" }], ["Edit", { file_path: "src/a.ts" }], ["Edit", { file_path: "src/b.ts" }], ["Bash", { command: "ls -la" }]], "Codex 도구 → Claude 이름");
+
+// #1086 Cursor — 실측 형식(루트 순서 메시지, 시각은 user <timestamp> 분 단위)
+assert.strictEqual(cursorTimestamp("<timestamp>Wednesday, Oct 14, 2026, 3:27 PM (UTC+9)</timestamp>"), Date.UTC(2026, 9, 14, 6, 27), "UTC+9 → UTC");
+const cur = parseCursorMessages([
+  { role: "system", content: "You are…" },
+  { role: "user", content: "<user_info>\nOS…</user_info>" },
+  { role: "user", content: [{ type: "text", text: "<timestamp>Wednesday, Oct 14, 2026, 3:27 PM (UTC+9)</timestamp>\n<user_query>\n파일 만들고 커밋해줘\n</user_query>" }] },
+  { role: "assistant", content: [{ type: "reasoning", text: "" }, { type: "text", text: "만들게요" }, { type: "tool-call", toolName: "Write", args: { path: "/r/hello.txt" } }] },
+  { role: "tool", content: [{ type: "tool-result", toolName: "Write", result: "Wrote" }] },
+  { role: "assistant", content: [{ type: "tool-call", toolName: "Shell", args: { command: "git add hello.txt && git commit -m x" } }] },
+  { role: "tool", content: [{ type: "tool-result", toolName: "Shell", result: "Exit code: 0" }] },
+  { role: "assistant", content: [{ type: "text", text: "커밋 완료" }] },
+], 0);
+const curSeg = segmentForCommit(cur, asIs, Date.UTC(2026, 9, 14, 6, 28) / 1000)!;
+assert.deepStrictEqual(curSeg.msgs.map((m) => m.text), ["파일 만들고 커밋해줘", "만들게요", "▸ Write: /r/hello.txt", "Wrote", "▸ Shell: git add hello.txt && git commit -m x", "Exit code: 0", "커밋 완료"], "Cursor 프롬프트 ~ 커밋 완료");
+assert.deepStrictEqual(cur.flatMap((l) => l.tools ?? []).map((t) => t.name), ["Edit", "Bash"], "Cursor 도구 → Claude 이름");
+
+// #1086 Antigravity — protobuf 단계(실측 필드 경로). 테스트용 작은 인코더.
+const vi = (n: number) => { const o: number[] = []; do { let b = n % 128; n = Math.floor(n / 128); if (n) b |= 128; o.push(b); } while (n); return o; };
+const fld = (f: number, v: number | string | number[]) => typeof v === "number" ? [...vi(f * 8), ...vi(v)] : (() => { const b = typeof v === "string" ? [...new TextEncoder().encode(v)] : v; return [...vi(f * 8 + 2), ...vi(b.length), ...b]; })();
+const U = (a: number[]) => new Uint8Array(a);
+const meta = (sec: number) => U(fld(1, fld(1, sec)));
+const T0 = 1791959266;
+const ag = parseAntigravitySteps([
+  { idx: 0, type: 14, metadata: meta(T0), payload: U(fld(19, [...fld(2, "커밋해줘"), ...fld(12, fld(12, "file:///r"))])) },
+  { idx: 1, type: 15, metadata: meta(T0 + 5), payload: U(fld(20, [...fld(3, "확인 중"), ...fld(7, [...fld(1, "c1"), ...fld(2, "run_command"), ...fld(3, JSON.stringify({ CommandLine: "git add a && git commit -m x", Cwd: "/r" }))])])) },
+  { idx: 2, type: 132, metadata: meta(T0 + 6), payload: U(fld(140, fld(2, fld(1, "exited 0")))) },
+  { idx: 3, type: 15, metadata: meta(T0 + 8), payload: U(fld(20, [...fld(1, "커밋 완료"), ...fld(3, "")])) },
+]);
+assert.strictEqual(ag.cwd, "/r", "워크스페이스 file:// → 경로");
+const agSeg = segmentForCommit(ag.lines, asIs, T0 + 6)!;
+assert.deepStrictEqual(agSeg.msgs.map((m) => m.text), ["커밋해줘", "확인 중", "▸ run_command: git add a && git commit -m x", "exited 0", "커밋 완료"], "Antigravity 프롬프트 ~ 커밋 완료");
+assert.strictEqual(agSeg.callTs, (T0 + 5) * 1000);
 console.log("agentSessionParse ok");
