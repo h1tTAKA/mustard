@@ -721,8 +721,9 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
       <div ref={scrollRef} className="nunopi-scroll h-full overflow-y-auto px-3 py-3">
         {messages.length === 0 && !loading ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-300 dark:text-zinc-600">
+            {/* #1078 활용 도움말 — 목록이라 왼쪽 정렬 */}
             <IconMessageCircle size={24} stroke={1.5} aria-hidden />
-            <span className="whitespace-pre-line text-[11px] leading-relaxed">{t("workspace.chatEmpty")}</span>
+            <span className="max-w-[18rem] whitespace-pre-line text-left text-[11px] leading-relaxed">{t("workspace.chatEmpty")}</span>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
