@@ -56,8 +56,9 @@ export function groupHunks(lines: DLine[]): Hunk[] {
 }
 
 // 저장 키 — 커밋 diff는 hash, 워킹트리 diff는 "wt:종류". 구간 키 = 구간 내용(diffText) 자체(재오픈 매칭, 편집되면 자연 미스).
-export const noteStoreKey = (root: string, file: string, hash?: string, worktree?: string) =>
-  `nunopi:hunk-notes:${root}:${hash ?? (worktree ? "wt:" + worktree : "")}:${file}`;
+// #1091 언어별 — ko는 기존 키 그대로(옛 설명 유지), ja/en은 접미사(언어 바꾸면 그 언어로 새로 설명).
+export const noteStoreKey = (root: string, file: string, hash?: string, worktree?: string, locale = "ko") =>
+  `nunopi:hunk-notes:${root}:${hash ?? (worktree ? "wt:" + worktree : "")}:${file}${locale === "ko" ? "" : `@${locale}`}`;
 
 // #1066 캐치업 diff 카드 본문 = 구간 설명들을 "---"로 이음. 새 카드는 구간마다 앞에 줄 범위 표지 → 카드가 "N~M번째 줄" + 그 구간 코드 펼치기.
 export const DIFF_SEP = "\n\n---\n\n";

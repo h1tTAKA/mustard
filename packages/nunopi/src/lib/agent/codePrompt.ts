@@ -1,6 +1,6 @@
 import type { AgentAnalyzeRequest, AgentAnalyzeResponse, AgentUsage } from "@mustard/core";
 import type { AgentProviderKind } from "@mustard/core";
-import { outputLanguageDirective } from "./outputLanguage";
+import { outputLanguageDirective, languageName } from "./outputLanguage";
 import { coerceModelTokens, dedupeConcepts, dedupeTokens } from "./dedupe";
 import { codeChunkDirectives } from "./codeChunkPrompt";
 import type { ConceptOccurrence, TranslateWarning } from "@mustard/core";
@@ -30,12 +30,12 @@ interface ClaudeNormalizedPayload {
 export function buildClaudePrompt(request: AgentAnalyzeRequest): string {
   return [
     "You are Nunopi's code analysis provider.",
-    "Explain unfamiliar code for a beginner in Korean.",
+    `Explain unfamiliar code for a beginner in ${languageName(request.locale)}.`,
     "Return JSON only.",
     "",
     "Output JSON shape:",
     "{",
-    '  "title": "string (이 코드의 핵심을 압축한 짧은 한국어 명사구 제목. 문장/마침표 금지, 6~24자, 구체적으로. 예: \\"유저 역할별 그룹화 유틸\\")",',
+    `  "title": "string (a short ${languageName(request.locale)} noun-phrase title capturing the core of this code. No sentence/period, 6-24 chars, specific. e.g. \\"유저 역할별 그룹화 유틸\\" in Korean)",`,
     '  "summary": "string",',
     '  "language": "string",',
     '  "lineExplanations": [',
@@ -47,7 +47,7 @@ export function buildClaudePrompt(request: AgentAnalyzeRequest): string {
     "    }",
     "  ],",
     '  "concepts": [',
-    '    { "conceptId": "string", "title": "string (Korean)" }',
+    `    { "conceptId": "string", "title": "string (${languageName(request.locale)})" }`,
     "  ],",
     '  "tokens": [',
     '    { "token": "string", "category": "string", "lines": number[] }',
@@ -63,7 +63,7 @@ export function buildClaudePrompt(request: AgentAnalyzeRequest): string {
     `Locale: ${request.locale}`,
     `Requested provider: ${request.providerId}`,
     `Detected language: ${request.detectedLanguage ?? "unknown"}`,
-    `User intent: ${request.userIntent ?? "Explain the code in beginner-friendly Korean."}`,
+    `User intent: ${request.userIntent ?? `Explain the code in beginner-friendly ${languageName(request.locale)}.`}`,
     "",
     "Code to analyze:",
     "```",

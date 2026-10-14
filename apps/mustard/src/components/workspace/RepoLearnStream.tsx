@@ -44,21 +44,23 @@ function load<T>(key: string): T[] { try { const r = typeof localStorage !== "un
 
 // 개념 1개 설명 프롬프트 — 설명 2문장 + (용어집 켜짐이면) [용어] term :: 뜻. 카드·JSON·코드 금지.
 // 용어는 프로그래밍·개발 것만(#1049) — 앱이 다루는 주제(언어학·문자 표준·업무 용어 등)가 섞이던 문제.
-function conceptPrompt(repo: string, kind: ConceptKind, target: string, withTerms: boolean): string {
+// #1091 출력 언어 = 앱 언어(프롬프트 본문은 한국어여도 답은 이 언어로). [용어] 마커는 파싱용이라 그대로.
+const LANG_NAME: Record<string, string> = { ko: "한국어", ja: "일본어(日本語)", en: "영어(English)" };
+function conceptPrompt(repo: string, kind: ConceptKind, target: string, withTerms: boolean, loc: string): string {
   return `레포 "${repo}"에서 AI 코딩 에이전트가 지금 ${KIND_VERB[kind]} "${target}"을(를) 다루고 있어.\n`
-    + `이게 뭐고 에이전트가 왜 이걸 보는지 개발 초보에게 자연스러운 한국어 2문장으로.\n`
+    + `이게 뭐고 에이전트가 왜 이걸 보는지 개발 초보에게 자연스러운 ${LANG_NAME[loc] ?? "한국어"} 2문장으로.\n`
     + (withTerms
-      ? `그 다음 줄에 "[용어]"만 쓰고, 이 설명을 이해하는 데 필요한 **프로그래밍·개발 용어**(언어 문법·함수·라이브러리·도구·명령어·개발 개념) 2~3개를 "용어 :: 한 줄 뜻" 형식으로 한 줄씩. `
-        + `이 앱이 다루는 주제의 도메인 지식(언어학·문자 표준·업무 용어 등)은 넣지 마. 해당 용어가 없으면 "[용어]" 줄 자체를 생략.\n`
+      ? `그 다음 줄에 "[용어]"만(이 마커는 번역하지 말고 그대로) 쓰고, 이 설명을 이해하는 데 필요한 **프로그래밍·개발 용어**(언어 문법·함수·라이브러리·도구·명령어·개발 개념) 2~3개를 "용어 :: 한 줄 뜻" 형식으로 한 줄씩. `
+        + `뜻은 ${LANG_NAME[loc] ?? "한국어"}로. 이 앱이 다루는 주제의 도메인 지식(언어학·문자 표준·업무 용어 등)은 넣지 마. 해당 용어가 없으면 "[용어]" 줄 자체를 생략.\n`
       : "")
     + `코드·카드·JSON·메타 발언 금지. 설명은 흐르는 문장으로(사전식 나열 말고).`;
 }
 
 // 명령어 카드(#1049) — 에이전트가 왜 했는지 말고 명령 자체를 풀이. 첫 줄 한 문장 요약 + 명령·옵션별 목록.
 const isCommand = (c: { kind: ConceptKind; tool: string }) => c.kind === "edit" && c.tool === "Bash";
-function commandPrompt(command: string): string {
+function commandPrompt(command: string, loc: string): string {
   return `터미널 명령어 하나를 개발 초보에게 풀이해줘:\n${command}\n\n`
-    + `첫 줄: 이 명령 전체가 무슨 일을 하는지 한국어 한 문장.\n`
+    + `첫 줄: 이 명령 전체가 무슨 일을 하는지 ${LANG_NAME[loc] ?? "한국어"} 한 문장(목록의 뜻도 같은 언어로).\n`
     + `그 다음: 쓰인 명령·옵션을 나온 순서대로 "- \`cd\` — 폴더 이동"처럼 한 줄씩(이름은 백틱, 뜻은 짧게). 같은 명령이 반복되면 한 번만.\n`
     + `에이전트가 왜 실행했는지·결과 추측·메타 발언 금지. 코드블록·JSON 금지.`;
 }
@@ -69,7 +71,7 @@ function parseConcept(raw: string): { expl: string; terms: Term[] } {
   const cardCut = s.search(/```|nunopi-cards|(^|\n)\s*\[\s*\{\s*"(term|word|title)"/i);
   if (cardCut >= 0) s = s.slice(0, cardCut);
   // "[용어]" 마커(앞 개행 없어도) 기준 분리 — 앞=설명, 뒤=용어 목록.
-  const m = s.split(/\[\s*용어\s*\]\s*/i);
+  const m = s.split(/\[\s*(?:용어|用語|terms?)\s*\]\s*/i);
   const expl = (m[0] ?? "").trim();
   const terms: Term[] = [];
   if (m[1]) for (const line of m.slice(1).join("\n").split("\n")) { // 용어는 한 줄에 하나(term :: 뜻)
@@ -175,7 +177,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     try {
       const res = await fetch("/api/agent/analyze", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerId: pid, request: { code: `레포: ${basename(root)}`, locale: loc, providerId: pid, mode: "chat", messages: [{ role: "user", content: isCommand(meta) ? commandPrompt(meta.target) : conceptPrompt(basename(root), meta.kind, meta.target, cfgRef.current.termsAnalyze) }], providerSettings: ps } }),
+        body: JSON.stringify({ providerId: pid, request: { code: `레포: ${basename(root)}`, locale: loc, providerId: pid, mode: "chat", messages: [{ role: "user", content: isCommand(meta) ? commandPrompt(meta.target, loc) : conceptPrompt(basename(root), meta.kind, meta.target, cfgRef.current.termsAnalyze, loc) }], providerSettings: ps } }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       const reader = res.body.getReader(); const dec = new TextDecoder();

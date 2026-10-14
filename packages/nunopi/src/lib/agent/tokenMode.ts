@@ -4,7 +4,7 @@
 import type { AgentAnalyzeRequest, AgentAnalyzeResponse } from "@mustard/core";
 import type { AgentProviderKind } from "@mustard/core";
 import type { CodeToken, TranslateWarning } from "@mustard/core";
-import { outputLanguageDirective } from "./outputLanguage";
+import { outputLanguageDirective, languageName } from "./outputLanguage";
 
 const JSON_CODE_BLOCK_PATTERN = /```json\s*([\s\S]*?)```/i;
 
@@ -13,15 +13,15 @@ export function buildExplainTokenPrompt(request: AgentAnalyzeRequest): string {
   const target = request.targetToken ?? "";
   return [
     "You are Nunopi's single-token explainer for beginners.",
-    "Explain ONE token as it is used in the given code, in Korean, for someone new to coding.",
+    `Explain ONE token as it is used in the given code, in ${languageName(request.locale)}, for someone new to coding.`,
     "Return JSON only (one token object).",
     "",
     "Output JSON shape:",
     "{",
     '  "token": "string (the token text, echo it back)",',
     '  "category": "react_hook | state_variable | state_setter | prop | function | event_handler | jsx_element | operator | keyword | punctuation | api_call | dependency_array | initial_value | css_selector | css_property | css_value | tailwind_utility | tailwind_layout | tailwind_spacing | tailwind_color | tailwind_responsive | tailwind_state",',
-    '  "label": "string (short Korean name)",',
-    '  "description": "string (beginner-friendly Korean explanation, 1-3 sentences)",',
+    `  "label": "string (short ${languageName(request.locale)} name)",`,
+    `  "description": "string (beginner-friendly ${languageName(request.locale)} explanation, 1-3 sentences)",`,
     '  "example": "string (optional tiny usage example)"',
     "}",
     "",

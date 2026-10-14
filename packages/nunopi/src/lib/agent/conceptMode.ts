@@ -3,7 +3,7 @@
 import type { AgentAnalyzeRequest, AgentAnalyzeResponse } from "@mustard/core";
 import type { AgentProviderKind } from "@mustard/core";
 import type { ConceptOccurrence, TranslateWarning } from "@mustard/core";
-import { outputLanguageDirective } from "./outputLanguage";
+import { outputLanguageDirective, languageName } from "./outputLanguage";
 
 const JSON_CODE_BLOCK_PATTERN = /```json\s*([\s\S]*?)```/i;
 
@@ -12,12 +12,12 @@ export function buildExplainConceptPrompt(request: AgentAnalyzeRequest): string 
   const target = request.targetConcept ?? "";
   return [
     "You are Nunopi's single-concept explainer for beginners.",
-    "Explain ONE programming concept as it is used in the given code, in Korean, for someone new to coding.",
+    `Explain ONE programming concept as it is used in the given code, in ${languageName(request.locale)}, for someone new to coding.`,
     "Return JSON only.",
     "",
     "Output JSON shape:",
     "{",
-    '  "description": "string (beginner-friendly Korean explanation of the concept as used here, 1-3 sentences)"',
+    `  "description": "string (beginner-friendly ${languageName(request.locale)} explanation of the concept as used here, 1-3 sentences)"`,
     "}",
     "",
     outputLanguageDirective(request.locale),

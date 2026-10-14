@@ -1,7 +1,8 @@
 import type { AgentAnalyzeRequest, AgentAnalyzeResponse, AgentUsage } from "@mustard/core";
 import type { AgentAnalyzeCallOptions, AgentProvider } from "@mustard/core";
 import type { ConceptOccurrence, TranslateWarning } from "@mustard/core";
-import { outputLanguageDirective } from "./outputLanguage";
+import { outputLanguageDirective, languageName } from "./outputLanguage";
+import { buildCardExplainPrompt } from "./cardExplainMode";
 import { coerceModelTokens, dedupeConcepts, dedupeTokens } from "./dedupe";
 import { buildTextPrompt, normalizeTextOutput, textModeResponse } from "./textMode";
 import { buildExplainTokenPrompt, normalizeExplainTokenOutput, tokenModeResponse } from "./tokenMode";
@@ -103,7 +104,7 @@ function normalizeOpenAICompatibleResponse(
 
   // 챗은 자유 텍스트, 글 모드는 텍스트 정규화, explain-token/concept는 각 1개.
   // 중복묶기(dedup-cards)·덱에이전트(deck-agent)도 자유 텍스트(블록 포함)를 그대로 담아 클라가 파싱.
-  if (request.mode === "chat" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz") {
+  if (request.mode === "chat" || request.mode === "explain-card" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz") {
     return normalizeChatOutput(content, "openai-compatible");
   }
   if (request.mode === "explain-concept") {
@@ -210,7 +211,7 @@ async function fetchOpenAICompatibleResponse(
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
       const httpMsg = `HTTP ${res.status} ${res.statusText}: ${errText.slice(0, 200)}`;
-      if (request.mode === "chat" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz") {
+      if (request.mode === "chat" || request.mode === "explain-card" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz") {
         return chatModeResponse("openai-compatible", `엔드포인트 오류(HTTP ${res.status}).`, [{ code: "PARSE_FAILED", message: httpMsg }]);
       }
       if (request.mode === "explain-concept") {
@@ -305,7 +306,7 @@ async function fetchOpenAICompatibleResponse(
     // 사용자 취소는 route로 전파(499 처리).
     if (signal?.aborted) throw err;
     const netMsg = err instanceof Error ? err.message : "Network error.";
-    if (request.mode === "chat" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz") {
+    if (request.mode === "chat" || request.mode === "explain-card" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz") {
       return chatModeResponse("openai-compatible", "엔드포인트에 연결하지 못했다.", [{ code: "PARSE_FAILED", message: netMsg }]);
     }
     if (request.mode === "explain-concept") {
@@ -356,6 +357,13 @@ function buildOpenAICompatibleMessages(
     return [
       { role: "system", content: chatSystemPrompt(request.locale) },
       { role: "user", content: buildChatPrompt(request) },
+    ];
+  }
+  // #1091 카드 디폴트 설명 — 없던 분기(코드 분석 프롬프트로 빠졌음). SNA와 같은 프롬프트, 자유 텍스트.
+  if (request.mode === "explain-card") {
+    return [
+      { role: "system", content: chatSystemPrompt(request.locale) },
+      { role: "user", content: buildCardExplainPrompt(request) },
     ];
   }
   // 중복묶기: 요청 code에 규칙+카드목록이 완성돼 있음. 블록만 내라는 경량 시스템.
@@ -414,11 +422,11 @@ function buildOpenAICompatibleMessages(
       role: "system",
       content: [
         "You are Nunopi's OpenAI-compatible analysis provider.",
-        "Explain unfamiliar code for a beginner in Korean.",
+        `Explain unfamiliar code for a beginner in ${languageName(request.locale)}.`,
         "Return JSON only.",
         "Expected JSON shape:",
         "{",
-        '  "title": "string (이 코드의 핵심을 압축한 짧은 한국어 명사구 제목. 문장/마침표 금지, 6~24자, 구체적으로. 예: \\"유저 역할별 그룹화 유틸\\")",',
+        `  "title": "string (a short ${languageName(request.locale)} noun-phrase title capturing the core of this code. No sentence/period, 6-24 chars, specific. e.g. \\"유저 역할별 그룹화 유틸\\" in Korean)",`,
         '  "summary": "string",',
         '  "language": "string",',
         '  "lineExplanations": [',
@@ -430,7 +438,7 @@ function buildOpenAICompatibleMessages(
         "    }",
         "  ],",
         '  "concepts": [',
-        '    { "conceptId": "string", "title": "string (Korean)" }',
+        `    { "conceptId": "string", "title": "string (${languageName(request.locale)})" }`,
         "  ],",
         '  "tokens": [',
         '    { "token": "string", "category": "string", "lines": number[] }',
@@ -448,7 +456,7 @@ function buildOpenAICompatibleMessages(
         `Locale: ${request.locale}`,
         `Requested provider: ${request.providerId}`,
         `Detected language: ${request.detectedLanguage ?? "unknown"}`,
-        `User intent: ${request.userIntent ?? "Explain the code in beginner-friendly Korean."}`,
+        `User intent: ${request.userIntent ?? `Explain the code in beginner-friendly ${languageName(request.locale)}.`}`,
         "",
         "Code to analyze:",
         "```",

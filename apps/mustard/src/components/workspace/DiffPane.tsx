@@ -42,7 +42,7 @@ export default function DiffPane({ root, hash, file, worktree, providerId, provi
   useEffect(() => { if (status === "ok") syncVp(); }, [status, lines]);
 
   // 노트 영속 — diff 신원별 localStorage(#1054 hunkNotes로 분리, 커밋 자동 설명과 같은 저장소).
-  const noteStore = noteStoreKey(root, file, hash, worktree);
+  const noteStore = noteStoreKey(root, file, hash, worktree, locale);
   const hunkKey = (h: Hunk) => h.diffText; // 구간 내용 자체를 키로(해시 충돌 원천 제거, 재오픈 매칭)
   // diff 바뀌면 저장 노트 로드 + 자동 설명이 이 diff에 쓰면 바로 반영(진행 중 로딩 표시는 유지).
   useEffect(() => {

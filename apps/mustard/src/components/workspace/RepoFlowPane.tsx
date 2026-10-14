@@ -73,7 +73,7 @@ function mergeFlow(existing: FlowSection[], incoming: FlowSection[]): FlowSectio
 function parseOverview(text: string): string {
   const cut = text.search(/```|nunopi-cards/i); // 카드 블록/코드펜스 이후는 설명 아님 → 자름(누수 방지)
   if (cut >= 0) text = text.slice(0, cut);
-  const isMarker = (l: string) => /^\s*\[?\s*(설명|흐름|explanation|flow)\s*[\]:：]?\s*$/i.test(l); // [설명]/[흐름]/설명:/흐름: 만 마커로(실제 소제목은 보존)
+  const isMarker = (l: string) => /^\s*\[?\s*(설명|흐름|説明|フロー|流れ|explanation|flow)\s*[\]:：]?\s*$/i.test(l); // [설명]/[흐름]/설명:/흐름: 만 마커로(실제 소제목은 보존)
   const kept = text.split("\n").filter((l) => !l.includes("|") && !isMarker(l.trim()));
   return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim(); // 과도한 빈 줄만 축소
 }

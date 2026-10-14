@@ -5,6 +5,12 @@
 import type { AgentAnalyzeRequest } from "@mustard/core";
 import { outputLanguageDirective } from "./outputLanguage";
 
+const HEADINGS: Record<string, { example: string; whenUse: string; whenSeen: string }> = {
+  ko: { example: "예문", whenUse: "이럴 때 써요", whenSeen: "이럴 때 나와요" },
+  ja: { example: "例", whenUse: "こんなときに使う", whenSeen: "こんなときに出てくる" },
+  en: { example: "Examples", whenUse: "When you use it", whenSeen: "Where you'll see it" },
+};
+
 export function buildCardExplainPrompt(request: AgentAnalyzeRequest): string {
   const term = request.targetTerm ?? "";
   const kind = request.targetKind ?? "term";
@@ -20,14 +26,15 @@ export function buildCardExplainPrompt(request: AgentAnalyzeRequest): string {
     `- First line: **${term}** followed by IPA pronunciation in slashes if it is an English word/term, and the English original/spelled-out form in parentheses if it is an abbreviation.`,
     "- Then 2-3 sentences: the general definition a beginner can grasp.",
   ];
+  const h = HEADINGS[request.locale] ?? HEADINGS.ko; // #1091 소제목도 설정 언어로
   if (isCode) {
     lines.push(
-      "- Then a '### 예문' section with 1-2 short, generic code examples in a fenced code block (not from any specific file).",
-      "- Then a '### 이럴 때 써요' section: when/where you typically see or use it, to build transfer/recognition.",
+      `- Then a '### ${h.example}' section with 1-2 short, generic code examples in a fenced code block (not from any specific file).`,
+      `- Then a '### ${h.whenUse}' section: when/where you typically see or use it, to build transfer/recognition.`,
     );
   } else {
     lines.push(
-      "- Then a '### 이럴 때 나와요' section: typical contexts where this term shows up, to build recognition.",
+      `- Then a '### ${h.whenSeen}' section: typical contexts where this term shows up, to build recognition.`,
     );
   }
   lines.push(
