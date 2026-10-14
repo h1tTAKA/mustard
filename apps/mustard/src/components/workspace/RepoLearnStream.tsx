@@ -366,8 +366,10 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     setFilter("all"); setQ(""); // eslint-disable-line react-hooks/set-state-in-effect -- 외부 요청(링크 클릭) 시 보기 초기화
     pendingJump.current = jump.key;
     if (concepts.some((c) => c.key === jump.key)) { pickDay(null); return; }
-    fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&key=${encodeURIComponent(jump.key)}`).then((r) => r.json())
-      .then((j) => { const it = j?.item as { ts?: number } | null; if (!it?.ts) { pendingJump.current = null; toast(t("learn.cardMissing")); return; }
+    const key = jump.key;
+    fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&key=${encodeURIComponent(key)}`).then((r) => r.json())
+      .then((j) => { if (pendingJump.current !== key) return; // 그새 다른 링크를 눌렀으면 옛 응답 무시(#1081 리뷰)
+        const it = j?.item as { ts?: number } | null; if (!it?.ts) { pendingJump.current = null; toast(t("learn.cardMissing")); return; }
         const d = new Date(it.ts); const p = (n: number) => String(n).padStart(2, "0"); pickDay(`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`); })
       .catch(() => { pendingJump.current = null; });
     // 요청 번호(n)가 바뀔 때만
