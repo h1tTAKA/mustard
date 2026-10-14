@@ -122,7 +122,7 @@ function kindGlyph(k: SessionKind, size: number, className?: string) {
   return k === "repo" ? <IconStack2 {...p} /> : k === "branch" ? <IconGitBranch {...p} /> : k === "diff" ? <IconGitCommit {...p} /> : k === "worktree" ? <IconPencil {...p} /> : k === "arch" ? <IconSitemap {...p} /> : <IconFileCode {...p} />;
 }
 
-export default function WorkspaceChat({ root, files, focus, prefill, changedFiles, providerId, providerSettings }: {
+export default function WorkspaceChat({ root, files, focus, prefill, changedFiles, providerId, providerSettings, onOpenCard }: {
   root: string;
   files: string[];
   focus: ChatFocus | null;
@@ -130,9 +130,16 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
   changedFiles?: Set<string>; // 현재 워킹트리 변경 파일 경로(#689 승계 트리거)
   providerId: AgentProviderKind;
   providerSettings: ProviderSettings;
+  onOpenCard?: (key: string) => void; // #1081 답변의 catchup: 링크 → 그 캐치업 카드로
 }) {
   const t = useT();
   const { locale } = useLocale();
+  // #1081 catchup:KEY 링크 클릭 → 캐치업 카드로 이동(앱 안). 그 밖 링크는 기본 동작.
+  const onLink = useCallback((href: string) => {
+    if (!/^catchup:/i.test(href) || !onOpenCard) return false;
+    let key = href.slice("catchup:".length); try { key = decodeURIComponent(key); } catch { /* 이미 평문 */ }
+    onOpenCard(key); return true;
+  }, [onOpenCard]);
   const confirm = useConfirm();
   const toast = useToast();
   const store = `nunopi:ws-chat:${root}`;
@@ -747,7 +754,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
               const cards = parsedCards.cards.filter(keepCard);
               return (
                 <div key={i} className="flex max-w-full flex-col items-start gap-1.5 text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-200">
-                  <div className="max-w-full"><Markdown>{text}</Markdown></div>
+                  <div className="max-w-full"><Markdown onLink={onLink}>{text}</Markdown></div>
                   {cards.length > 0 && (
                     <div className="flex flex-wrap items-center gap-1.5">
                       {cards.map((c) => bookmarkedTermExists(c.term) ? (
@@ -774,7 +781,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
             {streaming != null && (
               <div className="max-w-full text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-200">
                 {streaming
-                  ? <div className="max-w-full"><Markdown>{stripStreamingCardBlock(streaming)}</Markdown></div>
+                  ? <div className="max-w-full"><Markdown onLink={onLink}>{stripStreamingCardBlock(streaming)}</Markdown></div>
                   : <span className="flex items-center gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500"><IconLoader2 size={13} stroke={2} className="animate-spin" aria-hidden /> {t("chat.replying")}</span>}
               </div>
             )}

@@ -1,6 +1,6 @@
 // 캐치업 기록(#994) — GET ?root=&limit= 최근 / ?root=&q= 검색(#1049) / ?root=&day=YYYY-MM-DD 하루 / ?root=&days=1 기록 있는 날짜. POST {root, items} append.
 import { isAbsolute } from "node:path";
-import { appendItems, listDays, readDay, readRecent, sanitize, searchItems, type CatchupItem } from "@/lib/catchupStore";
+import { appendItems, findItem, listDays, readDay, readRecent, sanitize, searchItems, type CatchupItem } from "@/lib/catchupStore";
 
 export const runtime = "nodejs";
 
@@ -10,6 +10,8 @@ export async function GET(request: Request): Promise<Response> {
   if (!isAbsolute(root)) return Response.json({ ok: false, error: "absolute root required" }, { status: 400 });
   try {
     if (sp.get("days")) return Response.json({ ok: true, days: listDays(root) });
+    const key = sp.get("key"); // #1081 키 하나 찾기(질문 답변 링크 → 카드 이동)
+    if (key) return Response.json({ ok: true, item: findItem(root, key.slice(0, 600)) });
     const q = sp.get("q");
     if (q) return Response.json({ ok: true, items: searchItems(root, q.slice(0, 200), 200) });
     const day = sp.get("day");

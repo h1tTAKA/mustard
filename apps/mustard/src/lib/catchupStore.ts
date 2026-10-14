@@ -173,3 +173,9 @@ export function askCounts(root: string): Record<string, number> {
   }
   return out;
 }
+
+// #1081 키로 항목 찾기(최근 날짜부터) — 질문 답변의 catchup: 링크 → 그 카드로 이동할 날짜를 알려고.
+export function findItem(root: string, key: string): CatchupItem | null {
+  for (const day of listDays(root)) { const hit = readDay(root, day).find((x) => x.key === key); if (hit) return hit; }
+  return null;
+}

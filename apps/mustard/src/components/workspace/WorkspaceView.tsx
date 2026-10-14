@@ -79,6 +79,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   useAutoCommitExplain(path, providerId, providerSettings); // #1054 새 커밋 diff 미리 설명(설정 > git)
   const [rightModeSel, setRightMode] = useState<"chat" | "github" | "learn">("chat");
   const [catchupChat, setCatchupChat] = useState(false); // #1078 캐치업 안 질문 화면 열림
+  const [cardJump, setCardJump] = useState<{ key: string; n: number } | null>(null); // #1081 질문 답변 링크 → 캐치업 카드
   // #1062 캐치업 전체 끄기 — 패널·버튼 숨김(선택돼 있었으면 질문으로), 실시간 해설 서버 플래그도 끔(패널이 안 떠도 여기서 알림).
   const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
   const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze);
@@ -411,7 +412,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   }, []);
   // 변경 파일 경로 집합(챗 승계 판별용, #689) — fileStatus 바뀔 때만 새 identity(effect 무한루프 방지).
   const changedFileSet = useMemo(() => new Set(Object.keys(fileStatus)), [fileStatus]);
-  const chatEl = <WorkspaceChat root={path} files={files} focus={chatFocus} prefill={chatPrefill} changedFiles={changedFileSet} providerId={providerId} providerSettings={providerSettings} />; // #1078 캐치업 안·단독 모드 공용
+  const chatEl = <WorkspaceChat root={path} files={files} focus={chatFocus} prefill={chatPrefill} changedFiles={changedFileSet} providerId={providerId} providerSettings={providerSettings} onOpenCard={catchupOn ? (key) => { setCatchupChat(false); setRightMode("learn"); setCardJump((j) => ({ key, n: (j?.n ?? 0) + 1 })); } : undefined} />; // #1078 캐치업 안·단독 모드 공용, #1081 카드 링크
   // 깃 그래프 새로고침 시 상태맵도 갱신 — stable(inline이면 GitGraph load가 매 렌더 재생성→무한 fetch).
   const handleGitRefreshed = useCallback(() => { if (path) void loadGitStatus(path); }, [path, loadGitStatus]);
 
@@ -797,7 +798,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
               ) : rightMode === "learn" ? (
                 /* #1051 캐치업 용어 → 추가된 카드 클릭 시 확대(throwCard) — 질문 패널과 같은 FlyCardProvider */
                 <FlyCardProvider active={active} providerId={providerId} providerSettings={providerSettings} sourceIds={flyNoSources} onGoToSource={() => {}}>
-                  <RepoLearnStream key={path} root={path} active={active} agentWorking={agentWorking} providerId={providerId} providerSettings={providerSettings} onOpenDiff={(hash, file) => openCodeTab({ kind: "diff", hash, file })} onFocusCommit={(hash, file) => setGitFocus((f) => ({ hash, file, n: (f?.n ?? 0) + 1 }))}  chat={chatEl} chatOpen={catchupChat} onToggleChat={() => setCatchupChat((v) => !v)} />
+                  <RepoLearnStream key={path} root={path} active={active} agentWorking={agentWorking} providerId={providerId} providerSettings={providerSettings} onOpenDiff={(hash, file) => openCodeTab({ kind: "diff", hash, file })} onFocusCommit={(hash, file) => setGitFocus((f) => ({ hash, file, n: (f?.n ?? 0) + 1 }))}  chat={chatEl} chatOpen={catchupChat} onToggleChat={() => setCatchupChat((v) => !v)} jump={cardJump} />
                 </FlyCardProvider>
               ) : (
                 /* FlyCardProvider(#750) — 세션 카드 목록에서 카드 클릭 시 확대·상세(throwCard). 워크스페이스 카드는 출처이동 없음(빈 sourceIds). */
