@@ -266,6 +266,7 @@ export default function LearningHome() {
     <ConfirmProvider>
     <ToastProvider>
       <AppShell
+        subToggleInMemorize
         onOpenSettings={() => setIsSettingsOpen(true)}
         onLogoClick={() => handleViewModeChange("history")}
         editorCollapsed={editorCollapsed}
@@ -296,6 +297,7 @@ export default function LearningHome() {
           <QASubToggle
             viewMode={viewMode}
             onViewModeChange={handleViewModeChange}
+            withCards // #1083 카드 갤러리 = nunopi 첫 화면
             disabled={ca.isLoading}
           />
         }

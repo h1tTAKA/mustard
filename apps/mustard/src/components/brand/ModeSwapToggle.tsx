@@ -23,11 +23,11 @@ export default function ModeSwapToggle({ viewMode, onEnterNunopi, onEnterWorkspa
   return (
     <button type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label} className={ICON_BTN}>
       {inWorkspace ? (
-        // nunopi 심볼(블루-퍼플 그라데이션, 자체 색이라 양 테마 무관).
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src="/brand/nunopi-symbol-transparent.png" alt="" className="block h-[18px] w-[18px] object-contain" />
+        // #1083 nunopi 심볼을 단색으로 — png 알파 모양을 마스크로 쓰고 글자색(currentColor)으로 칠함 → 옆 헤더 아이콘과 같은 회색·호버
+        <NunopiGlyph size={18} />
       ) : (
-        <MustardMark size={20} />
+        // #1083 마크 그림이 캔버스 가운데 좁게(가로 ~1/3) 그려져 20px이면 작음 → 30px로 키우고 음수 여백으로 버튼 크기는 옆 아이콘과 비슷하게
+        <MustardMark size={30} className="-m-1.5 block" />
       )}
       {inWorkspace && memorizeBadge > 0 && (
         <span aria-label={`${t("mem.modeDue")} ${memorizeBadge}`}
@@ -37,4 +37,13 @@ export default function ModeSwapToggle({ viewMode, onEnterNunopi, onEnterWorkspa
       )}
     </button>
   );
+}
+
+// #1083 nunopi 심볼 단색 — png 알파 모양을 마스크로 쓰고 글자색(currentColor)으로 칠함 → 옆 헤더 아이콘과 같은 회색·호버
+const MASK = "url(/brand/nunopi-symbol-transparent.png)";
+// 원본 png는 가로로 길고 여백이 커서(내용 ≈ 가로 79%·세로 69%) 정사각 contain이면 작아 보임 → 상자는 아이콘 높이(size) × 1.4배 폭,
+// 마스크는 여백만큼 크게(폭 = size × 1.65) 깔아 내용이 옆 아이콘(16px)과 비슷한 크기로 보이게.
+export function NunopiGlyph({ size = 16 }: { size?: number }) {
+  const m = `${Math.round(size * 1.65)}px auto`;
+  return <span aria-hidden className="block bg-current" style={{ width: Math.round(size * 1.4), height: size, WebkitMaskImage: MASK, maskImage: MASK, WebkitMaskSize: m, maskSize: m, WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskPosition: "center", maskPosition: "center" }} />;
 }
