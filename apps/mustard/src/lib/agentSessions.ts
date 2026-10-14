@@ -48,9 +48,10 @@ async function sqlSessions(root: string, sinceMs: number): Promise<SqlSession[]>
   for (const h of await fs.readdir(cbase).catch(() => [] as string[])) for (const a of await fs.readdir(join(cbase, h)).catch(() => [] as string[])) {
     const dir = join(cbase, h, a);
     try {
-      const meta = JSON.parse(await fs.readFile(join(dir, "meta.json"), "utf8")) as { cwd?: string; createdAtMs?: number };
       const mtime = await mtimeOf(join(dir, "store.db"));
-      if (!meta.cwd || !underRoot(meta.cwd, root) || mtime < sinceMs) continue;
+      if (mtime < sinceMs) continue; // 시각부터 — 오래된 대화는 meta.json도 안 읽음(30초 주기 재시도 부담, #1086 리뷰)
+      const meta = JSON.parse(await fs.readFile(join(dir, "meta.json"), "utf8")) as { cwd?: string; createdAtMs?: number };
+      if (!meta.cwd || !underRoot(meta.cwd, root)) continue;
       const db = new DatabaseSync(join(dir, "store.db"), { readOnly: true });
       try {
         const head = JSON.parse(Buffer.from(String((db.prepare("select value from meta limit 1").get() as { value: string }).value), "hex").toString()) as { latestRootBlobId?: string };
@@ -58,7 +59,7 @@ async function sqlSessions(root: string, sinceMs: number): Promise<SqlSession[]>
         const rootBlob = head.latestRootBlobId ? blob(head.latestRootBlobId) : null; if (!rootBlob) continue;
         const msgs: { role?: string; content?: unknown }[] = [];
         for (let i = 0; i < rootBlob.length;) { // 루트 = field 1 반복(메시지 blob id 32바이트) — 대화 순서
-          const tag = rootBlob[i++]; let len = 0, mul = 1, b: number; do { b = rootBlob[i++]; len += (b & 0x7f) * mul; mul *= 128; } while (b & 0x80);
+          const tag = rootBlob[i++]; let len = 0, mul = 1, b: number; do { b = rootBlob[i++]; len += (b & 0x7f) * mul; mul *= 128; } while (b & 0x80 && i < rootBlob.length); // 잘린 blob에서 끝을 넘지 않게(#1086 리뷰)
           if (tag === 0x0a) { const m = blob(rootBlob.subarray(i, i + len).toString("hex")); if (m) { try { msgs.push(JSON.parse(m.toString())); } catch { /* 메시지 아닌 blob */ } } }
           i += len;
         }
