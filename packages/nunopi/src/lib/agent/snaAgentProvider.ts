@@ -88,10 +88,41 @@ function mapUsage(data: unknown): AgentUsage | undefined {
   };
 }
 
+// #1093 SNA 런타임 동시 세션 상한(기본 5) — 넘으면 "Max active sessions" 에러. 우리 호출(자동 설명·해설·요약·질문)을
+// 프로세스 단위 슬롯으로 줄 세우고(1개는 다른 사용처 몫으로 남김), 그래도 상한이면(다른 곳이 쓰는 중) 기다렸다 재시도.
+const SNA_SLOTS = 4;
+// globalThis — Next가 라우트마다(analyze·observe·backfill) 이 모듈을 따로 번들해도 한 프로세스에서 한 줄.
+const snaQ = ((globalThis as unknown as { __nunopiSnaQ?: { busy: number; waiters: (() => void)[] } }).__nunopiSnaQ ??= { busy: 0, waiters: [] });
+async function acquireSnaSlot(signal?: AbortSignal): Promise<() => void> {
+  while (snaQ.busy >= SNA_SLOTS) {
+    await new Promise<void>((res) => snaQ.waiters.push(res));
+    if (signal?.aborted) { snaQ.waiters.shift()?.(); throw new Error("분석이 취소되었습니다."); } // 받은 깨움은 다음 대기자에게
+  }
+  snaQ.busy++;
+  let done = false;
+  return () => { if (done) return; done = true; snaQ.busy--; snaQ.waiters.shift()?.(); };
+}
+const isSessionLimit = (e: unknown) => /Max active sessions/i.test(e instanceof Error ? e.message : String(e));
+const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((res) => { const t = setTimeout(res, ms); signal?.addEventListener("abort", () => { clearTimeout(t); res(); }, { once: true }); });
+
+// 슬롯 잡고 실행, 상한 에러면 백오프(2s→최대 30s) 재시도 — 최대 10분. 다른 에러·취소는 그대로 던짐.
+async function runViaSna(prompt: string, opts: Parameters<typeof runViaSnaOnce>[1]): Promise<RunResult> {
+  const deadline = Date.now() + 10 * 60_000;
+  for (let wait = 2000; ; wait = Math.min(wait * 2, 30_000)) {
+    const release = await acquireSnaSlot(opts.signal);
+    try { return await runViaSnaOnce(prompt, opts); }
+    catch (e) {
+      if (!isSessionLimit(e) || opts.signal?.aborted || Date.now() + wait > deadline) throw e;
+    } finally { release(); }
+    await sleep(wait, opts.signal);
+    if (opts.signal?.aborted) throw new Error("분석이 취소되었습니다.");
+  }
+}
+
 // runClaudeCli/codex exec 등가물 — runOnce 스트림을 누적해 { text, usage } 반환.
 // 런타임별 분기: claude는 토큰 최적화 플래그(툴 정의 0 + 유저 설정 미로드)를 붙이고,
 // codex는 그 플래그가 claude 전용이라 안 붙인다(어댑터가 알아서).
-async function runViaSna(
+async function runViaSnaOnce(
   prompt: string,
   opts: {
     runtime: SnaRuntime;
