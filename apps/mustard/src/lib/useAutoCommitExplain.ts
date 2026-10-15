@@ -14,6 +14,7 @@ export const diffItemKey = (hash: string, file: string) => `diff|${hash}|${file}
 export const parseDiffItemKey = (key: string) => { const m = /^diff\|([0-9a-fA-F]{4,64})\|(.+)$/.exec(key); return m ? { hash: m[1], file: m[2] } : null; };
 
 const POLL_MS = 30_000;
+const RETRY_MS = [5_000, 20_000, -1]; // #1093 덩어리 재시도 간격(-1 = 마지막 시도)
 const EXPLAIN_CONCURRENCY = 4; // #1090 덩어리 설명 동시 호출 수(AI CLI 동시 실행 — 너무 많으면 레이트 리밋)
 // 설명 가치 없는 파일 — 문서·lockfile·이미지 등(삭제 파일은 상태 D로 따로 거름).
 const SKIP_FILE = /\.(md|mdx|markdown|txt|rst|adoc|lock|png|jpe?g|gif|webp|avif|bmp|ico|svg|pdf|zip|gz|tgz|7z|rar|mp3|wav|ogg|flac|m4a|aac|mp4|mov|webm|avi|mkv|woff2?|ttf|otf|eot|wasm|exe|dll|so|dylib|bin)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$/i;
@@ -52,16 +53,17 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     // info = 카드 메타("브랜치 · 커밋 제목", #1062) — tool 필드에 담아 저장(스키마 변경 없이).
     // #1090 커밋의 모든 파일 덩어리를 한 작업 목록으로 → 동시 EXPLAIN_CONCURRENCY개씩 설명(차례로 하면 큰 커밋 하나에 수십 분).
     //  파일의 덩어리가 다 끝나면 그 파일 카드를 바로 — 카드 시각 = 끝난 시각(끝난 순서대로 맨 위에 쌓임, 유저 요청).
-    const explainCommit = async (hash: string, info: string) => {
+    // #1093 opts — 복구용: only = 그 파일만, ts = 원래 카드 시각 유지, replace = 같은 key 카드 교체.
+    const explainCommit = async (hash: string, info: string, opts: { only?: string; ts?: number; replace?: boolean } = {}) => {
       const list = await post("/api/repo/git-show", { path: root, hash });
-      const files = ((list?.files ?? []) as { status: string; path: string }[]).filter((f) => f.status !== "D" && !SKIP_FILE.test(f.path));
+      const files = ((list?.files ?? []) as { status: string; path: string }[]).filter((f) => f.status !== "D" && !SKIP_FILE.test(f.path) && (!opts.only || f.path === opts.only));
       type FileJob = { path: string; store: string; texts: (string | null)[]; left: number };
       const jobs: { file: FileJob; i: number; h: ReturnType<typeof groupHunks>[number] }[] = [];
       const emit = (f: FileJob) => {
         const texts = f.texts.filter((x): x is string => !!x);
         if (!texts.length || !alive) return;
-        const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts: Date.now(), expl: texts.join(DIFF_SEP) }; // #1074 자르지 않음
-        void post("/api/repo/stream", { root, items: [item] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
+        const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts: opts.ts ?? Date.now(), expl: texts.join(DIFF_SEP) }; // #1074 자르지 않음
+        void post("/api/repo/stream", { root, items: [item], replace: !!opts.replace }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
         window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
       };
       for (const f of files) { // #1074 커밋당 파일·구간 상한 없음 — 큰 커밋도 바뀐 코드 전부 캐치업에(유저 요청)
@@ -80,7 +82,11 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         while (alive && next < jobs.length) {
           const { file, i, h } = jobs[next++];
           const { providerId: pid, providerSettings: ps, locale: loc } = cfg.current;
-          try { const text = await explainDiffText(h.diffText, pid, ps, loc); saveNote(file.store, h.diffText, text); file.texts[i] = diffMark(h) + text; } catch { /* 구간 하나 실패 — 카드엔 빠지고 다음 주기 diff 화면에서 다시 */ }
+          for (const wait of RETRY_MS) { // #1093 실패면 잠시 뒤 다시(런타임 상한·일시 오류) — 최대 3번
+            if (!alive) return;
+            try { const text = await explainDiffText(h.diffText, pid, ps, loc); saveNote(file.store, h.diffText, text); file.texts[i] = diffMark(h) + text; break; }
+            catch { if (wait < 0) break; await new Promise((r) => setTimeout(r, wait)); } // 끝내 실패 — 카드엔 빠지고 복구 주기에서 다시
+          }
           if (--file.left === 0) emit(file); // 이 파일 끝 → 바로 카드
         }
       };
@@ -104,6 +110,25 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         }
       }
       if (alive) { const cur = read() ?? st0; write({ ...cur, pending: [...keep, ...(cur.pending ?? []).filter((p) => !st0.pending!.some((q) => q.hash === p.hash))] }); }
+    };
+
+    // #1093 복구 — 실패 문구가 설명으로 저장된 diff 카드를 찾아 그 파일만 다시(캐시된 정상 구간은 재사용, 실패 구간만 AI).
+    //  카드 시각은 원래대로(목록 제자리), 같은 key로 교체. 한 주기에 최대 5개(새 커밋 설명이 밀리지 않게).
+    const repairTries = new Map<string, { n: number; next: number }>(); // key → 시도 수·다음 시도 시각(계속 실패하는 파일이 30초마다 도는 것 방지)
+    const repairFailed = async () => {
+      if (!cfg.current.diffOn) return;
+      const j = await fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&q=${encodeURIComponent("런타임 실패:")}`).then((r) => r.json()).catch(() => null);
+      const bad = ((j?.items ?? []) as { key: string; kind: string; tool: string; ts: number }[]).filter((x) => {
+        if (x.kind !== "diff") return false;
+        const t = repairTries.get(x.key);
+        return !t || (t.n < 3 && Date.now() >= t.next); // 카드당 최대 3번, 5분·10분 간격
+      }).slice(0, 5);
+      for (const it of bad) {
+        if (!alive) return;
+        const k = parseDiffItemKey(it.key); if (!k) continue;
+        const n = (repairTries.get(it.key)?.n ?? 0) + 1; repairTries.set(it.key, { n, next: Date.now() + n * 5 * 60_000 });
+        await explainCommit(k.hash, it.tool === "diff" ? "" : it.tool, { only: k.file, ts: it.ts, replace: true });
+      }
     };
 
     const tick = async () => {
@@ -130,6 +155,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           st = read() ?? st;
         }
         await flushPending();
+        await repairFailed();
       } catch { /* 서버 미준비 등 — 다음 주기 */ } finally { busy = false; }
     };
     void tick();

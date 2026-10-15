@@ -2,7 +2,7 @@
 import assert from "node:assert";
 import { appendFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { appendItems, askCounts, dayKey, listDays, readAsk, readDay, readRecent, searchItems, sanitize, writeAsk } from "./catchupStore.ts";
+import { appendItems, replaceItems, askCounts, dayKey, listDays, readAsk, readDay, readRecent, searchItems, sanitize, writeAsk } from "./catchupStore.ts";
 
 assert.ok(process.env.MUSTARD_STREAM_DIR, "임시 디렉터리 필수(실 기록 보호)");
 const root = "/tmp/repo-a";
@@ -37,3 +37,16 @@ assert.deepStrictEqual(askCounts(root), { "narration|1|x": 2 }, "유저 질문 �
 assert.strictEqual(writeAsk(root, { key: "", messages: [] }, 1), null, "빈 key 거부");
 assert.deepStrictEqual(listDays(root), ["2026-10-06", "2026-10-05"], "ask 폴더가 날짜 목록에 안 섞임");
 console.log("catchupStore ok");
+
+// #1093 replaceItems — 같은 key 교체(복구), 다른 줄 보존, 실패 해설 카드는 읽을 때 숨김
+{
+  const r = "/tmp/repo-replace"; const t = new Date(2026, 9, 7, 9).getTime();
+  appendItems(r, [{ ...it("diff|a|x.ts", t), kind: "diff" as never, expl: "런타임 실패: Max" }, it("keep", t)]);
+  replaceItems(r, [{ ...it("diff|a|x.ts", t), kind: "diff" as never, expl: "정상 설명" }]);
+  const day = readDay(r, "2026-10-07");
+  assert.strictEqual(day.length, 2, "교체 후 줄 수 그대로");
+  assert.strictEqual(day.find((x) => x.key === "diff|a|x.ts")?.expl, "정상 설명", "새 내용으로 교체");
+  appendItems(r, [{ ...it("nar-fail", t), expl: "런타임 실패: Max active sessions" }]);
+  assert.ok(!readDay(r, "2026-10-07").some((x) => x.key === "nar-fail"), "실패 해설 카드 숨김");
+}
+console.log("catchupStore.check ok");

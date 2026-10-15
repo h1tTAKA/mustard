@@ -1,6 +1,6 @@
-// 캐치업 기록(#994) — GET ?root=&limit= 최근 / ?root=&q= 검색(#1049) / ?root=&day=YYYY-MM-DD 하루 / ?root=&days=1 기록 있는 날짜. POST {root, items} append.
+// 캐치업 기록(#994) — GET ?root=&limit= 최근 / ?root=&q= 검색(#1049) / ?root=&day=YYYY-MM-DD 하루 / ?root=&days=1 기록 있는 날짜. POST {root, items, replace?} append(replace면 같은 key 교체).
 import { isAbsolute } from "node:path";
-import { appendItems, findItem, itemsForHashes, listDays, readDay, readRecent, sanitize, searchItems, type CatchupItem } from "@/lib/catchupStore";
+import { appendItems, replaceItems, findItem, itemsForHashes, listDays, readDay, readRecent, sanitize, searchItems, type CatchupItem } from "@/lib/catchupStore";
 
 export const runtime = "nodejs";
 
@@ -24,11 +24,11 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  let body: { root?: unknown; items?: unknown };
+  let body: { root?: unknown; items?: unknown; replace?: unknown };
   try { body = await request.json(); } catch { return Response.json({ ok: false, error: "bad json" }, { status: 400 }); }
   const root = typeof body.root === "string" ? body.root : "";
   if (!isAbsolute(root) || !Array.isArray(body.items)) return Response.json({ ok: false, error: "root/items required" }, { status: 400 });
   const items = body.items.slice(0, 500).map(sanitize).filter((x): x is CatchupItem => !!x);
-  try { return Response.json({ ok: true, added: appendItems(root, items) }); }
+  try { return Response.json({ ok: true, added: body.replace === true ? replaceItems(root, items) : appendItems(root, items) }); } // #1093 replace = 같은 key 교체(복구)
   catch (e) { return Response.json({ ok: false, error: String((e as Error)?.message ?? e) }, { status: 500 }); }
 }
