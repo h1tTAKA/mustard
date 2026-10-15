@@ -2,9 +2,9 @@
 
 import { useEffect } from "react";
 import type { ConceptOccurrence } from "@mustard/core";
-import { CONCEPT_DESCRIPTIONS } from "./conceptDescriptions";
+import { CONCEPT_DESCRIPTIONS, conceptShort } from "./conceptDescriptions";
 import { StarIcon, XIcon } from "./icons";
-import { useT } from "@mustard/core";
+import { useT, useLocale } from "@mustard/core";
 
 interface ConceptSectionProps {
   concepts: ConceptOccurrence[];
@@ -19,6 +19,7 @@ interface ConceptSectionProps {
 
 export default function ConceptSection({ concepts, activeConceptId, onConceptClick, explainingConcepts, bookmarkedConceptTitles, onBookmarkToggle, onDelete }: ConceptSectionProps) {
   const t = useT();
+  const { locale } = useLocale();
   useEffect(() => {
     if (!activeConceptId) return;
     const el = document.getElementById(`concept-${activeConceptId}`);
@@ -62,8 +63,8 @@ export default function ConceptSection({ concepts, activeConceptId, onConceptCli
                         ? "text-lime-600 dark:text-lime-400"
                         : "text-zinc-400 hover:text-lime-600 dark:text-zinc-500 dark:hover:text-lime-400"
                     }`}
-                    title={isBookmarked ? "북마크 해제" : "북마크"}
-                    aria-label={isBookmarked ? `${concept.title} 북마크 해제` : `${concept.title} 북마크 추가`}
+                    title={isBookmarked ? t("bookmark.remove") : t("bookmark.add")}
+                    aria-label={isBookmarked ? t("bookmark.removeFor", { name: concept.title }) : t("bookmark.addFor", { name: concept.title })}
                   >
                     <StarIcon filled={isBookmarked} />
                   </button>
@@ -73,8 +74,8 @@ export default function ConceptSection({ concepts, activeConceptId, onConceptCli
                     type="button"
                     onClick={() => onDelete(concept.conceptId)}
                     className="text-zinc-400 transition hover:text-red-500 dark:text-zinc-500 dark:hover:text-red-400"
-                    title="이 개념 삭제 (다시 분석하면 다시 나옴)"
-                    aria-label={`${concept.title} 삭제`}
+                    title={t("concept.deleteHint")}
+                    aria-label={t("concept.deleteFor", { name: concept.title })}
                   >
                     <XIcon />
                   </button>
@@ -85,7 +86,7 @@ export default function ConceptSection({ concepts, activeConceptId, onConceptCli
             <button
               type="button"
               onClick={() => onConceptClick?.(concept.conceptId)}
-              aria-label={`${concept.title} 개념 선택`}
+              aria-label={t("concept.selectFor", { name: concept.title })}
               className={`w-full px-4 pt-4 text-left ${hasActions ? "pr-12" : ""}`}
             >
               <div className="flex min-w-0 items-center justify-between gap-2">
@@ -123,7 +124,7 @@ export default function ConceptSection({ concepts, activeConceptId, onConceptCli
             <div className="px-4 pb-4 pt-2">
               {/* 설명은 토큰처럼 상시 노출(#535). 있으면 설명, 로딩중이면 스피너 문구, 없으면 클릭 유도. */}
               {(() => {
-                const desc = concept.description ?? CONCEPT_DESCRIPTIONS[concept.conceptId]?.short;
+                const desc = concept.description ?? conceptShort(concept.conceptId, locale);
                 if (desc) {
                   return (
                     <p className="select-text border-t border-zinc-200 pt-2 text-xs text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">

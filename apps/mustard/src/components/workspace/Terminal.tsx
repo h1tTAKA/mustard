@@ -185,7 +185,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
         try {
           const r = await nd.terminal.ensure({ id, cwd, cols: term.cols, rows: term.rows, dark: isTerminalDark(getTerminalThemePref()) });
           if (disposed || !term) return;
-          if (!r.ok) { term.write(`\r\n[터미널 시작 실패${r.reason ? `: ${r.reason}` : ""} — node-pty 재빌드가 필요할 수 있어요]\r\n`); return; }
+          if (!r.ok) { term.write(`\r\n[${tRef.current("terminal.startFailed", { reason: r.reason ? `: ${r.reason}` : "" })}]\r\n`); return; }
           if (r.buffer) term.write(stripTermQueries(r.buffer)); // 정확한 cols 확보 후 재생(줄바꿈 안 굳음). 질의 시퀀스 제거(에코 방지 #807)
           offData = nd.terminal.onData(({ id: i, data }) => { if (i === id && term) term.write(data); });
           // 셸 종료 시 빈 화면 방치 대신 안내(+로 새 터미널).
@@ -193,7 +193,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
           term.onData((d) => nd.terminal.input({ id, data: d }));
         } catch {
           // 핸들러 미등록(옛 메인) 등 — 크래시 대신 안내.
-          if (term && !disposed) term.write("\r\n[터미널 연결 실패 — electron:dev를 완전히 껐다 재시작해 주세요]\r\n");
+          if (term && !disposed) term.write(`\r\n[${tRef.current("terminal.connectFailed")}]\r\n`);
         }
       };
       // 폭이 잡혔을 때만 fit → 최초 1회 ensure, 이후 resize. 폭 미확정이면 스킵(다음 콜백/폴백서 처리).

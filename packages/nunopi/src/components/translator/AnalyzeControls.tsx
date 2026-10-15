@@ -71,7 +71,7 @@ export function AnalyzeButton({
       <button
         type="button"
         onClick={onResume}
-        title="멈춘 지점부터 안 된 부분만 이어서 분석"
+        title={t("analyze.resumeHint")}
         className="shrink-0 whitespace-nowrap rounded-lg bg-[#3B34E2] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#322bc9]"
       >
         {t("input.resume")}
@@ -86,7 +86,7 @@ export function AnalyzeButton({
         onClick={async () => {
           if (await confirm({ title: t("confirm.reanalyzeTitle"), message: t("confirm.reanalyze"), confirmText: t("confirm.reanalyzeTitle") })) void onAnalyze();
         }}
-        title="현재 입력을 다시 분석(기존 결과는 사라짐)"
+        title={t("analyze.reanalyzeHint")}
         className="shrink-0 whitespace-nowrap rounded-lg bg-[#3B34E2] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#322bc9]"
       >
         {t("input.reanalyze")}

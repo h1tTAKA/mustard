@@ -93,8 +93,8 @@ function ExclusionGroup({
                 type="button"
                 onClick={() => onRemove(text)}
                 className="text-zinc-400 transition hover:text-red-500 dark:text-zinc-500 dark:hover:text-red-400"
-                title="제외 해제"
-                aria-label={`${text} 제외 해제`}
+                title={t("settings.unexclude")}
+                aria-label={t("settings.unexcludeFor", { name: text })}
               >
                 <XIcon className="h-3.5 w-3.5" />
               </button>
@@ -485,7 +485,7 @@ export default function SettingsDrawer({
               <select
                 value={locale}
                 onChange={(e) => setLocale(e.target.value as Locale)}
-                aria-label="언어 선택"
+                aria-label={t("settings.selectLanguage")}
                 className="w-full appearance-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 pr-9 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-500"
               >
                 {LOCALES.map((l) => (

@@ -61,7 +61,7 @@ export default function TextInputArea({ code, isLoading, onCodeChange, chatOpen,
               type="button"
               onClick={onClear}
               className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-600 transition hover:bg-red-100 hover:text-red-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-              title="입력을 비우고 새 글을 분석"
+              title={t("input.clearTextHint")}
             >
               <IconEraser size={14} stroke={2} aria-hidden /> {t("input.clear")}
             </button>
@@ -75,7 +75,7 @@ export default function TextInputArea({ code, isLoading, onCodeChange, chatOpen,
                   ? "bg-lime-600 text-white"
                   : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
               }`}
-              title="학습 챗 열기/닫기"
+              title={t("chat.toggleLearning")}
             >
               <IconMessageCircle size={14} stroke={2} aria-hidden /> {t("input.ask")}
             </button>
@@ -96,7 +96,7 @@ export default function TextInputArea({ code, isLoading, onCodeChange, chatOpen,
                   type="button"
                   onClick={() => onTermClick?.(seg.termId!)}
                   className="rounded bg-blue-100 px-0.5 font-medium text-blue-700 underline decoration-blue-400 decoration-dotted underline-offset-2 transition hover:bg-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-900/60"
-                  title="학습 패널에서 이 용어 보기"
+                  title={t("term.viewInPanel")}
                 >
                   {seg.text}
                 </button>

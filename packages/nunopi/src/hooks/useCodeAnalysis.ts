@@ -80,7 +80,7 @@ function getAnalysisLocale(): "ko" | "ja" | "en" {
 
 function formatFetchError(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
-  return "분석 요청 중 알 수 없는 오류가 발생했다.";
+  return translate(getAnalysisLocale(), "analyze.unknownError");
 }
 
 // 소유자(page.tsx)가 주입하는 공유 상태 — 다른 뷰(암기·기록·설정)와도 쓰이므로 훅이 소유하지 않는다.
@@ -247,11 +247,11 @@ export function useCodeAnalysis(shared: CodeAnalysisShared, initialMode: Analyze
 
   useEffect(() => {
     if (isLoading) {
-      document.title = "분석 중… — Nunopi";
+      document.title = translate(getAnalysisLocale(), "docTitle.analyzing");
     } else if (errorMessage) {
-      document.title = "오류 — Nunopi";
+      document.title = translate(getAnalysisLocale(), "docTitle.error");
     } else if (analysisResult) {
-      document.title = "결과 도착 — Nunopi";
+      document.title = translate(getAnalysisLocale(), "docTitle.done");
     } else {
       document.title = "Nunopi";
     }
@@ -336,7 +336,7 @@ export function useCodeAnalysis(shared: CodeAnalysisShared, initialMode: Analyze
   async function runAnalyze(resumeFrom?: AgentAnalyzeResponse) {
     const nextCode = code.trim();
     if (!nextCode) {
-      setErrorMessage(mode === "text" ? "분석할 글을 먼저 입력해야 한다." : "분석할 코드를 먼저 입력해야 한다.");
+      setErrorMessage(translate(getAnalysisLocale(), mode === "text" ? "analyze.needText" : "analyze.needCode"));
       setAnalysisResult(null);
       return;
     }
@@ -380,7 +380,7 @@ export function useCodeAnalysis(shared: CodeAnalysisShared, initialMode: Analyze
       if (!response.ok || !response.body) {
         const result = (await response.json().catch(() => null)) as AnalyzeApiErrorResponse | null;
         setAnalysisResult(null);
-        setErrorMessage(result?.ok === false ? result.error.message : "분석 요청이 실패했다.");
+        setErrorMessage(result?.ok === false ? result.error.message : translate(getAnalysisLocale(), "analyze.requestFailed"));
         return;
       }
       const reader = response.body.getReader();

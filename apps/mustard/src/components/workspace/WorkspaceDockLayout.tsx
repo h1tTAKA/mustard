@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { IconGripVertical } from "@tabler/icons-react";
+import { useT } from "@mustard/core";
 
 export type PanelId = "terminal" | "code" | "doc" | "flow" | "browser";
 export type DockNode =
@@ -108,6 +109,7 @@ export default function WorkspaceDockLayout({ tree, panels, onTreeChange }: {
   panels: Record<PanelId, ReactNode>;
   onTreeChange: (t: DockNode) => void;
 }) {
+  const t = useT();
   const treeRef = useRef(tree); // 드래그 move에서 최신 트리 읽기(closure stale 방지)
   useEffect(() => { treeRef.current = tree; }, [tree]);
   const [drag, setDrag] = useState<PanelId | null>(null);      // 드래그 중인 패널
@@ -125,7 +127,7 @@ export default function WorkspaceDockLayout({ tree, panels, onTreeChange }: {
           <div draggable
             onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", panel); setDrag(panel); }}
             onDragEnd={() => { setDrag(null); setOver(null); }}
-            title="패널 이동" aria-label="패널 이동"
+            title={t("dock.movePanel")} aria-label={t("dock.movePanel")}
             className="absolute right-0 top-0 z-40 flex h-7 w-[17px] cursor-grab items-center justify-center text-zinc-400 opacity-50 transition hover:text-zinc-600 hover:opacity-100 active:cursor-grabbing dark:hover:text-zinc-200">
             <IconGripVertical size={13} stroke={2} aria-hidden />
           </div>

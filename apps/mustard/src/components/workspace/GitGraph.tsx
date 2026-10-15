@@ -520,7 +520,7 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
                     {files == null ? (
                       <div className="flex items-center text-zinc-400" style={{ height: FILE_H }}><span style={{ width: colW }} className="shrink-0" /><IconLoader2 size={11} stroke={2} className="ml-3 animate-spin" aria-hidden /></div>
                     ) : files.length === 0 ? (
-                      <div className="flex items-center text-[10px] text-zinc-400" style={{ height: FILE_H }}><span style={{ width: colW }} className="shrink-0" /><span className="pl-3">(변경 없음)</span></div>
+                      <div className="flex items-center text-[10px] text-zinc-400" style={{ height: FILE_H }}><span style={{ width: colW }} className="shrink-0" /><span className="pl-3">{t("git.noChanges")}</span></div>
                     ) : files.map((f) => {
                       const [badge, cls] = STATUS[f.status as keyof typeof STATUS] ?? ["?", "text-zinc-400"];
                       return (

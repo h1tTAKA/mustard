@@ -32,7 +32,7 @@ import TokenDictionary from "./TokenDictionary";
 import ItTermDictionary from "./ItTermDictionary";
 import ConceptDictionary from "./ConceptDictionary";
 import ConceptSection from "./ConceptSection";
-import { CONCEPT_DESCRIPTIONS } from "./conceptDescriptions";
+import { conceptShort } from "./conceptDescriptions";
 import LineExplanationList from "./LineExplanationList";
 import ResizableBody from "./ResizableBody";
 import { useConfirm, CKEYS } from "@mustard/core";
@@ -549,7 +549,7 @@ export default function LearningPanel({
     // 카드 없음 → 새로 만든다. 설명 없으면 정적 사전/에이전트에서 받아 붙여 "설명없음" 방지(#533, 토큰과 동일).
     let toSave = concept;
     if (!concept.description) {
-      const desc = CONCEPT_DESCRIPTIONS[concept.conceptId]?.short ?? (onConceptExplain ? await onConceptExplain(concept.conceptId, concept.title) : null);
+      const desc = conceptShort(concept.conceptId, locale) ?? (onConceptExplain ? await onConceptExplain(concept.conceptId, concept.title) : null);
       if (desc) toSave = { ...concept, description: desc };
     }
     saveConceptDetail(toSave, bookmarkSourceTitle(), bookmarkSourceId());
@@ -567,7 +567,7 @@ export default function LearningPanel({
     setActiveConceptIds([conceptId]);
     setActiveTokenIds(relatedTokenIds);
     const concept = safeConcepts.find((c) => c.conceptId === conceptId);
-    if (concept && !concept.description && !CONCEPT_DESCRIPTIONS[conceptId]) {
+    if (concept && !concept.description && !conceptShort(conceptId, locale)) {
       void onConceptExplain?.(conceptId, concept.title); // 반환 Promise 의도적 무시(클릭 = 설명 로드만)
     }
   }
@@ -612,8 +612,8 @@ export default function LearningPanel({
             ? "text-lime-600 dark:text-lime-400"
             : "text-zinc-400 hover:text-lime-600 dark:text-zinc-500 dark:hover:text-lime-400"
         }`}
-        title={currentHistoryIsPinned ? "고정 해제" : "고정하기"}
-        aria-label={currentHistoryIsPinned ? "고정 해제" : "이 분석 고정하기"}
+        title={currentHistoryIsPinned ? t("analysis.unpin") : t("analysis.pin")}
+        aria-label={currentHistoryIsPinned ? t("analysis.unpin") : t("analysis.pinThis")}
       >
         <StarIcon filled={currentHistoryIsPinned} className="h-[18px] w-[18px]" />
       </button>
@@ -630,14 +630,14 @@ export default function LearningPanel({
             if (e.key === "Escape") { setHeaderEditing(false); setHeaderTitle(currentHistoryTitle ?? ""); }
           }}
           className="flex-1 min-w-0 rounded-lg border border-blue-300 bg-white px-2 py-1 text-sm font-medium text-zinc-800 outline-none dark:border-blue-600 dark:bg-zinc-900 dark:text-zinc-100"
-          aria-label="분석 제목 편집"
+          aria-label={t("analysis.editTitle")}
         />
       ) : (
         <button
           type="button"
           onClick={() => { setHeaderTitle(currentHistoryTitle ?? ""); setHeaderEditing(true); }}
           className="flex-1 min-w-0 truncate text-left text-sm font-semibold text-zinc-800 hover:text-blue-600 dark:text-zinc-100 dark:hover:text-blue-400"
-          title="클릭하여 제목 편집"
+          title={t("analysis.clickToEditTitle")}
         >
           {currentHistoryTitle || t("panel.titleNone")}
         </button>
@@ -652,8 +652,8 @@ export default function LearningPanel({
               ? "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
               : "text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
           }`}
-          title="목록에 담기"
-          aria-label="이 분석을 목록에 담기"
+          title={t("analysis.addToList")}
+          aria-label={t("analysis.addThisToList")}
         >
           <IconFolder size={15} stroke={2} aria-hidden />
         </button>
@@ -666,8 +666,8 @@ export default function LearningPanel({
             if (await confirm({ skipKey: CKEYS.skipDelete, message: t("confirm.deleteAnalysis"), confirmText: t("common.delete"), danger: true })) onDeleteHistory(currentHistoryId);
           }}
           className="shrink-0 rounded-lg px-1.5 py-1 text-xs text-zinc-400 transition hover:bg-red-100 hover:text-red-600 dark:text-zinc-500 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-          title="이 분석 삭제"
-          aria-label="이 분석 삭제"
+          title={t("analysis.deleteThis")}
+          aria-label={t("analysis.deleteThis")}
         >
           <IconTrash size={15} stroke={2} aria-hidden />
         </button>
@@ -934,7 +934,7 @@ export default function LearningPanel({
                   type="button"
                   onClick={() => { void handleCopyResult(); }}
                   className="rounded-lg px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-                  aria-label="분석 결과 클립보드에 복사"
+                  aria-label={t("analysis.copyResult")}
                 >
                   {copied ? t("panel.copied") : t("panel.copyResult")}
                 </button>
@@ -942,8 +942,8 @@ export default function LearningPanel({
                   type="button"
                   onClick={() => { void handleExportHtml(); }}
                   className="rounded-lg px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-                  aria-label="분석 결과를 HTML 파일로 저장"
-                  title="나중에 보며 공부할 수 있게 HTML로 저장"
+                  aria-label={t("analysis.exportHtml")}
+                  title={t("analysis.exportHtmlHint")}
                 >
                   {t("panel.saveHtml")}
                 </button>

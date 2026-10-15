@@ -45,3 +45,6 @@ export const CONCEPT_DESCRIPTIONS: Record<string, ConceptDescription> = {
     level: "beginner",
   },
 };
+
+// #1095 짧은 설명은 한국어만 내장 — 다른 언어면 없음 → 화면이 AI 설명(설정 언어)으로 채움.
+export const conceptShort = (id: string, locale: string): string | undefined => (locale === "ko" ? CONCEPT_DESCRIPTIONS[id]?.short : undefined);

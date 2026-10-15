@@ -157,7 +157,7 @@ export default function AnalysisHistory({
               onClick={async () => { if (await confirm({ skipKey: CKEYS.skipDelete, message: t("confirm.deleteCollection", { name: c.name }), confirmText: t("common.delete"), danger: true })) onDeleteCollection(c.id); }}
               className="pr-1.5 opacity-60 hover:opacity-100"
               title={t("history.deleteCollectionTitle")}
-              aria-label={`${c.name} 목록 삭제`}
+              aria-label={t("history.deleteListFor", { name: c.name })}
             >
               ×
             </button>
@@ -245,7 +245,7 @@ export default function AnalysisHistory({
                   type="button"
                   onClick={() => onRestore(entry)}
                   className="flex-1 min-w-0 text-left"
-                  aria-label={`히스토리 복원: ${entry.title ?? codePreview(entry.code)}`}
+                  aria-label={t("history.restoreFor", { name: entry.title ?? codePreview(entry.code) })}
                 >
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="inline-flex items-center rounded bg-zinc-200 px-1 py-0.5 text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 shrink-0">

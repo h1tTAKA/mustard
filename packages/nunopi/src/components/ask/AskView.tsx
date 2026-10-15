@@ -832,7 +832,7 @@ export default function AskView({ active = true, providerId, providerSettings, g
           <button
             type="button"
             onClick={() => toggleExpand(s.id)}
-            aria-label={isOpen ? "접기" : "펼치기"}
+            aria-label={isOpen ? t("a11y.collapse") : t("a11y.expand")}
             className="flex h-7 w-6 shrink-0 items-center justify-center text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
           >
             {isOpen ? <IconChevronDown size={15} stroke={2} aria-hidden /> : <IconChevronRight size={15} stroke={2} aria-hidden />}
@@ -993,7 +993,7 @@ export default function AskView({ active = true, providerId, providerSettings, g
           <button
             type="button"
             onClick={() => toggleFolderCollapse(folder.id)}
-            aria-label={folder.collapsed ? "펼치기" : "접기"}
+            aria-label={folder.collapsed ? t("a11y.expand") : t("a11y.collapse")}
             className="flex h-7 w-6 shrink-0 items-center justify-center text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
           >
             {folder.collapsed ? <IconChevronRight size={15} stroke={2} aria-hidden /> : <IconChevronDown size={15} stroke={2} aria-hidden />}

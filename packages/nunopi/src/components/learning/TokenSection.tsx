@@ -78,8 +78,8 @@ export default function TokenSection({ tokens, activeTokenIds, onTokenClick, onT
                       ? "text-lime-600 dark:text-lime-400"
                       : "text-zinc-400 hover:text-lime-600 dark:text-zinc-500 dark:hover:text-lime-400"
                   }`}
-                  title={isBookmarked ? "북마크 해제" : "북마크"}
-                  aria-label={isBookmarked ? `${token.token} 북마크 해제` : `${token.token} 북마크 추가`}
+                  title={isBookmarked ? t("bookmark.remove") : t("bookmark.add")}
+                  aria-label={isBookmarked ? t("bookmark.removeFor", { name: token.token }) : t("bookmark.addFor", { name: token.token })}
                 >
                   <StarIcon filled={isBookmarked} />
                 </button>
@@ -89,8 +89,8 @@ export default function TokenSection({ tokens, activeTokenIds, onTokenClick, onT
                   type="button"
                   onClick={() => onDelete(token)}
                   className="text-zinc-400 transition hover:text-red-500 dark:text-zinc-500 dark:hover:text-red-400"
-                  title="사전에서 삭제 (다시 태그를 누르면 다시 불러옴)"
-                  aria-label={`${token.token} 사전에서 삭제`}
+                  title={t("token.deleteHint")}
+                  aria-label={t("token.deleteFor", { name: token.token })}
                 >
                   <XIcon />
                 </button>
@@ -105,7 +105,7 @@ export default function TokenSection({ tokens, activeTokenIds, onTokenClick, onT
                 onTokenClick?.(token.id, token.conceptId);
               }}
               className={`w-full px-4 pt-4 text-left ${token.bookmarkable || onDelete ? "pr-12" : ""}`}
-              aria-label={token.description ? `${token.token} 토큰 선택` : `${token.token} 설명 보기`}
+              aria-label={token.description ? t("token.selectFor", { name: token.token }) : t("token.viewDescFor", { name: token.token })}
             >
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <code className="max-w-full break-all rounded bg-zinc-200 px-1.5 py-0.5 text-xs font-mono font-semibold text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useT } from "@mustard/core";
 
 interface EditorChatColumnProps {
   editor: React.ReactNode;
@@ -17,6 +18,7 @@ const MAX = 80;
 // 왼쪽 컬럼을 세로 분할 — 위 에디터 / 아래 학습 챗. 챗이 닫히면 에디터 풀높이.
 // 상하 드래그로 비율 조절(localStorage 보존). 우측 학습패널은 안 건드린다.
 export default function EditorChatColumn({ editor, chat, chatOpen, editorCollapsed = false }: EditorChatColumnProps) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   const [topPct, setTopPct] = useState(() => {
     if (typeof window === "undefined") return 55;
@@ -50,7 +52,7 @@ export default function EditorChatColumn({ editor, chat, chatOpen, editorCollaps
       <div
         role="separator"
         aria-orientation="horizontal"
-        aria-label="에디터와 챗 높이 조절"
+        aria-label={t("layout.resizeEditorChat")}
         onPointerDown={(e) => {
           setDragging(true);
           e.currentTarget.setPointerCapture(e.pointerId);

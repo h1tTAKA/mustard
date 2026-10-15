@@ -74,11 +74,11 @@ export default function ItConceptSection({
                       ? "text-lime-600 dark:text-lime-400"
                       : "text-zinc-400 hover:text-lime-600 dark:text-zinc-500 dark:hover:text-lime-400"
                   }`}
-                  title={bookmarkedTitles.includes(concept.title) ? "북마크 해제" : "IT 용어 사전에 북마크"}
+                  title={bookmarkedTitles.includes(concept.title) ? t("bookmark.remove") : t("bookmark.addToItDict")}
                   aria-label={
                     bookmarkedTitles.includes(concept.title)
-                      ? `${concept.title} 북마크 해제`
-                      : `${concept.title} 북마크 추가`
+                      ? t("bookmark.removeFor", { name: concept.title })
+                      : t("bookmark.addFor", { name: concept.title })
                   }
                 >
                   <StarIcon filled={bookmarkedTitles.includes(concept.title)} />
