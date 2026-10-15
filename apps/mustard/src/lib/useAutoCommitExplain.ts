@@ -53,16 +53,17 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     // info = 카드 메타("브랜치 · 커밋 제목", #1062) — tool 필드에 담아 저장(스키마 변경 없이).
     // #1090 커밋의 모든 파일 덩어리를 한 작업 목록으로 → 동시 EXPLAIN_CONCURRENCY개씩 설명(차례로 하면 큰 커밋 하나에 수십 분).
     //  파일의 덩어리가 다 끝나면 그 파일 카드를 바로 — 카드 시각 = 끝난 시각(끝난 순서대로 맨 위에 쌓임, 유저 요청).
-    const explainCommit = async (hash: string, info: string) => {
+    // #1093 opts — 복구용: only = 그 파일만, ts = 원래 카드 시각 유지, replace = 같은 key 카드 교체.
+    const explainCommit = async (hash: string, info: string, opts: { only?: string; ts?: number; replace?: boolean } = {}) => {
       const list = await post("/api/repo/git-show", { path: root, hash });
-      const files = ((list?.files ?? []) as { status: string; path: string }[]).filter((f) => f.status !== "D" && !SKIP_FILE.test(f.path));
+      const files = ((list?.files ?? []) as { status: string; path: string }[]).filter((f) => f.status !== "D" && !SKIP_FILE.test(f.path) && (!opts.only || f.path === opts.only));
       type FileJob = { path: string; store: string; texts: (string | null)[]; left: number };
       const jobs: { file: FileJob; i: number; h: ReturnType<typeof groupHunks>[number] }[] = [];
       const emit = (f: FileJob) => {
         const texts = f.texts.filter((x): x is string => !!x);
         if (!texts.length || !alive) return;
-        const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts: Date.now(), expl: texts.join(DIFF_SEP) }; // #1074 자르지 않음
-        void post("/api/repo/stream", { root, items: [item] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
+        const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts: opts.ts ?? Date.now(), expl: texts.join(DIFF_SEP) }; // #1074 자르지 않음
+        void post("/api/repo/stream", { root, items: [item], replace: !!opts.replace }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
         window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
       };
       for (const f of files) { // #1074 커밋당 파일·구간 상한 없음 — 큰 커밋도 바뀐 코드 전부 캐치업에(유저 요청)
@@ -111,6 +112,19 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
       if (alive) { const cur = read() ?? st0; write({ ...cur, pending: [...keep, ...(cur.pending ?? []).filter((p) => !st0.pending!.some((q) => q.hash === p.hash))] }); }
     };
 
+    // #1093 복구 — 실패 문구가 설명으로 저장된 diff 카드를 찾아 그 파일만 다시(캐시된 정상 구간은 재사용, 실패 구간만 AI).
+    //  카드 시각은 원래대로(목록 제자리), 같은 key로 교체. 한 주기에 최대 5개(새 커밋 설명이 밀리지 않게).
+    const repairFailed = async () => {
+      if (!cfg.current.diffOn) return;
+      const j = await fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&q=${encodeURIComponent("런타임 실패:")}`).then((r) => r.json()).catch(() => null);
+      const bad = ((j?.items ?? []) as { key: string; kind: string; tool: string; ts: number }[]).filter((x) => x.kind === "diff").slice(0, 5);
+      for (const it of bad) {
+        if (!alive) return;
+        const k = parseDiffItemKey(it.key); if (!k) continue;
+        await explainCommit(k.hash, it.tool === "diff" ? "" : it.tool, { only: k.file, ts: it.ts, replace: true });
+      }
+    };
+
     const tick = async () => {
       if (busy || !alive || !cfg.current.providerId) return;
       busy = true;
@@ -135,6 +149,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           st = read() ?? st;
         }
         await flushPending();
+        await repairFailed();
       } catch { /* 서버 미준비 등 — 다음 주기 */ } finally { busy = false; }
     };
     void tick();

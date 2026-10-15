@@ -51,9 +51,32 @@ function readDayFile(file: string): CatchupItem[] {
   const keys = new Set<string>();
   for (const line of readFileSync(file, "utf8").split("\n")) {
     if (!line.trim()) continue;
-    try { const it = sanitize(JSON.parse(line)); if (it && !keys.has(it.key)) { keys.add(it.key); out.push(it); } } catch { /* 깨진 줄(쓰다 죽음) 스킵 */ }
+    try {
+      const it = sanitize(JSON.parse(line));
+      if (it?.kind === "narration" && /^\s*런타임 실패:/.test(it.expl)) continue; // #1093 실패 문구가 해설로 저장된 옛 카드 — 숨김(재료가 없어 복구 불가)
+      if (it && !keys.has(it.key)) { keys.add(it.key); out.push(it); }
+    } catch { /* 깨진 줄(쓰다 죽음) 스킵 */ }
   }
   return out;
+}
+
+// #1093 같은 key 카드를 새 내용으로 교체(실패 카드 복구) — 그날 파일에서 그 key 줄을 빼고 새 줄 추가. 없던 key면 그냥 추가.
+// 임시 파일에 쓰고 rename(쓰다 죽어도 원본 유지). appendItems와 같은 이유로 동기 = 프로세스 안 경합 없음.
+export function replaceItems(root: string, items: CatchupItem[]): number {
+  if (!root || !items.length) return 0;
+  const dir = repoDir(root);
+  mkdirSync(dir, { recursive: true });
+  for (const it of items) {
+    const file = join(dir, `${dayKey(it.ts)}.jsonl`);
+    const lines = existsSync(file) ? readFileSync(file, "utf8").split("\n").filter((l) => {
+      if (!l.trim()) return false;
+      try { return (JSON.parse(l) as { key?: string }).key !== it.key; } catch { return true; }
+    }) : [];
+    const tmp = `${file}.tmp`;
+    writeFileSync(tmp, [...lines, JSON.stringify(it)].join("\n") + "\n");
+    renameSync(tmp, file);
+  }
+  return items.length;
 }
 
 // 같은 날 파일에 이미 있는 key는 스킵(이관·재전송 멱등). 날짜는 항목 ts 기준.
