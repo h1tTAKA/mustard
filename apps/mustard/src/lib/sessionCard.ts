@@ -30,7 +30,10 @@ export async function buildSessionItem(root: string, hash: string, ts: number, s
   if (s.closed === false && !force) return "wait" as const;
   let expl: string;
   try { expl = await askAgent(sessionDigest(s.messages), PROMPT, providerId, providerSettings, locale); }
-  catch { expl = s.messages.find((m) => m.role === "user")?.text.slice(0, 400) || "(요약 실패)"; } // 요약 실패해도 원본은 볼 수 있게 카드는 만듦
+  catch {
+    if (!force) return "wait" as const; // #1093 요약 실패(런타임 상한 등) — 다음 주기에 다시
+    expl = s.messages.find((m) => m.role === "user")?.text.slice(0, 400) || "(요약 실패)"; // 20분 넘게 실패 — 원본이라도 볼 수 있게 카드는 만듦
+  }
   return {
     key: sessionItemKey(hash), kind: "session", target: `${subject || hash.slice(0, 7)} @${hash.slice(0, 7)}`,
     tool: [AGENT_LABEL[s.agent] ?? s.agent, s.branch || branch].filter(Boolean).join(" · ").slice(0, 200), ts: Date.now(), expl: expl.slice(0, 8000),

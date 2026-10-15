@@ -14,6 +14,7 @@ export const diffItemKey = (hash: string, file: string) => `diff|${hash}|${file}
 export const parseDiffItemKey = (key: string) => { const m = /^diff\|([0-9a-fA-F]{4,64})\|(.+)$/.exec(key); return m ? { hash: m[1], file: m[2] } : null; };
 
 const POLL_MS = 30_000;
+const RETRY_MS = [5_000, 20_000, -1]; // #1093 덩어리 재시도 간격(-1 = 마지막 시도)
 const EXPLAIN_CONCURRENCY = 4; // #1090 덩어리 설명 동시 호출 수(AI CLI 동시 실행 — 너무 많으면 레이트 리밋)
 // 설명 가치 없는 파일 — 문서·lockfile·이미지 등(삭제 파일은 상태 D로 따로 거름).
 const SKIP_FILE = /\.(md|mdx|markdown|txt|rst|adoc|lock|png|jpe?g|gif|webp|avif|bmp|ico|svg|pdf|zip|gz|tgz|7z|rar|mp3|wav|ogg|flac|m4a|aac|mp4|mov|webm|avi|mkv|woff2?|ttf|otf|eot|wasm|exe|dll|so|dylib|bin)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)$/i;
@@ -80,7 +81,11 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         while (alive && next < jobs.length) {
           const { file, i, h } = jobs[next++];
           const { providerId: pid, providerSettings: ps, locale: loc } = cfg.current;
-          try { const text = await explainDiffText(h.diffText, pid, ps, loc); saveNote(file.store, h.diffText, text); file.texts[i] = diffMark(h) + text; } catch { /* 구간 하나 실패 — 카드엔 빠지고 다음 주기 diff 화면에서 다시 */ }
+          for (const wait of RETRY_MS) { // #1093 실패면 잠시 뒤 다시(런타임 상한·일시 오류) — 최대 3번
+            if (!alive) return;
+            try { const text = await explainDiffText(h.diffText, pid, ps, loc); saveNote(file.store, h.diffText, text); file.texts[i] = diffMark(h) + text; break; }
+            catch { if (wait < 0) break; await new Promise((r) => setTimeout(r, wait)); } // 끝내 실패 — 카드엔 빠지고 복구 주기에서 다시
+          }
           if (--file.left === 0) emit(file); // 이 파일 끝 → 바로 카드
         }
       };
