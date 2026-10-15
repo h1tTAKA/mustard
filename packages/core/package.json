@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./sna": "./src/sna/client.ts",
-    "./sna/server": "./src/sna/server.ts"
+    "./sna/server": "./src/sna/server.ts",
+    "./messages": "./src/i18n/messages.ts"
   }
 }

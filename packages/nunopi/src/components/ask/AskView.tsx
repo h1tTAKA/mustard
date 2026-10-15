@@ -786,7 +786,7 @@ export default function AskView({ active = true, providerId, providerSettings, g
           } catch { /* 부분 청크 — 무시 */ }
         }
         if (!ac.signal.aborted) {
-          updateSubMessages(sessionId, subId, (m) => [...m, { role: "assistant", content: answer || "(빈 응답)" }]);
+          updateSubMessages(sessionId, subId, (m) => [...m, { role: "assistant", content: answer || t("fallback.emptyResponse") }]);
         }
       } catch {
         if (!ac.signal.aborted) {

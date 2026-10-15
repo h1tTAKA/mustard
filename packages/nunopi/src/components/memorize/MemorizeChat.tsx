@@ -191,7 +191,7 @@ export default function MemorizeChat({ card, providerId, providerSettings, onOpe
             else if (ev.type === "result") answer = ev.response.summary;
           }
         }
-        if (!ac.signal.aborted) commitActive([...thread, { role: "assistant", content: answer || "(빈 응답)" }]);
+        if (!ac.signal.aborted) commitActive([...thread, { role: "assistant", content: answer || t("fallback.emptyResponse") }]);
       } catch {
         if (!ac.signal.aborted) commitActive([...thread, { role: "assistant", content: t("chat.replyError") }]);
       } finally {

@@ -5,6 +5,7 @@ import type { AgentAnalyzeRequest, AgentAnalyzeResponse } from "@mustard/core";
 import type { AgentProviderKind } from "@mustard/core";
 import type { CodeToken, TranslateWarning } from "@mustard/core";
 import { outputLanguageDirective, languageName } from "./outputLanguage";
+import { translate } from "@mustard/core/messages";
 
 const JSON_CODE_BLOCK_PATTERN = /```json\s*([\s\S]*?)```/i;
 
@@ -48,7 +49,7 @@ export function normalizeExplainTokenOutput(
 
   if (!parsed) {
     return tokenModeResponse(providerId, [], [
-      { code: "PARSE_FAILED", message: `"${target}" 설명을 해석하지 못했다.` },
+      { code: "PARSE_FAILED", message: translate(request.locale, "explain.tokenParseFailed", { target }) },
     ]);
   }
 
@@ -56,7 +57,7 @@ export function normalizeExplainTokenOutput(
     id: target || parsed.token || "token",
     token: parsed.token || target,
     category: (parsed.category as CodeToken["category"]) ?? "keyword",
-    label: parsed.label ?? "토큰",
+    label: parsed.label ?? translate(request.locale, "token.defaultLabel"),
     description: parsed.description ?? "",
     example: parsed.example,
     lines: [],

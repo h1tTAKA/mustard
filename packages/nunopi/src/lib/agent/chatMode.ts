@@ -112,7 +112,7 @@ export function normalizeChatOutput(
   providerId: AgentProviderKind,
 ): AgentAnalyzeResponse {
   const answer = rawText.trim();
-  return chatModeResponse(providerId, answer || "(빈 응답)", []);
+  return chatModeResponse(providerId, answer, []); // #1095 빈 답은 빈 문자열 — 대체 문구는 받는 화면이 설정 언어로
 }
 
 // 챗 응답 래퍼(성공 답 또는 실패/안내 메시지).

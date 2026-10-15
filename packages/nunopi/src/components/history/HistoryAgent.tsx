@@ -123,7 +123,7 @@ export default function HistoryAgent({ providerId, providerSettings }: HistoryAg
             else if (ev.type === "result") answer = ev.response.summary;
           }
         }
-        if (!ac.signal.aborted) setMessages([...thread, { role: "assistant", content: answer || "(빈 응답)" }]);
+        if (!ac.signal.aborted) setMessages([...thread, { role: "assistant", content: answer || t("fallback.emptyResponse") }]);
       } catch {
         if (!ac.signal.aborted) setMessages([...thread, { role: "assistant", content: t("chat.replyError") }]);
       } finally {

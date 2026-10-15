@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { isFailedNote } from "./failText.ts";
 
 export type CatchupKind = "symbol" | "file" | "query" | "repo" | "edit" | "narration" | "diff" | "session"; // session = 커밋을 만든 에이전트 세션(#1064) // diff = 커밋 변경 자동 설명(#1056)
 export interface CatchupItem { key: string; kind: CatchupKind; target: string; tool: string; ts: number; expl: string }
@@ -53,7 +54,7 @@ function readDayFile(file: string): CatchupItem[] {
     if (!line.trim()) continue;
     try {
       const it = sanitize(JSON.parse(line));
-      if (it?.kind === "narration" && /^\s*런타임 실패:/.test(it.expl)) continue; // #1093 실패 문구가 해설로 저장된 옛 카드 — 숨김(재료가 없어 복구 불가)
+      if (it?.kind === "narration" && isFailedNote(it.expl)) continue; // #1093 실패 문구가 해설로 저장된 옛 카드 — 숨김(재료가 없어 복구 불가)
       if (it && !keys.has(it.key)) { keys.add(it.key); out.push(it); }
     } catch { /* 깨진 줄(쓰다 죽음) 스킵 */ }
   }

@@ -22,6 +22,7 @@ import {
   normalizeClaudeOutput,
   type ClaudeAvailabilityResult,
 } from "./codePrompt";
+import { translate } from "@mustard/core/messages";
 
 // 분석/챗 런타임을 임베드 에이전트 런타임 서버(runOnce 스트림)로 처리하는 provider.
 // claude-code / codex 두 런타임을 같은 로직으로 굴리되, runOnce 옵션만 런타임별로 분기한다.
@@ -285,7 +286,7 @@ function createSnaProvider(cfg: SnaProviderConfig): AgentProvider {
       try {
         await getSnaClient();
       } catch (e) {
-        const message = `에이전트 런타임 서버에 연결하지 못했다: ${e instanceof Error ? e.message : String(e)}`;
+        const message = translate(request.locale, "provider.runtimeConnectFailed", { msg: e instanceof Error ? e.message : String(e) });
         return unavailableResponse(request, message, providerId);
       }
 
@@ -386,14 +387,14 @@ function createSnaProvider(cfg: SnaProviderConfig): AgentProvider {
         if (options?.signal?.aborted) throw err; // 취소는 route로 전파(499)
         const message = err instanceof Error ? err.message : "runtime run failed";
         const warn = [{ code: "PARSE_FAILED" as const, message }];
-        if (isChatStream || isDedup || isQuiz) return chatModeResponse(providerId, `런타임 실패: ${message}`, warn);
+        if (isChatStream || isDedup || isQuiz) return chatModeResponse(providerId, translate(request.locale, "provider.runtimeFailed", { msg: message }), warn);
         if (isExplainConcept) return conceptModeResponse(providerId, [], warn);
         if (isExplainToken) return tokenModeResponse(providerId, [], warn);
-        if (isText) return textModeResponse(providerId, `런타임 실패: ${message}`, warn);
+        if (isText) return textModeResponse(providerId, translate(request.locale, "provider.runtimeFailed", { msg: message }), warn);
         return {
           providerId,
           language: request.detectedLanguage ?? "unknown",
-          summary: `런타임 실패: ${message}`,
+          summary: translate(request.locale, "provider.runtimeFailed", { msg: message }),
           lineExplanations: [],
           tokens: [],
           concepts: [],

@@ -116,7 +116,7 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
         }
       }
       if (streamErr) { fail(`agent: ${streamErr}`); return; }
-      if (!answer.trim()) { fail("empty response (provider 설정 확인)"); return; }
+      if (!answer.trim()) { fail(t("repo.emptyResponseDetail")); return; }
       const parsed = parseCategories(stripCardBlock(answer)); // 튜터 자동 카드 블록 제거 후 파싱
       if (!parsed.length) { fail(`no JSON array — ${answer.slice(0, 160)}`); return; }
       setCats((prev) => {

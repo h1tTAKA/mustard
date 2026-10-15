@@ -28,6 +28,7 @@ import {
 import { saveExclusions } from "../lib/exclusions";
 import { type ModeModels, type ModeProviders, resolveModeModel, resolveModeProvider, withModel } from "../lib/modeProviders";
 import { type Collection, saveCollections } from "../lib/collections";
+import { translate } from "@mustard/core/messages";
 
 const DEFAULT_CODE = `const [count, setCount] = useState(0);\n\nreturn <button className="px-4 py-2">{count}</button>;`;
 
@@ -611,7 +612,7 @@ export function useCodeAnalysis(shared: CodeAnalysisShared, initialMode: Analyze
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ providerId, request: { code: input || "(코드 없음)", locale: getAnalysisLocale(), providerId, mode: "chat", messages: contextMessages, providerSettings } }),
         });
-        if (!res.ok || !res.body) { appendToSession(sid, { role: "assistant", content: "답변 요청이 실패했다." }); return; }
+        if (!res.ok || !res.body) { appendToSession(sid, { role: "assistant", content: translate(getAnalysisLocale(), "fallback.chatRequestFailed") }); return; }
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -631,9 +632,9 @@ export function useCodeAnalysis(shared: CodeAnalysisShared, initialMode: Analyze
             } catch { /* skip */ }
           }
         }
-        appendToSession(sid, { role: "assistant", content: answer || "(빈 응답)" });
+        appendToSession(sid, { role: "assistant", content: answer || translate(getAnalysisLocale(), "fallback.emptyResponse") });
       } catch {
-        appendToSession(sid, { role: "assistant", content: "답변 중 오류가 발생했다." });
+        appendToSession(sid, { role: "assistant", content: translate(getAnalysisLocale(), "fallback.chatError") });
       } finally {
         setChatStreaming(null);
         setChatLoading(false);

@@ -1154,6 +1154,28 @@ const ko: Dict = {
   "export.summary": "요약",
   "export.footer": "Nunopi — 바이브코더를 위한 AI 코드 학습 도구",
   "export.fileDefault": "분석",
+  "fallback.emptyResponse": "(빈 응답)",
+  "fallback.error": "(오류)",
+  "fallback.requestFailed": "(응답 실패)",
+  "fallback.summaryFailed": "(요약 실패)",
+  "fallback.chatRequestFailed": "답변 요청이 실패했다.",
+  "fallback.chatError": "답변 중 오류가 발생했다.",
+  "analyze.cancelled": "분석이 취소되었습니다.",
+  "provider.runtimeFailed": "런타임 실패: {msg}",
+  "provider.runtimeConnectFailed": "에이전트 런타임 서버에 연결하지 못했다: {msg}",
+  "provider.httpError": "엔드포인트 오류(HTTP {status}).",
+  "provider.connectFailed": "엔드포인트에 연결하지 못했다.",
+  "analyze.progressOverview": "개요 분석 중…",
+  "analyze.partialParse": "일부 구간({n}개) 줄 설명을 가져오지 못했어요. 다시 분석하면 채워집니다.",
+  "explain.conceptParseFailed": "\"{target}\" 개념 설명을 해석하지 못했다.",
+  "explain.tokenParseFailed": "\"{target}\" 설명을 해석하지 못했다.",
+  "token.defaultLabel": "토큰",
+  "text.parseFailed": "AI가 돌려준 응답을 글 분석 형식으로 해석하지 못했다. 다시 시도해 보라.",
+  "text.summaryFailed": "요약을 생성하지 못했다.",
+  "stream.repoStructure": "레포 구조",
+  "stream.live": "실시간",
+  "stream.liveWork": "실시간 작업",
+  "repo.emptyResponseDetail": "empty response (provider 설정 확인)",
 };
 
 const ja: Dict = {
@@ -2292,6 +2314,28 @@ const ja: Dict = {
   "export.summary": "要約",
   "export.footer": "Nunopi — バイブコーダーのためのAIコード学習ツール",
   "export.fileDefault": "分析",
+  "fallback.emptyResponse": "(空の応答)",
+  "fallback.error": "(エラー)",
+  "fallback.requestFailed": "(応答失敗)",
+  "fallback.summaryFailed": "(要約失敗)",
+  "fallback.chatRequestFailed": "回答のリクエストに失敗しました。",
+  "fallback.chatError": "回答中にエラーが発生しました。",
+  "analyze.cancelled": "分析がキャンセルされました。",
+  "provider.runtimeFailed": "ランタイム失敗: {msg}",
+  "provider.runtimeConnectFailed": "エージェントランタイムサーバーに接続できませんでした: {msg}",
+  "provider.httpError": "エンドポイントエラー(HTTP {status})。",
+  "provider.connectFailed": "エンドポイントに接続できませんでした。",
+  "analyze.progressOverview": "概要を分析中…",
+  "analyze.partialParse": "一部の区間({n}件)の行説明を取得できませんでした。再分析すると補完されます。",
+  "explain.conceptParseFailed": "「{target}」の概念説明を解釈できませんでした。",
+  "explain.tokenParseFailed": "「{target}」の説明を解釈できませんでした。",
+  "token.defaultLabel": "トークン",
+  "text.parseFailed": "AIの応答を文章分析の形式で解釈できませんでした。もう一度お試しください。",
+  "text.summaryFailed": "要約を生成できませんでした。",
+  "stream.repoStructure": "リポジトリ構造",
+  "stream.live": "リアルタイム",
+  "stream.liveWork": "リアルタイム作業",
+  "repo.emptyResponseDetail": "empty response(プロバイダー設定を確認)",
 };
 
 const en: Dict = {
@@ -3430,6 +3474,37 @@ const en: Dict = {
   "export.summary": "Summary",
   "export.footer": "Nunopi — AI code learning tool for vibe coders",
   "export.fileDefault": "analysis",
+  "fallback.emptyResponse": "(Empty response)",
+  "fallback.error": "(Error)",
+  "fallback.requestFailed": "(Request failed)",
+  "fallback.summaryFailed": "(Summary failed)",
+  "fallback.chatRequestFailed": "The answer request failed.",
+  "fallback.chatError": "An error occurred while answering.",
+  "analyze.cancelled": "Analysis was cancelled.",
+  "provider.runtimeFailed": "Runtime failed: {msg}",
+  "provider.runtimeConnectFailed": "Could not connect to the agent runtime server: {msg}",
+  "provider.httpError": "Endpoint error (HTTP {status}).",
+  "provider.connectFailed": "Could not connect to the endpoint.",
+  "analyze.progressOverview": "Analyzing overview…",
+  "analyze.partialParse": "Couldn't get line explanations for {n} section(s). Re-analyze to fill them in.",
+  "explain.conceptParseFailed": "Could not parse the concept explanation for \"{target}\".",
+  "explain.tokenParseFailed": "Could not parse the explanation for \"{target}\".",
+  "token.defaultLabel": "Token",
+  "text.parseFailed": "Could not parse the AI response as a text analysis. Please try again.",
+  "text.summaryFailed": "Could not generate a summary.",
+  "stream.repoStructure": "Repo structure",
+  "stream.live": "Live",
+  "stream.liveWork": "Live work",
+  "repo.emptyResponseDetail": "empty response (check provider settings)",
 };
 
 export const MESSAGES: Record<Locale, Dict> = { ko, ja, en };
+
+// #1095 React 밖(서버·provider·순수 함수)에서 쓰는 번역 — useT()와 같은 사전·치환. 모르는 키는 ko → 키 그대로.
+export function translate(locale: string | undefined, key: string, vars?: Record<string, string | number>): string {
+  const dict = MESSAGES[(locale as Locale) in MESSAGES ? (locale as Locale) : "ko"];
+  const s = dict[key] ?? MESSAGES.ko[key] ?? key;
+  return vars ? s.replace(/\{(\w+)\}/g, (_, k) => (k in vars ? String(vars[k]) : `{${k}}`)) : s;
+}
+// 한 키의 모든 언어 값 — 옛 저장값·다른 언어로 저장된 값 판정용(실패 문구 등).
+export const allLocaleValues = (key: string): string[] => (Object.keys(MESSAGES) as Locale[]).map((l) => MESSAGES[l][key]).filter(Boolean);
