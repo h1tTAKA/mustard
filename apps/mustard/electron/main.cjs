@@ -27,6 +27,7 @@ const { startWatch, stopWatch, stopAll: stopAllWatchers } = require("./repo-watc
 const { seen: seenText, freshLines } = require("./narration-dedupe.cjs");
 const { loadSeen, saveSeen } = require("./narration-seen-store.cjs"); // #1031 레포별 디스크 저장 // #1019 재그리기 중복 내레이션 방지
 const { installBrowserGuestPolicy, isAllowedUrl: isBrowserUrl, setAppChords, trackChordHost, forwardAppKeys } = require("./browser-guest.cjs"); // #1034 인앱 브라우저
+const { tm } = require("./main-i18n.cjs"); // #1095 사용자 노출 문구 다국어
 const githubBridge = require("./github-bridge.cjs"); // GitHub 패널(#809/#810) gh CLI 브릿지
 const { join, dirname } = require("node:path");
 
@@ -509,7 +510,7 @@ function loadGhToken() {
   } catch { return null; } // 파일 없음/복호화 실패 → 토큰 없음
 }
 function saveGhToken(token) {
-  if (!safeStorage.isEncryptionAvailable()) return { ok: false, detail: "이 환경은 안전한 토큰 저장을 지원하지 않음(safeStorage 불가)" };
+  if (!safeStorage.isEncryptionAvailable()) return { ok: false, detail: tm("token.noSafeStorage") };
   try {
     mkdirSync(app.getPath("userData"), { recursive: true });
     const enc = safeStorage.encryptString(String(token)).toString("base64");
@@ -535,7 +536,7 @@ function loadHostToken(host) {
   } catch { return null; }
 }
 function saveHostToken(host, token) {
-  if (!safeStorage.isEncryptionAvailable()) return { ok: false, detail: "이 환경은 안전한 토큰 저장을 지원하지 않음(safeStorage 불가)" };
+  if (!safeStorage.isEncryptionAvailable()) return { ok: false, detail: tm("token.noSafeStorage") };
   try {
     mkdirSync(app.getPath("userData"), { recursive: true });
     const enc = safeStorage.encryptString(String(token)).toString("base64");
@@ -547,7 +548,7 @@ function clearHostToken(host) { try { rmSync(hostTokenFile(host)); } catch { /* 
 
 // 토큰 IPC(#826) — set(저장)/status(존재 여부만)/clear(삭제).
 ipcMain.handle("github:set-token", (_e, { token }) => {
-  if (typeof token !== "string" || !token.trim()) return { ok: false, detail: "빈 토큰" };
+  if (typeof token !== "string" || !token.trim()) return { ok: false, detail: tm("token.empty") };
   return saveGhToken(token.trim());
 });
 ipcMain.handle("github:token-status", () => ({ hasToken: loadGhToken() != null }));
@@ -592,7 +593,7 @@ ipcMain.handle("integrations:glab-issue-view", (_e, { cwd, number }) => {
 });
 ipcMain.handle("integrations:set-token", (_e, { host, token }) => {
   if (!TOKEN_HOSTS.includes(host)) return { ok: false, detail: "invalid host" };
-  if (typeof token !== "string" || !token.trim()) return { ok: false, detail: "빈 토큰" };
+  if (typeof token !== "string" || !token.trim()) return { ok: false, detail: tm("token.empty") };
   return saveHostToken(host, token.trim());
 });
 ipcMain.handle("integrations:token-status", (_e, { host }) => ({ hasToken: TOKEN_HOSTS.includes(host) && loadHostToken(host) != null }));
@@ -1115,7 +1116,7 @@ ipcMain.handle("terminal:ensure", async (_e, { id, cwd, cols, rows, dark }) => {
   if (!r.ok) return { ok: false, reason: r.reason || "daemon unavailable" };
   let buffer = r.buffer || "";
   // 콜드 스타트(데몬 buffer 빔)인데 디스크 저장분 있으면 이전 내용 재생 시드(#680). warm 재접속이면 skip.
-  if (!buffer && savedBuffers[id]) buffer = savedBuffers[id] + "\r\n\x1b[2m── 이전 세션 내용(재시작 전) ──\x1b[0m\r\n";
+  if (!buffer && savedBuffers[id]) buffer = savedBuffers[id] + `\r\n\x1b[2m${tm("term.previousSession")}\x1b[0m\r\n`;
   delete savedBuffers[id]; // 재생 1회 소비(중복 방지)
   liveBuffers.set(id, buffer);
   seedSeen(id, buffer); // #1019 붙는 순간의 기존 화면 = 본 것(곧 이어질 resize 재그리기를 새 활동으로 안 봄)
