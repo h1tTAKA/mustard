@@ -114,13 +114,19 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
 
     // #1093 복구 — 실패 문구가 설명으로 저장된 diff 카드를 찾아 그 파일만 다시(캐시된 정상 구간은 재사용, 실패 구간만 AI).
     //  카드 시각은 원래대로(목록 제자리), 같은 key로 교체. 한 주기에 최대 5개(새 커밋 설명이 밀리지 않게).
+    const repairTries = new Map<string, { n: number; next: number }>(); // key → 시도 수·다음 시도 시각(계속 실패하는 파일이 30초마다 도는 것 방지)
     const repairFailed = async () => {
       if (!cfg.current.diffOn) return;
       const j = await fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&q=${encodeURIComponent("런타임 실패:")}`).then((r) => r.json()).catch(() => null);
-      const bad = ((j?.items ?? []) as { key: string; kind: string; tool: string; ts: number }[]).filter((x) => x.kind === "diff").slice(0, 5);
+      const bad = ((j?.items ?? []) as { key: string; kind: string; tool: string; ts: number }[]).filter((x) => {
+        if (x.kind !== "diff") return false;
+        const t = repairTries.get(x.key);
+        return !t || (t.n < 3 && Date.now() >= t.next); // 카드당 최대 3번, 5분·10분 간격
+      }).slice(0, 5);
       for (const it of bad) {
         if (!alive) return;
         const k = parseDiffItemKey(it.key); if (!k) continue;
+        const n = (repairTries.get(it.key)?.n ?? 0) + 1; repairTries.set(it.key, { n, next: Date.now() + n * 5 * 60_000 });
         await explainCommit(k.hash, it.tool === "diff" ? "" : it.tool, { only: k.file, ts: it.ts, replace: true });
       }
     };

@@ -95,8 +95,14 @@ const SNA_SLOTS = 4;
 const snaQ = ((globalThis as unknown as { __nunopiSnaQ?: { busy: number; waiters: (() => void)[] } }).__nunopiSnaQ ??= { busy: 0, waiters: [] });
 async function acquireSnaSlot(signal?: AbortSignal): Promise<() => void> {
   while (snaQ.busy >= SNA_SLOTS) {
-    await new Promise<void>((res) => snaQ.waiters.push(res));
-    if (signal?.aborted) { snaQ.waiters.shift()?.(); throw new Error("분석이 취소되었습니다."); } // 받은 깨움은 다음 대기자에게
+    let woken = false;
+    await new Promise<void>((res) => {
+      const wake = () => { woken = true; signal?.removeEventListener("abort", onAbort); res(); };
+      const onAbort = () => { const i = snaQ.waiters.indexOf(wake); if (i >= 0) snaQ.waiters.splice(i, 1); res(); }; // 취소 = 줄에서 빠지고 바로 깸
+      snaQ.waiters.push(wake);
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
+    if (signal?.aborted) { if (woken) snaQ.waiters.shift()?.(); throw new Error("분석이 취소되었습니다."); } // 깨움을 받았으면 다음 대기자에게
   }
   snaQ.busy++;
   let done = false;

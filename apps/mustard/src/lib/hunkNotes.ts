@@ -8,7 +8,7 @@ export * from "./hunkDiff";
 export const HUNK_NOTES_EVENT = "nunopi:hunk-notes"; // detail = 저장 키 — 열려 있는 DiffPane이 바로 다시 읽게
 
 // #1093 실패 문구가 설명으로 저장된 옛 값 — 없는 것으로(다시 설명).
-export const isFailedNote = (t: string) => /^\s*(런타임 실패:|\(빈 응답\)|\(오류\))/.test(t);
+export const isFailedNote = (t: string) => /^\s*런타임 실패:/.test(t) || /^\s*\((빈 응답|오류)\)\s*$/.test(t); // 괄호 문구는 그것만 있을 때(정상 설명 오판 방지)
 export function loadNotes(store: string): Record<string, string> {
   try {
     const raw = localStorage.getItem(store); const all = raw ? (JSON.parse(raw) as Record<string, string>) : {};
