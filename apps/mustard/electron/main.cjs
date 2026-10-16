@@ -157,6 +157,7 @@ async function startRuntimeServer() {
     port: await getFreePort(), // 3099 고정 대신 빈 포트(충돌 방지)
     dbPath: join(app.getPath("userData"), "sna.db"),
     runtimePaths,
+    maxSessions: 8, // #1100 Crew 역할 세션(동시 3) + 분석·해설·질문 대기열(4) + 여유 1 — 기본 5면 Crew가 분석을 굶김
     ...(nativeBinding ? { nativeBinding } : {}),
     onLog: (l) => { if (/ready|error|fail/i.test(l)) console.log("[sna]", l); },
   });

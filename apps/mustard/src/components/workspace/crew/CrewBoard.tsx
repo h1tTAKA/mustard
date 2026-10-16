@@ -3,12 +3,13 @@
 // 이번 단계: 칸 7개 + 수동 카드(만들기·편집·삭제·드래그) + 담당 역할 지정. 에이전트 실행·커스텀 역할은 에픽 2번부터.
 // 보드는 서버 파일(~/.nunopi/crew)이 기준 — 화면은 연산만 보내고 돌아온 보드로 갱신(창 여러 개여도 덮어쓰기 없음).
 import { useCallback, useEffect, useState } from "react";
-import { IconLayoutKanban, IconPlus, IconX } from "@tabler/icons-react";
+import { IconLayoutKanban, IconPlus, IconShieldQuestion, IconUsers, IconX } from "@tabler/icons-react";
 import { useConfirm, useT, useToast } from "@mustard/core";
 import { CREW_STATUSES, type CrewBoard as Board, type CrewOp, type CrewStatus, type CrewTask } from "@/lib/crew/crewTypes";
 import { relTime } from "@/lib/relTime";
-import { STATUS_DOT, RoleIcon } from "./crewUi";
+import { STATUS_DOT, RoleIcon, elapsed, isActiveRun, roleName, useCrewRoles, useCrewRuns } from "./crewUi";
 import TaskDialog from "./TaskDialog";
+import RolesDialog from "./RolesDialog";
 
 type Dialog = { mode: "create"; status: CrewStatus } | { mode: "edit"; task: CrewTask };
 
@@ -19,6 +20,8 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
   const [board, setBoard] = useState<Board | null>(null);
   const [failed, setFailed] = useState(false);
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [rolesOpen, setRolesOpen] = useState(false);
+  const [roles, setRoles] = useCrewRoles();
   const [drag, setDrag] = useState<string | null>(null); // 끌고 있는 카드 id
   const [over, setOver] = useState<{ status: CrewStatus; index: number } | null>(null); // 놓일 자리(칸·순번, 끄는 카드 뺀 기준)
 
@@ -30,6 +33,23 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
   useEffect(() => { load(); }, [load]);
   // 다른 창에서 바꿨을 수 있음 — 창으로 돌아오면 다시 읽기
   useEffect(() => { window.addEventListener("focus", load); return () => window.removeEventListener("focus", load); }, [load]);
+
+  const [runs, reloadRuns] = useCrewRuns(root, load); // 엔진이 카드를 옮기므로 실행 상태가 바뀌면 보드도 다시 읽음
+  const [, tick] = useState(0);
+  const anyActive = [...runs.values()].some(isActiveRun);
+  useEffect(() => { if (!anyActive) return; const id = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(id); }, [anyActive]); // 카드 경과 시간
+
+  // 실행·중지·권한 응답 — 결과 기록을 바로 반영하고 보드 다시 읽기
+  const runAction = async (taskId: string, action: "start" | "stop" | "permission", approved?: boolean) => {
+    try {
+      const j = await (await fetch("/api/crew/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, taskId, action, approved }) })).json();
+      if (!j?.ok) throw new Error(j?.error);
+    } catch (e) {
+      const msg = String((e as Error)?.message ?? e), lim = /concurrency limit \((\d+)\)/.exec(msg); // 동시 실행 상한은 기기 전체(SNA 세션·구독 사용량이 기기 단위)
+      toast(lim ? t("crew.limitReached", { n: lim[1] }) : `${t("crew.runFailed")}: ${msg}`, "error");
+    }
+    reloadRuns(); load();
+  };
 
   const apply = async (op: CrewOp): Promise<boolean> => {
     try {
@@ -63,6 +83,10 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
       <div className="flex shrink-0 items-center gap-1 border-b border-zinc-200 px-3 py-1.5 pr-6 dark:border-zinc-800">
         <IconLayoutKanban size={14} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
         <span className="mr-auto truncate text-[13px] font-semibold text-zinc-700 dark:text-zinc-200">{t("crew.title")}</span>
+        <button type="button" onClick={() => setRolesOpen(true)} title={t("crew.rolesTitle")}
+          className="flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+          <IconUsers size={13} stroke={2} aria-hidden />{t("crew.roles")}
+        </button>
         <button type="button" onClick={() => setDialog({ mode: "create", status: "backlog" })}
           className="flex shrink-0 items-center gap-1 rounded-md border border-zinc-200 px-2 py-0.5 text-[11.5px] font-medium text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800">
           <IconPlus size={12} stroke={2.2} aria-hidden />{t("crew.newTask")}
@@ -106,13 +130,25 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
                           className={`w-full rounded-lg border border-zinc-200/80 bg-white px-3 py-2.5 text-left shadow-[0_1px_1px_rgba(0,0,0,0.03)] transition hover:border-zinc-300 hover:shadow-sm dark:border-white/[0.07] dark:bg-[#17181f] dark:hover:border-white/15 ${drag === c.id ? "opacity-40" : ""}`}>
                           <div className="line-clamp-2 text-[12.5px] font-medium leading-snug text-zinc-800 dark:text-zinc-100">{c.title}</div>
                           {c.body && <div className="mt-1 line-clamp-2 text-[11.5px] leading-snug text-zinc-500 dark:text-zinc-400">{c.body}</div>}
-                          <div className="mt-2 flex items-center gap-1.5">
-                            <span className="inline-flex min-w-0 items-center gap-1 rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10.5px] text-zinc-600 dark:bg-white/[0.06] dark:text-zinc-300">
-                              <RoleIcon role={c.role} size={11} />
-                              <span className="truncate">{t(`crew.role.${c.role ?? "none"}`)}</span>
-                            </span>
-                            <span className="ml-auto shrink-0 text-[10.5px] tabular-nums text-zinc-400 dark:text-zinc-500">{relTime(new Date(c.updatedAt).toISOString())}</span>
-                          </div>
+                          {(() => {
+                            const run = runs.get(c.id);
+                            const active = isActiveRun(run);
+                            return (<>
+                              {active && run?.state !== "needs-permission" && run?.lastActivity && <div className="mt-1.5 truncate font-mono text-[10.5px] text-mustard-700 dark:text-mustard-400">{run.lastActivity}</div>}
+                              {run?.state === "needs-permission" && <div className="mt-1.5 flex items-center gap-1 text-[10.5px] font-medium text-amber-600 dark:text-amber-400"><IconShieldQuestion size={11} aria-hidden />{t("crew.state.needs-permission")}</div>}
+                              <div className="mt-2 flex items-center gap-1.5">
+                                <span className="inline-flex min-w-0 items-center gap-1 rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10.5px] text-zinc-600 dark:bg-white/[0.06] dark:text-zinc-300">
+                                  <RoleIcon role={c.role && roles.some((r) => r.id === c.role) ? c.role : undefined} size={11} />
+                                  <span className="truncate">{roleName(t, roles, c.role)}</span>
+                                </span>
+                                {active && run ? (
+                                  <span className="ml-auto flex shrink-0 items-center gap-1 text-[10.5px] tabular-nums text-mustard-700 dark:text-mustard-400">
+                                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-mustard-500" aria-hidden />{elapsed(run.startedAt)}
+                                  </span>
+                                ) : <span className="ml-auto shrink-0 text-[10.5px] tabular-nums text-zinc-400 dark:text-zinc-500">{relTime(new Date(c.updatedAt).toISOString())}</span>}
+                              </div>
+                            </>);
+                          })()}
                         </button>
                       </div>
                     );
@@ -130,6 +166,11 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
         <TaskDialog key={dialog.mode === "edit" ? dialog.task.id : `new-${dialog.status}`}
           initial={dialog.mode === "edit" ? dialog.task : undefined}
           status={dialog.mode === "edit" ? dialog.task.status : dialog.status}
+          roles={roles}
+          run={dialog.mode === "edit" ? runs.get(dialog.task.id) : undefined}
+          onRun={dialog.mode === "edit" ? () => void runAction(dialog.task.id, "start") : undefined}
+          onStop={dialog.mode === "edit" ? () => void runAction(dialog.task.id, "stop") : undefined}
+          onPermission={dialog.mode === "edit" ? (ok) => void runAction(dialog.task.id, "permission", ok) : undefined}
           onClose={() => setDialog(null)}
           onSave={async (v) => {
             const ok = dialog.mode === "edit"
@@ -143,6 +184,7 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
             if (await apply({ op: "delete", id: dialog.task.id })) setDialog(null);
           } : undefined} />
       )}
+      {rolesOpen && <RolesDialog roles={roles} onRoles={setRoles} onClose={() => setRolesOpen(false)} />}
     </div>
   );
 }
