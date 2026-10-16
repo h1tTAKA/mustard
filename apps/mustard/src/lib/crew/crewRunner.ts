@@ -16,7 +16,7 @@ import { decide } from "./crewPolicy";
 import { narrationLocale } from "@/lib/narrationConfig";
 import { defaultSnaModel } from "@mustard/nunopi/server";
 import { translate } from "@mustard/core/messages";
-import { appendMsg, type CrewMsg } from "./crewChat";
+import { appendMsg, findMsg, parseMentions, type CrewMsg } from "./crewChat";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems } from "@/lib/catchupStore";
 import type { CrewStatus } from "./crewTypes";
@@ -374,4 +374,38 @@ export function decideCard(root: string, taskId: string, action: "approve" | "re
     text: action === "approve" ? tr(task.gate?.kind === "blocked" ? "crewchat.decision.retry" : "crewchat.decision.approve") : text.trim(),
     ...(task.gate && task.gate.kind !== "merge" ? { mentions: [(task.pipeline ?? [])[task.gate.stage] ?? ""].filter(Boolean) } : {}) });
   return board;
+}
+
+// #1104 사람이 팀 채팅에 쓴 말.
+// - 카드 메시지에 답글: 질문 중이면 답 / spec·schema·merge 관문이면 반려(코멘트로 다시) / 막힘이면 다시 / 그 밖은 다음 실행 메모
+// - 답글 아님 + @역할: 그 역할(여럿이면 그 순서 파이프라인) 담당 새 카드를 Ready로 → tick이 바로 시작(그록봇식)
+// - 그 밖: 채팅에만 남김
+export function postHuman(root: string, text: string, replyTo?: string): { msg: CrewMsg; taskId?: string; created?: boolean } {
+  const body = text.trim().slice(0, 8000);
+  if (!body) throw new Error("empty");
+  registerRoot(root);
+  const known = new Set(listRoles().map((r) => r.id));
+  const mentions = parseMentions(body, known);
+  const parent = replyTo ? findMsg(root, replyTo) : undefined;
+  const task = parent?.taskId ? readBoard(root).tasks.find((t) => t.id === parent.taskId) : undefined;
+  const msg = appendMsg(root, { from: "human", kind: "human", text: body, ...(mentions.length ? { mentions } : {}), ...(replyTo ? { replyTo } : {}), ...(task ? { taskId: task.id, taskTitle: task.title } : {}) });
+  if (task) {
+    if (activeFor(root, task.id)) { patchTask(root, task.id, { note: [task.note, body].filter(Boolean).join("\n\n") }); return { msg, taskId: task.id }; } // 실행 중 — 다음 실행에
+    const g0 = task.gate;
+    const retry = g0?.kind === "blocked" ? decideGate(task, "approve") : null; // 막힘 = 그 단계부터 다시(답글을 메모로)
+    const r = g0?.kind === "question" ? decideGate(task, "answer", body)
+      : retry ? { ...retry, patch: { ...retry.patch, note: body } }
+      : g0 ? decideGate(task, "reject", body) // spec·schema·merge 관문에 답글 = 반려 코멘트
+      : null;
+    if (r) patchTask(root, task.id, { ...r.patch, status: r.status });
+    else patchTask(root, task.id, { note: [task.note, body].filter(Boolean).join("\n\n") });
+    return { msg, taskId: task.id };
+  }
+  if (mentions.length) {
+    const title = body.replace(/@[a-z0-9-]+/gi, "").split("\n").map((l) => l.trim()).find(Boolean)?.slice(0, 80) || body.slice(0, 80);
+    const b = applyOp(root, { op: "create", title, body, status: "ready", role: mentions[0], pipeline: mentions });
+    const created = b.tasks[b.tasks.length - 1];
+    return { msg, taskId: created.id, created: true };
+  }
+  return { msg };
 }
