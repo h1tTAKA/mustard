@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-import { CREW_STATUSES, type CrewBoard, type CrewOp, type CrewStatus, type CrewTask } from "./crewTypes.ts";
+import { CREW_STATUSES, type CrewBoard, type CrewGate, type CrewOp, type CrewStatus, type CrewTask } from "./crewTypes.ts";
 export type { CrewBoard, CrewOp, CrewStatus, CrewTask };
 
 const TITLE_MAX = 200, BODY_MAX = 20_000, TASKS_MAX = 2000;
@@ -20,6 +20,21 @@ const isStatus = (s: unknown): s is CrewStatus => typeof s === "string" && (CREW
 // 역할 id — 기본 8 + 에픽 2번 커스텀 대비 slug 형식만 허용(빈 값 = 자동 배정)
 const cleanRole = (r: unknown): string | undefined => (typeof r === "string" && /^[a-z0-9][a-z0-9-]{0,39}$/.test(r) ? r : undefined);
 
+// #1102 오케스트레이터 필드 검증
+function flowFields(t: Record<string, unknown>): Partial<CrewTask> {
+  const out: Partial<CrewTask> = {};
+  if (Array.isArray(t.pipeline)) { const p = t.pipeline.map(cleanRole).filter((r): r is string => !!r).slice(0, 30); if (p.length) out.pipeline = p; }
+  const int = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 1000 ? v : undefined);
+  if (int(t.stage) !== undefined) out.stage = int(t.stage);
+  if (int(t.loops) !== undefined) out.loops = int(t.loops);
+  if (int(t.fails) !== undefined) out.fails = int(t.fails);
+  const gt = t.gate as Record<string, unknown> | undefined;
+  if (gt && typeof gt === "object" && ["spec", "schema", "merge", "question", "blocked"].includes(String(gt.kind)) && int(gt.stage) !== undefined)
+    out.gate = { kind: gt.kind as CrewGate["kind"], stage: int(gt.stage)!, ...(typeof gt.text === "string" ? { text: gt.text.slice(0, 4000) } : {}) };
+  if (typeof t.note === "string" && t.note) out.note = t.note.slice(0, 8000);
+  return out;
+}
+
 export function sanitizeTask(x: unknown): CrewTask | null {
   if (!x || typeof x !== "object") return null;
   const t = x as Record<string, unknown>;
@@ -29,6 +44,7 @@ export function sanitizeTask(x: unknown): CrewTask | null {
     id: t.id.slice(0, 64), title: t.title.trim().slice(0, TITLE_MAX), body: typeof t.body === "string" ? t.body.slice(0, BODY_MAX) : "",
     status: t.status, order: num(t.order, 0), createdAt: num(t.createdAt, 0), updatedAt: num(t.updatedAt, 0),
     ...(cleanRole(t.role) ? { role: cleanRole(t.role) } : {}),
+    ...flowFields(t),
   };
 }
 
@@ -70,12 +86,17 @@ export function applyOp(root: string, op: CrewOp, now = Date.now()): CrewBoard {
     const status = isStatus(op.status) ? op.status : "backlog";
     const order = tasks.filter((t) => t.status === status).length; // 칸 맨 아래
     const role = cleanRole(op.role);
-    tasks.push({ id: randomUUID(), title: title.slice(0, TITLE_MAX), body: String(op.body ?? "").slice(0, BODY_MAX), status, order, createdAt: now, updatedAt: now, ...(role ? { role } : {}) });
+    const pipeline = (Array.isArray(op.pipeline) ? op.pipeline : []).map(cleanRole).filter((r): r is string => !!r).slice(0, 30);
+    tasks.push({ id: randomUUID(), title: title.slice(0, TITLE_MAX), body: String(op.body ?? "").slice(0, BODY_MAX), status, order, createdAt: now, updatedAt: now, ...(role ? { role } : {}), ...(pipeline.length ? { pipeline, stage: 0 } : {}) });
   } else if (op.op === "update") {
     const t = find(op.id);
     if (op.title !== undefined) { const title = String(op.title).trim(); if (!title) throw new Error("title required"); t.title = title.slice(0, TITLE_MAX); }
     if (op.body !== undefined) t.body = String(op.body).slice(0, BODY_MAX);
     if (op.role !== undefined) { const role = cleanRole(op.role); if (role) t.role = role; else delete t.role; } // "" = 자동 배정으로
+    if (op.pipeline !== undefined) { // #1102 사람이 정한 파이프라인(바뀌면 처음 단계부터)
+      const p = (Array.isArray(op.pipeline) ? op.pipeline : []).map(cleanRole).filter((r): r is string => !!r).slice(0, 30);
+      if (JSON.stringify(p) !== JSON.stringify(t.pipeline ?? [])) { if (p.length) t.pipeline = p; else delete t.pipeline; t.stage = 0; delete t.loops; delete t.fails; }
+    }
     t.updatedAt = now;
   } else if (op.op === "move") {
     if (!isStatus(op.status)) throw new Error("bad status");
@@ -96,4 +117,21 @@ export function applyOp(root: string, op: CrewOp, now = Date.now()): CrewBoard {
     throw new Error("unknown op");
   }
   return writeBoard(root, board);
+}
+
+// #1102 서버 전용 — 오케스트레이터가 카드의 흐름 필드·칸을 바꿈(라우트로는 노출 안 함). undefined 값 = 그 필드 지움.
+export type FlowPatch = Partial<Pick<CrewTask, "pipeline" | "stage" | "loops" | "fails" | "gate" | "note">> & { status?: CrewStatus };
+export function patchTask(root: string, id: string, patch: FlowPatch, now = Date.now()): CrewBoard {
+  const board = readBoard(root);
+  const i = board.tasks.findIndex((x) => x.id === id);
+  if (i < 0) throw new Error("task not found");
+  const { status, ...fields } = patch;
+  const raw: Record<string, unknown> = { ...board.tasks[i] };
+  for (const [k, v] of Object.entries(fields)) { if (v === undefined) delete raw[k]; else raw[k] = v; }
+  const t = sanitizeTask(raw); // 잘못된 값은 걸러서 저장
+  if (!t) throw new Error("bad patch");
+  t.updatedAt = now;
+  board.tasks[i] = t;
+  writeBoard(root, board);
+  return status && status !== t.status ? applyOp(root, { op: "move", id, status, index: board.tasks.filter((x) => x.status === status).length }, now) : board;
 }
