@@ -16,13 +16,25 @@ const SAFE_GIT = new Set(["status", "diff", "log", "show", "add", "commit", "res
 
 const inside = (dir: string, p: string) => { const r = relative(dir, resolve(dir, p)); return !!dir && !r.startsWith("..") && !isAbsolute(r); };
 
-function bashDecision(cmd: string, worktree: string): Decision {
+// 판단 전에 걷어내기(실사용 오탐 — node -e "…", git commit -m "$(cat <<'EOF' …)", cat >> f <<'EOF' …):
+// ① heredoc 본문 → <<H  ② 명령 치환은 `cat <<H`만 허용(그 밖은 실제 실행되는 코드라 null = 묻기)  ③ 따옴표 안 글자 → Q
+function strip(cmd: string): string | null {
+  let c = cmd.replace(/<<-?\s*(['"]?)(\w+)\1[^\n]*\n[\s\S]*?\n\s*\2\s*(?=\n|$)/g, (m) => m.slice(0, m.indexOf("\n")).replace(/<<-?\s*(['"]?)\w+\1/, "<<H"));
+  const subs = [...c.matchAll(/\$\(([^()]*)\)|`([^`]*)`/g)];
+  if (subs.some((m) => !/^\s*cat\s+<<H\s*$/.test((m[1] ?? m[2] ?? "").trim() ? (m[1] ?? m[2] ?? "") : "x"))) return null;
+  if (/\$\(|`/.test(c.replace(/\$\(\s*cat\s+<<H\s*\)/g, ""))) return null; // 짝 안 맞는 치환
+  c = c.replace(/\$\(\s*cat\s+<<H\s*\)/g, "Q").replace(/'[^']*'/g, "Q").replace(/"(?:[^"\\]|\\.)*"/g, "Q");
+  return c;
+}
+
+function bashDecision(raw: string, worktree: string): Decision {
+  const cmd = strip(raw);
+  if (cmd === null) return DENY_RE.test(raw) ? "deny" : "ask";
   if (DENY_RE.test(cmd)) return "deny";
-  // 연결(&&, ||, ;, |) 단위로 나눠 각 부분의 첫 단어 확인. 서브셸·리다이렉트로 밖에 쓰기는 사람에게.
-  if (/`|\$\(/.test(cmd)) return "ask";
+  // 연결(&&, ||, ;, |, 줄바꿈) 단위로 나눠 각 부분의 첫 단어 확인. 리다이렉트로 밖에 쓰기는 사람에게.
   const outRedirect = [...cmd.matchAll(/>{1,2}\s*([^\s|&;]+)/g)].map((m) => m[1]);
   if (outRedirect.some((p) => p !== "/dev/null" && !inside(worktree, p))) return "ask";
-  for (const part of cmd.split(/&&|\|\||;|\|/)) {
+  for (const part of cmd.split(/&&|\|\||;|\||\n/)) {
     const words = part.trim().replace(/^(\w+=\S+\s+)+/, "").split(/\s+/); // 앞의 VAR=값 무시
     const w0 = words[0];
     if (!w0) continue;

