@@ -1365,6 +1365,17 @@ const ko: Dict = {
   "crewchat.gate.blocked": "막혔어요: {why}",
   "crewchat.decision.approve": "승인할게요.",
   "crewchat.decision.retry": "이 단계부터 다시 해 주세요.",
+  "crewchat.title": "팀 채팅",
+  "crewchat.empty": "아직 대화가 없어요. @역할로 일을 맡겨 보세요 — 예: @app-builder 로그인 버그 고쳐 줘",
+  "crewchat.placeholder": "메시지 — @역할로 일을 맡기거나, 메시지에 답글로 그 카드에 전달",
+  "crewchat.send": "보내기",
+  "crewchat.reply": "답글",
+  "crewchat.replyingTo": "{who}에게 답글",
+  "crewchat.you": "나",
+  "crewchat.board": "보드",
+  "crewchat.openCard": "보드에서 카드 열기",
+  "crewchat.created": "새 카드를 만들어 맡겼어요",
+  "crewchat.sendFailed": "보내지 못했어요",
 };
 
 const ja: Dict = {
@@ -2714,6 +2725,17 @@ const ja: Dict = {
   "crewchat.gate.blocked": "ブロックされました: {why}",
   "crewchat.decision.approve": "承認します。",
   "crewchat.decision.retry": "この段階からやり直してください。",
+  "crewchat.title": "チームチャット",
+  "crewchat.empty": "まだ会話がありません。@役割で仕事を任せてみてください — 例: @app-builder ログインのバグを直して",
+  "crewchat.placeholder": "メッセージ — @役割で依頼、またはメッセージに返信してそのカードへ",
+  "crewchat.send": "送信",
+  "crewchat.reply": "返信",
+  "crewchat.replyingTo": "{who}に返信",
+  "crewchat.you": "自分",
+  "crewchat.board": "ボード",
+  "crewchat.openCard": "ボードでカードを開く",
+  "crewchat.created": "新しいカードを作って任せました",
+  "crewchat.sendFailed": "送信できませんでした",
 };
 
 const en: Dict = {
@@ -4063,6 +4085,17 @@ const en: Dict = {
   "crewchat.gate.blocked": "Blocked: {why}",
   "crewchat.decision.approve": "Approved.",
   "crewchat.decision.retry": "Please retry from this step.",
+  "crewchat.title": "Team chat",
+  "crewchat.empty": "No messages yet. Hand off work with @role — e.g. @app-builder fix the login bug",
+  "crewchat.placeholder": "Message — @role to hand off work, or reply to a message to send it to that card",
+  "crewchat.send": "Send",
+  "crewchat.reply": "Reply",
+  "crewchat.replyingTo": "Replying to {who}",
+  "crewchat.you": "You",
+  "crewchat.board": "Board",
+  "crewchat.openCard": "Open card on the board",
+  "crewchat.created": "Created a card and handed it off",
+  "crewchat.sendFailed": "Couldn't send",
 };
 
 export const MESSAGES: Record<Locale, Dict> = { ko, ja, en };
