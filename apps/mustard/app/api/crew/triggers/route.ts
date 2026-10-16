@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 export async function GET(request: Request): Promise<Response> {
   const root = new URL(request.url).searchParams.get("root") ?? "";
   if (!isAbsolute(root)) return Response.json({ ok: false, error: "absolute root required" }, { status: 400 });
+  registerRoot(root, new URL(request.url).origin);
   return Response.json({ ok: true, triggers: readTriggers(root) });
 }
 
