@@ -260,7 +260,7 @@ export default function CrewChat({ root }: { root: string }) {
               if (e.key === "Escape") { setMention(null); if (!mention) setReply(null); return; }
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); }
             }}
-            className="nunopi-scroll max-h-32 min-h-[36px] flex-1 resize-none rounded-[18px] bg-zinc-100 px-3.5 py-2 text-[12.5px] leading-[1.45] text-zinc-800 outline-none placeholder:text-zinc-400 [field-sizing:content] focus:bg-zinc-100 focus:ring-1 focus:ring-zinc-300 dark:bg-white/[0.06] dark:text-zinc-100 dark:focus:ring-white/15" />
+            className="nunopi-scroll max-h-32 min-h-[36px] flex-1 resize-none rounded-[18px] bg-zinc-100 px-3.5 py-2 text-[12.5px] leading-[1.45] text-zinc-800 outline-none placeholder:text-zinc-400 [field-sizing:content] focus:ring-1 focus:ring-zinc-300 dark:bg-white/[0.06] dark:text-zinc-100 dark:focus:ring-white/15" />
           <button type="button" onClick={() => void send()} disabled={!text.trim() || busy} aria-label={t("crewchat.send")}
             className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mustard-500 text-brown-900 transition hover:bg-mustard-400 disabled:bg-zinc-200 disabled:text-zinc-400 dark:disabled:bg-white/10 dark:disabled:text-zinc-500">
             <IconArrowUp size={16} stroke={2.4} aria-hidden />

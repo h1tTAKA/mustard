@@ -3,13 +3,14 @@
 // 이번 단계: 칸 7개 + 수동 카드(만들기·편집·삭제·드래그) + 담당 역할 지정. 에이전트 실행·커스텀 역할은 에픽 2번부터.
 // 보드는 서버 파일(~/.nunopi/crew)이 기준 — 화면은 연산만 보내고 돌아온 보드로 갱신(창 여러 개여도 덮어쓰기 없음).
 import { useCallback, useEffect, useState } from "react";
-import { IconGitPullRequest, IconLayoutKanban, IconPlus, IconShieldQuestion, IconUsers, IconX } from "@tabler/icons-react";
+import { IconBolt, IconGitPullRequest, IconLayoutKanban, IconPlus, IconShieldQuestion, IconUsers, IconX } from "@tabler/icons-react";
 import { useConfirm, useT, useToast } from "@mustard/core";
 import { CREW_STATUSES, type CrewBoard as Board, type CrewOp, type CrewStatus, type CrewTask } from "@/lib/crew/crewTypes";
 import { relTime } from "@/lib/relTime";
 import { STATUS_DOT, RoleIcon, elapsed, isActiveRun, roleName, useCrewRoles, useCrewRuns } from "./crewUi";
 import TaskDialog from "./TaskDialog";
 import RolesDialog from "./RolesDialog";
+import TriggersDialog from "./TriggersDialog";
 import { CREW_OPEN_TASK_EVENT, pendingOpen } from "./CrewChat";
 
 // #1110 터미널로 넘겨받기 — detail = { root, worktree, provider }. 그 레포 TerminalPane이 새 탭에서 이어받음.
@@ -25,6 +26,7 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
   const [failed, setFailed] = useState(false);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [rolesOpen, setRolesOpen] = useState(false);
+  const [trigOpen, setTrigOpen] = useState(false);
   const [roles, setRoles] = useCrewRoles();
   const [drag, setDrag] = useState<string | null>(null); // 끌고 있는 카드 id
   const [over, setOver] = useState<{ status: CrewStatus; index: number } | null>(null); // 놓일 자리(칸·순번, 끄는 카드 뺀 기준)
@@ -103,6 +105,10 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
       <div className="flex shrink-0 items-center gap-1 border-b border-zinc-200 px-3 py-1.5 pr-6 dark:border-zinc-800">
         <IconLayoutKanban size={14} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
         <span className="mr-auto truncate text-[13px] font-semibold text-zinc-700 dark:text-zinc-200">{t("crew.title")}</span>
+        <button type="button" onClick={() => setTrigOpen(true)} title={t("crewtrig.title")}
+          className="flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+          <IconBolt size={13} stroke={2} aria-hidden />{t("crewtrig.button")}
+        </button>
         <button type="button" onClick={() => setRolesOpen(true)} title={t("crew.rolesTitle")}
           className="flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
           <IconUsers size={13} stroke={2} aria-hidden />{t("crew.roles")}
@@ -233,6 +239,7 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
             if (await apply({ op: "delete", id: dialog.task.id })) setDialog(null);
           } : undefined} />
       )}
+      {trigOpen && <TriggersDialog root={root} roles={roles} onClose={() => { setTrigOpen(false); load(); }} />}
       {rolesOpen && <RolesDialog roles={roles} onRoles={setRoles} onClose={() => setRolesOpen(false)} />}
     </div>
   );
