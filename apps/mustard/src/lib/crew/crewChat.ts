@@ -40,7 +40,7 @@ export function readMsgs(root: string, since = 0, limit = 400): CrewMsg[] {
     if (!line.trim()) continue;
     try {
       const m = JSON.parse(line) as CrewMsg;
-      if (typeof m.id === "string" && typeof m.ts === "number" && typeof m.from === "string" && KINDS.has(m.kind) && typeof m.text === "string" && m.ts > since) out.push(m);
+      if (typeof m.id === "string" && typeof m.ts === "number" && typeof m.from === "string" && KINDS.has(m.kind) && typeof m.text === "string" && m.ts >= since) out.push(m); // >= — 같은 ms 메시지 유실 방지(화면이 id로 중복 제거, 리뷰)
     } catch { /* 쓰다 죽은 줄 */ }
   }
   return out.slice(-limit);
