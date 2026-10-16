@@ -9,6 +9,7 @@ export const MAX_FAILS = 3;      // 같은 단계 연속 실패 차단기
 export interface Handoff {
   status: "done" | "needs_input" | "blocked" | "failed";
   summary?: string;
+  message?: string;        // #1104 팀 채팅에 남길 말(1인칭, 다음 역할 @멘션) — 없으면 summary
   question?: string;       // needs_input
   roles?: string[];        // 범위 기획자 — 이 카드에 필요한 역할(순서대로)
   testsPassed?: boolean;   // 테스트 엔지니어
@@ -25,6 +26,7 @@ export function parseHandoff(raw: string | null, fallbackSummary?: string): Hand
       return {
         status,
         ...(typeof j.summary === "string" ? { summary: j.summary.slice(0, 4000) } : {}),
+        ...(typeof j.message === "string" ? { message: j.message.slice(0, 4000) } : {}),
         ...(typeof j.question === "string" ? { question: j.question.slice(0, 4000) } : {}),
         ...(Array.isArray(j.roles) ? { roles: j.roles.filter((r): r is string => typeof r === "string").slice(0, 20) } : {}),
         ...(typeof j.testsPassed === "boolean" ? { testsPassed: j.testsPassed } : {}),

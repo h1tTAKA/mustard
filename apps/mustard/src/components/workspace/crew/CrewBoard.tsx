@@ -10,6 +10,7 @@ import { relTime } from "@/lib/relTime";
 import { STATUS_DOT, RoleIcon, elapsed, isActiveRun, roleName, useCrewRoles, useCrewRuns } from "./crewUi";
 import TaskDialog from "./TaskDialog";
 import RolesDialog from "./RolesDialog";
+import { CREW_OPEN_TASK_EVENT, pendingOpen } from "./CrewChat";
 
 type Dialog = { mode: "create"; status: CrewStatus } | { mode: "edit"; task: CrewTask };
 
@@ -63,6 +64,19 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
       return true;
     } catch { toast(t("crew.saveFailed"), "error"); load(); return false; }
   };
+
+  // #1104 팀 채팅 카드 칩 → 이 카드 편집 창(보드가 막 열렸으면 읽은 뒤에). 보드 패널이 닫혀 있으면 WorkspaceView가 먼저 엶.
+  const [want, setWant] = useState<string | null>(() => (pendingOpen.v?.root === root ? pendingOpen.v.taskId : null)); // 닫혀 있다 열린 경우
+  useEffect(() => {
+    const on = (e: Event) => { const d = (e as CustomEvent<{ root: string; taskId: string }>).detail; if (d?.root === root) { setWant(d.taskId); load(); } };
+    window.addEventListener(CREW_OPEN_TASK_EVENT, on); return () => window.removeEventListener(CREW_OPEN_TASK_EVENT, on);
+  }, [root, load]);
+  useEffect(() => {
+    if (!want || !board) return;
+    const task = board.tasks.find((x) => x.id === want);
+    setWant(null); pendingOpen.v = null; // eslint-disable-line react-hooks/set-state-in-effect -- 한 번 쓰고 비움
+    if (task) setDialog({ mode: "edit", task });
+  }, [want, board]);
 
   const column = (s: CrewStatus) => (board?.tasks ?? []).filter((x) => x.status === s).sort((a, b) => a.order - b.order);
 

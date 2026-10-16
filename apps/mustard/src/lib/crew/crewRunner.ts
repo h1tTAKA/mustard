@@ -15,6 +15,10 @@ import { ensureWorktree } from "./crewWorktree";
 import { decide } from "./crewPolicy";
 import { narrationLocale } from "@/lib/narrationConfig";
 import { defaultSnaModel } from "@mustard/nunopi/server";
+import { translate } from "@mustard/core/messages";
+import { appendMsg, findMsg, parseMentions, type CrewMsg } from "./crewChat";
+import { emitNarration } from "@/lib/mcpActivity";
+import { appendItems } from "@/lib/catchupStore";
 import type { CrewStatus } from "./crewTypes";
 
 export type RunState = "starting" | "running" | "needs-permission" | "done" | "failed" | "stopped";
@@ -85,6 +89,7 @@ export async function hookDecision(runId: string, token: string, tool: string, i
   run.state = "needs-permission"; run.permission = { request: { tool_name: tool, tool_input: input }, at: Date.now() };
   moveCard(run.root, run.taskId, "needs-you");
   persist(run, true);
+  say(run.root, { from: run.role, provider: run.provider, kind: "permission", taskId: run.taskId, mentions: ["you"], text: tr("crewchat.permission", { tool: `${tool}${input.command ? `: ${String(input.command).slice(0, 200)}` : ""}` }) });
   const ok = await new Promise<boolean>((res) => {
     const timer = setTimeout(() => { // 10분 무응답 = 거절, 카드는 다시 실행 중으로(보안 리뷰)
       g.pending.delete(runId);
@@ -142,6 +147,23 @@ function block(root: string, taskId: string, stage: number, why: string) {
   try { patchTask(root, taskId, { gate: { kind: "blocked", stage, text: why }, status: "blocked" }); } catch { /* 카드 지워짐 */ }
 }
 
+// #1104 팀 채팅·캐치업 — 서버 문구는 앱 언어. 실패해도 실행엔 영향 없게 삼킴.
+const tr = (key: string, vars?: Record<string, string | number>) => translate(narrationLocale(), key, vars);
+const PROVIDER: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", grok: "Grok Build", cursor: "Cursor", opencode: "OpenCode" };
+function roleLabel(id: string): string {
+  const r = getRole(id);
+  return r && !r.builtin ? r.name : tr(`crew.role.${id}`);
+}
+function say(root: string, m: Omit<CrewMsg, "id" | "ts">) { try { appendMsg(root, m); } catch { /* 채팅 기록 실패는 무시 */ } }
+// 캐치업 보고 — 실시간 해설 통로(SSE + 날짜별 저장)로 "역할(AI) · 카드: 한 말"
+function report(run: CrewRun, title: string, text: string) {
+  try {
+    const ts = Date.now(), head = `${roleLabel(run.role)}(${PROVIDER[run.provider] ?? run.provider}) · ${title}`.slice(0, 120);
+    const sent = emitNarration(run.root, head, text, ts);
+    if (sent) appendItems(run.root, [{ key: `narration|${ts}|${sent.target}`, kind: "narration", target: sent.target, tool: "narration", ts, expl: sent.note }]);
+  } catch { /* 보고 실패는 무시 */ }
+}
+
 // #1102 역할 하나가 끝남 → .crew/handoff.json(없으면 마지막 메시지)으로 흐름 상태 기계 적용 → 카드 이동(다음 Ready는 tick이 시작).
 function finish(run: CrewRun, forced?: Handoff) {
   try {
@@ -153,6 +175,16 @@ function finish(run: CrewRun, forced?: Handoff) {
     const r = next({ ...task, stage: run.stage ?? task.stage }, h, new Set(listRoles().map((x) => x.id)));
     patchTask(run.root, run.taskId, { ...r.patch, status: r.status });
     run.lastActivity = `→ ${r.status}${r.patch.gate ? ` (${r.patch.gate.kind})` : ""}`;
+    // #1104 팀 채팅 — 역할이 한 말(+ 다음 역할 @멘션), 관문·막힘은 보드가 사람을 부름
+    const nextRole = r.status === "ready" && r.patch.pipeline ? r.patch.pipeline[r.patch.stage ?? 0] : r.status === "ready" ? (task.pipeline ?? [])[(r.patch.stage ?? task.stage ?? 0)] : undefined;
+    const base = { taskId: task.id, taskTitle: task.title };
+    const said = (h.message || h.summary || run.summary || "").trim();
+    if (h.status === "needs_input") say(run.root, { ...base, from: run.role, provider: run.provider, kind: "question", text: h.question || said, mentions: ["you"] });
+    else if (said) say(run.root, { ...base, from: run.role, provider: run.provider, kind: h.status === "done" ? "handoff" : "blocked", text: nextRole && !said.includes(`@${nextRole}`) ? `${said}\n@${nextRole}` : said, ...(nextRole ? { mentions: [nextRole] } : {}) });
+    const gate = r.patch.gate;
+    if (gate && gate.kind !== "question") say(run.root, { ...base, from: "board", kind: gate.kind === "blocked" ? "blocked" : "gate", mentions: ["you"],
+      text: gate.kind === "merge" ? tr("crewchat.gate.merge", { branch: run.branch }) : gate.kind === "blocked" ? tr("crewchat.gate.blocked", { why: gate.text ?? "" }) : tr(`crewchat.gate.${gate.kind}`) });
+    if (said) report(run, task.title, h.status === "needs_input" ? (h.question || said) : said);
   } catch (e) { block(run.root, run.taskId, run.stage ?? 0, `flow error: ${String((e as Error)?.message ?? e)}`); }
 }
 
@@ -295,6 +327,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     });
     run.state = "running"; run.lastActivity = "started";
     persist(run, true);
+    say(root, { from: role.id, provider: role.provider, kind: "start", taskId, taskTitle: task.title, text: tr(note ? "crewchat.restart" : "crewchat.start", { card: task.title }) });
   } catch (e) {
     run.state = "failed"; run.endedAt = Date.now(); run.error = oneLine(String((e as Error)?.message ?? e), 400);
     block(root, taskId, stage, run.error); // 시작 자체 실패(worktree·SNA)는 재시도 안 함 — 사람이 확인
@@ -336,5 +369,43 @@ export function decideCard(root: string, taskId: string, action: "approve" | "re
   const task = readBoard(root).tasks.find((t) => t.id === taskId);
   if (!task) throw new Error("task not found");
   const r = decideGate(task, action, text);
-  return patchTask(root, taskId, { ...r.patch, status: r.status });
+  const board = patchTask(root, taskId, { ...r.patch, status: r.status });
+  say(root, { from: "human", kind: "decision", taskId, taskTitle: task.title,
+    text: action === "approve" ? tr(task.gate?.kind === "blocked" ? "crewchat.decision.retry" : "crewchat.decision.approve") : text.trim(),
+    ...(task.gate && task.gate.kind !== "merge" ? { mentions: [(task.pipeline ?? [])[task.gate.stage] ?? ""].filter(Boolean) } : {}) });
+  return board;
+}
+
+// #1104 사람이 팀 채팅에 쓴 말.
+// - 카드 메시지에 답글: 질문 중이면 답 / spec·schema·merge 관문이면 반려(코멘트로 다시) / 막힘이면 다시 / 그 밖은 다음 실행 메모
+// - 답글 아님 + @역할: 그 역할(여럿이면 그 순서 파이프라인) 담당 새 카드를 Ready로 → tick이 바로 시작(그록봇식)
+// - 그 밖: 채팅에만 남김
+export function postHuman(root: string, text: string, replyTo?: string): { msg: CrewMsg; taskId?: string; created?: boolean } {
+  const body = text.trim().slice(0, 8000);
+  if (!body) throw new Error("empty");
+  registerRoot(root);
+  const known = new Set(listRoles().map((r) => r.id));
+  const mentions = parseMentions(body, known);
+  const parent = replyTo ? findMsg(root, replyTo) : undefined;
+  const task = parent?.taskId ? readBoard(root).tasks.find((t) => t.id === parent.taskId) : undefined;
+  const msg = appendMsg(root, { from: "human", kind: "human", text: body, ...(mentions.length ? { mentions } : {}), ...(replyTo ? { replyTo } : {}), ...(task ? { taskId: task.id, taskTitle: task.title } : {}) });
+  if (task) {
+    if (activeFor(root, task.id)) { patchTask(root, task.id, { note: [task.note, body].filter(Boolean).join("\n\n") }); return { msg, taskId: task.id }; } // 실행 중 — 다음 실행에
+    const g0 = task.gate;
+    const retry = g0?.kind === "blocked" ? decideGate(task, "approve") : null; // 막힘 = 그 단계부터 다시(답글을 메모로)
+    const r = g0?.kind === "question" ? decideGate(task, "answer", body)
+      : retry ? { ...retry, patch: { ...retry.patch, note: body } }
+      : g0 ? decideGate(task, "reject", body) // spec·schema·merge 관문에 답글 = 반려 코멘트
+      : null;
+    if (r) patchTask(root, task.id, { ...r.patch, status: r.status });
+    else patchTask(root, task.id, { note: [task.note, body].filter(Boolean).join("\n\n") });
+    return { msg, taskId: task.id };
+  }
+  if (mentions.length) {
+    const title = body.replace(/@[a-z0-9-]+/gi, "").split("\n").map((l) => l.trim()).find(Boolean)?.slice(0, 80) || body.slice(0, 80);
+    const b = applyOp(root, { op: "create", title, body, status: "ready", role: mentions[0], pipeline: mentions });
+    const created = b.tasks[b.tasks.length - 1];
+    return { msg, taskId: created.id, created: true };
+  }
+  return { msg };
 }
