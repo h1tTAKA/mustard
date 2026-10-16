@@ -251,6 +251,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
   reconcile(root);
   const task = readBoard(root).tasks.find((t) => t.id === taskId);
   if (!task) throw new Error("task not found");
+  if (task.gate && task.gate.kind !== "blocked") throw new Error("gate pending"); // 관문은 관문 창(사람 결정)으로만 — 실행 버튼으로 건너뛰기 금지(리뷰). 막힘은 다시 실행 허용
   const active = [...g.runs.values()].filter((r) => ACTIVE.includes(r.state));
   if (active.some((r) => r.root === root && r.taskId === taskId)) throw new Error("already running");
   if (active.length >= MAX_CONCURRENT) throw new Error(`concurrency limit (${MAX_CONCURRENT})`);

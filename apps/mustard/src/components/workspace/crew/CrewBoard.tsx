@@ -137,7 +137,7 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
                             <div className="mt-2 flex items-center gap-0.5" aria-label={t("crew.step", { n: Math.min((c.stage ?? 0) + 1, c.pipeline.length), total: c.pipeline.length })}>
                               {c.pipeline.map((r, i) => (
                                 <span key={i} title={roleName(t, roles, r)}
-                                  className={`flex h-[18px] w-[18px] items-center justify-center rounded ${i === (c.stage ?? 0) ? "bg-mustard-500/20 text-mustard-700 ring-1 ring-mustard-500/50 dark:text-mustard-400" : i < (c.stage ?? 0) ? "bg-zinc-100 text-zinc-400 dark:bg-white/[0.05] dark:text-zinc-500" : "text-zinc-300 dark:text-zinc-600"}`}>
+                                  className={`flex h-[18px] w-[18px] items-center justify-center rounded ${i === Math.min(c.stage ?? 0, c.pipeline!.length - 1) ? "bg-mustard-500/20 text-mustard-700 ring-1 ring-mustard-500/50 dark:text-mustard-400" : i < (c.stage ?? 0) ? "bg-zinc-100 text-zinc-400 dark:bg-white/[0.05] dark:text-zinc-500" : "text-zinc-300 dark:text-zinc-600"}`}>
                                   <RoleIcon role={roles.some((x) => x.id === r) ? r : undefined} size={11} />
                                 </span>
                               ))}
