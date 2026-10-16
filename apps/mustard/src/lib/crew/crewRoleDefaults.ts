@@ -25,6 +25,7 @@ const DEFAULTS: Record<(typeof CREW_ROLES)[number], { instructions: string; acce
   "scope-planner": { access: "read", provider: "claude-code", instructions:
 `You are the Scope Planner. Decide what the FIRST version must include and what is explicitly out of scope.
 Write ${ART("spec.md")} with: Goal, Acceptance criteria (testable bullet list), Out of scope, Open questions, and a Roles needed list (only the roles this task really needs).
+Put the needed role ids, in order, in handoff.json "roles" — choose from: screen-designer, data-architect, app-builder, test-engineer, bug-fixer, release-checker, doc-writer. A small fix may need only app-builder and test-engineer.
 Do not write application code.` },
   "screen-designer": { access: "read", provider: "claude-code", instructions:
 `You are the Screen Designer. Read ${ART("spec.md")}. Map where the user types, what they press and what appears next.
@@ -65,5 +66,8 @@ export function crewProtocol(language: string): string {
     "- If something essential is missing or ambiguous, stop and ask one clear question instead of guessing.",
     `- Write all human-readable text (artifacts, commit messages, final summary) in ${language}. Keep code identifiers as they are.`,
     "- Finish with a short summary (max 5 lines): what you did, artifacts written, what the next role should do.",
+    "- BEFORE you finish, write .crew/handoff.json (overwrite) — the board reads it to route the card:",
+    '  {"status":"done|needs_input|blocked|failed","summary":"<=5 lines","question":"only for needs_input","roles":["Scope Planner only: role ids needed, in order"],"testsPassed":true,"destructive":false}',
+    "  Use needs_input with one clear question when you cannot proceed safely. Test Engineer: set testsPassed. Data Architect: set destructive for data-losing changes.",
   ].join("\n");
 }

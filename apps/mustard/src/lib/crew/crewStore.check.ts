@@ -2,7 +2,7 @@
 import assert from "node:assert";
 import { readdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { applyOp, boardFile, readBoard, sanitizeTask } from "./crewStore.ts";
+import { applyOp, boardFile, patchTask, readBoard, sanitizeTask } from "./crewStore.ts";
 
 assert.ok(process.env.MUSTARD_CREW_DIR, "임시 디렉터리 필수(실 보드 보호)");
 const root = "/tmp/repo-crew";
@@ -53,5 +53,16 @@ rb = applyOp(r3, { op: "update", id: rt.id, role: "" });
 assert.strictEqual(rb.tasks[0].role, undefined, "빈 역할 = 자동 배정");
 rb = applyOp(r3, { op: "create", title: "x", role: "Bad Role!" });
 assert.strictEqual(rb.tasks[1].role, undefined, "잘못된 역할 id 무시");
+
+// #1102 patchTask — 흐름 필드·칸, undefined = 지움, 잘못된 값은 걸러짐
+const r4 = "/tmp/repo-flow";
+const ft = applyOp(r4, { op: "create", title: "flow" }).tasks[0];
+let fb = patchTask(r4, ft.id, { pipeline: ["scope-planner", "app-builder", "Bad!"], stage: 1, gate: { kind: "spec", stage: 0, text: "spec ok?" }, status: "needs-you" });
+let f = fb.tasks[0];
+assert.deepStrictEqual([f.pipeline, f.stage, f.gate?.kind, f.status], [["scope-planner", "app-builder"], 1, "spec", "needs-you"], "흐름 필드·칸");
+fb = patchTask(r4, ft.id, { gate: undefined, status: "ready" });
+f = fb.tasks[0];
+assert.deepStrictEqual([f.gate, f.status, f.stage], [undefined, "ready", 1], "지우기");
+assert.strictEqual(readBoard(r4).tasks[0].pipeline?.length, 2, "파일에 남음");
 
 console.log("crewStore.check ok");

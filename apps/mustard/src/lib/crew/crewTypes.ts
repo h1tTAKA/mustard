@@ -4,7 +4,13 @@ export type CrewStatus = (typeof CREW_STATUSES)[number];
 // 기본 역할 8(유저 제공 구성) — 이름·설명은 i18n crew.role.<id> / crew.roleDesc.<id>. 커스텀 역할은 에픽 2번.
 export const CREW_ROLES = ["scope-planner", "screen-designer", "data-architect", "app-builder", "test-engineer", "bug-fixer", "release-checker", "doc-writer"] as const;
 // role 없음 = 자동 배정(범위 기획자가 나눔)
-export interface CrewTask { id: string; title: string; body: string; status: CrewStatus; order: number; createdAt: number; updatedAt: number; role?: string }
+// 사람 대기 이유(#1102) — spec/schema/merge 관문, question(되묻기). stage = 반려·답 때 다시 돌릴 단계.
+export interface CrewGate { kind: "spec" | "schema" | "merge" | "question" | "blocked"; text?: string; stage: number }
+export interface CrewTask {
+  id: string; title: string; body: string; status: CrewStatus; order: number; createdAt: number; updatedAt: number; role?: string;
+  // 오케스트레이터(#1102) — 파이프라인(역할 순서)·지금 단계·테스트↔수정 횟수·같은 단계 연속 실패·사람 대기·다음 실행에 붙일 사람 말
+  pipeline?: string[]; stage?: number; loops?: number; fails?: number; gate?: CrewGate; note?: string;
+}
 export interface CrewBoard { version: 1; tasks: CrewTask[] }
 export type CrewOp =
   | { op: "create"; title: string; body?: string; status?: CrewStatus; role?: string }
