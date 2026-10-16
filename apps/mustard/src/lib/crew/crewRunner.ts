@@ -3,12 +3,13 @@
 //       → complete = 리뷰 칸(세션 종료해 자리 반납) / error = 막힘 / 권한 요청 = 나 필요(사람 클릭으로만 승인).
 // 상태는 SNA 세션 이벤트(기록)로 판정 — 화면 긁기 안 함(#979 교훈). 기록 = ~/.nunopi/crew/<sha>/runs.json.
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { getSnaClient } from "@mustard/core/sna";
-import { applyOp, readBoard } from "./crewStore";
-import { getRole } from "./crewRoleStore";
+import { applyOp, patchTask, readBoard } from "./crewStore";
+import { decideGate, next, parseHandoff, pipelineOf, type Handoff } from "./crewFlow";
+import { getRole, listRoles } from "./crewRoleStore";
 import { crewProtocol, type CrewRole } from "./crewRoleDefaults";
 import { ensureWorktree } from "./crewWorktree";
 import { decide } from "./crewPolicy";
@@ -17,7 +18,7 @@ import type { CrewStatus } from "./crewTypes";
 
 export type RunState = "starting" | "running" | "needs-permission" | "done" | "failed" | "stopped";
 export interface CrewRun {
-  id: string; root: string; taskId: string; role: string; provider: string; model?: string;
+  id: string; root: string; taskId: string; role: string; stage?: number; provider: string; model?: string;
   sessionId?: string; worktree: string; branch: string; base: string;
   state: RunState; startedAt: number; endedAt?: number;
   lastActivity?: string; toolCount: number; tokens?: { input: number; output: number }; costUsd?: number;
@@ -48,8 +49,8 @@ function writeRuns(root: string, runs: CrewRun[]) {
 
 // ── 프로세스 싱글톤 상태 ──────────────────────────────────────────────
 type Pending = { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> };
-type G = { runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending> };
-const g = ((globalThis as unknown as { __mustardCrew?: G }).__mustardCrew ??= { runs: new Map(), bySession: new Map(), wired: false, reconciled: new Set(), flush: new Map(), tokens: new Map(), pending: new Map() });
+type G = { roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending> };
+const g = ((globalThis as unknown as { __mustardCrew?: G }).__mustardCrew ??= { roots: new Set(), origin: "", starting: new Set(), runs: new Map(), bySession: new Map(), wired: false, reconciled: new Set(), flush: new Map(), tokens: new Map(), pending: new Map() } as G);
 
 // ── Claude 권한 훅 ───────────────────────────────────────────────────
 // SNA가 자동으로 넣는 PreToolUse 훅은 인증 없이 SNA에 물어 전부 거부됨(+ 읽기마다 사람에게 물음) → Claude 역할은
@@ -103,7 +104,7 @@ function reconcile(root: string) {
   for (const r of runs) {
     if (ACTIVE.includes(r.state) && !g.runs.has(r.id)) {
       r.state = "failed"; r.error = "interrupted (app restarted)"; r.endedAt = Date.now(); changed = true;
-      moveCard(root, r.taskId, "blocked");
+      block(root, r.taskId, r.stage ?? 0, "interrupted (app restarted)");
     }
   }
   if (changed) writeRuns(root, runs);
@@ -131,6 +132,50 @@ function moveCard(root: string, taskId: string, status: CrewStatus) {
 
 const oneLine = (s: string, n = 140) => s.replace(/\s+/g, " ").trim().slice(-n);
 
+// 막힘 — 이유를 관문에 남겨 보드에서 보이게(승인 = 그 단계부터 다시)
+function block(root: string, taskId: string, stage: number, why: string) {
+  try { patchTask(root, taskId, { gate: { kind: "blocked", stage, text: why }, status: "blocked" }); } catch { /* 카드 지워짐 */ }
+}
+
+// #1102 역할 하나가 끝남 → .crew/handoff.json(없으면 마지막 메시지)으로 흐름 상태 기계 적용 → 카드 이동(다음 Ready는 tick이 시작).
+function finish(run: CrewRun, forced?: Handoff) {
+  try {
+    const file = join(run.worktree, ".crew", "handoff.json");
+    const raw = !forced && run.worktree && existsSync(file) ? readFileSync(file, "utf8") : null;
+    const h = forced ?? parseHandoff(raw, run.summary);
+    const task = readBoard(run.root).tasks.find((t) => t.id === run.taskId);
+    if (!task) return;
+    const r = next({ ...task, stage: run.stage ?? task.stage }, h, new Set(listRoles().map((x) => x.id)));
+    patchTask(run.root, run.taskId, { ...r.patch, status: r.status });
+    run.lastActivity = `→ ${r.status}${r.patch.gate ? ` (${r.patch.gate.kind})` : ""}`;
+  } catch (e) { block(run.root, run.taskId, run.stage ?? 0, `flow error: ${String((e as Error)?.message ?? e)}`); }
+}
+
+// #1102 오케스트레이터 tick — 알려진 레포의 Ready 카드를 동시 상한 안에서 자동 시작(Ready 칸 = 에이전트 대기열).
+function ensureTicker() {
+  if (g.ticker) return;
+  g.ticker = setInterval(() => {
+    if (!g.origin) return;
+    for (const root of g.roots) {
+      let ready: { id: string }[] = [];
+      try { ready = readBoard(root).tasks.filter((t) => t.status === "ready").sort((a, b) => a.order - b.order); } catch { continue; }
+      for (const t of ready) {
+        const active = [...g.runs.values()].filter((r) => ACTIVE.includes(r.state)).length + g.starting.size;
+        if (active >= MAX_CONCURRENT) return;
+        const key = `${root}\n${t.id}`;
+        if (g.starting.has(key) || activeFor(root, t.id)) continue;
+        g.starting.add(key);
+        void startRun(root, t.id, g.origin).catch(() => {}).finally(() => g.starting.delete(key));
+      }
+    }
+  }, 2000);
+}
+export function registerRoot(root: string, origin?: string) {
+  g.roots.add(root);
+  if (origin) g.origin = safeOrigin(origin);
+  ensureTicker();
+}
+
 // ── SNA 이벤트 배선(한 번) ───────────────────────────────────────────
 async function wire() {
   if (g.wired) return;
@@ -152,13 +197,13 @@ async function wire() {
       const inp = Number(data.inputTokens ?? 0), out = Number(data.outputTokens ?? 0);
       run.tokens = { input: (run.tokens?.input ?? 0) + inp, output: (run.tokens?.output ?? 0) + out };
       if (typeof data.costUsd === "number") run.costUsd = data.costUsd;
-      moveCard(run.root, run.taskId, "review");
+      finish(run); // #1102 봉투 → 다음 역할·관문·Review
       persist(run, true);
       void sna.agent.kill(session).catch(() => {}); // 세션 자리 반납(대화 기록은 SNA DB에 남음 — 넘겨받기·이어 하기는 에픽 4번)
       return;
     } else if (type === "error") {
       run.state = "failed"; run.endedAt = Date.now(); run.error = oneLine(msg || "agent error", 400);
-      moveCard(run.root, run.taskId, "blocked");
+      finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘)
       persist(run, true);
       return;
     } else if (type === "interrupted") {
@@ -176,16 +221,19 @@ async function wire() {
   await sna.agent.subscribePermissions().catch(() => {});
 }
 
-function buildPrompt(title: string, body: string, role: CrewRole): string {
+function buildPrompt(title: string, body: string, role: CrewRole, pipeline: string[], stage: number, note?: string): string {
   return [
     `# Board card: ${title}`,
     body.trim() ? `\n${body.trim()}` : "",
-    `\nYou are acting as role "${role.id}". Do your role's part for this card now.`,
+    `\nPipeline: ${pipeline.map((r, i) => (i === stage ? `**${r}**` : r)).join(" → ")} (step ${stage + 1}/${pipeline.length}).`,
+    `You are acting as role "${role.id}". Read earlier roles' files in .crew/ first, then do your role's part for this card now.`,
+    note ? `\n## Message from the human (follow this)\n${note}` : "",
   ].join("\n");
 }
 
 // ── 공개 API ─────────────────────────────────────────────────────────
-export function listRuns(root: string): CrewRun[] {
+export function listRuns(root: string, origin?: string): CrewRun[] {
+  registerRoot(root, origin);
   reconcile(root);
   const disk = readRuns(root);
   const mem = [...g.runs.values()].filter((r) => r.root === root);
@@ -199,21 +247,26 @@ const safeOrigin = (o: string) => (/^http:\/\/(127\.0\.0\.1|localhost):\d{2,5}$/
 
 export async function startRun(root: string, taskId: string, origin: string): Promise<CrewRun> {
   origin = safeOrigin(origin);
+  registerRoot(root, origin);
   reconcile(root);
   const task = readBoard(root).tasks.find((t) => t.id === taskId);
   if (!task) throw new Error("task not found");
   const active = [...g.runs.values()].filter((r) => ACTIVE.includes(r.state));
   if (active.some((r) => r.root === root && r.taskId === taskId)) throw new Error("already running");
   if (active.length >= MAX_CONCURRENT) throw new Error(`concurrency limit (${MAX_CONCURRENT})`);
-  const role = getRole(task.role) ?? getRole("scope-planner")!; // 자동 배정 = 범위 기획자부터(나누기는 에픽 3번)
+  const pipeline = pipelineOf(task);
+  const stage = Math.min(task.stage ?? 0, pipeline.length - 1);
+  const role = getRole(pipeline[stage]) ?? getRole("scope-planner")!; // 지워진 커스텀 역할 등 = 범위 기획자
+  const note = task.note;
+  patchTask(root, taskId, { pipeline, stage, note: undefined, gate: undefined, status: "running" }); // 사람 말은 이번 실행에 한 번만
 
-  moveCard(root, taskId, "running");
-  const run: CrewRun = { id: randomUUID(), root, taskId, role: role.id, provider: role.provider, model: role.model, worktree: "", branch: "", base: "", state: "starting", startedAt: Date.now(), toolCount: 0, lastActivity: "preparing worktree" };
+  const run: CrewRun = { id: randomUUID(), root, taskId, role: role.id, stage, provider: role.provider, model: role.model, worktree: "", branch: "", base: "", state: "starting", startedAt: Date.now(), toolCount: 0, lastActivity: "preparing worktree" };
   g.runs.set(run.id, run);
   persist(run, true);
   try {
     const wt = await ensureWorktree(root, taskId, task.title);
     Object.assign(run, { worktree: wt.dir, branch: wt.branch, base: wt.base });
+    rmSync(join(wt.dir, ".crew", "handoff.json"), { force: true }); // 앞 역할 봉투를 이번 결과로 착각하지 않게
     await wire();
     const sna = await getSnaClient();
     const { sessionId } = await sna.sessions.create({ label: `crew:${task.title.slice(0, 60)}`, cwd: wt.dir, meta: { crew: true, root, taskId, runId: run.id, role: role.id } });
@@ -227,7 +280,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     await sna.agent.start(sessionId, {
       provider: role.provider, ...(role.model ? { model: role.model } : {}), cwd: wt.dir,
       appendSystemPrompt: `${role.instructions}\n\n${crewProtocol(LANG[narrationLocale()] ?? "Korean")}`,
-      prompt: buildPrompt(task.title, task.body, role),
+      prompt: buildPrompt(task.title, task.body, role, pipeline, stage, note),
       // Claude: SNA 훅 대신 Mustard 훅(정책 자동 허락·차단, 나머지만 사람에게). Codex·OpenCode: SNA 기본 승인 흐름(onPermissionRequest).
       permissionMode: isClaude ? "bypassPermissions" : "acceptEdits",
       ...(isClaude ? { providerOptions: { settings: { hooks: { PreToolUse: [{ matcher: ".*", hooks: [{ type: "command", command: `node "${hookPath()}" --url=${origin} --run=${run.id} --token=${token}`, timeout: 900 }] }] } } } } : {}),
@@ -238,7 +291,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     persist(run, true);
   } catch (e) {
     run.state = "failed"; run.endedAt = Date.now(); run.error = oneLine(String((e as Error)?.message ?? e), 400);
-    moveCard(root, taskId, "blocked");
+    block(root, taskId, stage, run.error); // 시작 자체 실패(worktree·SNA)는 재시도 안 함 — 사람이 확인
     persist(run, true);
   }
   return run;
@@ -252,7 +305,7 @@ export async function stopRun(root: string, taskId: string): Promise<CrewRun> {
   run.state = "stopped"; run.endedAt = Date.now(); run.error = "stopped by user"; run.permission = undefined;
   g.pending.get(run.id)?.resolve(false); // 기다리던 훅은 거부로 풀기
   if (run.sessionId) await (await getSnaClient()).agent.kill(run.sessionId).catch(() => {});
-  moveCard(root, taskId, "blocked");
+  block(root, taskId, run.stage ?? 0, "stopped by user");
   persist(run, true);
   return run;
 }
@@ -269,4 +322,13 @@ export async function respondPermission(root: string, taskId: string, approved: 
   moveCard(root, taskId, "running");
   persist(run, true);
   return run;
+}
+
+// #1102 사람 결정(보드 클릭) — 관문 승인/반려, 질문 답. 결과가 Ready면 tick이 다음 역할을 시작.
+export function decideCard(root: string, taskId: string, action: "approve" | "reject" | "answer", text = "") {
+  if (activeFor(root, taskId)) throw new Error("running");
+  const task = readBoard(root).tasks.find((t) => t.id === taskId);
+  if (!task) throw new Error("task not found");
+  const r = decideGate(task, action, text);
+  return patchTask(root, taskId, { ...r.patch, status: r.status });
 }
