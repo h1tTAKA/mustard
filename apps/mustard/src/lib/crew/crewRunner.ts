@@ -179,8 +179,10 @@ function finish(run: CrewRun, forced?: Handoff) {
     const nextRole = r.status === "ready" && r.patch.pipeline ? r.patch.pipeline[r.patch.stage ?? 0] : r.status === "ready" ? (task.pipeline ?? [])[(r.patch.stage ?? task.stage ?? 0)] : undefined;
     const base = { taskId: task.id, taskTitle: task.title };
     const said = (h.message || h.summary || run.summary || "").trim();
-    if (h.status === "needs_input") say(run.root, { ...base, from: run.role, provider: run.provider, kind: "question", text: h.question || said, mentions: ["you"] });
-    else if (said) say(run.root, { ...base, from: run.role, provider: run.provider, kind: h.status === "done" ? "handoff" : "blocked", text: nextRole && !said.includes(`@${nextRole}`) ? `${said}\n@${nextRole}` : said, ...(nextRole ? { mentions: [nextRole] } : {}) });
+    const toPeer = h.status === "needs_input" && r.status === "ready"; // #1108 사람 대신 동료에게 물음
+    if (toPeer && nextRole) say(run.root, { ...base, from: run.role, provider: run.provider, kind: "handoff", text: `@${nextRole} ${h.ask?.question ?? h.question ?? said}`, mentions: [nextRole] });
+    else if (h.status === "needs_input") say(run.root, { ...base, from: run.role, provider: run.provider, kind: "question", text: h.question || said, mentions: ["you"] });
+    else if (said) say(run.root, { ...base, from: run.role, provider: run.provider, kind: h.status === "done" || h.status === "changes_requested" ? "handoff" : "blocked", text: nextRole && !said.includes(`@${nextRole}`) ? `${said}\n@${nextRole}` : said, ...(nextRole ? { mentions: [nextRole] } : {}) });
     const gate = r.patch.gate;
     if (gate && gate.kind !== "question") say(run.root, { ...base, from: "board", kind: gate.kind === "blocked" ? "blocked" : "gate", mentions: ["you"],
       text: gate.kind === "merge" ? tr("crewchat.gate.merge", { branch: run.branch }) : gate.kind === "blocked" ? tr("crewchat.gate.blocked", { why: gate.text ?? "" }) : tr(`crewchat.gate.${gate.kind}`) });
@@ -258,13 +260,21 @@ async function wire() {
   await sna.agent.subscribePermissions().catch(() => {});
 }
 
-function buildPrompt(title: string, body: string, role: CrewRole, pipeline: string[], stage: number, note?: string): string {
+function buildPrompt(title: string, body: string, role: CrewRole, pipeline: string[], stage: number, note?: string, consult?: { from: string; question: string }): string {
+  // #1108 답하기 모드 — 동료 질문에 답만(코드 수정 금지), 답은 봉투 message에
+  if (consult) return [
+    `# Board card: ${title}`,
+    body.trim() ? `\n${body.trim()}` : "",
+    `\nYour teammate "${consult.from}" is asking you (as "${role.id}"):`,
+    `> ${consult.question}`,
+    `\nAnswer ONLY. Read the code and .crew/ files as needed, but do NOT modify any code or commit. Put your answer (concise, concrete) in .crew/handoff.json "message" with status "done" — it goes straight back to "${consult.from}" in the team chat.`,
+  ].join("\n");
   return [
     `# Board card: ${title}`,
     body.trim() ? `\n${body.trim()}` : "",
     `\nPipeline: ${pipeline.map((r, i) => (i === stage ? `**${r}**` : r)).join(" → ")} (step ${stage + 1}/${pipeline.length}).`,
     `You are acting as role "${role.id}". Read earlier roles' files in .crew/ first, then do your role's part for this card now.`,
-    note ? `\n## Message from the human (follow this)\n${note}` : "",
+    note ? `\n## Message for you (from the human or a teammate — follow this)\n${note}` : "",
   ].join("\n");
 }
 
@@ -318,7 +328,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     await sna.agent.start(sessionId, {
       provider: role.provider, model: modelFor(role), cwd: wt.dir,
       appendSystemPrompt: `${role.instructions}\n\n${crewProtocol(LANG[narrationLocale()] ?? "Korean")}`,
-      prompt: buildPrompt(task.title, task.body, role, pipeline, stage, note),
+      prompt: buildPrompt(task.title, task.body, role, pipeline, stage, note, task.consult?.stage === stage ? task.consult : undefined),
       // Claude: SNA 훅 대신 Mustard 훅(정책 자동 허락·차단, 나머지만 사람에게). Codex·OpenCode: SNA 기본 승인 흐름(onPermissionRequest).
       permissionMode: isClaude ? "bypassPermissions" : "acceptEdits",
       ...(isClaude ? { providerOptions: { settings: { hooks: { PreToolUse: [{ matcher: ".*", hooks: [{ type: "command", command: `node "${hookPath()}" --url=${origin} --run=${run.id} --token=${token}`, timeout: 900 }] }] } } } } : {}),
