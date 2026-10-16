@@ -44,7 +44,10 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
     try {
       const j = await (await fetch("/api/crew/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, taskId, action, approved }) })).json();
       if (!j?.ok) throw new Error(j?.error);
-    } catch (e) { toast(`${t("crew.runFailed")}: ${String((e as Error)?.message ?? e)}`, "error"); }
+    } catch (e) {
+      const msg = String((e as Error)?.message ?? e), lim = /concurrency limit \((\d+)\)/.exec(msg); // 동시 실행 상한은 기기 전체(SNA 세션·구독 사용량이 기기 단위)
+      toast(lim ? t("crew.limitReached", { n: lim[1] }) : `${t("crew.runFailed")}: ${msg}`, "error");
+    }
     reloadRuns(); load();
   };
 

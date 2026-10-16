@@ -44,7 +44,8 @@ export async function ensureWorktree(root: string, taskId: string, title: string
   await excludeCrewDir(root);
   if (await isWorktree(dir)) {
     mkdirSync(join(dir, ".crew"), { recursive: true });
-    return { dir, branch: await git(dir, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => branch), base, created: false };
+    const cur = await git(dir, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => branch);
+    return { dir, branch: cur === "HEAD" ? branch : cur, base, created: false }; // 분리 HEAD면 계산한 이름(리뷰)
   }
   await git(root, ["worktree", "prune"]).catch(() => {}); // 지워진 폴더의 옛 등록 정리(같은 경로 재사용 막힘 방지)
   mkdirSync(join(dir, ".."), { recursive: true });

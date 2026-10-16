@@ -1336,6 +1336,7 @@ const ko: Dict = {
   "crew.branch": "브랜치",
   "crew.runFailed": "실행하지 못했어요",
   "crew.save.done": "저장했어요",
+  "crew.limitReached": "동시에 {n}개까지만 실행할 수 있어요. 진행 중인 작업이 끝나면 다시 눌러 주세요.",
 };
 
 const ja: Dict = {
@@ -2656,6 +2657,7 @@ const ja: Dict = {
   "crew.branch": "ブランチ",
   "crew.runFailed": "実行できませんでした",
   "crew.save.done": "保存しました",
+  "crew.limitReached": "同時に実行できるのは{n}件までです。実行中の作業が終わってから再度押してください。",
 };
 
 const en: Dict = {
@@ -3976,6 +3978,7 @@ const en: Dict = {
   "crew.branch": "Branch",
   "crew.runFailed": "Couldn't run",
   "crew.save.done": "Saved",
+  "crew.limitReached": "Up to {n} tasks can run at once. Try again when a running task finishes.",
 };
 
 export const MESSAGES: Record<Locale, Dict> = { ko, ja, en };
