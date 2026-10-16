@@ -4,25 +4,29 @@ import type { CrewGate, CrewStatus, CrewTask } from "./crewTypes.ts";
 
 export const MAX_TEST_LOOPS = 3; // 테스트↔수정 최대
 export const MAX_FAILS = 3;      // 같은 단계 연속 실패 차단기
+export const MAX_CONSULTS = 3;   // #1108 카드당 동료에게 묻기
+export const MAX_REVIEWS = 2;    // #1108 리뷰 변경 요청 왕복
 
 // 역할이 끝내기 전에 .crew/handoff.json에 쓰는 봉투(규약). 없으면 마지막 메시지로 done.
 export interface Handoff {
-  status: "done" | "needs_input" | "blocked" | "failed";
+  status: "done" | "needs_input" | "blocked" | "failed" | "changes_requested";
   summary?: string;
   message?: string;        // #1104 팀 채팅에 남길 말(1인칭, 다음 역할 @멘션) — 없으면 summary
   question?: string;       // needs_input
   roles?: string[];        // 범위 기획자 — 이 카드에 필요한 역할(순서대로)
   testsPassed?: boolean;   // 테스트 엔지니어
   destructive?: boolean;   // 데이터 설계자 — 파괴적 변경
+  ask?: { to: string; question: string }; // #1108 needs_input을 사람 대신 동료에게
+  to?: string;             // #1108 changes_requested — 고칠 역할(없으면 직전 다른 역할)
 }
 
-export interface FlowResult { status: CrewStatus; patch: Partial<Pick<CrewTask, "pipeline" | "stage" | "loops" | "fails" | "gate" | "note">> }
+export interface FlowResult { status: CrewStatus; patch: Partial<Pick<CrewTask, "pipeline" | "stage" | "loops" | "fails" | "gate" | "note" | "consult" | "consults" | "reviews">> }
 
 export function parseHandoff(raw: string | null, fallbackSummary?: string): Handoff {
   if (raw) {
     try {
       const j = JSON.parse(raw) as Record<string, unknown>;
-      const status = ["done", "needs_input", "blocked", "failed"].includes(String(j.status)) ? (j.status as Handoff["status"]) : "done";
+      const status = ["done", "needs_input", "blocked", "failed", "changes_requested"].includes(String(j.status)) ? (j.status as Handoff["status"]) : "done";
       return {
         status,
         ...(typeof j.summary === "string" ? { summary: j.summary.slice(0, 4000) } : {}),
@@ -31,6 +35,9 @@ export function parseHandoff(raw: string | null, fallbackSummary?: string): Hand
         ...(Array.isArray(j.roles) ? { roles: j.roles.filter((r): r is string => typeof r === "string").slice(0, 20) } : {}),
         ...(typeof j.testsPassed === "boolean" ? { testsPassed: j.testsPassed } : {}),
         ...(typeof j.destructive === "boolean" ? { destructive: j.destructive } : {}),
+        ...(j.ask && typeof j.ask === "object" && typeof (j.ask as Record<string, unknown>).to === "string" && typeof (j.ask as Record<string, unknown>).question === "string"
+          ? { ask: { to: String((j.ask as Record<string, unknown>).to), question: String((j.ask as Record<string, unknown>).question).slice(0, 4000) } } : {}),
+        ...(typeof j.to === "string" ? { to: j.to } : {}),
       };
     } catch { /* 깨진 JSON — 아래 기본값 */ }
   }
@@ -47,7 +54,26 @@ export function next(task: CrewTask, h: Handoff, knownRoles: Set<string>): FlowR
   const role = pipeline[stage];
   const gate = (kind: CrewGate["kind"], at: number, text?: string): CrewGate => ({ kind, stage: at, ...(text ? { text } : {}) });
 
-  if (h.status === "needs_input") return { status: "needs-you", patch: { gate: gate("question", stage, h.question || h.summary), note: undefined, fails: 0 } };
+  // #1108 답하기 단계가 끝남 → 묻던 역할로, 답을 메모로(실패해도 답 없이 돌아감 — 묻던 역할이 사람에게 물을 수 있음)
+  if (task.consult && task.consult.stage === stage) {
+    const answer = (h.message || h.summary || "").trim();
+    return { status: "ready", patch: { consult: undefined, fails: 0, gate: undefined, stage: stage + 1, note: `Answer from teammate "${role}" to your question (${task.consult.question}):\n${answer || "(no answer — ask the human if still blocked)"}` } };
+  }
+  // #1108 동료에게 묻기 — [상대, 나]를 끼우고 상대는 답하기 모드
+  if (h.status === "needs_input" && h.ask && knownRoles.has(h.ask.to) && h.ask.to !== role && (task.consults ?? 0) < MAX_CONSULTS) {
+    pipeline = [...pipeline.slice(0, stage + 1), h.ask.to, role, ...pipeline.slice(stage + 1)];
+    return { status: "ready", patch: { pipeline, stage: stage + 1, consult: { stage: stage + 1, from: role, question: h.ask.question }, consults: (task.consults ?? 0) + 1, fails: 0, gate: undefined, note: undefined } };
+  }
+  if (h.status === "needs_input") return { status: "needs-you", patch: { gate: gate("question", stage, h.ask?.question || h.question || h.summary), note: undefined, fails: 0 } };
+  // #1108 리뷰 변경 요청 — [담당, 나]를 끼워 반영 후 재검토(2왕복), 넘으면 사람(머지 관문에 지적 첨부)
+  if (h.status === "changes_requested") {
+    const comments = (h.message || h.summary || "").trim();
+    const target = h.to && knownRoles.has(h.to) && h.to !== role ? h.to : [...pipeline.slice(0, stage)].reverse().find((r) => r !== role && r !== "scope-planner");
+    const reviews = (task.reviews ?? 0) + 1;
+    if (!target || reviews > MAX_REVIEWS) return { status: "review", patch: { reviews, fails: 0, gate: gate("merge", stage, `Reviewer "${role}" still requests changes:\n${comments}`) } };
+    pipeline = [...pipeline.slice(0, stage + 1), target, role, ...pipeline.slice(stage + 1)];
+    return { status: "ready", patch: { pipeline, stage: stage + 1, reviews, fails: 0, gate: undefined, note: `Changes requested by "${role}":\n${comments}` } };
+  }
   if (h.status === "blocked" || h.status === "failed") {
     const fails = (task.fails ?? 0) + 1;
     if (fails >= MAX_FAILS) return { status: "blocked", patch: { fails, gate: gate("blocked", stage, h.summary || `${role} failed ${fails} times`) } };
