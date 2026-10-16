@@ -1143,6 +1143,7 @@ ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, extraArgs, 
   // #1110 Crew 넘겨받기 — 카드 작업 폴더에서 실행(절대 경로·존재하는 폴더만, 작은따옴표 이스케이프)
   let cdPrefix = "";
   if (typeof cwd === "string" && cwd) {
+    if (/[\r\n\0]/.test(cwd)) return { ok: false, reason: "bad cwd" }; // 줄바꿈·NUL 경로 거부(리뷰)
     try { if (!require("node:path").isAbsolute(cwd) || !require("node:fs").statSync(cwd).isDirectory()) return { ok: false, reason: "bad cwd" }; } catch { return { ok: false, reason: "bad cwd" }; }
     cdPrefix = `cd '${cwd.replace(/'/g, "'\\''")}' && `;
   }

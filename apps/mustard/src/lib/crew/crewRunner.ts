@@ -432,7 +432,14 @@ export function postHuman(root: string, text: string, replyTo?: string): { msg: 
 
 // #1110 Draft PR 만들기 — 사람 클릭으로만(에이전트는 push·PR 금지 정책). 카드 마지막 실행의 작업 폴더·브랜치에서 push → gh pr create --draft.
 const pexecFile = promisify(execFile);
+const prInFlight = new Set<string>(); // 같은 카드 PR 두 번 눌림 방지(리뷰)
 export async function createPr(root: string, taskId: string): Promise<{ url: string }> {
+  const key = `${root}\n${taskId}`;
+  if (prInFlight.has(key)) throw new Error("already creating a PR");
+  prInFlight.add(key);
+  try { return await createPrOnce(root, taskId); } finally { prInFlight.delete(key); }
+}
+async function createPrOnce(root: string, taskId: string): Promise<{ url: string }> {
   if (activeFor(root, taskId)) throw new Error("running");
   const task = readBoard(root).tasks.find((t) => t.id === taskId);
   if (!task) throw new Error("task not found");
