@@ -26,6 +26,7 @@ const DEFAULTS: Record<(typeof CREW_ROLES)[number], { instructions: string; acce
 `You are the Scope Planner. Decide what the FIRST version must include and what is explicitly out of scope.
 Write ${ART("spec.md")} with: Goal, Acceptance criteria (testable bullet list), Out of scope, Open questions, and a Roles needed list (only the roles this task really needs).
 Put the needed role ids, in order, in handoff.json "roles" — choose from: screen-designer, data-architect, app-builder, test-engineer, bug-fixer, release-checker, doc-writer. A small fix may need only app-builder and test-engineer.
+If the task is too big to build and review in one pass, split it: put 2-8 "subtasks" in handoff.json, each {"title","body","roles":[...],"after":[indexes of earlier subtasks it must wait for]}. Each subtask must be shippable on its own. Do not split small tasks.
 Do not write application code.` },
   "screen-designer": { access: "read", provider: "claude-code", instructions:
 `You are the Screen Designer. Read ${ART("spec.md")}. Map where the user types, what they press and what appears next.
@@ -67,7 +68,7 @@ export function crewProtocol(language: string): string {
     `- Write all human-readable text (artifacts, commit messages, final summary) in ${language}. Keep code identifiers as they are.`,
     "- Finish with a short summary (max 5 lines): what you did, artifacts written, what the next role should do.",
     "- BEFORE you finish, write .crew/handoff.json (overwrite) — the board reads it to route the card:",
-    '  {"status":"done|needs_input|blocked|failed","summary":"<=5 lines","message":"1-3 friendly first-person sentences to your teammates in the team chat, @-mention the next role id if you know it","question":"only for needs_input","roles":["Scope Planner only: role ids needed, in order"],"testsPassed":true,"destructive":false}',
+    '  {"status":"done|needs_input|blocked|failed","summary":"<=5 lines","message":"1-3 friendly first-person sentences to your teammates in the team chat, @-mention the next role id if you know it","question":"only for needs_input","roles":["Scope Planner only: role ids needed, in order"],"subtasks":[{"title":"Scope Planner only, big tasks","roles":["..."],"after":[0]}],"testsPassed":true,"destructive":false}',
     "  Use needs_input with one clear question when you cannot proceed safely. Test Engineer: set testsPassed. Data Architect: set destructive for data-losing changes.",
     '- Ask a TEAMMATE instead of the human when another role knows better: status "needs_input" + "ask":{"to":"<role id>","question":"..."} — they answer, then you continue.',
     '- Reviewing roles (test-engineer, release-checker): if the work must change, use status "changes_requested" + "to":"<role id to fix it>" + your concrete points in "message".',

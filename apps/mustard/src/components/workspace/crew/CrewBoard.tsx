@@ -3,10 +3,11 @@
 // 이번 단계: 칸 7개 + 수동 카드(만들기·편집·삭제·드래그) + 담당 역할 지정. 에이전트 실행·커스텀 역할은 에픽 2번부터.
 // 보드는 서버 파일(~/.nunopi/crew)이 기준 — 화면은 연산만 보내고 돌아온 보드로 갱신(창 여러 개여도 덮어쓰기 없음).
 import { useCallback, useEffect, useState } from "react";
-import { IconBolt, IconGitPullRequest, IconLayoutKanban, IconPlus, IconShieldQuestion, IconUsers, IconX } from "@tabler/icons-react";
+import { IconBolt, IconClockPause, IconCornerDownRight, IconGitPullRequest, IconSubtask, IconLayoutKanban, IconPlus, IconShieldQuestion, IconUsers, IconX } from "@tabler/icons-react";
 import { useConfirm, useT, useToast } from "@mustard/core";
 import { CREW_STATUSES, type CrewBoard as Board, type CrewOp, type CrewStatus, type CrewTask } from "@/lib/crew/crewTypes";
 import { relTime } from "@/lib/relTime";
+import { childProgress, waitingOn } from "@/lib/crew/crewFlow";
 import { STATUS_DOT, RoleIcon, elapsed, isActiveRun, roleName, useCrewRoles, useCrewRuns } from "./crewUi";
 import TaskDialog from "./TaskDialog";
 import RolesDialog from "./RolesDialog";
@@ -167,6 +168,20 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
                             </div>
                           )}
                           {c.pr && <a href={c.pr.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-violet-500/10 px-1.5 py-0.5 text-[10.5px] font-medium text-violet-700 hover:bg-violet-500/20 dark:text-violet-300"><IconGitPullRequest size={11} aria-hidden />PR</a>}
+                          {(() => { // #1114 부모 = 하위 진행, 하위 = 상위 카드·기다리는 카드
+                            const all = board?.tasks ?? [];
+                            const prog = c.children?.length ? childProgress(c, all) : null;
+                            const parent = c.parentId ? all.find((x) => x.id === c.parentId) : undefined;
+                            const wait = waitingOn(c, all).map((id) => all.find((x) => x.id === id)?.title).filter(Boolean);
+                            if (!prog && !parent && !wait.length) return null;
+                            return (
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10.5px]">
+                                {prog && <span className="inline-flex items-center gap-1 rounded-md bg-sky-500/10 px-1.5 py-0.5 font-medium tabular-nums text-sky-700 dark:text-sky-300"><IconSubtask size={11} aria-hidden />{t("crewsplit.progress", { done: prog.done, total: prog.total })}</span>}
+                                {parent && <span className="inline-flex min-w-0 max-w-full items-center gap-1 text-zinc-400 dark:text-zinc-500"><IconCornerDownRight size={11} className="shrink-0" aria-hidden /><span className="truncate">{parent.title}</span></span>}
+                                {wait.length > 0 && <span title={wait.join("\n")} className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md bg-zinc-100 px-1.5 py-0.5 text-zinc-500 dark:bg-white/[0.06] dark:text-zinc-400"><IconClockPause size={11} className="shrink-0" aria-hidden /><span className="truncate">{t("crewsplit.waiting", { title: wait[0]! })}{wait.length > 1 ? ` +${wait.length - 1}` : ""}</span></span>}
+                              </div>
+                            );
+                          })()}
                           {c.gate && <div className={`mt-1.5 truncate text-[10.5px] font-medium ${c.gate.kind === "blocked" ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}`}>{t(`crew.gate.${c.gate.kind}`)}</div>}
                           {(() => {
                             const run = runs.get(c.id);

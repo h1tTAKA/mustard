@@ -40,7 +40,8 @@ async function excludeCrewDir(root: string) {
 }
 
 // 있으면 재사용, 없으면 현재 HEAD에서 새 브랜치로 만듦(브랜치만 남아 있으면 그 브랜치로 다시 붙임).
-export async function ensureWorktree(root: string, taskId: string, title: string): Promise<{ dir: string; branch: string; base: string; created: boolean }> {
+// from = 새 브랜치를 만들 때 시작점(#1114 의존 카드의 브랜치 — 앞 작업 위에 쌓기). 없거나 못 찾으면 HEAD.
+export async function ensureWorktree(root: string, taskId: string, title: string, from?: string): Promise<{ dir: string; branch: string; base: string; created: boolean }> {
   const { dir, branch } = worktreeFor(root, taskId, title);
   const base = await git(root, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "HEAD");
   await excludeCrewDir(root);
@@ -52,7 +53,8 @@ export async function ensureWorktree(root: string, taskId: string, title: string
   await git(root, ["worktree", "prune"]).catch(() => {}); // 지워진 폴더의 옛 등록 정리(같은 경로 재사용 막힘 방지)
   mkdirSync(join(dir, ".."), { recursive: true });
   const exists = await git(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).then(() => true, () => false);
-  await git(root, exists ? ["worktree", "add", dir, branch] : ["worktree", "add", "-b", branch, dir, "HEAD"]);
+  const start = from && (await git(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${from}`]).then(() => true, () => false)) ? from : "HEAD";
+  await git(root, exists ? ["worktree", "add", dir, branch] : ["worktree", "add", "-b", branch, dir, start]);
   mkdirSync(join(dir, ".crew"), { recursive: true });
   return { dir, branch, base, created: true };
 }

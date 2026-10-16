@@ -1428,6 +1428,14 @@ const ko: Dict = {
   "crewtrig.notYet": "아직 카드를 만든 적 없어요.",
   "crewtrig.priming": "곧 지금 상태를 확인해요. 이미 있는 것은 건너뛰어요.",
   "crewtrig.deleteConfirm": "이 계기를 삭제할까요?",
+  "crewsplit.parentContext": "상위 카드: {title}",
+  "crewsplit.created": "하위 작업 {n}개로 나눴어요. 순서대로 진행해요.",
+  "crewsplit.parentDone": "하위 작업 {n}개가 모두 끝났어요.",
+  "crewsplit.proposal": "하위 작업 {n}개로 나누자는 제안",
+  "crewsplit.after": "{list}번 다음",
+  "crewsplit.approve": "나눠서 진행",
+  "crewsplit.progress": "하위 {done}/{total}",
+  "crewsplit.waiting": "기다림: {title}",
 };
 
 const ja: Dict = {
@@ -2840,6 +2848,14 @@ const ja: Dict = {
   "crewtrig.notYet": "まだカードを作成していません。",
   "crewtrig.priming": "まもなく現在の状態を確認します。既存のものはスキップします。",
   "crewtrig.deleteConfirm": "このトリガーを削除しますか?",
+  "crewsplit.parentContext": "親カード: {title}",
+  "crewsplit.created": "{n}個のサブタスクに分けました。順番に進めます。",
+  "crewsplit.parentDone": "{n}個のサブタスクがすべて完了しました。",
+  "crewsplit.proposal": "{n}個のサブタスクに分ける提案",
+  "crewsplit.after": "{list}番の後",
+  "crewsplit.approve": "分けて進める",
+  "crewsplit.progress": "サブ {done}/{total}",
+  "crewsplit.waiting": "待機: {title}",
 };
 
 const en: Dict = {
@@ -4252,6 +4268,14 @@ const en: Dict = {
   "crewtrig.notYet": "No cards created yet.",
   "crewtrig.priming": "Checking the current state shortly. Existing items will be skipped.",
   "crewtrig.deleteConfirm": "Delete this trigger?",
+  "crewsplit.parentContext": "Parent card: {title}",
+  "crewsplit.created": "Split into {n} subtasks. They will run in order.",
+  "crewsplit.parentDone": "All {n} subtasks are done.",
+  "crewsplit.proposal": "Proposed split into {n} subtasks",
+  "crewsplit.after": "after {list}",
+  "crewsplit.approve": "Split and run",
+  "crewsplit.progress": "Subtasks {done}/{total}",
+  "crewsplit.waiting": "Waiting: {title}",
 };
 
 export const MESSAGES: Record<Locale, Dict> = { ko, ja, en };
