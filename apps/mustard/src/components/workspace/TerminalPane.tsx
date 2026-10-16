@@ -175,6 +175,21 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   };
   const LAUNCHABLE: AgentId[] = ["claude", "codex", "grok", "opencode", "omp", "antigravity", "cursor", "hermes"]; // gemini 제외(구글=antigravity)
   const newTerminal = () => { setMenuOpen(false); addTab(); };
+  // #1110 Crew 카드 넘겨받기 — 이 레포 카드면 새 탭에서 카드 작업 폴더로 이동해 그 에이전트 대화를 이어받음
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ root: string; worktree: string; provider: string }>).detail;
+      if (!d || d.root !== cwd) return;
+      const map: Record<string, [AgentId, string]> = { "claude-code": ["claude", "--continue"], codex: ["codex", "resume --last"], grok: ["grok", ""], cursor: ["cursor", ""], opencode: ["opencode", ""] };
+      const [agent, args] = map[d.provider] ?? ["claude", "--continue"];
+      const id = genId();
+      setTabs((prev) => [...prev, { id, title: t("workspace.terminalTab", { n: nextNum(prev) }) }]);
+      setActiveId(id);
+      void window.nunopiDesktop?.terminal?.launchAgent?.({ id, agent, dark: isTerminalDark(getTerminalThemePref()), extraArgs: [getSetting<string>(AKEYS.args(agent), ""), args].filter(Boolean).join(" "), cwd: d.worktree });
+    };
+    window.addEventListener("mustard:crew-takeover", on);
+    return () => window.removeEventListener("mustard:crew-takeover", on);
+  }, [cwd, t]);
   const launchInNewTab = (agent: AgentId) => {
     setMenuOpen(false);
     const id = genId();

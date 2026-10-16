@@ -3,7 +3,7 @@
 // 이번 단계: 칸 7개 + 수동 카드(만들기·편집·삭제·드래그) + 담당 역할 지정. 에이전트 실행·커스텀 역할은 에픽 2번부터.
 // 보드는 서버 파일(~/.nunopi/crew)이 기준 — 화면은 연산만 보내고 돌아온 보드로 갱신(창 여러 개여도 덮어쓰기 없음).
 import { useCallback, useEffect, useState } from "react";
-import { IconLayoutKanban, IconPlus, IconShieldQuestion, IconUsers, IconX } from "@tabler/icons-react";
+import { IconGitPullRequest, IconLayoutKanban, IconPlus, IconShieldQuestion, IconUsers, IconX } from "@tabler/icons-react";
 import { useConfirm, useT, useToast } from "@mustard/core";
 import { CREW_STATUSES, type CrewBoard as Board, type CrewOp, type CrewStatus, type CrewTask } from "@/lib/crew/crewTypes";
 import { relTime } from "@/lib/relTime";
@@ -11,6 +11,9 @@ import { STATUS_DOT, RoleIcon, elapsed, isActiveRun, roleName, useCrewRoles, use
 import TaskDialog from "./TaskDialog";
 import RolesDialog from "./RolesDialog";
 import { CREW_OPEN_TASK_EVENT, pendingOpen } from "./CrewChat";
+
+// #1110 터미널로 넘겨받기 — detail = { root, worktree, provider }. 그 레포 TerminalPane이 새 탭에서 이어받음.
+export const CREW_TAKEOVER_EVENT = "mustard:crew-takeover";
 
 type Dialog = { mode: "create"; status: CrewStatus } | { mode: "edit"; task: CrewTask };
 
@@ -157,6 +160,7 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
                               ))}
                             </div>
                           )}
+                          {c.pr && <a href={c.pr.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-violet-500/10 px-1.5 py-0.5 text-[10.5px] font-medium text-violet-700 hover:bg-violet-500/20 dark:text-violet-300"><IconGitPullRequest size={11} aria-hidden />PR</a>}
                           {c.gate && <div className={`mt-1.5 truncate text-[10.5px] font-medium ${c.gate.kind === "blocked" ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}`}>{t(`crew.gate.${c.gate.kind}`)}</div>}
                           {(() => {
                             const run = runs.get(c.id);
@@ -200,6 +204,22 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
           onStop={dialog.mode === "edit" ? () => void runAction(dialog.task.id, "stop") : undefined}
           onPermission={dialog.mode === "edit" ? (ok) => void runAction(dialog.task.id, "permission", ok) : undefined}
           onGate={dialog.mode === "edit" ? async (decision, text) => { if (await runAction(dialog.task.id, "gate", undefined, decision, text)) setDialog(null); } : undefined}
+          onPr={dialog.mode === "edit" ? async () => {
+            try {
+              const j = await (await fetch("/api/crew/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, taskId: dialog.task.id, action: "pr" }) })).json();
+              if (!j?.ok) throw new Error(j?.error);
+              load();
+              setDialog((d) => (d?.mode === "edit" ? { mode: "edit", task: { ...d.task, pr: { url: j.url } } } : d));
+            } catch (e) { toast(`${t("crew.pr.failed")}: ${String((e as Error)?.message ?? e)}`, "error"); }
+          } : undefined}
+          onTakeover={dialog.mode === "edit" ? async () => {
+            try {
+              const j = await (await fetch("/api/crew/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, taskId: dialog.task.id, action: "takeover" }) })).json();
+              if (!j?.ok) throw new Error(j?.error);
+              window.dispatchEvent(new CustomEvent(CREW_TAKEOVER_EVENT, { detail: { root, worktree: j.worktree, provider: j.provider } }));
+              setDialog(null); reloadRuns(); load();
+            } catch (e) { toast(`${t("crew.runFailed")}: ${String((e as Error)?.message ?? e)}`, "error"); }
+          } : undefined}
           onClose={() => setDialog(null)}
           onSave={async (v) => {
             const ok = dialog.mode === "edit"

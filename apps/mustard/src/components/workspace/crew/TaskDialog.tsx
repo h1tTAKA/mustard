@@ -3,7 +3,7 @@
 // ⌘/Ctrl+Enter 저장, Esc 닫기(열린 선택 메뉴가 있으면 메뉴부터).
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconArrowLeft, IconArrowRight, IconCheck, IconChevronDown, IconGitBranch, IconPlayerPlayFilled, IconPlayerStopFilled, IconPlus, IconShieldQuestion, IconTrash, IconX } from "@tabler/icons-react";
+import { IconArrowLeft, IconArrowRight, IconCheck, IconChevronDown, IconGitBranch, IconPlayerPlayFilled, IconPlayerStopFilled, IconPlus, IconShieldQuestion, IconTerminal2, IconTrash, IconX, IconExternalLink, IconGitPullRequest, IconLoader2 } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import { CREW_STATUSES, type CrewStatus, type CrewTask } from "@/lib/crew/crewTypes";
 import type { CrewRole } from "@/lib/crew/crewRoleDefaults";
@@ -12,9 +12,10 @@ import { PROVIDER_LABEL, RoleIcon, STATUS_DOT, elapsed, isActiveRun, roleDesc, r
 
 export interface TaskDraft { title: string; body: string; role: string; status: CrewStatus; pipeline: string[] }
 
-export default function TaskDialog({ initial, status, roles, run, onSave, onClose, onDelete, onRun, onStop, onPermission, onGate }: {
+export default function TaskDialog({ initial, status, roles, run, onSave, onClose, onDelete, onRun, onStop, onPermission, onGate, onPr, onTakeover }: {
   initial?: CrewTask; status: CrewStatus; roles: CrewRole[]; run?: CrewRun; onSave: (v: TaskDraft) => void | Promise<void>; onClose: () => void; onDelete?: () => void;
   onRun?: () => void; onStop?: () => void; onPermission?: (approved: boolean) => void; onGate?: (decision: "approve" | "reject" | "answer", text: string) => void;
+  onPr?: () => Promise<void>; onTakeover?: () => void; // #1110
 }) {
   const t = useT();
   const [title, setTitle] = useState(initial?.title ?? "");
@@ -146,10 +147,10 @@ export default function TaskDialog({ initial, status, roles, run, onSave, onClos
           {!pipeline.length && <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("crew.pipelineHint")}</p>}
         </div>
 
-        {initial?.gate && <GatePanel task={initial} branch={run?.branch} onGate={onGate} />}
+        {initial?.gate && <GatePanel task={initial} branch={run?.branch} onGate={onGate} onPr={onPr} />}
 
         {initial && (
-          <RunPanel run={run} onRun={onRun} onStop={onStop} onPermission={onPermission} dirty={(initial.role ?? "") !== role || JSON.stringify(initial.pipeline ?? []) !== JSON.stringify(pipeline)} />
+          <RunPanel run={run} onRun={onRun} onStop={onStop} onPermission={onPermission} onTakeover={onTakeover} dirty={(initial.role ?? "") !== role || JSON.stringify(initial.pipeline ?? []) !== JSON.stringify(pipeline)} />
         )}
 
         <div className="flex items-center gap-2 rounded-b-2xl border-t border-zinc-100 bg-zinc-50/60 px-5 py-3 dark:border-white/5 dark:bg-white/[0.02]">
@@ -172,7 +173,7 @@ export default function TaskDialog({ initial, status, roles, run, onSave, onClos
 }
 
 // 실행 구역(편집 창) — 실행/중지, 상태·마지막 활동·경과·도구 수·브랜치, 권한 요청(허락/거절), 마지막 요약.
-function RunPanel({ run, onRun, onStop, onPermission, dirty }: { run?: CrewRun; onRun?: () => void; onStop?: () => void; onPermission?: (approved: boolean) => void; dirty: boolean }) {
+function RunPanel({ run, onRun, onStop, onPermission, onTakeover, dirty }: { run?: CrewRun; onRun?: () => void; onStop?: () => void; onPermission?: (approved: boolean) => void; onTakeover?: () => void; dirty: boolean }) {
   const t = useT();
   const active = isActiveRun(run);
   const [, tick] = useState(0);
@@ -204,7 +205,9 @@ function RunPanel({ run, onRun, onStop, onPermission, dirty }: { run?: CrewRun; 
       </div>
       {!run && <p className="mt-1.5 text-[11.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">{t("crew.runIdle")}</p>}
       {run?.lastActivity && active && <p className="mt-1.5 truncate font-mono text-[11px] text-zinc-500 dark:text-zinc-400">{run.lastActivity}</p>}
-      {run?.branch && <p className="mt-1 flex items-center gap-1 font-mono text-[10.5px] text-zinc-400 dark:text-zinc-500"><IconGitBranch size={11} aria-hidden />{run.branch}</p>}
+      {run?.branch && <div className="mt-1 flex items-center gap-2"><p className="flex min-w-0 items-center gap-1 font-mono text-[10.5px] text-zinc-400 dark:text-zinc-500"><IconGitBranch size={11} aria-hidden />{run.branch}</p>
+        {onTakeover && <button type="button" onClick={onTakeover} title={t("crew.takeoverHint")} className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-zinc-200 px-2 py-0.5 text-[11px] font-medium text-zinc-600 transition hover:border-zinc-300 hover:text-zinc-900 dark:border-white/10 dark:text-zinc-300 dark:hover:text-zinc-50"><IconTerminal2 size={12} aria-hidden />{t("crew.takeover")}</button>}
+      </div>}
       {run?.state === "needs-permission" && (
         <div className="mt-2.5 rounded-lg border border-amber-300/60 bg-amber-50 p-2.5 dark:border-amber-500/30 dark:bg-amber-500/[0.07]">
           <div className="flex items-center gap-1.5 text-[12px] font-medium text-amber-800 dark:text-amber-300"><IconShieldQuestion size={14} aria-hidden />{t("crew.permissionAsk")}{reqTool && <code className="rounded bg-amber-100 px-1 text-[11px] dark:bg-amber-500/15">{reqTool}</code>}</div>
@@ -227,8 +230,9 @@ function RunPanel({ run, onRun, onStop, onPermission, dirty }: { run?: CrewRun; 
 }
 
 // 관문·질문·막힘(#1102) — 사람 결정. spec·schema·merge: 승인/반려(코멘트), question: 답하기, blocked: 이 단계부터 다시.
-function GatePanel({ task, branch, onGate }: { task: CrewTask; branch?: string; onGate?: (decision: "approve" | "reject" | "answer", text: string) => void }) {
+function GatePanel({ task, branch, onGate, onPr }: { task: CrewTask; branch?: string; onGate?: (decision: "approve" | "reject" | "answer", text: string) => void; onPr?: () => Promise<void> }) {
   const t = useT();
+  const [prBusy, setPrBusy] = useState(false);
   const g = task.gate!;
   const [text, setText] = useState("");
   const isQ = g.kind === "question", isBlocked = g.kind === "blocked";
@@ -248,6 +252,14 @@ function GatePanel({ task, branch, onGate }: { task: CrewTask; branch?: string; 
         ) : isBlocked ? (
           <button type="button" onClick={() => onGate?.("approve", "")} className="rounded-lg bg-zinc-900 px-3 py-1 text-[12px] font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900">{t("crew.gate.retry")}</button>
         ) : (<>
+          {g.kind === "merge" && (task.pr ? (
+            <a href={task.pr.url} target="_blank" rel="noreferrer" className="mr-auto inline-flex items-center gap-1 rounded-lg border border-zinc-300 px-2.5 py-1 text-[12px] font-medium text-zinc-700 transition hover:bg-white dark:border-white/15 dark:text-zinc-200 dark:hover:bg-white/10"><IconExternalLink size={13} aria-hidden />{t("crew.pr.open")}</a>
+          ) : onPr && (
+            <button type="button" disabled={prBusy} onClick={async () => { setPrBusy(true); try { await onPr(); } finally { setPrBusy(false); } }}
+              className="mr-auto inline-flex items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1 text-[12px] font-medium text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900">
+              {prBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconGitPullRequest size={13} aria-hidden />}{prBusy ? t("crew.pr.creating") : t("crew.pr.create")}
+            </button>
+          ))}
           <button type="button" disabled={!text.trim()} onClick={() => onGate?.("reject", text)} className="rounded-lg px-3 py-1 text-[12px] font-medium text-zinc-600 transition hover:bg-amber-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10">{t("crew.gate.reject")}</button>
           <button type="button" onClick={() => onGate?.("approve", "")} className="rounded-lg bg-amber-500 px-3 py-1 text-[12px] font-semibold text-white transition hover:bg-amber-600">{t("crew.gate.approve")}</button>
         </>)}
