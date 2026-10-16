@@ -17,6 +17,9 @@ const baseDir = () => process.env.MUSTARD_CREW_DIR || join(homedir(), ".nunopi",
 export const boardFile = (root: string) => join(baseDir(), sha(normPath(root)), "board.json");
 const isStatus = (s: unknown): s is CrewStatus => typeof s === "string" && (CREW_STATUSES as readonly string[]).includes(s);
 
+// 역할 id — 기본 8 + 에픽 2번 커스텀 대비 slug 형식만 허용(빈 값 = 자동 배정)
+const cleanRole = (r: unknown): string | undefined => (typeof r === "string" && /^[a-z0-9][a-z0-9-]{0,39}$/.test(r) ? r : undefined);
+
 export function sanitizeTask(x: unknown): CrewTask | null {
   if (!x || typeof x !== "object") return null;
   const t = x as Record<string, unknown>;
@@ -25,6 +28,7 @@ export function sanitizeTask(x: unknown): CrewTask | null {
   return {
     id: t.id.slice(0, 64), title: t.title.trim().slice(0, TITLE_MAX), body: typeof t.body === "string" ? t.body.slice(0, BODY_MAX) : "",
     status: t.status, order: num(t.order, 0), createdAt: num(t.createdAt, 0), updatedAt: num(t.updatedAt, 0),
+    ...(cleanRole(t.role) ? { role: cleanRole(t.role) } : {}),
   };
 }
 
@@ -65,11 +69,13 @@ export function applyOp(root: string, op: CrewOp, now = Date.now()): CrewBoard {
     if (tasks.length >= TASKS_MAX) throw new Error("too many tasks");
     const status = isStatus(op.status) ? op.status : "backlog";
     const order = tasks.filter((t) => t.status === status).length; // 칸 맨 아래
-    tasks.push({ id: randomUUID(), title: title.slice(0, TITLE_MAX), body: String(op.body ?? "").slice(0, BODY_MAX), status, order, createdAt: now, updatedAt: now });
+    const role = cleanRole(op.role);
+    tasks.push({ id: randomUUID(), title: title.slice(0, TITLE_MAX), body: String(op.body ?? "").slice(0, BODY_MAX), status, order, createdAt: now, updatedAt: now, ...(role ? { role } : {}) });
   } else if (op.op === "update") {
     const t = find(op.id);
     if (op.title !== undefined) { const title = String(op.title).trim(); if (!title) throw new Error("title required"); t.title = title.slice(0, TITLE_MAX); }
     if (op.body !== undefined) t.body = String(op.body).slice(0, BODY_MAX);
+    if (op.role !== undefined) { const role = cleanRole(op.role); if (role) t.role = role; else delete t.role; } // "" = 자동 배정으로
     t.updatedAt = now;
   } else if (op.op === "move") {
     if (!isStatus(op.status)) throw new Error("bad status");

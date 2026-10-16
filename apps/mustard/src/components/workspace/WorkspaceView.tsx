@@ -641,11 +641,11 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
           {/* 중앙 패널 접기/펴기(#758) — 없는 패널은 비활성(회색), 있으면 클릭해 접기/펴기(펼침=강조). */}
           {([
             { p: "terminal" as PanelId, Icon: IconTerminal2, key: "workspace.panelTerminal" },
+            { p: "crew" as PanelId, Icon: IconLayoutKanban, key: "workspace.panelCrew" }, // #1098 에이전트 팀 보드 — 터미널 바로 오른쪽(유저 지정)
             { p: "code" as PanelId, Icon: IconFileCode, key: "workspace.panelCode" },
             { p: "doc" as PanelId, Icon: IconFileText, key: "workspace.panelDoc" },
             { p: "flow" as PanelId, Icon: IconSitemap, key: "workspace.panelArch" },
             { p: "browser" as PanelId, Icon: IconWorld, key: "workspace.panelBrowser" },
-            { p: "crew" as PanelId, Icon: IconLayoutKanban, key: "workspace.panelCrew" }, // #1098 에이전트 팀 보드
           ]).map(({ p, Icon, key }) => {
             // 브라우저·팀 보드는 접기 대신 열기/닫기 — 안 열려 있어도 눌러서 연다(#1034·#1098).
             const isBrowser = p === "browser", isCrew = p === "crew";

@@ -44,4 +44,14 @@ assert.deepStrictEqual(readBoard(r2).tasks, [], "깨진 파일 = 빈 보드");
 assert.strictEqual(readBoard(root).tasks.length, 2, "다른 레포 보드는 그대로");
 assert.ok(readdirSync(dir).some((f) => f.startsWith("board.json.broken-")), "깨진 원본 백업");
 
+// 역할
+const r3 = "/tmp/repo-role";
+let rb = applyOp(r3, { op: "create", title: "로그인", role: "bug-fixer" });
+const rt = rb.tasks[0];
+assert.strictEqual(rt.role, "bug-fixer", "역할 저장");
+rb = applyOp(r3, { op: "update", id: rt.id, role: "" });
+assert.strictEqual(rb.tasks[0].role, undefined, "빈 역할 = 자동 배정");
+rb = applyOp(r3, { op: "create", title: "x", role: "Bad Role!" });
+assert.strictEqual(rb.tasks[1].role, undefined, "잘못된 역할 id 무시");
+
 console.log("crewStore.check ok");
