@@ -159,7 +159,7 @@ export default function CrewChat({ root }: { root: string }) {
         {msgs.map((m, i) => {
           const prev = msgs[i - 1], nextM = msgs[i + 1];
           const newDay = !prev || dayKey(prev.ts) !== dayKey(m.ts);
-          const sameRun = (a?: CrewMsg, b?: CrewMsg) => !!a && !!b && a.from === b.from && a.from !== "board" && dayKey(a.ts) === dayKey(b.ts) && b.ts - a.ts < 3 * 60_000;
+          const sameRun = (a?: CrewMsg, b?: CrewMsg) => !!a && !!b && a.from === b.from && a.from !== "board" && a.taskId === b.taskId && dayKey(a.ts) === dayKey(b.ts) && b.ts - a.ts < 3 * 60_000;
           const first = !sameRun(prev, m) || newDay;               // 묶음 첫 메시지 = 아바타·이름
           const last = !sameRun(m, nextM);                          // 묶음 마지막 = 시간 표시
           const isMe = m.from === "human", isBoard = m.from === "board";
