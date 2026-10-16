@@ -67,7 +67,7 @@ export function crewProtocol(language: string): string {
     `- Write all human-readable text (artifacts, commit messages, final summary) in ${language}. Keep code identifiers as they are.`,
     "- Finish with a short summary (max 5 lines): what you did, artifacts written, what the next role should do.",
     "- BEFORE you finish, write .crew/handoff.json (overwrite) — the board reads it to route the card:",
-    '  {"status":"done|needs_input|blocked|failed","summary":"<=5 lines","question":"only for needs_input","roles":["Scope Planner only: role ids needed, in order"],"testsPassed":true,"destructive":false}',
+    '  {"status":"done|needs_input|blocked|failed","summary":"<=5 lines","message":"1-3 friendly first-person sentences to your teammates in the team chat, @-mention the next role id if you know it","question":"only for needs_input","roles":["Scope Planner only: role ids needed, in order"],"testsPassed":true,"destructive":false}',
     "  Use needs_input with one clear question when you cannot proceed safely. Test Engineer: set testsPassed. Data Architect: set destructive for data-losing changes.",
   ].join("\n");
 }

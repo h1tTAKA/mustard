@@ -1356,6 +1356,15 @@ const ko: Dict = {
   "crew.gate.answerPlaceholder": "답을 적어 주세요 — 에이전트가 이걸 받아 이어서 해요",
   "crew.gate.mergeHint": "승인하면 Done으로 가요. 브랜치 {branch}는 직접 머지하거나 PR로 올려 주세요.",
   "crew.step": "{n}/{total}단계",
+  "crewchat.start": "「{card}」 맡을게요.",
+  "crewchat.restart": "말씀하신 내용 반영해서 「{card}」 다시 할게요.",
+  "crewchat.permission": "`{tool}` 실행해도 될까요?",
+  "crewchat.gate.spec": "범위(spec) 확인하고 승인해 주세요.",
+  "crewchat.gate.schema": "데이터 구조 변경이 있어요. 승인해 주세요.",
+  "crewchat.gate.merge": "다 끝났어요. 브랜치 {branch} 머지 여부를 정해 주세요.",
+  "crewchat.gate.blocked": "막혔어요: {why}",
+  "crewchat.decision.approve": "승인할게요.",
+  "crewchat.decision.retry": "이 단계부터 다시 해 주세요.",
 };
 
 const ja: Dict = {
@@ -2696,6 +2705,15 @@ const ja: Dict = {
   "crew.gate.answerPlaceholder": "回答を書いてください — エージェントがこれを受けて続けます",
   "crew.gate.mergeHint": "承認するとDoneに移ります。ブランチ{branch}は手動でマージするかPRにしてください。",
   "crew.step": "ステップ {n}/{total}",
+  "crewchat.start": "「{card}」を担当します。",
+  "crewchat.restart": "いただいた内容を反映して「{card}」をやり直します。",
+  "crewchat.permission": "`{tool}` を実行してもいいですか?",
+  "crewchat.gate.spec": "スコープ(spec)を確認して承認してください。",
+  "crewchat.gate.schema": "データ構造の変更があります。承認してください。",
+  "crewchat.gate.merge": "完了しました。ブランチ {branch} をマージするか決めてください。",
+  "crewchat.gate.blocked": "ブロックされました: {why}",
+  "crewchat.decision.approve": "承認します。",
+  "crewchat.decision.retry": "この段階からやり直してください。",
 };
 
 const en: Dict = {
@@ -4036,6 +4054,15 @@ const en: Dict = {
   "crew.gate.answerPlaceholder": "Your answer — the agent continues with it",
   "crew.gate.mergeHint": "Approving moves it to Done. Merge branch {branch} yourself or open a PR.",
   "crew.step": "Step {n}/{total}",
+  "crewchat.start": "Taking “{card}”.",
+  "crewchat.restart": "Redoing “{card}” with your note.",
+  "crewchat.permission": "May I run `{tool}`?",
+  "crewchat.gate.spec": "Please review and approve the spec.",
+  "crewchat.gate.schema": "There's a schema change. Please approve.",
+  "crewchat.gate.merge": "All done. Decide whether to merge branch {branch}.",
+  "crewchat.gate.blocked": "Blocked: {why}",
+  "crewchat.decision.approve": "Approved.",
+  "crewchat.decision.retry": "Please retry from this step.",
 };
 
 export const MESSAGES: Record<Locale, Dict> = { ko, ja, en };

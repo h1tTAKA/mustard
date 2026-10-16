@@ -15,6 +15,10 @@ import { ensureWorktree } from "./crewWorktree";
 import { decide } from "./crewPolicy";
 import { narrationLocale } from "@/lib/narrationConfig";
 import { defaultSnaModel } from "@mustard/nunopi/server";
+import { translate } from "@mustard/core/messages";
+import { appendMsg, type CrewMsg } from "./crewChat";
+import { emitNarration } from "@/lib/mcpActivity";
+import { appendItems } from "@/lib/catchupStore";
 import type { CrewStatus } from "./crewTypes";
 
 export type RunState = "starting" | "running" | "needs-permission" | "done" | "failed" | "stopped";
@@ -85,6 +89,7 @@ export async function hookDecision(runId: string, token: string, tool: string, i
   run.state = "needs-permission"; run.permission = { request: { tool_name: tool, tool_input: input }, at: Date.now() };
   moveCard(run.root, run.taskId, "needs-you");
   persist(run, true);
+  say(run.root, { from: run.role, provider: run.provider, kind: "permission", taskId: run.taskId, mentions: ["you"], text: tr("crewchat.permission", { tool: `${tool}${input.command ? `: ${String(input.command).slice(0, 200)}` : ""}` }) });
   const ok = await new Promise<boolean>((res) => {
     const timer = setTimeout(() => { // 10분 무응답 = 거절, 카드는 다시 실행 중으로(보안 리뷰)
       g.pending.delete(runId);
@@ -142,6 +147,23 @@ function block(root: string, taskId: string, stage: number, why: string) {
   try { patchTask(root, taskId, { gate: { kind: "blocked", stage, text: why }, status: "blocked" }); } catch { /* 카드 지워짐 */ }
 }
 
+// #1104 팀 채팅·캐치업 — 서버 문구는 앱 언어. 실패해도 실행엔 영향 없게 삼킴.
+const tr = (key: string, vars?: Record<string, string | number>) => translate(narrationLocale(), key, vars);
+const PROVIDER: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", grok: "Grok Build", cursor: "Cursor", opencode: "OpenCode" };
+function roleLabel(id: string): string {
+  const r = getRole(id);
+  return r && !r.builtin ? r.name : tr(`crew.role.${id}`);
+}
+function say(root: string, m: Omit<CrewMsg, "id" | "ts">) { try { appendMsg(root, m); } catch { /* 채팅 기록 실패는 무시 */ } }
+// 캐치업 보고 — 실시간 해설 통로(SSE + 날짜별 저장)로 "역할(AI) · 카드: 한 말"
+function report(run: CrewRun, title: string, text: string) {
+  try {
+    const ts = Date.now(), head = `${roleLabel(run.role)}(${PROVIDER[run.provider] ?? run.provider}) · ${title}`.slice(0, 120);
+    const sent = emitNarration(run.root, head, text, ts);
+    if (sent) appendItems(run.root, [{ key: `narration|${ts}|${sent.target}`, kind: "narration", target: sent.target, tool: "narration", ts, expl: sent.note }]);
+  } catch { /* 보고 실패는 무시 */ }
+}
+
 // #1102 역할 하나가 끝남 → .crew/handoff.json(없으면 마지막 메시지)으로 흐름 상태 기계 적용 → 카드 이동(다음 Ready는 tick이 시작).
 function finish(run: CrewRun, forced?: Handoff) {
   try {
@@ -153,6 +175,16 @@ function finish(run: CrewRun, forced?: Handoff) {
     const r = next({ ...task, stage: run.stage ?? task.stage }, h, new Set(listRoles().map((x) => x.id)));
     patchTask(run.root, run.taskId, { ...r.patch, status: r.status });
     run.lastActivity = `→ ${r.status}${r.patch.gate ? ` (${r.patch.gate.kind})` : ""}`;
+    // #1104 팀 채팅 — 역할이 한 말(+ 다음 역할 @멘션), 관문·막힘은 보드가 사람을 부름
+    const nextRole = r.status === "ready" && r.patch.pipeline ? r.patch.pipeline[r.patch.stage ?? 0] : r.status === "ready" ? (task.pipeline ?? [])[(r.patch.stage ?? task.stage ?? 0)] : undefined;
+    const base = { taskId: task.id, taskTitle: task.title };
+    const said = (h.message || h.summary || run.summary || "").trim();
+    if (h.status === "needs_input") say(run.root, { ...base, from: run.role, provider: run.provider, kind: "question", text: h.question || said, mentions: ["you"] });
+    else if (said) say(run.root, { ...base, from: run.role, provider: run.provider, kind: h.status === "done" ? "handoff" : "blocked", text: nextRole && !said.includes(`@${nextRole}`) ? `${said}\n@${nextRole}` : said, ...(nextRole ? { mentions: [nextRole] } : {}) });
+    const gate = r.patch.gate;
+    if (gate && gate.kind !== "question") say(run.root, { ...base, from: "board", kind: gate.kind === "blocked" ? "blocked" : "gate", mentions: ["you"],
+      text: gate.kind === "merge" ? tr("crewchat.gate.merge", { branch: run.branch }) : gate.kind === "blocked" ? tr("crewchat.gate.blocked", { why: gate.text ?? "" }) : tr(`crewchat.gate.${gate.kind}`) });
+    if (said) report(run, task.title, h.status === "needs_input" ? (h.question || said) : said);
   } catch (e) { block(run.root, run.taskId, run.stage ?? 0, `flow error: ${String((e as Error)?.message ?? e)}`); }
 }
 
@@ -295,6 +327,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     });
     run.state = "running"; run.lastActivity = "started";
     persist(run, true);
+    say(root, { from: role.id, provider: role.provider, kind: "start", taskId, taskTitle: task.title, text: tr(note ? "crewchat.restart" : "crewchat.start", { card: task.title }) });
   } catch (e) {
     run.state = "failed"; run.endedAt = Date.now(); run.error = oneLine(String((e as Error)?.message ?? e), 400);
     block(root, taskId, stage, run.error); // 시작 자체 실패(worktree·SNA)는 재시도 안 함 — 사람이 확인
@@ -336,5 +369,9 @@ export function decideCard(root: string, taskId: string, action: "approve" | "re
   const task = readBoard(root).tasks.find((t) => t.id === taskId);
   if (!task) throw new Error("task not found");
   const r = decideGate(task, action, text);
-  return patchTask(root, taskId, { ...r.patch, status: r.status });
+  const board = patchTask(root, taskId, { ...r.patch, status: r.status });
+  say(root, { from: "human", kind: "decision", taskId, taskTitle: task.title,
+    text: action === "approve" ? tr(task.gate?.kind === "blocked" ? "crewchat.decision.retry" : "crewchat.decision.approve") : text.trim(),
+    ...(task.gate && task.gate.kind !== "merge" ? { mentions: [(task.pipeline ?? [])[task.gate.stage] ?? ""].filter(Boolean) } : {}) });
+  return board;
 }
