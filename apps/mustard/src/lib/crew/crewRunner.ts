@@ -19,6 +19,7 @@ import { narrationLocale } from "@/lib/narrationConfig";
 import { defaultSnaModel } from "@mustard/nunopi/server";
 import { translate } from "@mustard/core/messages";
 import { appendMsg, findMsg, parseMentions, type CrewMsg } from "./crewChat";
+import { freshIds, hasTriggers, readTriggers, scheduleDue, writeTriggers, type CrewTrigger } from "./crewTriggers";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems } from "@/lib/catchupStore";
 import type { CrewStatus } from "./crewTypes";
@@ -56,7 +57,7 @@ function writeRuns(root: string, runs: CrewRun[]) {
 
 // ── 프로세스 싱글톤 상태 ──────────────────────────────────────────────
 type Pending = { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> };
-type G = { roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending> };
+type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending> };
 const g = ((globalThis as unknown as { __mustardCrew?: G }).__mustardCrew ??= { roots: new Set(), origin: "", starting: new Set(), runs: new Map(), bySession: new Map(), wired: false, reconciled: new Set(), flush: new Map(), tokens: new Map(), pending: new Map() } as G);
 
 // ── Claude 권한 훅 ───────────────────────────────────────────────────
@@ -197,6 +198,12 @@ function ensureTicker() {
   if (g.ticker) return;
   g.ticker = setInterval(() => {
     if (!g.origin) return;
+    // #1112 자동 계기 — 1분마다(30틱) 켜진 계기 확인 → 카드 Ready(아래 루프가 시작)
+    g.trigTick = ((g.trigTick ?? 0) + 1) % 30;
+    if (g.trigTick === 1 && !g.trigBusy) {
+      g.trigBusy = true;
+      void (async () => { for (const root of g.roots) if (hasTriggers(root)) await checkTriggers(root).catch(() => {}); })().finally(() => { g.trigBusy = false; });
+    }
     for (const root of g.roots) {
       let ready: { id: string }[] = [];
       try { ready = readBoard(root).tasks.filter((t) => t.status === "ready").sort((a, b) => a.order - b.order); } catch { continue; }
@@ -472,4 +479,64 @@ export async function takeover(root: string, taskId: string): Promise<{ worktree
   const run = [...listRuns(root)].reverse().find((r) => r.taskId === taskId && r.worktree);
   if (!run || !existsSync(run.worktree)) throw new Error("no worktree for this card");
   return { worktree: run.worktree, provider: run.provider };
+}
+
+// ── #1112 자동 계기 실행 ─────────────────────────────────────────────
+async function sh(cmd: string, args: string[], cwd: string, timeout = 30_000): Promise<string> {
+  return (await pexecFile(cmd, args, { cwd, timeout, maxBuffer: 5_000_000 })).stdout.trim();
+}
+async function baseBranch(root: string): Promise<string> {
+  const head = await sh("git", ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], root).catch(() => ""); // origin/main
+  if (head) return head.replace(/^origin\//, "");
+  return sh("git", ["rev-parse", "--abbrev-ref", "HEAD"], root).catch(() => "main");
+}
+function triggerCard(root: string, t: CrewTrigger, title: string, body: string, chat: string) {
+  const b = applyOp(root, { op: "create", title: title.slice(0, 200), body: body.slice(0, 20_000), status: "ready", ...(t.pipeline[0] ? { role: t.pipeline[0] } : {}), ...(t.pipeline.length ? { pipeline: t.pipeline } : {}) });
+  const card = b.tasks[b.tasks.length - 1];
+  say(root, { from: "board", kind: "gate", taskId: card.id, taskTitle: card.title, text: `${chat}${t.pipeline[0] ? ` @${t.pipeline[0]}` : ""}`, ...(t.pipeline[0] ? { mentions: [t.pipeline[0]] } : {}) });
+}
+export async function checkTriggers(root: string, now = Date.now()): Promise<void> {
+  const list = readTriggers(root);
+  let changed = false;
+  for (const t of list) {
+    if (!t.enabled) continue;
+    try {
+      if (t.kind === "schedule") {
+        if (!scheduleDue(t, now)) continue;
+        triggerCard(root, t, t.title ?? "Scheduled task", t.body ?? "", tr("crewtrig.scheduleChat"));
+        t.lastFired = now; delete t.lastError; changed = true;
+        continue;
+      }
+      // CI 실패·이슈 — 새로 나타난 것만, 처음엔 지금 있는 것을 본 것으로만(켜자마자 폭주 방지), 한 번에 최대 2장
+      let items: { id: string; title: string; body: string; chat: string }[] = [];
+      if (t.kind === "ci-failed") {
+        const branch = t.branch || (await baseBranch(root));
+        const runs = JSON.parse(await sh("gh", ["run", "list", "--branch", branch, "--limit", "10", "--json", "databaseId,conclusion,name,displayTitle,url"], root) || "[]") as { databaseId: number; conclusion: string; name: string; displayTitle: string; url: string }[];
+        items = runs.filter((r) => r.conclusion === "failure").map((r) => ({ id: String(r.databaseId), title: tr("crewtrig.ciTitle", { name: r.name, branch }), body: `${r.displayTitle}\n${r.url}`, chat: tr("crewtrig.ciChat") }));
+      } else if (t.kind === "issue-label" && t.label) {
+        const issues = JSON.parse(await sh("gh", ["issue", "list", "--label", t.label, "--state", "open", "--limit", "30", "--json", "number,title,body,url"], root) || "[]") as { number: number; title: string; body: string; url: string }[];
+        items = issues.map((i) => ({ id: String(i.number), title: `#${i.number} ${i.title}`, body: `${i.body ?? ""}\n\n${i.url}`, chat: tr("crewtrig.issueChat", { label: t.label! }) }));
+      }
+      if (!t.primed) { t.seen = [...new Set([...t.seen, ...items.map((x) => x.id)])].slice(-500); t.primed = true; delete t.lastError; changed = true; continue; }
+      const fresh = freshIds(t.seen, items.map((x) => x.id)).slice(0, 2);
+      for (const id of fresh) {
+        const it = items.find((x) => x.id === id)!;
+        let body = it.body;
+        if (t.kind === "ci-failed") { // 실패 로그 뒤쪽(에이전트는 gh를 직접 못 써서 미리 넣어 줌)
+          const log = await sh("gh", ["run", "view", id, "--log-failed"], root, 60_000).catch(() => "");
+          body = `${tr("crewtrig.ciBody")}\n\n${it.body}${log ? `\n\n\`\`\`\n${log.split("\n").slice(-120).join("\n").slice(-6000)}\n\`\`\`` : ""}`;
+        }
+        triggerCard(root, t, it.title, body, it.chat);
+        t.seen = [...t.seen, id].slice(-500); t.lastFired = now; changed = true;
+      }
+      if (t.lastError) { delete t.lastError; changed = true; }
+    } catch (e) {
+      const msg = String((e as { stderr?: string }).stderr || (e as Error)?.message || e).trim().slice(0, 300);
+      if (t.lastError !== msg) { t.lastError = msg; changed = true; }
+    }
+  }
+  if (changed) { // 실행 중에 화면이 계기를 고쳤을 수 있음 — 최신 파일에 실행 결과 필드만 덮음
+    const cur = readTriggers(root);
+    writeTriggers(root, cur.map((c) => { const r = list.find((x) => x.id === c.id); return r ? { ...c, seen: r.seen, primed: r.primed, lastFired: r.lastFired, lastError: r.lastError } : c; }));
+  }
 }

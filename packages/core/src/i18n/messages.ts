@@ -1397,6 +1397,11 @@ const ko: Dict = {
   "crew.pr.creating": "PR 만드는 중…",
   "crew.takeover": "터미널로 넘겨받기",
   "crew.takeoverHint": "이 카드 작업 폴더에서 에이전트 대화를 이어서 직접 해요(실행 중이면 멈춰요)",
+  "crewtrig.ciTitle": "CI 실패: {name} ({branch})",
+  "crewtrig.ciBody": "CI가 실패했어요. 원인을 찾아 고치고 테스트로 확인해 주세요.",
+  "crewtrig.ciChat": "CI가 실패해서 카드를 만들었어요.",
+  "crewtrig.issueChat": "「{label}」 라벨 이슈가 올라와서 카드를 만들었어요.",
+  "crewtrig.scheduleChat": "예약된 작업 시간이라 카드를 만들었어요.",
 };
 
 const ja: Dict = {
@@ -2778,6 +2783,11 @@ const ja: Dict = {
   "crew.pr.creating": "PR作成中…",
   "crew.takeover": "ターミナルで引き継ぐ",
   "crew.takeoverHint": "このカードの作業フォルダでエージェントの会話を引き継ぎます(実行中なら停止します)",
+  "crewtrig.ciTitle": "CI失敗: {name} ({branch})",
+  "crewtrig.ciBody": "CIが失敗しました。原因を突き止めて修正し、テストで確認してください。",
+  "crewtrig.ciChat": "CIが失敗したのでカードを作りました。",
+  "crewtrig.issueChat": "「{label}」ラベルのIssueが来たのでカードを作りました。",
+  "crewtrig.scheduleChat": "予約の時間になったのでカードを作りました。",
 };
 
 const en: Dict = {
@@ -4159,6 +4169,11 @@ const en: Dict = {
   "crew.pr.creating": "Creating PR…",
   "crew.takeover": "Take over in terminal",
   "crew.takeoverHint": "Continue this agent’s conversation yourself in the card’s worktree (stops a running run)",
+  "crewtrig.ciTitle": "CI failed: {name} ({branch})",
+  "crewtrig.ciBody": "CI failed. Find the cause, fix it and verify with tests.",
+  "crewtrig.ciChat": "CI failed, so I created a card.",
+  "crewtrig.issueChat": "A “{label}” issue came in, so I created a card.",
+  "crewtrig.scheduleChat": "Scheduled time — created a card.",
 };
 
 export const MESSAGES: Record<Locale, Dict> = { ko, ja, en };
