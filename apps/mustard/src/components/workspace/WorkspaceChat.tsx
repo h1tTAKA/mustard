@@ -570,7 +570,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ providerId, request: { code: ctx, locale, providerId, mode: "chat", messages: thread, providerSettings, noCards: !cardsOn, workspaceRoot: root } }), // #998 레포 읽기 전용 도구(Read/Grep/Glob) — 서버가 검증
       });
-      if (!res.ok || !res.body) { writeSub(sk, subId, [...thread, { role: "assistant", content: "(응답 실패)" }]); return; }
+      if (!res.ok || !res.body) { writeSub(sk, subId, [...thread, { role: "assistant", content: t("fallback.requestFailed") }]); return; }
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = "", answer = "";
@@ -595,9 +595,9 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
           if (Array.isArray(j?.items)) answer = withRelatedCards(answer, j.items as { key: string; kind: string; target: string }[], t("learn.relatedCards"));
         }
       }
-      writeSub(sk, subId, [...thread, { role: "assistant", content: answer || "(빈 응답)" }]);
+      writeSub(sk, subId, [...thread, { role: "assistant", content: answer || t("fallback.emptyResponse") }]);
     } catch {
-      writeSub(sk, subId, [...thread, { role: "assistant", content: "(오류)" }]);
+      writeSub(sk, subId, [...thread, { role: "assistant", content: t("fallback.error") }]);
     } finally {
       setLoading(false); setStreaming(null);
     }

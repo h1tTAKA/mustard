@@ -168,7 +168,7 @@ export default function LineExplanationList({
                     type="button"
                     onClick={() => onConceptClick?.(concept.conceptId)}
                     className="inline-flex items-center rounded-lg bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700 transition hover:bg-violet-200 hover:text-violet-900 dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-800/40 dark:hover:text-violet-200"
-                    aria-label={`${concept.title} 개념으로 이동`}
+                    aria-label={t("concept.gotoFor", { name: concept.title })}
                   >
                     {concept.title}
                   </button>

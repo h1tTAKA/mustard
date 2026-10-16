@@ -4,6 +4,8 @@ import type { AgentAnalyzeRequest } from "@mustard/core";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems } from "@/lib/catchupStore";
 import { narrationProvider, narrationModel, narrationLocale } from "@/lib/narrationConfig";
+import { translate } from "@mustard/core/messages";
+import { isFailedNote } from "@/lib/failText";
 
 // #1091 출력 언어 — 본문 지시가 한국어라 ko 아니면 맨 앞·끝에 못박음(제목 줄·소제목까지).
 const LANG_NAME = { ko: "한국어", ja: "일본어(日本語)", en: "영어(English)" } as const;
@@ -75,7 +77,7 @@ function splitNarration(summary: string): { title: string; note: string } {
     .trim();
   if (title.length > 42) { const cut = title.slice(0, 42); const sp = cut.lastIndexOf(" "); title = (sp > 20 ? cut.slice(0, sp) : cut).trim() + "…"; } // 단어경계 자르기(mid-word 잘림 방지)
   const note = lines.slice(i + 1).join("\n").trim();
-  return { title: title || "실시간 작업", note: note || title };
+  return { title: title || translate(narrationLocale(), "stream.liveWork"), note: note || title };
 }
 
 // 재료(delta·diff) → AI 해설 → 캐치업 방출 + 날짜별 저장. ts = 카드 시각(재생이면 원래 시각). 해설 없음(SKIP 등)이면 false.
@@ -97,7 +99,7 @@ export async function narrate(cwd: string, agent: string, delta: string, diff: s
   const res = await provider.analyze(request, { signal: opts.signal });
   const summary = (res?.summary ?? "").trim();
   // #1093 런타임 실패(동시 세션 상한 등)는 summary에 문구를 담아 옴 → 카드로 내지 말고 실패로(호출부가 조용히 처리)
-  if (/^런타임 실패:/.test(summary) || res?.warnings?.some((w) => w.code === "PARSE_FAILED")) throw new Error(summary || "runtime failed");
+  if (isFailedNote(summary) || res?.warnings?.some((w) => w.code === "PARSE_FAILED")) throw new Error(summary || "runtime failed");
   // 모델이 실제 활동 없다고 판단하면 "SKIP" → 카드 방출 안 함(무의미 내레이션·토큰 낭비 방지).
   if (/^SKIP\b/i.test(summary)) console.log(`[narration] SKIP ${cwd.split("/").pop()} (delta ${delta.length}B, diff ${diff.length}B)`); // #1045 진단 — 왜 해설이 안 뜨나
   if (!summary || /^SKIP\b/i.test(summary) || summary.length <= 8) return false;

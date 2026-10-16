@@ -7,6 +7,7 @@ import { useLocale, useSetting, withModel, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { parseDiff, groupHunks, diffMark, DIFF_SEP, noteStoreKey, loadNotes, saveNote, explainDiffText } from "@/lib/hunkNotes";
 import { buildSessionItem } from "@/lib/sessionCard";
+import { isFailedNote, RUNTIME_FAIL_PREFIXES } from "@/lib/failText";
 
 // #1056 캐치업 연동 — 파일 하나 설명이 끝나면 캐치업 카드(kind diff)로. key에 hash·파일을 담아 카드에서 diff를 열 수 있게.
 export const CATCHUP_ITEM_EVENT = "nunopi:catchup-item"; // detail = { root, item } — 같은 창 캐치업이 즉시 추가
@@ -117,9 +118,9 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     const repairTries = new Map<string, { n: number; next: number }>(); // key → 시도 수·다음 시도 시각(계속 실패하는 파일이 30초마다 도는 것 방지)
     const repairFailed = async () => {
       if (!cfg.current.diffOn) return;
-      const j = await fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&q=${encodeURIComponent("런타임 실패:")}`).then((r) => r.json()).catch(() => null);
-      const bad = ((j?.items ?? []) as { key: string; kind: string; tool: string; ts: number }[]).filter((x) => {
-        if (x.kind !== "diff") return false;
+      const found = await Promise.all(RUNTIME_FAIL_PREFIXES.map((q) => fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&q=${encodeURIComponent(q)}`).then((r) => r.json()).catch(() => null))); // #1095 언어별 실패 문구
+      const bad = found.flatMap((j) => (j?.items ?? []) as { key: string; kind: string; tool: string; ts: number; expl: string }[]).filter((x, i, a) => a.findIndex((y) => y.key === x.key) === i).filter((x) => {
+        if (x.kind !== "diff" || !x.expl.split(DIFF_SEP).some(isFailedNote)) return false; // 설명 구간이 실패 문구로 시작할 때만(본문에 그 말이 나올 뿐인 카드 제외)
         const t = repairTries.get(x.key);
         return !t || (t.n < 3 && Date.now() >= t.next); // 카드당 최대 3번, 5분·10분 간격
       }).slice(0, 5);

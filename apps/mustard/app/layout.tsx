@@ -23,18 +23,18 @@ const THEME_BOOT_SCRIPT = `(function(){try{var t=localStorage.getItem('nunopi:th
 export const metadata: Metadata = {
   title: "Mustard",
   description:
-    "AI 에이전트 개발 워크스페이스(ADE). 레포를 탭으로 열어 에이전트·터미널·깃과 함께 개발하고, 옵션으로 nunopi 코드 학습 모듈을 임베드한다.",
+    "Agentic development environment (ADE): open repos as tabs and build with agents, terminals and git — with the optional nunopi code-learning module.", // #1095 정적 메타라 언어 중립(영어)
   icons: { icon: "/brand/mustard-mark.svg" }, // 브랜드 심볼(겨자 꽃가지, #906)
   openGraph: {
     title: "Mustard",
-    description: "AI 에이전트 개발 워크스페이스(ADE)",
+    description: "Agentic development environment (ADE)",
     type: "website",
-    locale: "ko_KR",
+    locale: "en_US",
   },
   twitter: {
     card: "summary",
     title: "Mustard",
-    description: "AI 에이전트 개발 워크스페이스(ADE)",
+    description: "Agentic development environment (ADE)",
   },
 };
 

@@ -1,3 +1,6 @@
+import { translate } from "@mustard/core/messages";
+// #1095 서버 문구 언어 — narrationConfig가 globalThis에 둔 앱 언어(이 파일은 클라도 import → node:fs 못 씀, 그래서 전역만 읽음)
+const actLocale = () => (globalThis as unknown as { __mustardNarrationLocale?: string }).__mustardNarrationLocale ?? "ko";
 // MCP 툴콜 활동 버스(#855) — 에이전트가 부른 코드그래프 툴을 앱으로 push(실시간 학습 브릿지).
 // agentStatus.ts 패턴 미러: globalThis 싱글턴(dev 라우트 리로드 생존) + emit/subscribe fan-out + 최근 링버퍼.
 export type ConceptKind = "symbol" | "file" | "query" | "repo" | "edit" | "narration";
@@ -41,7 +44,7 @@ export function extractConcept(tool: string, args: Record<string, unknown>): { k
     case "katchup_trace_calls": { const t = s(args.symbol); return t ? { kind: "symbol", target: t } : null; }
     case "katchup_file_api": { const t = s(args.file); return t ? { kind: "file", target: t } : null; }
     case "katchup_search": { const t = s(args.query); return t ? { kind: "query", target: t } : null; }
-    case "katchup_repo_map": return { kind: "repo", target: "레포 구조" };
+    case "katchup_repo_map": return { kind: "repo", target: translate(actLocale(), "stream.repoStructure") };
     default: return null; // check_freshness 등
   }
 }
@@ -75,7 +78,7 @@ export function emitNarration(root: string, title: string, note: string, now: nu
   const n = (note ?? "").trim();
   if (!n) return null;
   const r = normPath(root);
-  const t = (title || "실시간").trim();
+  const t = (title || translate(actLocale(), "stream.live")).trim();
   if (lastNarr.get(r) === t) return null; // 연속 동일 제목 = 중복(같은 활동 재내레이션) → 스킵
   lastNarr.set(r, t);
   pushEvent({ root: r, tool: "narration", kind: "narration", target: t, isError: false, ts: now, note: n });

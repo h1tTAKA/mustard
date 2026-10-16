@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useT } from "@mustard/core";
 
 interface ResizableBodyProps {
   // localStorage 키 식별자 — 섹션마다 고유(lines/tokens/it-terms).
@@ -20,6 +21,7 @@ export default function ResizableBody({
   minHeight = 140,
   children,
 }: ResizableBodyProps) {
+  const t = useT();
   const [height, setHeight] = useState(defaultHeight);
   // 드래그 중 최신 높이를 항상 보유 — pointerup 영속화 시 클로저 stale 방지(AppShell 패턴).
   const heightRef = useRef(defaultHeight);
@@ -71,11 +73,11 @@ export default function ResizableBody({
       <div
         role="separator"
         aria-orientation="horizontal"
-        aria-label="섹션 높이 조절"
+        aria-label={t("layout.resizeSection")}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        title="드래그해서 높이 조절"
+        title={t("layout.dragResize")}
         className="mx-auto mt-1.5 h-1.5 w-16 cursor-row-resize rounded-full bg-zinc-300 transition-colors hover:bg-blue-400/60 dark:bg-zinc-700 dark:hover:bg-blue-400/50"
       />
     </div>

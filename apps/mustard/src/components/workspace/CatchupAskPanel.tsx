@@ -80,9 +80,9 @@ export default function CatchupAskPanel({ root, item, providerId, providerSettin
         }
       }
       if (!answer && err) throw new Error(err);
-      await save(key, target, [...thread, { role: "assistant", content: answer || "(빈 응답)" }]);
+      await save(key, target, [...thread, { role: "assistant", content: answer || t("fallback.emptyResponse") }]);
     } catch {
-      await save(key, target, [...thread, { role: "assistant", content: "(오류)" }]);
+      await save(key, target, [...thread, { role: "assistant", content: t("fallback.error") }]);
     } finally { setBusyKey(null); setStreaming(null); }
   }
 

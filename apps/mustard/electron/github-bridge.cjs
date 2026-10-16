@@ -5,15 +5,16 @@ const { execFile } = require("node:child_process");
 const { existsSync, statSync } = require("node:fs");
 const { promisify } = require("node:util");
 const pexecFile = promisify(execFile);
+const { tm } = require("./main-i18n.cjs"); // #1095 사용자 노출 문구 다국어
 
 // gh 에러 분류 — UI가 "설치 필요/인증 필요/rate limit" 등 안내를 그릴 수 있게.
 function classifyGhError(e) {
-  if (e?.code === "ENOENT") return { kind: "not-installed", detail: "gh(GitHub CLI)를 찾을 수 없음" };
+  if (e?.code === "ENOENT") return { kind: "not-installed", detail: tm("gh.notInstalled") };
   const s = String(e?.stderr || e?.message || "").toLowerCase();
   // #964 glab은 미인증 시 "401 Unauthorized"로 나옴(gh 문구와 다름) → 401/unauthorized도 not-authed.
-  if (/auth login|not logged|authentication|gh auth|no accounts|unauthorized|\b401\b/.test(s)) return { kind: "not-authed", detail: "인증 필요 — 터미널에서 `gh auth login` 또는 `glab auth login`" };
-  if (/rate limit|api rate|\b403\b/.test(s)) return { kind: "rate-limited", detail: "API rate limit — 잠시 후 재시도" };
-  const line = (String(e?.stderr || e?.message || "").split("\n").find((l) => l.trim()) || "gh 실행 오류").trim();
+  if (/auth login|not logged|authentication|gh auth|no accounts|unauthorized|\b401\b/.test(s)) return { kind: "not-authed", detail: tm("gh.notAuthed") };
+  if (/rate limit|api rate|\b403\b/.test(s)) return { kind: "rate-limited", detail: tm("gh.rateLimited") };
+  const line = (String(e?.stderr || e?.message || "").split("\n").find((l) => l.trim()) || tm("gh.runError")).trim();
   return { kind: "error", detail: line.slice(0, 300) };
 }
 
@@ -21,7 +22,7 @@ function classifyGhError(e) {
 // 성공 { ok, stdout } | 실패 { ok:false, kind, detail }.
 async function ghRun({ gh, cwd, args, timeout = 15000, env }) {
   // cwd 없음/비디렉터리면 execFile이 ENOENT를 던져 gh 미설치로 오분류됨 → 먼저 걸러 error로.
-  if (cwd && (!existsSync(cwd) || !statSync(cwd).isDirectory())) return { ok: false, kind: "error", detail: "작업 디렉터리를 찾을 수 없음" };
+  if (cwd && (!existsSync(cwd) || !statSync(cwd).isDirectory())) return { ok: false, kind: "error", detail: tm("gh.noCwd") };
   try {
     const { stdout } = await pexecFile(gh || "gh", args, { cwd, timeout, maxBuffer: 10_000_000, env: env || process.env });
     return { ok: true, stdout };
@@ -35,7 +36,7 @@ async function ghJson({ gh, cwd, args, env }) {
   const r = await ghRun({ gh, cwd, args, env });
   if (!r.ok) return r;
   try { return { ok: true, data: JSON.parse(r.stdout || "null") }; }
-  catch { return { ok: false, kind: "error", detail: "gh --json 출력 파싱 실패" }; }
+  catch { return { ok: false, kind: "error", detail: tm("gh.parseFailed") }; }
 }
 
 // 인증 진단 — { state: "ok"|"not-installed"|"not-authed"|"rate-limited"|"error", detail? }.

@@ -44,7 +44,7 @@ export default function HistoryTimeline({ onNavigate }: { onNavigate?: (nav: His
   useEffect(() => {
     // 언마운트 후 setState 방지 가드(collectHistory 비동기 완료가 언마운트 뒤일 수 있음).
     let alive = true;
-    const reload = () => { void collectHistory().then((ev) => { if (alive) setEvents(ev); }); };
+    const reload = () => { void collectHistory(locale).then((ev) => { if (alive) setEvents(ev); }); };
     reload();
     window.addEventListener(CARDS_CHANGED_EVENT, reload);
     window.addEventListener(CARD_CHAT_CHANGED_EVENT, reload);
@@ -55,7 +55,7 @@ export default function HistoryTimeline({ onNavigate }: { onNavigate?: (nav: His
       window.removeEventListener(CARD_CHAT_CHANGED_EVENT, reload);
       window.removeEventListener("focus", reload);
     };
-  }, []);
+  }, [locale]);
 
   if (events === null) {
     return (

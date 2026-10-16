@@ -2,6 +2,7 @@
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { askAgent } from "@/lib/hunkNotes";
 import type { SessionMsg } from "@/lib/agentSessionParse";
+import { translate } from "@mustard/core/messages";
 
 export const sessionItemKey = (hash: string) => `session|${hash}`;
 export const AGENT_LABEL: Record<string, string> = { claude: "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity" };
@@ -32,7 +33,7 @@ export async function buildSessionItem(root: string, hash: string, ts: number, s
   try { expl = await askAgent(sessionDigest(s.messages), PROMPT, providerId, providerSettings, locale); }
   catch {
     if (!force) return "wait" as const; // #1093 요약 실패(런타임 상한 등) — 다음 주기에 다시
-    expl = s.messages.find((m) => m.role === "user")?.text.slice(0, 400) || "(요약 실패)"; // 20분 넘게 실패 — 원본이라도 볼 수 있게 카드는 만듦
+    expl = s.messages.find((m) => m.role === "user")?.text.slice(0, 400) || translate(locale, "fallback.summaryFailed"); // 20분 넘게 실패 — 원본이라도 볼 수 있게 카드는 만듦
   }
   return {
     key: sessionItemKey(hash), kind: "session", target: `${subject || hash.slice(0, 7)} @${hash.slice(0, 7)}`,

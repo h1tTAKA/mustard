@@ -72,8 +72,8 @@ export default function ItTermSection({
                       ? "text-lime-600 dark:text-lime-400"
                       : "text-zinc-400 hover:text-lime-600 dark:text-zinc-500 dark:hover:text-lime-400"
                   }`}
-                  title={isBookmarked ? "북마크 해제" : "북마크"}
-                  aria-label={isBookmarked ? `${term.term} 북마크 해제` : `${term.term} 북마크 추가`}
+                  title={isBookmarked ? t("bookmark.remove") : t("bookmark.add")}
+                  aria-label={isBookmarked ? t("bookmark.removeFor", { name: term.term }) : t("bookmark.addFor", { name: term.term })}
                 >
                   <StarIcon filled={isBookmarked} />
                 </button>
@@ -85,8 +85,8 @@ export default function ItTermSection({
                     if (await confirm({ skipKey: CKEYS.skipDelete, title: t("confirm.excludeTermTitle", { term: term.term }), message: t("confirm.excludeTerm"), confirmText: t("common.exclude"), danger: true })) onExclude(term);
                   }}
                   className="text-zinc-400 transition hover:text-red-500 dark:text-zinc-500 dark:hover:text-red-400"
-                  title="이 용어 제외 (다음 분석부터 숨김)"
-                  aria-label={`${term.term} 제외하기`}
+                  title={t("term.excludeHint")}
+                  aria-label={t("term.excludeFor", { name: term.term })}
                 >
                   <BanIcon />
                 </button>
@@ -104,7 +104,7 @@ export default function ItTermSection({
                   if (!window.getSelection()?.toString()) onTermClick?.(term.conceptIds);
                 }
               }}
-              aria-label={`${term.term} 용어`}
+              aria-label={t("term.ariaFor", { name: term.term })}
               className={`w-full cursor-pointer select-text p-4 text-left ${(term.bookmarkable && onBookmarkToggle) || onExclude ? "pr-12" : ""}`}
             >
               <div className="flex min-w-0 flex-wrap items-center gap-2">

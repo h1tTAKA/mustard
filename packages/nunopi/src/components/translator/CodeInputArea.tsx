@@ -128,11 +128,11 @@ export default function CodeInputArea({
             onChange={(event) =>
               onLanguageChoiceChange(event.target.value as LanguageChoice)
             }
-            aria-label="코드 언어 선택"
+            aria-label={t("input.selectCodeLang")}
             title={
               languageChoice === "auto"
-                ? `자동 감지: ${editorLanguage}`
-                : "코드 언어 선택"
+                ? t("input.autoDetectedLang", { lang: editorLanguage })
+                : t("input.selectCodeLang")
             }
             className="shrink-0 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 outline-none transition focus:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:focus:border-zinc-500"
           >
@@ -155,7 +155,7 @@ export default function CodeInputArea({
               type="button"
               onClick={onClear}
               className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-600 transition hover:bg-red-100 hover:text-red-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-              title="입력을 비우고 새 코드를 분석"
+              title={t("input.clearCodeHint")}
             >
               <IconEraser size={14} stroke={2} aria-hidden /> {t("input.clear")}
             </button>
@@ -169,7 +169,7 @@ export default function CodeInputArea({
                   ? "bg-lime-600 text-white"
                   : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
               }`}
-              title="학습 챗 열기/닫기"
+              title={t("chat.toggleLearning")}
             >
               <IconMessageCircle size={14} stroke={2} aria-hidden /> {t("input.ask")}
             </button>

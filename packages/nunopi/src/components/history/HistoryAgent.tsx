@@ -77,7 +77,7 @@ export default function HistoryAgent({ providerId, providerSettings }: HistoryAg
       try {
         // 전송 시점 최신 이력 + 복습(SRS) 현황 → 컨텍스트.
         const now = new Date();
-        const events = await collectHistory();
+        const events = await collectHistory(locale);
         const s = summary("all", now);
         const cats = categoryCounts("all", now, undefined, "all");
         // due 카드 제목 목록(캡 40) — 어떤 카드가 복습 대기인지 콕 집어 답하도록.
@@ -123,7 +123,7 @@ export default function HistoryAgent({ providerId, providerSettings }: HistoryAg
             else if (ev.type === "result") answer = ev.response.summary;
           }
         }
-        if (!ac.signal.aborted) setMessages([...thread, { role: "assistant", content: answer || "(빈 응답)" }]);
+        if (!ac.signal.aborted) setMessages([...thread, { role: "assistant", content: answer || t("fallback.emptyResponse") }]);
       } catch {
         if (!ac.signal.aborted) setMessages([...thread, { role: "assistant", content: t("chat.replyError") }]);
       } finally {

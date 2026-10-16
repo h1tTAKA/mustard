@@ -4,6 +4,7 @@ import type { AgentAnalyzeRequest, AgentAnalyzeResponse } from "@mustard/core";
 import type { AgentProviderKind } from "@mustard/core";
 import type { ConceptOccurrence, TranslateWarning } from "@mustard/core";
 import { outputLanguageDirective, languageName } from "./outputLanguage";
+import { translate } from "@mustard/core/messages";
 
 const JSON_CODE_BLOCK_PATTERN = /```json\s*([\s\S]*?)```/i;
 
@@ -43,7 +44,7 @@ export function normalizeExplainConceptOutput(
 
   if (!description) {
     return conceptModeResponse(providerId, [], [
-      { code: "PARSE_FAILED", message: `"${target}" 개념 설명을 해석하지 못했다.` },
+      { code: "PARSE_FAILED", message: translate(request.locale, "explain.conceptParseFailed", { target }) },
     ]);
   }
 

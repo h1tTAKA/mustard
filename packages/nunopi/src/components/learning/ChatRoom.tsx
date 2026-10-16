@@ -108,7 +108,7 @@ export default function ChatRoom({ messages, streaming, isLoading, disabled, mod
               type="button"
               onClick={() => { void handleCopy(); }}
               className="rounded-lg px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-              title="대화 전체를 마크다운으로 복사"
+              title={t("chat.copyAllMd")}
             >
               {copied ? t("panel.copied") : t("chat.copyMd")}
             </button>
@@ -135,7 +135,7 @@ export default function ChatRoom({ messages, streaming, isLoading, disabled, mod
                 onClick={() => setConfirmingClear(true)}
                 disabled={isLoading}
                 className="rounded-lg px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-200 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-red-400"
-                title="대화 초기화"
+                title={t("chat.resetConversation")}
               >
                 {t("chat.clear")}
               </button>

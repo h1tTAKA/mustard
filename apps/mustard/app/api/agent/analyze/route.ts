@@ -18,6 +18,7 @@ import { homedir } from "node:os";
 import { isAbsolute } from "node:path";
 import { streamDirFor } from "@/lib/catchupStore";
 import { agentTranscriptDirs } from "@/lib/agentSessions";
+import { translate } from "@mustard/core/messages";
 
 interface AgentAnalyzeHttpRequest {
   providerId: AgentProviderKind;
@@ -143,7 +144,7 @@ export async function POST(
         send({ type: "result", providerId, response });
       } catch (error) {
         const message = request.signal.aborted
-          ? "분석이 취소되었습니다."
+          ? translate(providerRequest.locale, "analyze.cancelled")
           : formatErrorMessage(error);
         send({ type: "error", message });
       } finally {

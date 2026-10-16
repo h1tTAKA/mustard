@@ -6,6 +6,7 @@ import type { AgentAnalyzeRequest, AgentAnalyzeResponse, AgentUsage } from "@mus
 import type { AgentProviderKind } from "@mustard/core";
 import type { ItConcept, ItTerm, TranslateWarning } from "@mustard/core";
 import { outputLanguageDirective } from "./outputLanguage";
+import { translate, allLocaleValues } from "@mustard/core/messages";
 
 const JSON_CODE_BLOCK_PATTERN = /```json\s*([\s\S]*?)```/i;
 
@@ -263,7 +264,7 @@ export function mergeTextResults(
     }));
 
   // prev 요약이 실제 요약이면 그대로(이어서는 새로 안 만듦). sentinel/빈 거면 next로.
-  const prevSummary = prev.summary && prev.summary !== "요약을 생성하지 못했다." ? prev.summary : "";
+  const prevSummary = prev.summary && !allLocaleValues("text.summaryFailed").includes(prev.summary) ? prev.summary : "";
 
   return {
     ...prev,
@@ -303,7 +304,7 @@ export function normalizeTextOutput(
   if (!parsed) {
     return textModeResponse(
       providerId,
-      "AI가 돌려준 응답을 글 분석 형식으로 해석하지 못했다. 다시 시도해 보라.",
+      translate(request.locale, "text.parseFailed"),
       [
         {
           code: "PARSE_FAILED",
@@ -335,7 +336,7 @@ export function normalizeTextOutput(
     mode: "text",
     language: "text",
     title: typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : undefined,
-    summary: parsed.summary ?? "요약을 생성하지 못했다.",
+    summary: parsed.summary ?? translate(request.locale, "text.summaryFailed"),
     lineExplanations: [],
     tokens: [],
     concepts: [],

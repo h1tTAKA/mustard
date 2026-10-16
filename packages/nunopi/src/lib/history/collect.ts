@@ -5,6 +5,7 @@ import { loadTokenDetails, loadTermDetails, loadConceptDetails } from "@mustard/
 import { loadActivity } from "../srs/activityLog";
 import { collectCards } from "../srs/collect";
 import type { UnifiedHistoryEvent } from "./types";
+import { translate } from "@mustard/core/messages";
 
 // 첫 유저 메시지 요약(제목용). 없으면 폴백.
 function firstQuestion(messages: { role: string; content: string }[], fallback: string): string {
@@ -15,7 +16,9 @@ function firstQuestion(messages: { role: string; content: string }[], fallback: 
 
 // 모든 저장소를 읽어 통일 히스토리 이벤트로(읽기 전용). 시간 내림차순 정렬.
 // 출처별 try/catch — 하나가 실패해도 나머지는 수집.
-export async function collectHistory(): Promise<UnifiedHistoryEvent[]> {
+// #1095 locale = 이벤트 제목·설명 언어(화면 설정)
+export async function collectHistory(locale = "ko"): Promise<UnifiedHistoryEvent[]> {
+  const tr = (key: string, vars?: Record<string, string | number>) => translate(locale, key, vars);
   const out: UnifiedHistoryEvent[] = [];
 
   // 1) 코드/글 분석 이력 + 그 안 챗룸
@@ -23,7 +26,7 @@ export async function collectHistory(): Promise<UnifiedHistoryEvent[]> {
     const entries = await getAllHistory();
     for (const e of entries) {
       const mode = e.mode === "text" ? "text" : "code";
-      const modeLabel = mode === "text" ? "글 분석" : "코드 분석";
+      const modeLabel = mode === "text" ? tr("history.evt.textAnalysis") : tr("history.evt.codeAnalysis");
       const aTitle = e.title || modeLabel;
       out.push({
         type: "analysis",
@@ -39,8 +42,8 @@ export async function collectHistory(): Promise<UnifiedHistoryEvent[]> {
           type: "chat",
           id: cs.id,
           createdAt: e.createdAt, // 챗 세션 개별 시각 없어 분석 항목 시각으로 근사
-          title: firstQuestion(cs.messages, "분석 챗"),
-          description: `${modeLabel} '${aTitle}' 챗룸`,
+          title: firstQuestion(cs.messages, tr("history.evt.analysisChat")),
+          description: tr("history.evt.chatRoom", { mode: modeLabel, title: aTitle }),
           nav: { mode, sourceId: e.id, sessionId: cs.id },
         });
       }
@@ -51,14 +54,14 @@ export async function collectHistory(): Promise<UnifiedHistoryEvent[]> {
   try {
     const store = loadAskStore("");
     for (const s of store.sessions) {
-      const sessLabel = `질문모드 '${s.title || "세션"}'`;
+      const sessLabel = tr("history.evt.askSession", { title: s.title || tr("history.evt.session") });
       for (const sub of s.subs) {
         if (sub.messages.length > 0) {
           out.push({
             type: "ask",
             id: sub.id,
             createdAt: sub.createdAt ?? s.createdAt,
-            title: firstQuestion(sub.messages, "질문"),
+            title: firstQuestion(sub.messages, tr("history.evt.question")),
             description: sessLabel,
             nav: { mode: "ask", sessionId: s.id, subId: sub.id },
           });
@@ -68,7 +71,7 @@ export async function collectHistory(): Promise<UnifiedHistoryEvent[]> {
             type: "quiz",
             id: qs.id,
             createdAt: qs.createdAt,
-            title: `퀴즈 ${qs.quiz.questions.length}문항`,
+            title: tr("history.evt.quizN", { n: qs.quiz.questions.length }),
             description: sessLabel,
             nav: { mode: "ask", sessionId: s.id, subId: sub.id, quizId: qs.id },
           });
@@ -91,8 +94,8 @@ export async function collectHistory(): Promise<UnifiedHistoryEvent[]> {
           type: "chat",
           id: cs.id,
           createdAt: cs.createdAt ?? cardTime.get(cardKey) ?? new Date().toISOString(),
-          title: firstQuestion(cs.messages, "카드 챗"),
-          description: `암기 카드 '${cardKey}' 챗룸`,
+          title: firstQuestion(cs.messages, tr("history.evt.cardChat")),
+          description: tr("history.evt.cardChatRoom", { card: cardKey }),
           nav: { mode: "memorize", cardKey },
         });
       }
@@ -107,19 +110,19 @@ export async function collectHistory(): Promise<UnifiedHistoryEvent[]> {
         if (!d?.bookmarkedAt) continue;
         // 출처 경로: 어디서 이 카드를 저장했나.
         const from = d.sourceTitle
-          ? `'${d.sourceTitle}'에서 저장`
+          ? tr("history.evt.savedFrom", { title: d.sourceTitle })
           : d.sourceKind === "ask"
-            ? "질문모드에서 저장"
+            ? tr("history.evt.savedFromAsk")
             : d.sourceKind === "card"
-              ? "암기 카드에서 저장"
+              ? tr("history.evt.savedFromCard")
               : d.sourceKind === "workspace"
-                ? "워크스페이스 챗에서 저장"
-                : "분석에서 저장";
+                ? tr("history.evt.savedFromWorkspace")
+                : tr("history.evt.savedFromAnalysis");
         out.push({
           type: "bookmark",
           id: `bm-${text}-${d.bookmarkedAt}`,
           createdAt: d.bookmarkedAt,
-          title: `카드 생성: ${text}`,
+          title: tr("history.evt.cardCreated", { text }),
           description: from,
           // workspace 카드는 이동 대상(특정 챗 세션 복원)이 없어 비클릭(#750). 그 외만 nav 부여.
           ...(d.sourceKind === "workspace" ? {} : { nav: { mode: d.sourceKind === "ask" ? "ask" : "code", sourceId: d.sourceId, sessionId: d.sourceSessionId, subId: d.sourceSubId } as const }),
@@ -137,7 +140,7 @@ export async function collectHistory(): Promise<UnifiedHistoryEvent[]> {
         type: "review",
         id: `review-${day}`,
         createdAt: `${day}T00:00:00`, // 로컬 자정
-        title: `복습 ${log.n}장`,
+        title: tr("history.evt.reviewN", { n: log.n }),
         nav: { mode: "memorize" },
       });
     }

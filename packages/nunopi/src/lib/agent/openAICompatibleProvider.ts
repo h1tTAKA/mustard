@@ -9,6 +9,7 @@ import { buildExplainTokenPrompt, normalizeExplainTokenOutput, tokenModeResponse
 import { buildExplainConceptPrompt, normalizeExplainConceptOutput, conceptModeResponse } from "./conceptMode";
 import { chatSystemPrompt, buildChatPrompt, normalizeChatOutput, chatModeResponse, deckAgentSystemPrompt, buildDeckAgentPrompt } from "./chatMode";
 import { codeChunkDirectives } from "./codeChunkPrompt";
+import { translate } from "@mustard/core/messages";
 
 interface OpenAICompatibleConfig {
   baseUrl: string;
@@ -212,7 +213,7 @@ async function fetchOpenAICompatibleResponse(
       const errText = await res.text().catch(() => "");
       const httpMsg = `HTTP ${res.status} ${res.statusText}: ${errText.slice(0, 200)}`;
       if (request.mode === "chat" || request.mode === "explain-card" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz") {
-        return chatModeResponse("openai-compatible", `엔드포인트 오류(HTTP ${res.status}).`, [{ code: "PARSE_FAILED", message: httpMsg }]);
+        return chatModeResponse("openai-compatible", translate(request.locale, "provider.httpError", { status: res.status }), [{ code: "PARSE_FAILED", message: httpMsg }]);
       }
       if (request.mode === "explain-concept") {
         return conceptModeResponse("openai-compatible", [], [{ code: "PARSE_FAILED", message: httpMsg }]);
@@ -307,7 +308,7 @@ async function fetchOpenAICompatibleResponse(
     if (signal?.aborted) throw err;
     const netMsg = err instanceof Error ? err.message : "Network error.";
     if (request.mode === "chat" || request.mode === "explain-card" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz") {
-      return chatModeResponse("openai-compatible", "엔드포인트에 연결하지 못했다.", [{ code: "PARSE_FAILED", message: netMsg }]);
+      return chatModeResponse("openai-compatible", translate(request.locale, "provider.connectFailed"), [{ code: "PARSE_FAILED", message: netMsg }]);
     }
     if (request.mode === "explain-concept") {
       return conceptModeResponse("openai-compatible", [], [{ code: "PARSE_FAILED", message: netMsg }]);
