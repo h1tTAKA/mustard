@@ -84,7 +84,11 @@ export async function hookDecision(runId: string, token: string, tool: string, i
   moveCard(run.root, run.taskId, "needs-you");
   persist(run, true);
   const ok = await new Promise<boolean>((res) => {
-    const timer = setTimeout(() => { g.pending.delete(runId); res(false); }, 10 * 60_000);
+    const timer = setTimeout(() => { // 10분 무응답 = 거절, 카드는 다시 실행 중으로(보안 리뷰)
+      g.pending.delete(runId);
+      if (run.state === "needs-permission") { run.state = "running"; run.permission = undefined; run.lastActivity = "permission timed out (denied)"; moveCard(run.root, run.taskId, "running"); persist(run, true); }
+      res(false);
+    }, 10 * 60_000);
     g.pending.set(runId, { resolve: (v) => { clearTimeout(timer); g.pending.delete(runId); res(v); }, timer });
   });
   return ok ? { decision: "allow" } : { decision: "deny", reason: "The user denied this action" };
@@ -190,7 +194,11 @@ export function listRuns(root: string): CrewRun[] {
   return [...byId.values()].sort((a, b) => a.startedAt - b.startedAt);
 }
 
+// 훅이 다시 부를 주소 — 훅 실행 명령줄에 들어가므로 로컬 http 주소 형식만(명령 주입 방지, 보안 리뷰)
+const safeOrigin = (o: string) => (/^http:\/\/(127\.0\.0\.1|localhost):\d{2,5}$/.test(o) ? o : `http://127.0.0.1:${Number(process.env.PORT) || 59720}`);
+
 export async function startRun(root: string, taskId: string, origin: string): Promise<CrewRun> {
+  origin = safeOrigin(origin);
   reconcile(root);
   const task = readBoard(root).tasks.find((t) => t.id === taskId);
   if (!task) throw new Error("task not found");

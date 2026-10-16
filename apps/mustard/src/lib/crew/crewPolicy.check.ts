@@ -42,4 +42,10 @@ assert.strictEqual(d("Bash", { command: 'git commit -m "do not git push"' }), "a
 assert.strictEqual(d("Bash", { command: 'bash -c "git push"' }), "ask", "bash -c는 묻기");
 assert.strictEqual(d("Bash", { command: "npm test\ngit push" }), "deny", "줄바꿈 연결 속 push");
 
+// 보안 리뷰
+assert.strictEqual(d("Bash", { command: "git -C /other/repo push" }), "deny", "옵션 앞 push");
+assert.strictEqual(d("Bash", { command: "git -c core.x=y push origin" }), "deny");
+assert.strictEqual(d("Bash", { command: "git --no-pager log" }), "ask", "옵션 붙은 git은 묻기(하위 명령 확인 불가)");
+assert.strictEqual(d("Bash", { command: "git config core.pager evil" }), "ask", "config는 묻기");
+
 console.log("crewPolicy.check ok");
