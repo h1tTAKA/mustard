@@ -40,15 +40,18 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
   useEffect(() => { if (!anyActive) return; const id = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(id); }, [anyActive]); // 카드 경과 시간
 
   // 실행·중지·권한 응답 — 결과 기록을 바로 반영하고 보드 다시 읽기
-  const runAction = async (taskId: string, action: "start" | "stop" | "permission", approved?: boolean) => {
+  const runAction = async (taskId: string, action: "start" | "stop" | "permission" | "gate", approved?: boolean, decision?: string, text?: string): Promise<boolean> => {
     try {
-      const j = await (await fetch("/api/crew/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, taskId, action, approved }) })).json();
+      const j = await (await fetch("/api/crew/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, taskId, action, approved, decision, text }) })).json();
       if (!j?.ok) throw new Error(j?.error);
+      reloadRuns(); load();
+      return true;
     } catch (e) {
       const msg = String((e as Error)?.message ?? e), lim = /concurrency limit \((\d+)\)/.exec(msg); // 동시 실행 상한은 기기 전체(SNA 세션·구독 사용량이 기기 단위)
       toast(lim ? t("crew.limitReached", { n: lim[1] }) : `${t("crew.runFailed")}: ${msg}`, "error");
     }
     reloadRuns(); load();
+    return false;
   };
 
   const apply = async (op: CrewOp): Promise<boolean> => {
@@ -130,6 +133,17 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
                           className={`w-full rounded-lg border border-zinc-200/80 bg-white px-3 py-2.5 text-left shadow-[0_1px_1px_rgba(0,0,0,0.03)] transition hover:border-zinc-300 hover:shadow-sm dark:border-white/[0.07] dark:bg-[#17181f] dark:hover:border-white/15 ${drag === c.id ? "opacity-40" : ""}`}>
                           <div className="line-clamp-2 text-[12.5px] font-medium leading-snug text-zinc-800 dark:text-zinc-100">{c.title}</div>
                           {c.body && <div className="mt-1 line-clamp-2 text-[11.5px] leading-snug text-zinc-500 dark:text-zinc-400">{c.body}</div>}
+                          {c.pipeline && c.pipeline.length > 1 && (
+                            <div className="mt-2 flex items-center gap-0.5" aria-label={t("crew.step", { n: Math.min((c.stage ?? 0) + 1, c.pipeline.length), total: c.pipeline.length })}>
+                              {c.pipeline.map((r, i) => (
+                                <span key={i} title={roleName(t, roles, r)}
+                                  className={`flex h-[18px] w-[18px] items-center justify-center rounded ${i === (c.stage ?? 0) ? "bg-mustard-500/20 text-mustard-700 ring-1 ring-mustard-500/50 dark:text-mustard-400" : i < (c.stage ?? 0) ? "bg-zinc-100 text-zinc-400 dark:bg-white/[0.05] dark:text-zinc-500" : "text-zinc-300 dark:text-zinc-600"}`}>
+                                  <RoleIcon role={roles.some((x) => x.id === r) ? r : undefined} size={11} />
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {c.gate && <div className={`mt-1.5 truncate text-[10.5px] font-medium ${c.gate.kind === "blocked" ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}`}>{t(`crew.gate.${c.gate.kind}`)}</div>}
                           {(() => {
                             const run = runs.get(c.id);
                             const active = isActiveRun(run);
@@ -171,12 +185,13 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
           onRun={dialog.mode === "edit" ? () => void runAction(dialog.task.id, "start") : undefined}
           onStop={dialog.mode === "edit" ? () => void runAction(dialog.task.id, "stop") : undefined}
           onPermission={dialog.mode === "edit" ? (ok) => void runAction(dialog.task.id, "permission", ok) : undefined}
+          onGate={dialog.mode === "edit" ? async (decision, text) => { if (await runAction(dialog.task.id, "gate", undefined, decision, text)) setDialog(null); } : undefined}
           onClose={() => setDialog(null)}
           onSave={async (v) => {
             const ok = dialog.mode === "edit"
-              ? await apply({ op: "update", id: dialog.task.id, title: v.title, body: v.body, role: v.role })
+              ? await apply({ op: "update", id: dialog.task.id, title: v.title, body: v.body, role: v.role, pipeline: v.pipeline })
                 && (v.status === dialog.task.status || await apply({ op: "move", id: dialog.task.id, status: v.status, index: column(v.status).length }))
-              : await apply({ op: "create", title: v.title, body: v.body, role: v.role, status: v.status });
+              : await apply({ op: "create", title: v.title, body: v.body, role: v.role, status: v.status, pipeline: v.pipeline });
             if (ok) setDialog(null);
           }}
           onDelete={dialog.mode === "edit" ? async () => {

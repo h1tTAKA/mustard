@@ -13,7 +13,7 @@ export interface CrewTask {
 }
 export interface CrewBoard { version: 1; tasks: CrewTask[] }
 export type CrewOp =
-  | { op: "create"; title: string; body?: string; status?: CrewStatus; role?: string }
-  | { op: "update"; id: string; title?: string; body?: string; role?: string }
+  | { op: "create"; title: string; body?: string; status?: CrewStatus; role?: string; pipeline?: string[] }
+  | { op: "update"; id: string; title?: string; body?: string; role?: string; pipeline?: string[] } // pipeline [] = 지움(담당 하나·자동)
   | { op: "move"; id: string; status: CrewStatus; index: number }
   | { op: "delete"; id: string };

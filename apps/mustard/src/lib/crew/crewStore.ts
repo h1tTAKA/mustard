@@ -86,12 +86,17 @@ export function applyOp(root: string, op: CrewOp, now = Date.now()): CrewBoard {
     const status = isStatus(op.status) ? op.status : "backlog";
     const order = tasks.filter((t) => t.status === status).length; // 칸 맨 아래
     const role = cleanRole(op.role);
-    tasks.push({ id: randomUUID(), title: title.slice(0, TITLE_MAX), body: String(op.body ?? "").slice(0, BODY_MAX), status, order, createdAt: now, updatedAt: now, ...(role ? { role } : {}) });
+    const pipeline = (Array.isArray(op.pipeline) ? op.pipeline : []).map(cleanRole).filter((r): r is string => !!r).slice(0, 30);
+    tasks.push({ id: randomUUID(), title: title.slice(0, TITLE_MAX), body: String(op.body ?? "").slice(0, BODY_MAX), status, order, createdAt: now, updatedAt: now, ...(role ? { role } : {}), ...(pipeline.length ? { pipeline, stage: 0 } : {}) });
   } else if (op.op === "update") {
     const t = find(op.id);
     if (op.title !== undefined) { const title = String(op.title).trim(); if (!title) throw new Error("title required"); t.title = title.slice(0, TITLE_MAX); }
     if (op.body !== undefined) t.body = String(op.body).slice(0, BODY_MAX);
     if (op.role !== undefined) { const role = cleanRole(op.role); if (role) t.role = role; else delete t.role; } // "" = 자동 배정으로
+    if (op.pipeline !== undefined) { // #1102 사람이 정한 파이프라인(바뀌면 처음 단계부터)
+      const p = (Array.isArray(op.pipeline) ? op.pipeline : []).map(cleanRole).filter((r): r is string => !!r).slice(0, 30);
+      if (JSON.stringify(p) !== JSON.stringify(t.pipeline ?? [])) { if (p.length) t.pipeline = p; else delete t.pipeline; t.stage = 0; delete t.loops; delete t.fails; }
+    }
     t.updatedAt = now;
   } else if (op.op === "move") {
     if (!isStatus(op.status)) throw new Error("bad status");
