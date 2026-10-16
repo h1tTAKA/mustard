@@ -1,0 +1,99 @@
+// Crew 보드 저장소(#1098, 에픽 #1097) — 레포별 칸반 카드. 서버 전용.
+// 저장 = ~/.nunopi/crew/<sha256(root)>/board.json (레포 안은 안 건드림). 쓰기는 tmp+rename(쓰다 죽어도 원본 유지).
+// 연산(추가·수정·이동·삭제)은 서버에서 하고 결과 보드를 돌려줌 — 창이 여러 개여도 서버 파일이 기준.
+// 동기 함수만(await 없음) → 한 서버 프로세스 안에서 요청끼리 끼어들 수 없음(catchupStore와 같은 이유).
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+
+import { CREW_STATUSES, type CrewBoard, type CrewOp, type CrewStatus, type CrewTask } from "./crewTypes.ts";
+export type { CrewBoard, CrewOp, CrewStatus, CrewTask };
+
+const TITLE_MAX = 200, BODY_MAX = 20_000, TASKS_MAX = 2000;
+const normPath = (p: string) => p.replace(/\/+$/, "");
+const sha = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 32);
+const baseDir = () => process.env.MUSTARD_CREW_DIR || join(homedir(), ".nunopi", "crew"); // 점검에서 임시 폴더로
+export const boardFile = (root: string) => join(baseDir(), sha(normPath(root)), "board.json");
+const isStatus = (s: unknown): s is CrewStatus => typeof s === "string" && (CREW_STATUSES as readonly string[]).includes(s);
+
+// 역할 id — 기본 8 + 에픽 2번 커스텀 대비 slug 형식만 허용(빈 값 = 자동 배정)
+const cleanRole = (r: unknown): string | undefined => (typeof r === "string" && /^[a-z0-9][a-z0-9-]{0,39}$/.test(r) ? r : undefined);
+
+export function sanitizeTask(x: unknown): CrewTask | null {
+  if (!x || typeof x !== "object") return null;
+  const t = x as Record<string, unknown>;
+  if (typeof t.id !== "string" || !t.id || typeof t.title !== "string" || !t.title.trim() || !isStatus(t.status)) return null;
+  const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+  return {
+    id: t.id.slice(0, 64), title: t.title.trim().slice(0, TITLE_MAX), body: typeof t.body === "string" ? t.body.slice(0, BODY_MAX) : "",
+    status: t.status, order: num(t.order, 0), createdAt: num(t.createdAt, 0), updatedAt: num(t.updatedAt, 0),
+    ...(cleanRole(t.role) ? { role: cleanRole(t.role) } : {}),
+  };
+}
+
+export function readBoard(root: string): CrewBoard {
+  const file = boardFile(root);
+  if (!existsSync(file)) return { version: 1, tasks: [] };
+  try {
+    const j = JSON.parse(readFileSync(file, "utf8")) as { tasks?: unknown };
+    const tasks = Array.isArray(j.tasks) ? j.tasks.map(sanitizeTask).filter((t): t is CrewTask => !!t) : [];
+    return { version: 1, tasks };
+  } catch {
+    try { renameSync(file, `${file}.broken-${Date.now()}`); } catch { /* 백업 실패해도 빈 보드로 */ } // 깨진 파일은 남겨 두고(복구용) 빈 보드
+    return { version: 1, tasks: [] };
+  }
+}
+
+function writeBoard(root: string, board: CrewBoard): CrewBoard {
+  const file = boardFile(root);
+  mkdirSync(join(file, ".."), { recursive: true });
+  writeFileSync(`${file}.tmp`, JSON.stringify(board, null, 1));
+  renameSync(`${file}.tmp`, file);
+  return board;
+}
+
+// 칸 안 순서 다시 매기기(0,1,2…) — 이동·삭제 뒤 구멍 없게.
+function renumber(tasks: CrewTask[], status: CrewStatus): void {
+  tasks.filter((t) => t.status === status).sort((a, b) => a.order - b.order).forEach((t, i) => { t.order = i; });
+}
+
+// 연산 하나 적용 → 새 보드. 잘못된 입력이면 Error(라우트가 400).
+export function applyOp(root: string, op: CrewOp, now = Date.now()): CrewBoard {
+  const board = readBoard(root);
+  const tasks = board.tasks;
+  const find = (id: string) => { const t = tasks.find((x) => x.id === id); if (!t) throw new Error("task not found"); return t; };
+  if (op.op === "create") {
+    const title = String(op.title ?? "").trim();
+    if (!title) throw new Error("title required");
+    if (tasks.length >= TASKS_MAX) throw new Error("too many tasks");
+    const status = isStatus(op.status) ? op.status : "backlog";
+    const order = tasks.filter((t) => t.status === status).length; // 칸 맨 아래
+    const role = cleanRole(op.role);
+    tasks.push({ id: randomUUID(), title: title.slice(0, TITLE_MAX), body: String(op.body ?? "").slice(0, BODY_MAX), status, order, createdAt: now, updatedAt: now, ...(role ? { role } : {}) });
+  } else if (op.op === "update") {
+    const t = find(op.id);
+    if (op.title !== undefined) { const title = String(op.title).trim(); if (!title) throw new Error("title required"); t.title = title.slice(0, TITLE_MAX); }
+    if (op.body !== undefined) t.body = String(op.body).slice(0, BODY_MAX);
+    if (op.role !== undefined) { const role = cleanRole(op.role); if (role) t.role = role; else delete t.role; } // "" = 자동 배정으로
+    t.updatedAt = now;
+  } else if (op.op === "move") {
+    if (!isStatus(op.status)) throw new Error("bad status");
+    const t = find(op.id);
+    const from = t.status;
+    // 목적 칸에서 자기 빼고 정렬 → index 자리에 끼우고 번호 다시
+    const dest = tasks.filter((x) => x.status === op.status && x.id !== t.id).sort((a, b) => a.order - b.order);
+    const at = Math.max(0, Math.min(Number.isFinite(op.index) ? Math.floor(op.index) : dest.length, dest.length));
+    dest.splice(at, 0, t);
+    t.status = op.status; t.updatedAt = now;
+    dest.forEach((x, i) => { x.order = i; });
+    if (from !== op.status) renumber(tasks, from);
+  } else if (op.op === "delete") {
+    const t = find(op.id);
+    board.tasks = tasks.filter((x) => x.id !== t.id);
+    renumber(board.tasks, t.status);
+  } else {
+    throw new Error("unknown op");
+  }
+  return writeBoard(root, board);
+}
