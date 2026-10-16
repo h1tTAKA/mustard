@@ -10,10 +10,10 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { getSnaClient } from "@mustard/core/sna";
 import { applyOp, patchTask, readBoard } from "./crewStore";
-import { decideGate, next, parseHandoff, pipelineOf, type Handoff } from "./crewFlow";
+import { childProgress, decideGate, next, parseHandoff, pipelineOf, waitingOn, type Handoff } from "./crewFlow";
 import { getRole, listRoles } from "./crewRoleStore";
 import { crewProtocol, type CrewRole } from "./crewRoleDefaults";
-import { ensureWorktree } from "./crewWorktree";
+import { ensureWorktree, worktreeFor } from "./crewWorktree";
 import { decide } from "./crewPolicy";
 import { narrationLocale } from "@/lib/narrationConfig";
 import { defaultSnaModel } from "@mustard/nunopi/server";
@@ -22,7 +22,7 @@ import { appendMsg, findMsg, parseMentions, type CrewMsg } from "./crewChat";
 import { freshIds, hasTriggers, readTriggers, scheduleDue, writeTriggers, type CrewTrigger } from "./crewTriggers";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems } from "@/lib/catchupStore";
-import type { CrewStatus } from "./crewTypes";
+import type { CrewStatus, CrewTask } from "./crewTypes";
 
 export type RunState = "starting" | "running" | "needs-permission" | "done" | "failed" | "stopped";
 export interface CrewRun {
@@ -206,7 +206,11 @@ function ensureTicker() {
     }
     for (const root of g.roots) {
       let ready: { id: string }[] = [];
-      try { ready = readBoard(root).tasks.filter((t) => t.status === "ready").sort((a, b) => a.order - b.order); } catch { continue; }
+      try {
+        const tasks = readBoard(root).tasks;
+        closeParents(root, tasks);
+        ready = tasks.filter((t) => t.status === "ready" && !t.children?.length && !waitingOn(t, tasks).length).sort((a, b) => a.order - b.order); // #1114 의존이 안 끝난 하위는 기다림
+      } catch { continue; }
       for (const t of ready) {
         const active = [...g.runs.values()].filter((r) => ACTIVE.includes(r.state)).length + g.starting.size;
         if (active >= MAX_CONCURRENT) return;
@@ -312,7 +316,10 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
   reconcile(root);
   const task = readBoard(root).tasks.find((t) => t.id === taskId);
   if (!task) throw new Error("task not found");
-  if (task.gate && task.gate.kind !== "blocked") throw new Error("gate pending"); // 관문은 관문 창(사람 결정)으로만 — 실행 버튼으로 건너뛰기 금지(리뷰). 막힘은 다시 실행 허용
+  if (task.gate && task.gate.kind !== "blocked") throw new Error("gate pending");
+  const board0 = readBoard(root).tasks;
+  if (waitingOn(task, board0).length) throw new Error("waiting on dependencies"); // #1114
+  if (task.children?.length) throw new Error("has subtasks"); // 부모는 하위가 일함 // 관문은 관문 창(사람 결정)으로만 — 실행 버튼으로 건너뛰기 금지(리뷰). 막힘은 다시 실행 허용
   const active = [...g.runs.values()].filter((r) => ACTIVE.includes(r.state));
   if (active.some((r) => r.root === root && r.taskId === taskId)) throw new Error("already running");
   if (active.length >= MAX_CONCURRENT) throw new Error(`concurrency limit (${MAX_CONCURRENT})`);
@@ -326,7 +333,8 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
   g.runs.set(run.id, run);
   persist(run, true);
   try {
-    const wt = await ensureWorktree(root, taskId, task.title);
+    const dep = board0.find((x) => x.id === task.dependsOn?.[task.dependsOn.length - 1]); // ponytail: 의존 여럿이면 마지막 것 브랜치에서 시작(나머지는 그 안에 없을 수 있음), 필요하면 머지 단계 추가
+    const wt = await ensureWorktree(root, taskId, task.title, dep ? worktreeFor(root, dep.id, dep.title).branch : undefined);
     Object.assign(run, { worktree: wt.dir, branch: wt.branch, base: wt.base });
     rmSync(join(wt.dir, ".crew", "handoff.json"), { force: true }); // 앞 역할 봉투를 이번 결과로 착각하지 않게
     await wire();
@@ -396,6 +404,7 @@ export function decideCard(root: string, taskId: string, action: "approve" | "re
   const task = readBoard(root).tasks.find((t) => t.id === taskId);
   if (!task) throw new Error("task not found");
   const r = decideGate(task, action, text);
+  if (action === "approve" && task.gate?.kind === "spec" && task.split?.length) return splitCard(root, task); // #1114 쪼개기 승인
   const board = patchTask(root, taskId, { ...r.patch, status: r.status });
   say(root, { from: "human", kind: "decision", taskId, taskTitle: task.title,
     text: action === "approve" ? tr(task.gate?.kind === "blocked" ? "crewchat.decision.retry" : "crewchat.decision.approve") : text.trim(),
@@ -538,5 +547,34 @@ export async function checkTriggers(root: string, now = Date.now()): Promise<voi
   if (changed) { // 실행 중에 화면이 계기를 고쳤을 수 있음 — 최신 파일에 실행 결과 필드만 덮음, 조건이 바뀐 계기는 안 덮음(처음부터 다시, 리뷰)
     const cur = readTriggers(root);
     writeTriggers(root, cur.map((c) => { const r = list.find((x) => x.id === c.id && x.kind === c.kind && x.label === c.label && x.branch === c.branch); return r ? { ...c, seen: r.seen, primed: r.primed, lastFired: r.lastFired, lastError: r.lastError } : c; }));
+  }
+}
+
+// ── #1114 하위 작업 ─────────────────────────────────────────────────
+// 쪼개기 승인 → 하위 카드(Ready, 부모 맥락·기획 요약 첨부, 의존 = 앞 번호 카드), 부모는 Review 칸에서 하위 기다림.
+function splitCard(root: string, parent: CrewTask) {
+  say(root, { from: "human", kind: "decision", taskId: parent.id, taskTitle: parent.title, text: tr("crewchat.decision.approve") });
+  const ids: string[] = [];
+  const context = `${tr("crewsplit.parentContext", { title: parent.title })}\n${parent.body}${parent.gate?.text ? `\n\n${parent.gate.text}` : ""}`.slice(0, 6000);
+  for (const s of parent.split ?? []) {
+    const b = applyOp(root, { op: "create", title: s.title, body: `${s.body ?? ""}\n\n---\n${context}`.trim(), status: "ready", role: s.roles[0], pipeline: s.roles });
+    const child = b.tasks[b.tasks.length - 1];
+    const dependsOn = (s.after ?? []).map((i) => ids[i]).filter(Boolean);
+    patchTask(root, child.id, { parentId: parent.id, ...(dependsOn.length ? { dependsOn } : {}) });
+    ids.push(child.id);
+  }
+  const board = patchTask(root, parent.id, { children: ids, split: undefined, gate: undefined, status: "review" });
+  say(root, { from: "board", kind: "gate", taskId: parent.id, taskTitle: parent.title, text: tr("crewsplit.created", { n: ids.length }) });
+  return board;
+}
+
+// 하위가 전부 Done이면 부모도 Done(tick마다 — 머지 승인·보드에서 끌기 등 어느 경로로 끝나도)
+function closeParents(root: string, tasks: CrewTask[]) {
+  for (const p of tasks) {
+    if (!p.children?.length || p.status === "done") continue;
+    const { done, total } = childProgress(p, tasks);
+    if (!total || done < total) continue;
+    patchTask(root, p.id, { status: "done" });
+    say(root, { from: "board", kind: "gate", taskId: p.id, taskTitle: p.title, text: tr("crewsplit.parentDone", { n: total }) });
   }
 }

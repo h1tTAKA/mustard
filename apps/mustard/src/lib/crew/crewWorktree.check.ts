@@ -40,4 +40,10 @@ assert.ok(g(root, "branch", "--list", "crew/3f2a9c1e-fix-login-bug").length > 0,
 const back = await ensureWorktree(root, id, "Fix Login Bug!");
 assert.ok(back.created && existsSync(join(back.dir, "b.txt")), "남은 브랜치로 다시 붙임(작업 이어짐)");
 
+// #1114 의존 카드 브랜치에서 시작 — 앞 작업(b.txt)이 보임, 없는 브랜치면 HEAD
+const kid = await ensureWorktree(root, "kid00001", "next step", "crew/3f2a9c1e-fix-login-bug");
+assert.ok(kid.created && existsSync(join(kid.dir, "b.txt")), "의존 브랜치 위에 쌓기");
+const lone = await ensureWorktree(root, "kid00002", "lone", "crew/nope");
+assert.ok(lone.created && !existsSync(join(lone.dir, "b.txt")), "없는 브랜치 = HEAD");
+
 console.log("crewWorktree.check ok");
