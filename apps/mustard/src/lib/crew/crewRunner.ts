@@ -535,8 +535,8 @@ export async function checkTriggers(root: string, now = Date.now()): Promise<voi
       if (t.lastError !== msg) { t.lastError = msg; changed = true; }
     }
   }
-  if (changed) { // 실행 중에 화면이 계기를 고쳤을 수 있음 — 최신 파일에 실행 결과 필드만 덮음
+  if (changed) { // 실행 중에 화면이 계기를 고쳤을 수 있음 — 최신 파일에 실행 결과 필드만 덮음, 조건이 바뀐 계기는 안 덮음(처음부터 다시, 리뷰)
     const cur = readTriggers(root);
-    writeTriggers(root, cur.map((c) => { const r = list.find((x) => x.id === c.id); return r ? { ...c, seen: r.seen, primed: r.primed, lastFired: r.lastFired, lastError: r.lastError } : c; }));
+    writeTriggers(root, cur.map((c) => { const r = list.find((x) => x.id === c.id && x.kind === c.kind && x.label === c.label && x.branch === c.branch); return r ? { ...c, seen: r.seen, primed: r.primed, lastFired: r.lastFired, lastError: r.lastError } : c; }));
   }
 }
