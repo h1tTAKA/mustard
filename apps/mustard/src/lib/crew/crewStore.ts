@@ -7,10 +7,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-export const CREW_STATUSES = ["backlog", "ready", "running", "needs-you", "review", "done", "blocked"] as const;
-export type CrewStatus = (typeof CREW_STATUSES)[number];
-export interface CrewTask { id: string; title: string; body: string; status: CrewStatus; order: number; createdAt: number; updatedAt: number }
-export interface CrewBoard { version: 1; tasks: CrewTask[] }
+import { CREW_STATUSES, type CrewBoard, type CrewOp, type CrewStatus, type CrewTask } from "./crewTypes.ts";
+export type { CrewBoard, CrewOp, CrewStatus, CrewTask };
 
 const TITLE_MAX = 200, BODY_MAX = 20_000, TASKS_MAX = 2000;
 const normPath = (p: string) => p.replace(/\/+$/, "");
@@ -55,12 +53,6 @@ function writeBoard(root: string, board: CrewBoard): CrewBoard {
 function renumber(tasks: CrewTask[], status: CrewStatus): void {
   tasks.filter((t) => t.status === status).sort((a, b) => a.order - b.order).forEach((t, i) => { t.order = i; });
 }
-
-export type CrewOp =
-  | { op: "create"; title: string; body?: string; status?: CrewStatus }
-  | { op: "update"; id: string; title?: string; body?: string }
-  | { op: "move"; id: string; status: CrewStatus; index: number }
-  | { op: "delete"; id: string };
 
 // 연산 하나 적용 → 새 보드. 잘못된 입력이면 Error(라우트가 400).
 export function applyOp(root: string, op: CrewOp, now = Date.now()): CrewBoard {
