@@ -1390,6 +1390,13 @@ const ko: Dict = {
   "crewchat.emptyTitle": "에이전트들에게 말을 걸어 보세요",
   "crewchat.emptyHint": "위 프로필을 누르거나 @로 불러서 일을 맡기면, 여기서 서로 주고받으며 일해요.",
   "crewchat.placeholderShort": "메시지 입력 — @로 에이전트 부르기",
+  "crewchat.prCreated": "Draft PR 만들었어요: {url}",
+  "crew.pr.create": "Draft PR 만들기",
+  "crew.pr.open": "PR 열기",
+  "crew.pr.failed": "PR을 만들지 못했어요",
+  "crew.pr.creating": "PR 만드는 중…",
+  "crew.takeover": "터미널로 넘겨받기",
+  "crew.takeoverHint": "이 카드 작업 폴더에서 에이전트 대화를 이어서 직접 해요(실행 중이면 멈춰요)",
 };
 
 const ja: Dict = {
@@ -2764,6 +2771,13 @@ const ja: Dict = {
   "crewchat.emptyTitle": "エージェントに話しかけてみましょう",
   "crewchat.emptyHint": "上のプロフィールを押すか@で呼んで依頼すると、ここでやり取りしながら作業します。",
   "crewchat.placeholderShort": "メッセージ — @でエージェントを呼ぶ",
+  "crewchat.prCreated": "Draft PRを作成しました: {url}",
+  "crew.pr.create": "Draft PRを作成",
+  "crew.pr.open": "PRを開く",
+  "crew.pr.failed": "PRを作成できませんでした",
+  "crew.pr.creating": "PR作成中…",
+  "crew.takeover": "ターミナルで引き継ぐ",
+  "crew.takeoverHint": "このカードの作業フォルダでエージェントの会話を引き継ぎます(実行中なら停止します)",
 };
 
 const en: Dict = {
@@ -4138,6 +4152,13 @@ const en: Dict = {
   "crewchat.emptyTitle": "Say hi to your agents",
   "crewchat.emptyHint": "Tap a profile above or @mention one to hand off work — they’ll talk it through here.",
   "crewchat.placeholderShort": "Message — @ to call an agent",
+  "crewchat.prCreated": "Opened a draft PR: {url}",
+  "crew.pr.create": "Create draft PR",
+  "crew.pr.open": "Open PR",
+  "crew.pr.failed": "Couldn't create the PR",
+  "crew.pr.creating": "Creating PR…",
+  "crew.takeover": "Take over in terminal",
+  "crew.takeoverHint": "Continue this agent’s conversation yourself in the card’s worktree (stops a running run)",
 };
 
 export const MESSAGES: Record<Locale, Dict> = { ko, ja, en };

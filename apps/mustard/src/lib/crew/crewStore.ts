@@ -34,6 +34,8 @@ function flowFields(t: Record<string, unknown>): Partial<CrewTask> {
   if (typeof t.note === "string" && t.note) out.note = t.note.slice(0, 8000);
   if (int(t.consults) !== undefined) out.consults = int(t.consults);
   if (int(t.reviews) !== undefined) out.reviews = int(t.reviews);
+  const pr = t.pr as Record<string, unknown> | undefined;
+  if (pr && typeof pr.url === "string" && /^https?:\/\//.test(pr.url)) out.pr = { url: pr.url.slice(0, 500) };
   const c = t.consult as Record<string, unknown> | undefined;
   if (c && typeof c === "object" && int(c.stage) !== undefined && cleanRole(c.from) && typeof c.question === "string")
     out.consult = { stage: int(c.stage)!, from: cleanRole(c.from)!, question: c.question.slice(0, 4000) };
@@ -125,7 +127,7 @@ export function applyOp(root: string, op: CrewOp, now = Date.now()): CrewBoard {
 }
 
 // #1102 서버 전용 — 오케스트레이터가 카드의 흐름 필드·칸을 바꿈(라우트로는 노출 안 함). undefined 값 = 그 필드 지움.
-export type FlowPatch = Partial<Pick<CrewTask, "pipeline" | "stage" | "loops" | "fails" | "gate" | "note" | "consult" | "consults" | "reviews">> & { status?: CrewStatus };
+export type FlowPatch = Partial<Pick<CrewTask, "pipeline" | "stage" | "loops" | "fails" | "gate" | "note" | "consult" | "consults" | "reviews" | "pr">> & { status?: CrewStatus };
 export function patchTask(root: string, id: string, patch: FlowPatch, now = Date.now()): CrewBoard {
   const board = readBoard(root);
   const i = board.tasks.findIndex((x) => x.id === id);

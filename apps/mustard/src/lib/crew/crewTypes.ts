@@ -12,6 +12,7 @@ export interface CrewTask {
   pipeline?: string[]; stage?: number; loops?: number; fails?: number; gate?: CrewGate; note?: string;
   // 에이전트 토론(#1108) — 지금 단계가 동료 질문에 답하기면 consult, 묻기 횟수·리뷰 왕복 횟수
   consult?: { stage: number; from: string; question: string }; consults?: number; reviews?: number;
+  pr?: { url: string }; // #1110 사람이 만든 draft PR
 }
 export interface CrewBoard { version: 1; tasks: CrewTask[] }
 export type CrewOp =

@@ -1,7 +1,7 @@
 // Crew 실행(#1100) — GET ?root= 실행 기록(진행 중 포함) / POST {root, taskId, action:"start"|"stop"|"permission"|"gate", approved?, decision?, text?}.
 // 권한 승인은 이 경로(사람 클릭)로만 — 에이전트 메시지로 승인되지 않음.
 import { isAbsolute } from "node:path";
-import { decideCard, listRuns, respondPermission, startRun, stopRun, MAX_CONCURRENT } from "@/lib/crew/crewRunner";
+import { createPr, decideCard, listRuns, respondPermission, startRun, stopRun, takeover, MAX_CONCURRENT } from "@/lib/crew/crewRunner";
 
 export const runtime = "nodejs";
 
@@ -25,6 +25,8 @@ export async function POST(request: Request): Promise<Response> {
       if (!d) return Response.json({ ok: false, error: "bad decision" }, { status: 400 });
       return Response.json({ ok: true, board: decideCard(root, taskId, d, typeof b.text === "string" ? b.text : "") });
     }
+    if (b.action === "pr") return Response.json({ ok: true, ...(await createPr(root, taskId)) }); // #1110 사람 클릭
+    if (b.action === "takeover") return Response.json({ ok: true, ...(await takeover(root, taskId)) });
     const run = b.action === "start" ? await startRun(root, taskId, new URL(request.url).origin) // 훅이 다시 부를 주소
       : b.action === "stop" ? await stopRun(root, taskId)
       : b.action === "permission" ? await respondPermission(root, taskId, b.approved === true)

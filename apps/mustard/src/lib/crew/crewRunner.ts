@@ -3,7 +3,9 @@
 //       → complete = 리뷰 칸(세션 종료해 자리 반납) / error = 막힘 / 권한 요청 = 나 필요(사람 클릭으로만 승인).
 // 상태는 SNA 세션 이벤트(기록)로 판정 — 화면 긁기 안 함(#979 교훈). 기록 = ~/.nunopi/crew/<sha>/runs.json.
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { getSnaClient } from "@mustard/core/sna";
@@ -426,4 +428,41 @@ export function postHuman(root: string, text: string, replyTo?: string): { msg: 
     return { msg, taskId: created.id, created: true };
   }
   return { msg };
+}
+
+// #1110 Draft PR 만들기 — 사람 클릭으로만(에이전트는 push·PR 금지 정책). 카드 마지막 실행의 작업 폴더·브랜치에서 push → gh pr create --draft.
+const pexecFile = promisify(execFile);
+export async function createPr(root: string, taskId: string): Promise<{ url: string }> {
+  if (activeFor(root, taskId)) throw new Error("running");
+  const task = readBoard(root).tasks.find((t) => t.id === taskId);
+  if (!task) throw new Error("task not found");
+  if (task.pr) return task.pr;
+  const run = [...listRuns(root)].reverse().find((r) => r.taskId === taskId && r.worktree && r.branch);
+  if (!run || !existsSync(run.worktree)) throw new Error("no worktree for this card");
+  const git = (args: string[]) => pexecFile("git", args, { cwd: run.worktree, timeout: 120_000 }).then((r) => r.stdout.trim());
+  const remote = await git(["remote"]).catch(() => "");
+  if (!remote.split("\n").includes("origin")) throw new Error("no git remote 'origin'");
+  await git(["push", "-u", "origin", run.branch]);
+  const artifacts = (() => { try { return readdirSync(join(run.worktree, ".crew")).filter((f) => f.endsWith(".md")); } catch { return []; } })();
+  const body = [
+    "## Summary", task.gate?.text || run.summary || task.title, "",
+    "## Pipeline", (task.pipeline ?? [run.role]).map((r) => `\`${r}\``).join(" → "), "",
+    ...(artifacts.length ? ["## Crew artifacts (in the worktree, not committed)", ...artifacts.map((f) => `- .crew/${f}`), ""] : []),
+    "🤖 Opened from Mustard Crew",
+  ].join("\n");
+  const base = run.base && run.base !== "HEAD" ? run.base : "";
+  const out = await pexecFile("gh", ["pr", "create", "--draft", "--head", run.branch, ...(base ? ["--base", base] : []), "--title", task.title, "--body", body], { cwd: run.worktree, timeout: 120_000 })
+    .then((r) => r.stdout.trim()).catch((e) => { throw new Error(String((e as { stderr?: string }).stderr || (e as Error).message).trim().slice(0, 300) || "gh failed"); });
+  const url = out.split("\n").map((l) => l.trim()).find((l) => /^https?:\/\//.test(l)) ?? out;
+  patchTask(root, taskId, { pr: { url } });
+  say(root, { from: "board", kind: "gate", taskId, taskTitle: task.title, text: tr("crewchat.prCreated", { url }) });
+  return { url };
+}
+
+// #1110 터미널로 넘겨받기 — 실행 중이면 멈추고, 그 카드 작업 폴더·마지막 역할의 실행 AI를 돌려줌(화면이 새 터미널 탭에서 이어받음).
+export async function takeover(root: string, taskId: string): Promise<{ worktree: string; provider: string }> {
+  if (activeFor(root, taskId)) await stopRun(root, taskId);
+  const run = [...listRuns(root)].reverse().find((r) => r.taskId === taskId && r.worktree);
+  if (!run || !existsSync(run.worktree)) throw new Error("no worktree for this card");
+  return { worktree: run.worktree, provider: run.provider };
 }

@@ -1136,10 +1136,16 @@ ipcMain.on("terminal:input", (_e, { id, data }) => { termClient.input({ id, data
 // #864 에이전트 직접 실행 — 신원을 실행 기록에 확정하고 pty 셸에 실행 커맨드 주입. 반환 후 탭 아이콘/이름=이 에이전트.
 // 새 탭은 렌더러가 Terminal 마운트→ensure까지 시간차가 있어, pty 준비(ensuredIds)를 최대 3s 대기 후 주입.
 const ensuredIds = new Set(); // ensure 완료된 세션 id
-ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, extraArgs }) => {
+ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, extraArgs, cwd }) => {
   if (!id || typeof agent !== "string") return { ok: false, reason: "bad args" };
   let cmd = agentCommand(agent);
   if (!cmd) return { ok: false, reason: "unknown agent" };
+  // #1110 Crew 넘겨받기 — 카드 작업 폴더에서 실행(절대 경로·존재하는 폴더만, 작은따옴표 이스케이프)
+  let cdPrefix = "";
+  if (typeof cwd === "string" && cwd) {
+    try { if (!require("node:path").isAbsolute(cwd) || !require("node:fs").statSync(cwd).isDirectory()) return { ok: false, reason: "bad cwd" }; } catch { return { ok: false, reason: "bad cwd" }; }
+    cdPrefix = `cd '${cwd.replace(/'/g, "'\\''")}' && `;
+  }
   // claude는 자기 theme(settings.json)으로 diff·프롬프트·링크 색을 truecolor로 찍어 터미널 팔레트가 못 이긴다(#922).
   // 터미널 테마에 맞춰 --settings로 세션 theme만 덮어씀(유저 전역 ~/.claude/settings.json은 안 건드림, auth 유지·병합).
   if (agent === "claude" && typeof dark === "boolean") cmd += ` --settings '{"theme":"${dark ? "dark" : "light"}"}'`;
@@ -1149,7 +1155,7 @@ ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, extraArgs }
   let ready = false;
   for (let i = 0; i < 60; i++) { if (ensuredIds.has(id)) { ready = true; break; } await new Promise((r) => setTimeout(r, 50)); } // 최대 3s pty 대기
   if (!ready) { launchRegistry.delete(id); return { ok: false, reason: "pty not ready" }; } // 준비 실패 → 신원 취소(오아이콘 방지)
-  try { termClient.input({ id, data: cmd + "\r" }); }
+  try { termClient.input({ id, data: cdPrefix + cmd + "\r" }); }
   catch (e) { launchRegistry.delete(id); return { ok: false, reason: String((e && e.message) || e) }; }
   return { ok: true };
 });
