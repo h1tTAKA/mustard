@@ -1253,6 +1253,9 @@ const ko: Dict = {
   "docTitle.error": "오류 — Nunopi",
   "docTitle.done": "결과 도착 — Nunopi",
   "deck.defaultName": "덱",
+  "workspace.panelCrew": "에이전트 팀 보드",
+  "crew.title": "Crew",
+  "crew.close": "보드 닫기",
 };
 
 const ja: Dict = {
@@ -2490,6 +2493,9 @@ const ja: Dict = {
   "docTitle.error": "エラー — Nunopi",
   "docTitle.done": "結果が届きました — Nunopi",
   "deck.defaultName": "デッキ",
+  "workspace.panelCrew": "エージェントチームボード",
+  "crew.title": "Crew",
+  "crew.close": "ボードを閉じる",
 };
 
 const en: Dict = {
@@ -3727,6 +3733,9 @@ const en: Dict = {
   "docTitle.error": "Error — Nunopi",
   "docTitle.done": "Results ready — Nunopi",
   "deck.defaultName": "Deck",
+  "workspace.panelCrew": "Agent team board",
+  "crew.title": "Crew",
+  "crew.close": "Close board",
 };
 
 export const MESSAGES: Record<Locale, Dict> = { ko, ja, en };
