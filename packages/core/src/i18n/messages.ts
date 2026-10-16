@@ -1387,6 +1387,9 @@ const ko: Dict = {
   "crewchat.hint": "Enter 보내기 · Shift+Enter 줄바꿈 · 메시지에 답글하면 그 카드로",
   "crewchat.manageRoles": "에이전트 관리",
   "crewchat.you.name": "나",
+  "crewchat.emptyTitle": "에이전트들에게 말을 걸어 보세요",
+  "crewchat.emptyHint": "위 프로필을 누르거나 @로 불러서 일을 맡기면, 여기서 서로 주고받으며 일해요.",
+  "crewchat.placeholderShort": "메시지 입력 — @로 에이전트 부르기",
 };
 
 const ja: Dict = {
@@ -2758,6 +2761,9 @@ const ja: Dict = {
   "crewchat.hint": "Enter 送信 · Shift+Enter 改行 · 返信でそのカードへ",
   "crewchat.manageRoles": "エージェント管理",
   "crewchat.you.name": "自分",
+  "crewchat.emptyTitle": "エージェントに話しかけてみましょう",
+  "crewchat.emptyHint": "上のプロフィールを押すか@で呼んで依頼すると、ここでやり取りしながら作業します。",
+  "crewchat.placeholderShort": "メッセージ — @でエージェントを呼ぶ",
 };
 
 const en: Dict = {
@@ -4129,6 +4135,9 @@ const en: Dict = {
   "crewchat.hint": "Enter to send · Shift+Enter newline · reply to route to that card",
   "crewchat.manageRoles": "Manage agents",
   "crewchat.you.name": "You",
+  "crewchat.emptyTitle": "Say hi to your agents",
+  "crewchat.emptyHint": "Tap a profile above or @mention one to hand off work — they’ll talk it through here.",
+  "crewchat.placeholderShort": "Message — @ to call an agent",
 };
 
 export const MESSAGES: Record<Locale, Dict> = { ko, ja, en };

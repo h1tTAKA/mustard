@@ -241,8 +241,13 @@ async function wire() {
       void sna.agent.kill(session).catch(() => {}); // 세션 자리 반납(대화 기록은 SNA DB에 남음 — 넘겨받기·이어 하기는 에픽 4번)
       return;
     } else if (type === "error") {
-      run.state = "failed"; run.endedAt = Date.now(); run.error = oneLine(msg || "agent error", 400);
-      finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘)
+      // SNA 오류 이벤트는 message가 비는 경우가 있음(Codex 인증 오류 등) → data 안의 실제 이유를 꺼냄(#1108 라이브 테스트)
+      const errObj = (data.error ?? {}) as Record<string, unknown>;
+      const why = msg || String(errObj.message ?? data.message ?? "") || (Object.keys(data).length ? JSON.stringify(data) : "") || "agent error";
+      run.state = "failed"; run.endedAt = Date.now(); run.error = oneLine(why, 400);
+      // 로그인·인증 문제는 다시 해도 똑같이 실패 → 재시도 없이 바로 막힘(이유를 보여 줌)
+      if (/unauthori[sz]ed|sign in again|log ?in|refresh token|not logged|authenticat/i.test(why)) block(run.root, run.taskId, run.stage ?? 0, `${PROVIDER[run.provider] ?? run.provider} login needed: ${run.error}`);
+      else finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘)
       persist(run, true);
       return;
     } else if (type === "interrupted") {
