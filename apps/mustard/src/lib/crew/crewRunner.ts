@@ -14,6 +14,7 @@ import { crewProtocol, type CrewRole } from "./crewRoleDefaults";
 import { ensureWorktree } from "./crewWorktree";
 import { decide } from "./crewPolicy";
 import { narrationLocale } from "@/lib/narrationConfig";
+import { defaultSnaModel } from "@mustard/nunopi/server";
 import type { CrewStatus } from "./crewTypes";
 
 export type RunState = "starting" | "running" | "needs-permission" | "done" | "failed" | "stopped";
@@ -129,6 +130,10 @@ function moveCard(root: string, taskId: string, status: CrewStatus) {
     applyOp(root, { op: "move", id: taskId, status, index: b.tasks.filter((x) => x.status === status).length });
   } catch { /* 카드가 지워졌으면 무시 */ }
 }
+
+// 모델을 비우면 SNA가 설정 기본(Claude 모델)을 넣어 Codex·Grok·Cursor가 즉시 실패(라이브 테스트) → 실행 AI별 기본 모델을 항상 명시.
+const modelFor = (role: CrewRole): string =>
+  role.model?.trim() || (role.provider === "grok" ? "grok-build" : role.provider === "cursor" ? "auto" : defaultSnaModel(role.provider as "claude-code" | "codex" | "opencode"));
 
 const oneLine = (s: string, n = 140) => s.replace(/\s+/g, " ").trim().slice(-n);
 
@@ -261,7 +266,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
   const note = task.note;
   patchTask(root, taskId, { pipeline, stage, note: undefined, gate: undefined, status: "running" }); // 사람 말은 이번 실행에 한 번만
 
-  const run: CrewRun = { id: randomUUID(), root, taskId, role: role.id, stage, provider: role.provider, model: role.model, worktree: "", branch: "", base: "", state: "starting", startedAt: Date.now(), toolCount: 0, lastActivity: "preparing worktree" };
+  const run: CrewRun = { id: randomUUID(), root, taskId, role: role.id, stage, provider: role.provider, model: modelFor(role), worktree: "", branch: "", base: "", state: "starting", startedAt: Date.now(), toolCount: 0, lastActivity: "preparing worktree" };
   g.runs.set(run.id, run);
   persist(run, true);
   try {
@@ -279,7 +284,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     g.tokens.set(run.id, token);
     if (isClaude) writeHook();
     await sna.agent.start(sessionId, {
-      provider: role.provider, ...(role.model ? { model: role.model } : {}), cwd: wt.dir,
+      provider: role.provider, model: modelFor(role), cwd: wt.dir,
       appendSystemPrompt: `${role.instructions}\n\n${crewProtocol(LANG[narrationLocale()] ?? "Korean")}`,
       prompt: buildPrompt(task.title, task.body, role, pipeline, stage, note),
       // Claude: SNA 훅 대신 Mustard 훅(정책 자동 허락·차단, 나머지만 사람에게). Codex·OpenCode: SNA 기본 승인 흐름(onPermissionRequest).
