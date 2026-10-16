@@ -147,7 +147,7 @@ export default function TaskDialog({ initial, status, roles, run, onSave, onClos
           {!pipeline.length && <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("crew.pipelineHint")}</p>}
         </div>
 
-        {initial?.gate && <GatePanel task={initial} branch={run?.branch} onGate={onGate} onPr={onPr} />}
+        {initial?.gate && <GatePanel task={initial} roles={roles} branch={run?.branch} onGate={onGate} onPr={onPr} />}
 
         {initial && (
           <RunPanel run={run} onRun={onRun} onStop={onStop} onPermission={onPermission} onTakeover={onTakeover} dirty={(initial.role ?? "") !== role || JSON.stringify(initial.pipeline ?? []) !== JSON.stringify(pipeline)} />
@@ -230,7 +230,7 @@ function RunPanel({ run, onRun, onStop, onPermission, onTakeover, dirty }: { run
 }
 
 // 관문·질문·막힘(#1102) — 사람 결정. spec·schema·merge: 승인/반려(코멘트), question: 답하기, blocked: 이 단계부터 다시.
-function GatePanel({ task, branch, onGate, onPr }: { task: CrewTask; branch?: string; onGate?: (decision: "approve" | "reject" | "answer", text: string) => void; onPr?: () => Promise<void> }) {
+function GatePanel({ task, roles, branch, onGate, onPr }: { task: CrewTask; roles: CrewRole[]; branch?: string; onGate?: (decision: "approve" | "reject" | "answer", text: string) => void; onPr?: () => Promise<void> }) {
   const t = useT();
   const [prBusy, setPrBusy] = useState(false);
   const g = task.gate!;
@@ -241,6 +241,26 @@ function GatePanel({ task, branch, onGate, onPr }: { task: CrewTask; branch?: st
     <div className={`mx-5 mb-4 rounded-xl border p-3 ${tone}`}>
       <div className={`text-[12.5px] font-semibold ${isBlocked ? "text-rose-700 dark:text-rose-300" : "text-amber-800 dark:text-amber-300"}`}>{t(`crew.gate.${g.kind}`)}</div>
       {g.text && <p className="nunopi-scroll mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-300">{g.text}</p>}
+      {g.kind === "spec" && task.split?.length ? (
+        // #1114 쪼개기 제안 — 승인하면 이대로 하위 카드(번호 순, "N 다음" = 그 카드가 끝나야 시작)
+        <div className="mt-2.5">
+          <div className="mb-1 text-[11px] font-medium text-amber-800/80 dark:text-amber-300/80">{t("crewsplit.proposal", { n: task.split.length })}</div>
+          <ol className="space-y-1">
+            {task.split.map((s, i) => (
+              <li key={i} className="flex items-start gap-2 rounded-lg bg-white/70 px-2.5 py-1.5 dark:bg-black/20">
+                <span className="mt-px w-4 shrink-0 text-right text-[11px] tabular-nums text-zinc-400">{i + 1}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[12px] font-medium text-zinc-800 dark:text-zinc-100">{s.title}</span>
+                  <span className="mt-0.5 flex flex-wrap items-center gap-1">
+                    {s.roles.map((r, j) => <span key={j} title={roleName(t, roles, r)} className="inline-flex h-[18px] w-[18px] items-center justify-center rounded bg-zinc-100 text-zinc-500 dark:bg-white/[0.06] dark:text-zinc-400"><RoleIcon role={roles.some((x) => x.id === r) ? r : undefined} size={11} /></span>)}
+                    {s.after?.length ? <span className="text-[10.5px] text-zinc-500 dark:text-zinc-400">{t("crewsplit.after", { list: s.after.map((n) => n + 1).join(", ") })}</span> : null}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
       {g.kind === "merge" && <p className="mt-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">{t("crew.gate.mergeHint", { branch: branch || "crew/…" })}</p>}
       {!isBlocked && (
         <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder={isQ ? t("crew.gate.answerPlaceholder") : t("crew.gate.commentPlaceholder")}
@@ -261,7 +281,7 @@ function GatePanel({ task, branch, onGate, onPr }: { task: CrewTask; branch?: st
             </button>
           ))}
           <button type="button" disabled={!text.trim()} onClick={() => onGate?.("reject", text)} className="rounded-lg px-3 py-1 text-[12px] font-medium text-zinc-600 transition hover:bg-amber-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10">{t("crew.gate.reject")}</button>
-          <button type="button" onClick={() => onGate?.("approve", "")} className="rounded-lg bg-amber-500 px-3 py-1 text-[12px] font-semibold text-white transition hover:bg-amber-600">{t("crew.gate.approve")}</button>
+          <button type="button" onClick={() => onGate?.("approve", "")} className="rounded-lg bg-amber-500 px-3 py-1 text-[12px] font-semibold text-white transition hover:bg-amber-600">{g.kind === "spec" && task.split?.length ? t("crewsplit.approve") : t("crew.gate.approve")}</button>
         </>)}
       </div>
     </div>
