@@ -95,7 +95,7 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
                   {s === "backlog" && adding && <Composer onCancel={() => setAdding(false)} onSave={async (title, body) => { if (await apply({ op: "create", title, body })) setAdding(false); }} />}
                   {cards.map((c, i) => (
                     <div key={c.id}>
-                      {over?.status === s && over.index === i && drag !== c.id && <div className="mb-1.5 h-0.5 rounded bg-mustard-500" aria-hidden />}
+                      {over?.status === s && over.index === i - (drag && cards.slice(0, i).some((x) => x.id === drag) ? 1 : 0) && drag !== c.id && /* 끄는 카드를 뺀 순번(onColumnDragOver와 같은 기준) */ <div className="mb-1.5 h-0.5 rounded bg-mustard-500" aria-hidden />}
                       <button type="button" data-card={c.id} draggable
                         onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", c.id); setDrag(c.id); }}
                         onDragEnd={() => { setDrag(null); setOver(null); }}
