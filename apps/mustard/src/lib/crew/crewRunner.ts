@@ -11,6 +11,7 @@ import { applyOp, readBoard } from "./crewStore";
 import { getRole } from "./crewRoleStore";
 import { crewProtocol, type CrewRole } from "./crewRoleDefaults";
 import { ensureWorktree } from "./crewWorktree";
+import { decide } from "./crewPolicy";
 import { narrationLocale } from "@/lib/narrationConfig";
 import type { CrewStatus } from "./crewTypes";
 
@@ -46,8 +47,48 @@ function writeRuns(root: string, runs: CrewRun[]) {
 }
 
 // ── 프로세스 싱글톤 상태 ──────────────────────────────────────────────
-type G = { runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>> };
-const g = ((globalThis as unknown as { __mustardCrew?: G }).__mustardCrew ??= { runs: new Map(), bySession: new Map(), wired: false, reconciled: new Set(), flush: new Map() });
+type Pending = { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> };
+type G = { runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending> };
+const g = ((globalThis as unknown as { __mustardCrew?: G }).__mustardCrew ??= { runs: new Map(), bySession: new Map(), wired: false, reconciled: new Set(), flush: new Map(), tokens: new Map(), pending: new Map() });
+
+// ── Claude 권한 훅 ───────────────────────────────────────────────────
+// SNA가 자동으로 넣는 PreToolUse 훅은 인증 없이 SNA에 물어 전부 거부됨(+ 읽기마다 사람에게 물음) → Claude 역할은
+// bypassPermissions(SNA 훅 안 넣음) + Mustard 훅: 도구마다 Mustard 서버(/api/crew/permission)에 묻고 crewPolicy가 결정.
+// 훅 파일은 실행 때 ~/.nunopi/crew/claude-hook.cjs에 씀(패키지 경로에 안 기댐). 실패하면 거부(안전 쪽).
+const HOOK_SRC = `// Mustard Crew PreToolUse 훅(#1100) — 자동 생성. 도구 실행 전에 Mustard에 물어 allow/deny.
+const arg = (k) => (process.argv.find((a) => a.startsWith("--" + k + "=")) || "").slice(k.length + 3);
+let raw = ""; process.stdin.on("data", (c) => (raw += c));
+process.stdin.on("end", async () => {
+  const out = (d, why) => { console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: d, ...(why ? { permissionDecisionReason: why } : {}) } })); process.exit(0); };
+  try {
+    const input = raw.trim() ? JSON.parse(raw) : {};
+    const r = await fetch(arg("url") + "/api/crew/permission", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run: arg("run"), token: arg("token"), tool_name: input.tool_name, tool_input: input.tool_input }), signal: AbortSignal.timeout(900000) });
+    const j = await r.json();
+    out(j.decision === "allow" ? "allow" : "deny", j.decision === "allow" ? "" : (j.reason || "Denied by Mustard Crew policy or the user"));
+  } catch (e) { out("deny", "Mustard unreachable: " + (e && e.message)); }
+});
+`;
+const hookPath = () => join(baseDir(), "claude-hook.cjs");
+function writeHook() { mkdirSync(baseDir(), { recursive: true }); writeFileSync(hookPath(), HOOK_SRC); }
+
+// 훅 요청 처리 — 정책이 allow/deny면 바로, ask면 카드 '나 필요'로 옮기고 사람 클릭(최대 10분, 넘으면 거부)을 기다림.
+export async function hookDecision(runId: string, token: string, tool: string, input: Record<string, unknown>): Promise<{ decision: "allow" | "deny"; reason?: string }> {
+  const run = g.runs.get(runId);
+  if (!run || g.tokens.get(runId) !== token || !ACTIVE.includes(run.state)) return { decision: "deny", reason: "unknown or finished run" };
+  const d = decide(tool, input ?? {}, run.worktree);
+  if (d === "allow") return { decision: "allow" };
+  if (d === "deny") { run.lastActivity = `⛔ ${tool} blocked by policy`; persist(run); return { decision: "deny", reason: "Blocked by Mustard Crew policy (push/merge/destructive git are human-only)" }; }
+  if (g.pending.has(runId)) return { decision: "deny", reason: "another permission is pending" };
+  run.state = "needs-permission"; run.permission = { request: { tool_name: tool, tool_input: input }, at: Date.now() };
+  moveCard(run.root, run.taskId, "needs-you");
+  persist(run, true);
+  const ok = await new Promise<boolean>((res) => {
+    const timer = setTimeout(() => { g.pending.delete(runId); res(false); }, 10 * 60_000);
+    g.pending.set(runId, { resolve: (v) => { clearTimeout(timer); g.pending.delete(runId); res(v); }, timer });
+  });
+  return ok ? { decision: "allow" } : { decision: "deny", reason: "The user denied this action" };
+}
 
 // 앱이 재시작되면 이전 실행의 세션은 사라짐 → 진행 중이던 기록은 실패로 정리하고 카드는 막힘으로(첫 접근 때 한 번).
 function reconcile(root: string) {
@@ -149,7 +190,7 @@ export function listRuns(root: string): CrewRun[] {
   return [...byId.values()].sort((a, b) => a.startedAt - b.startedAt);
 }
 
-export async function startRun(root: string, taskId: string): Promise<CrewRun> {
+export async function startRun(root: string, taskId: string, origin: string): Promise<CrewRun> {
   reconcile(root);
   const task = readBoard(root).tasks.find((t) => t.id === taskId);
   if (!task) throw new Error("task not found");
@@ -171,11 +212,17 @@ export async function startRun(root: string, taskId: string): Promise<CrewRun> {
     run.sessionId = sessionId;
     g.bySession.set(sessionId, run.id);
     await sna.agent.subscribe(sessionId);
+    const isClaude = role.provider === "claude-code";
+    const token = randomUUID();
+    g.tokens.set(run.id, token);
+    if (isClaude) writeHook();
     await sna.agent.start(sessionId, {
       provider: role.provider, ...(role.model ? { model: role.model } : {}), cwd: wt.dir,
       appendSystemPrompt: `${role.instructions}\n\n${crewProtocol(LANG[narrationLocale()] ?? "Korean")}`,
       prompt: buildPrompt(task.title, task.body, role),
-      permissionMode: "acceptEdits", // worktree 안 수정은 자동, 그 밖 도구는 권한 요청 → 나 필요
+      // Claude: SNA 훅 대신 Mustard 훅(정책 자동 허락·차단, 나머지만 사람에게). Codex·OpenCode: SNA 기본 승인 흐름(onPermissionRequest).
+      permissionMode: isClaude ? "bypassPermissions" : "acceptEdits",
+      ...(isClaude ? { providerOptions: { settings: { hooks: { PreToolUse: [{ matcher: ".*", hooks: [{ type: "command", command: `node "${hookPath()}" --url=${origin} --run=${run.id} --token=${token}`, timeout: 900 }] }] } } } } : {}),
       disallowedTools: DISALLOWED,
       meta: { crew: true, runId: run.id },
     });
@@ -195,6 +242,7 @@ export async function stopRun(root: string, taskId: string): Promise<CrewRun> {
   const run = activeFor(root, taskId);
   if (!run) throw new Error("not running");
   run.state = "stopped"; run.endedAt = Date.now(); run.error = "stopped by user"; run.permission = undefined;
+  g.pending.get(run.id)?.resolve(false); // 기다리던 훅은 거부로 풀기
   if (run.sessionId) await (await getSnaClient()).agent.kill(run.sessionId).catch(() => {});
   moveCard(root, taskId, "blocked");
   persist(run, true);
@@ -204,8 +252,11 @@ export async function stopRun(root: string, taskId: string): Promise<CrewRun> {
 // 권한 요청 응답 — 화면 버튼(사람 클릭)에서만 옴. 에이전트가 전한 "승인됐다"는 받지 않음.
 export async function respondPermission(root: string, taskId: string, approved: boolean): Promise<CrewRun> {
   const run = activeFor(root, taskId);
-  if (!run || run.state !== "needs-permission" || !run.sessionId) throw new Error("no pending permission");
-  await (await getSnaClient()).agent.respondPermission(run.sessionId, approved);
+  if (!run || run.state !== "needs-permission") throw new Error("no pending permission");
+  const hook = g.pending.get(run.id);
+  if (hook) hook.resolve(approved); // Claude — Mustard 훅이 기다리는 중
+  else if (run.sessionId) await (await getSnaClient()).agent.respondPermission(run.sessionId, approved); // Codex·OpenCode — SNA 승인
+  else throw new Error("no pending permission");
   run.state = "running"; run.permission = undefined; run.lastActivity = approved ? "permission approved" : "permission denied";
   moveCard(root, taskId, "running");
   persist(run, true);

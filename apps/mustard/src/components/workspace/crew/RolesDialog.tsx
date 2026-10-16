@@ -97,12 +97,12 @@ export default function RolesDialog({ roles, onRoles, onClose }: { roles: CrewRo
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
-              <div>
+              <div className="col-span-2">
                 <label className={label}>{t("crew.roleProvider")}</label>
-                <div className="flex gap-1 rounded-lg bg-zinc-100 p-0.5 dark:bg-white/[0.05]">
+                <div className="grid grid-cols-5 gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-white/[0.05]">
                   {CREW_PROVIDERS.map((p) => (
                     <button key={p} type="button" onClick={() => setDraft({ ...draft, provider: p })}
-                      className={`flex-1 rounded-md px-2 py-1 text-[11.5px] font-medium transition ${draft.provider === p ? "bg-white text-zinc-900 shadow-sm dark:bg-white/15 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
+                      className={`rounded-md px-2 py-1 text-[11.5px] font-medium transition ${draft.provider === p ? "bg-white text-zinc-900 shadow-sm dark:bg-white/15 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
                       {PROVIDER_LABEL[p]}
                     </button>
                   ))}

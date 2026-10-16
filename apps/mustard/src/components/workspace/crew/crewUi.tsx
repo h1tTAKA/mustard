@@ -11,7 +11,7 @@ export const STATUS_DOT: Record<CrewStatus, string> = {
   review: "bg-violet-500", done: "bg-emerald-500", blocked: "bg-rose-500",
 };
 
-export const PROVIDER_LABEL: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", opencode: "OpenCode" };
+export const PROVIDER_LABEL: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", grok: "Grok Build", cursor: "Cursor", opencode: "OpenCode" };
 
 const ROLE_ICON: Record<string, typeof IconCode> = {
   "scope-planner": IconTarget, "screen-designer": IconLayoutDashboard, "data-architect": IconDatabase, "app-builder": IconCode,

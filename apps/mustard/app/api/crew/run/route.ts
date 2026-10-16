@@ -18,7 +18,7 @@ export async function POST(request: Request): Promise<Response> {
   const root = typeof b.root === "string" ? b.root : "", taskId = typeof b.taskId === "string" ? b.taskId : "";
   if (!isAbsolute(root) || !taskId) return Response.json({ ok: false, error: "root/taskId required" }, { status: 400 });
   try {
-    const run = b.action === "start" ? await startRun(root, taskId)
+    const run = b.action === "start" ? await startRun(root, taskId, new URL(request.url).origin) // 훅이 다시 부를 주소
       : b.action === "stop" ? await stopRun(root, taskId)
       : b.action === "permission" ? await respondPermission(root, taskId, b.approved === true)
       : null;

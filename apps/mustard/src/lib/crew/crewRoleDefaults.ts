@@ -3,8 +3,9 @@
 // 이름·설명은 i18n(crew.role.<id> / crew.roleDesc.<id>), 지시문은 모델용이라 영어(출력 언어는 Crew 규약에서 따로 지정).
 import { CREW_ROLES } from "./crewTypes.ts";
 
-export type CrewProvider = "claude-code" | "codex" | "opencode";
-export const CREW_PROVIDERS: CrewProvider[] = ["claude-code", "codex", "opencode"];
+// SNA 0.17.2가 실행할 수 있는 런타임 전부(Grok Build·Cursor는 ACP). Gemini 계열은 SNA 프로바이더가 아직 없음 — 추가되면 여기 한 줄.
+export type CrewProvider = "claude-code" | "codex" | "grok" | "cursor" | "opencode";
+export const CREW_PROVIDERS: CrewProvider[] = ["claude-code", "codex", "grok", "cursor", "opencode"];
 // read = 결과물(.crew/) 문서만 씀(코드 안 고침), write = worktree 코드 수정·커밋까지
 export type CrewAccess = "read" | "write";
 
