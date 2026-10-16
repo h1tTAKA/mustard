@@ -69,5 +69,7 @@ export function crewProtocol(language: string): string {
     "- BEFORE you finish, write .crew/handoff.json (overwrite) — the board reads it to route the card:",
     '  {"status":"done|needs_input|blocked|failed","summary":"<=5 lines","message":"1-3 friendly first-person sentences to your teammates in the team chat, @-mention the next role id if you know it","question":"only for needs_input","roles":["Scope Planner only: role ids needed, in order"],"testsPassed":true,"destructive":false}',
     "  Use needs_input with one clear question when you cannot proceed safely. Test Engineer: set testsPassed. Data Architect: set destructive for data-losing changes.",
+    '- Ask a TEAMMATE instead of the human when another role knows better: status "needs_input" + "ask":{"to":"<role id>","question":"..."} — they answer, then you continue.',
+    '- Reviewing roles (test-engineer, release-checker): if the work must change, use status "changes_requested" + "to":"<role id to fix it>" + your concrete points in "message".',
   ].join("\n");
 }

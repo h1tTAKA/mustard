@@ -179,8 +179,10 @@ function finish(run: CrewRun, forced?: Handoff) {
     const nextRole = r.status === "ready" && r.patch.pipeline ? r.patch.pipeline[r.patch.stage ?? 0] : r.status === "ready" ? (task.pipeline ?? [])[(r.patch.stage ?? task.stage ?? 0)] : undefined;
     const base = { taskId: task.id, taskTitle: task.title };
     const said = (h.message || h.summary || run.summary || "").trim();
-    if (h.status === "needs_input") say(run.root, { ...base, from: run.role, provider: run.provider, kind: "question", text: h.question || said, mentions: ["you"] });
-    else if (said) say(run.root, { ...base, from: run.role, provider: run.provider, kind: h.status === "done" ? "handoff" : "blocked", text: nextRole && !said.includes(`@${nextRole}`) ? `${said}\n@${nextRole}` : said, ...(nextRole ? { mentions: [nextRole] } : {}) });
+    const toPeer = h.status === "needs_input" && r.status === "ready"; // #1108 사람 대신 동료에게 물음
+    if (toPeer && nextRole) say(run.root, { ...base, from: run.role, provider: run.provider, kind: "handoff", text: `@${nextRole} ${h.ask?.question ?? h.question ?? said}`, mentions: [nextRole] });
+    else if (h.status === "needs_input") say(run.root, { ...base, from: run.role, provider: run.provider, kind: "question", text: h.question || said, mentions: ["you"] });
+    else if (said) say(run.root, { ...base, from: run.role, provider: run.provider, kind: h.status === "done" || h.status === "changes_requested" ? "handoff" : "blocked", text: nextRole && !said.includes(`@${nextRole}`) ? `${said}\n@${nextRole}` : said, ...(nextRole ? { mentions: [nextRole] } : {}) });
     const gate = r.patch.gate;
     if (gate && gate.kind !== "question") say(run.root, { ...base, from: "board", kind: gate.kind === "blocked" ? "blocked" : "gate", mentions: ["you"],
       text: gate.kind === "merge" ? tr("crewchat.gate.merge", { branch: run.branch }) : gate.kind === "blocked" ? tr("crewchat.gate.blocked", { why: gate.text ?? "" }) : tr(`crewchat.gate.${gate.kind}`) });
@@ -239,8 +241,13 @@ async function wire() {
       void sna.agent.kill(session).catch(() => {}); // 세션 자리 반납(대화 기록은 SNA DB에 남음 — 넘겨받기·이어 하기는 에픽 4번)
       return;
     } else if (type === "error") {
-      run.state = "failed"; run.endedAt = Date.now(); run.error = oneLine(msg || "agent error", 400);
-      finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘)
+      // SNA 오류 이벤트는 message가 비는 경우가 있음(Codex 인증 오류 등) → data 안의 실제 이유를 꺼냄(#1108 라이브 테스트)
+      const errObj = (data.error ?? {}) as Record<string, unknown>;
+      const why = msg || String(errObj.message ?? data.message ?? "") || (Object.keys(data).length ? JSON.stringify(data) : "") || "agent error";
+      run.state = "failed"; run.endedAt = Date.now(); run.error = oneLine(why, 400);
+      // 로그인·인증 문제는 다시 해도 똑같이 실패 → 재시도 없이 바로 막힘(이유를 보여 줌)
+      if (/unauthori[sz]ed|sign in again|log ?in|refresh token|not logged|authenticat/i.test(why)) block(run.root, run.taskId, run.stage ?? 0, `${PROVIDER[run.provider] ?? run.provider} login needed: ${run.error}`);
+      else finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘)
       persist(run, true);
       return;
     } else if (type === "interrupted") {
@@ -258,13 +265,21 @@ async function wire() {
   await sna.agent.subscribePermissions().catch(() => {});
 }
 
-function buildPrompt(title: string, body: string, role: CrewRole, pipeline: string[], stage: number, note?: string): string {
+function buildPrompt(title: string, body: string, role: CrewRole, pipeline: string[], stage: number, note?: string, consult?: { from: string; question: string }): string {
+  // #1108 답하기 모드 — 동료 질문에 답만(코드 수정 금지), 답은 봉투 message에
+  if (consult) return [
+    `# Board card: ${title}`,
+    body.trim() ? `\n${body.trim()}` : "",
+    `\nYour teammate "${consult.from}" is asking you (as "${role.id}"):`,
+    `> ${consult.question}`,
+    `\nAnswer ONLY. Read the code and .crew/ files as needed, but do NOT modify any code or commit. Put your answer (concise, concrete) in .crew/handoff.json "message" with status "done" — it goes straight back to "${consult.from}" in the team chat.`,
+  ].join("\n");
   return [
     `# Board card: ${title}`,
     body.trim() ? `\n${body.trim()}` : "",
     `\nPipeline: ${pipeline.map((r, i) => (i === stage ? `**${r}**` : r)).join(" → ")} (step ${stage + 1}/${pipeline.length}).`,
     `You are acting as role "${role.id}". Read earlier roles' files in .crew/ first, then do your role's part for this card now.`,
-    note ? `\n## Message from the human (follow this)\n${note}` : "",
+    note ? `\n## Message for you (from the human or a teammate — follow this)\n${note}` : "",
   ].join("\n");
 }
 
@@ -318,9 +333,12 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     await sna.agent.start(sessionId, {
       provider: role.provider, model: modelFor(role), cwd: wt.dir,
       appendSystemPrompt: `${role.instructions}\n\n${crewProtocol(LANG[narrationLocale()] ?? "Korean")}`,
-      prompt: buildPrompt(task.title, task.body, role, pipeline, stage, note),
+      prompt: buildPrompt(task.title, task.body, role, pipeline, stage, note, task.consult?.stage === stage ? task.consult : undefined),
       // Claude: SNA 훅 대신 Mustard 훅(정책 자동 허락·차단, 나머지만 사람에게). Codex·OpenCode: SNA 기본 승인 흐름(onPermissionRequest).
       permissionMode: isClaude ? "bypassPermissions" : "acceptEdits",
+      // Codex: SNA 기본은 작업 폴더마다 .sna/codex-home에 로그인 정보를 복사 → 리프레시 토큰은 한 번 쓰면 무효라 복사본끼리 서로 깨뜨림
+      // (라이브 테스트: "refresh token was already used", 사용자 CLI 로그인까지 깨질 위험) → 사용자 원래 CODEX_HOME 하나를 공유(#1108).
+      ...(role.provider === "codex" ? { configDir: process.env.CODEX_HOME?.trim() || join(homedir(), ".codex") } : {}),
       ...(isClaude ? { providerOptions: { settings: { hooks: { PreToolUse: [{ matcher: ".*", hooks: [{ type: "command", command: `node "${hookPath()}" --url=${origin} --run=${run.id} --token=${token}`, timeout: 900 }] }] } } } } : {}),
       disallowedTools: DISALLOWED,
       meta: { crew: true, runId: run.id },

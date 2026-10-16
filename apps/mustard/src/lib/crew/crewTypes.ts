@@ -10,6 +10,8 @@ export interface CrewTask {
   id: string; title: string; body: string; status: CrewStatus; order: number; createdAt: number; updatedAt: number; role?: string;
   // 오케스트레이터(#1102) — 파이프라인(역할 순서)·지금 단계·테스트↔수정 횟수·같은 단계 연속 실패·사람 대기·다음 실행에 붙일 사람 말
   pipeline?: string[]; stage?: number; loops?: number; fails?: number; gate?: CrewGate; note?: string;
+  // 에이전트 토론(#1108) — 지금 단계가 동료 질문에 답하기면 consult, 묻기 횟수·리뷰 왕복 횟수
+  consult?: { stage: number; from: string; question: string }; consults?: number; reviews?: number;
 }
 export interface CrewBoard { version: 1; tasks: CrewTask[] }
 export type CrewOp =

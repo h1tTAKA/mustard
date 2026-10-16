@@ -31,6 +31,7 @@ const again = await ensureWorktree(root, id, "Fix Login Bug!");
 assert.ok(!again.created && again.dir === w.dir, "재사용");
 await ensureWorktree(root, "zzzz9999", "other");
 assert.strictEqual(readFileSync(join(root, ".git", "info", "exclude"), "utf8").split("\n").filter((l) => l === ".crew/").length, 1, "exclude 한 번만");
+assert.ok(readFileSync(join(root, ".git", "info", "exclude"), "utf8").split("\n").includes(".sna/"), ".sna/도 제외");
 
 writeFileSync(join(w.dir, "b.txt"), "2"); g(w.dir, "add", "b.txt"); g(w.dir, "commit", "-qm", "agent work");
 await removeWorktree(root, id, "Fix Login Bug!");

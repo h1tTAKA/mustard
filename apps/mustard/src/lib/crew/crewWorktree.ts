@@ -34,7 +34,9 @@ async function excludeCrewDir(root: string) {
   const ex = join(common, "info", "exclude");
   mkdirSync(join(common, "info"), { recursive: true });
   const cur = existsSync(ex) ? readFileSync(ex, "utf8") : "";
-  if (!cur.split("\n").some((l) => l.trim() === ".crew/")) appendFileSync(ex, `${cur && !cur.endsWith("\n") ? "\n" : ""}# Mustard Crew 결과물(#1100)\n.crew/\n`);
+  const lines = cur.split("\n").map((l) => l.trim());
+  const add = [".crew/", ".sna/"].filter((x) => !lines.includes(x)); // .sna/ = SNA가 작업 폴더에 만드는 런타임 파일(#1108)
+  if (add.length) appendFileSync(ex, `${cur && !cur.endsWith("\n") ? "\n" : ""}# Mustard Crew 결과물·런타임(#1100·#1108)\n${add.join("\n")}\n`);
 }
 
 // 있으면 재사용, 없으면 현재 HEAD에서 새 브랜치로 만듦(브랜치만 남아 있으면 그 브랜치로 다시 붙임).
