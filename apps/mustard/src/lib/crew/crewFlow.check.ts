@@ -1,6 +1,6 @@
 // crewFlow 점검 — node --experimental-strip-types src/lib/crew/crewFlow.check.ts
 import assert from "node:assert";
-import { decideGate, next, parseHandoff, pipelineOf, MAX_CONSULTS, MAX_REVIEWS, MAX_TEST_LOOPS } from "./crewFlow.ts";
+import { childProgress, decideGate, next, parseHandoff, pipelineOf, waitingOn, MAX_CONSULTS, MAX_REVIEWS, MAX_TEST_LOOPS } from "./crewFlow.ts";
 import type { CrewTask } from "./crewTypes.ts";
 
 const known = new Set(["scope-planner", "screen-designer", "data-architect", "app-builder", "test-engineer", "bug-fixer", "release-checker", "doc-writer"]);
@@ -23,7 +23,7 @@ assert.deepStrictEqual([r.patch.stage, r.patch.gate?.kind, r.patch.gate?.stage],
 let t = T({ ...r.patch, status: "needs-you" } as Partial<CrewTask>);
 assert.deepStrictEqual(decideGate(t, "approve"), { status: "ready", patch: { gate: undefined } });
 // spec 반려 → 코멘트와 기획자 재실행
-assert.deepStrictEqual(decideGate(t, "reject", "로그인만 범위로"), { status: "ready", patch: { gate: undefined, stage: 0, note: "로그인만 범위로", fails: 0 } });
+assert.deepStrictEqual(decideGate(t, "reject", "로그인만 범위로"), { status: "ready", patch: { gate: undefined, stage: 0, note: "로그인만 범위로", fails: 0, split: undefined } });
 assert.throws(() => decideGate(t, "reject", " "), /comment required/);
 
 // 개발 → 테스트(다음 단계 Ready)
@@ -94,5 +94,27 @@ assert.deepStrictEqual(r.patch.pipeline?.slice(3), ["test-engineer", "release-ch
 r = next(T({ pipeline: ["app-builder", "release-checker"], stage: 1, reviews: MAX_REVIEWS }), cr(), known);
 assert.deepStrictEqual([r.status, r.patch.gate?.kind], ["review", "merge"], "왕복 상한 → 머지 관문에 지적 첨부");
 assert.ok(r.patch.gate?.text?.includes("에러 처리 빠짐"));
+
+// #1114 쪼개기
+{
+  const subs = [{ title: "API", roles: ["app-builder", "scope-planner", "nobody"] }, { title: "화면", after: [0, 1, 5, -1] }, { title: "" }, { title: "문서", roles: ["doc-writer"], after: [1] }];
+  const h = parseHandoff(JSON.stringify({ status: "done", roles: ["app-builder", "test-engineer"], subtasks: subs }));
+  assert.strictEqual(h.subtasks?.length, 3, "제목 빈 것 버림");
+  const s = next(T({}), h, known);
+  assert.deepStrictEqual([s.status, s.patch.gate?.kind], ["needs-you", "spec"], "쪼개기도 spec 관문");
+  assert.deepStrictEqual(s.patch.split, [
+    { title: "API", roles: ["app-builder"] },
+    { title: "화면", roles: ["app-builder", "test-engineer"], after: [0] },
+    { title: "문서", roles: ["doc-writer"], after: [1] },
+  ], "모르는 역할·기획자 빼고, 비면 남은 파이프라인, after는 앞 번호만");
+  assert.strictEqual(next(T({}), done({ subtasks: [{ title: "하나" }] }), known).patch.split, undefined, "1개는 쪼개기 아님");
+  const nine = Array.from({ length: 12 }, (_, i) => ({ title: `t${i}` }));
+  assert.strictEqual(next(T({}), done({ subtasks: nine }), known).patch.split?.length, 8, "최대 8");
+  const rj = decideGate(T({ gate: { kind: "spec", stage: 0 }, split: s.patch.split }), "reject", "더 작게");
+  assert.ok("split" in rj.patch && rj.patch.split === undefined, "반려하면 제안 버림");
+  const tasks = [{ id: "a", status: "done" as const }, { id: "b", status: "running" as const }];
+  assert.deepStrictEqual(waitingOn({ dependsOn: ["a", "b", "gone"] }, tasks), ["b"], "Done·지워진 건 안 기다림");
+  assert.deepStrictEqual(childProgress({ children: ["a", "b", "gone"] }, tasks), { done: 1, total: 2 });
+}
 
 console.log("crewFlow.check ok");

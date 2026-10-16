@@ -1,11 +1,12 @@
 // Crew 흐름 상태 기계(#1102, 에픽 #1097) — 역할 하나가 끝났을 때 카드를 어디로 보낼지. 순수 함수(AI 아님, 점검 가능).
 // 원칙(조사 결론): 순서·종료는 코드가 강제(CrewAI 오배정·AutoGen 무한 반복 회피), 사람은 관문에서만, 실패·반복엔 상한.
-import type { CrewGate, CrewStatus, CrewTask } from "./crewTypes.ts";
+import type { CrewGate, CrewStatus, CrewSubtask, CrewTask } from "./crewTypes.ts";
 
 export const MAX_TEST_LOOPS = 3; // 테스트↔수정 최대
 export const MAX_FAILS = 3;      // 같은 단계 연속 실패 차단기
 export const MAX_CONSULTS = 3;   // #1108 카드당 동료에게 묻기
 export const MAX_REVIEWS = 2;    // #1108 리뷰 변경 요청 왕복
+export const MAX_SUBTASKS = 8;   // #1114 한 카드를 나눌 수 있는 최대
 
 // 역할이 끝내기 전에 .crew/handoff.json에 쓰는 봉투(규약). 없으면 마지막 메시지로 done.
 export interface Handoff {
@@ -18,9 +19,10 @@ export interface Handoff {
   destructive?: boolean;   // 데이터 설계자 — 파괴적 변경
   ask?: { to: string; question: string }; // #1108 needs_input을 사람 대신 동료에게
   to?: string;             // #1108 changes_requested — 고칠 역할(없으면 직전 다른 역할)
+  subtasks?: { title: string; body?: string; roles?: string[]; after?: number[] }[]; // #1114 범위 기획자 — 하위 작업 제안
 }
 
-export interface FlowResult { status: CrewStatus; patch: Partial<Pick<CrewTask, "pipeline" | "stage" | "loops" | "fails" | "gate" | "note" | "consult" | "consults" | "reviews">> }
+export interface FlowResult { status: CrewStatus; patch: Partial<Pick<CrewTask, "pipeline" | "stage" | "loops" | "fails" | "gate" | "note" | "consult" | "consults" | "reviews" | "split">> }
 
 export function parseHandoff(raw: string | null, fallbackSummary?: string): Handoff {
   if (raw) {
@@ -38,6 +40,13 @@ export function parseHandoff(raw: string | null, fallbackSummary?: string): Hand
         ...(j.ask && typeof j.ask === "object" && typeof (j.ask as Record<string, unknown>).to === "string" && typeof (j.ask as Record<string, unknown>).question === "string"
           ? { ask: { to: String((j.ask as Record<string, unknown>).to), question: String((j.ask as Record<string, unknown>).question).slice(0, 4000) } } : {}),
         ...(typeof j.to === "string" ? { to: j.to } : {}),
+        ...(Array.isArray(j.subtasks) ? { subtasks: j.subtasks.flatMap((x) => {
+          const s = x as Record<string, unknown>;
+          if (!s || typeof s !== "object" || typeof s.title !== "string" || !s.title.trim()) return [];
+          return [{ title: s.title.trim().slice(0, 200), ...(typeof s.body === "string" ? { body: s.body.slice(0, 8000) } : {}),
+            ...(Array.isArray(s.roles) ? { roles: s.roles.filter((r): r is string => typeof r === "string") } : {}),
+            ...(Array.isArray(s.after) ? { after: s.after.filter((n): n is number => Number.isInteger(n)) } : {}) }];
+        }).slice(0, MAX_SUBTASKS) } : {}),
       };
     } catch { /* 깨진 JSON — 아래 기본값 */ }
   }
@@ -95,6 +104,9 @@ export function next(task: CrewTask, h: Handoff, knownRoles: Set<string>): FlowR
     return { status: "ready", patch: { ...base, pipeline, stage: stage + 1, loops } };
   }
   const nextStage = stage + 1;
+  // #1114 하위 작업 2개 이상 = 쪼개기 제안을 spec 관문에(남은 단계가 없어도) — 승인하면 실행기가 하위 카드로 만듦
+  if (role === "scope-planner" && h.subtasks && h.subtasks.length >= 2)
+    return { status: "needs-you", patch: { ...base, pipeline, stage: nextStage, gate: gate("spec", stage, h.summary), split: toSplit(h.subtasks, pipeline.slice(nextStage), knownRoles) } };
   if (nextStage >= pipeline.length) return { status: "review", patch: { ...base, pipeline, stage, gate: gate("merge", stage, h.summary) } }; // 끝 — 머지 관문
   if (role === "scope-planner") return { status: "needs-you", patch: { ...base, pipeline, stage: nextStage, gate: gate("spec", stage, h.summary) } };
   if (role === "data-architect" && h.destructive) return { status: "needs-you", patch: { ...base, pipeline, stage: nextStage, gate: gate("schema", stage, h.summary) } };
@@ -112,5 +124,25 @@ export function decideGate(task: CrewTask, action: "approve" | "reject" | "answe
     return { status: "ready", patch: { gate: undefined } }; // spec·schema — 단계는 이미 다음으로
   }
   if (!text.trim()) throw new Error("comment required");
-  return { status: "ready", patch: { gate: undefined, stage: g.stage, note: text.trim().slice(0, 8000), fails: 0 } };
+  return { status: "ready", patch: { gate: undefined, stage: g.stage, note: text.trim().slice(0, 8000), fails: 0, split: undefined } }; // 반려 = 쪼개기 제안도 버림(다시 계획)
+}
+
+// #1114 제안 정리 — 역할은 아는 것만(범위 기획자 빼고, 비면 부모의 남은 파이프라인), after는 앞 번호만(순환 불가).
+export function toSplit(subs: NonNullable<Handoff["subtasks"]>, rest: string[], knownRoles: Set<string>): CrewSubtask[] {
+  const fallback = rest.length ? rest : ["app-builder", "test-engineer"];
+  return subs.slice(0, MAX_SUBTASKS).map((s, i) => {
+    const roles = [...new Set((s.roles ?? []).filter((r) => knownRoles.has(r) && r !== "scope-planner"))];
+    const after = [...new Set((s.after ?? []).filter((n) => n >= 0 && n < i))];
+    return { title: s.title, ...(s.body ? { body: s.body } : {}), roles: roles.length ? roles : fallback, ...(after.length ? { after } : {}) };
+  });
+}
+
+// #1114 하위 카드가 기다리는 카드(의존 중 아직 Done 아닌 것). 지워진 의존은 기다리지 않음.
+export const waitingOn = (t: Pick<CrewTask, "dependsOn">, tasks: Pick<CrewTask, "id" | "status">[]): string[] =>
+  (t.dependsOn ?? []).filter((id) => { const d = tasks.find((x) => x.id === id); return !!d && d.status !== "done"; });
+
+// #1114 부모 진행 — 하위 몇 개 중 몇 개 Done(지워진 하위는 빼고 셈)
+export function childProgress(p: Pick<CrewTask, "children">, tasks: Pick<CrewTask, "id" | "status">[]): { done: number; total: number } {
+  const kids = (p.children ?? []).map((id) => tasks.find((x) => x.id === id)).filter((x): x is NonNullable<typeof x> => !!x);
+  return { done: kids.filter((k) => k.status === "done").length, total: kids.length };
 }

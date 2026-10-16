@@ -36,6 +36,20 @@ function flowFields(t: Record<string, unknown>): Partial<CrewTask> {
   if (int(t.reviews) !== undefined) out.reviews = int(t.reviews);
   const pr = t.pr as Record<string, unknown> | undefined;
   if (pr && typeof pr.url === "string" && /^https?:\/\//.test(pr.url)) out.pr = { url: pr.url.slice(0, 500) };
+  const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && /^[\w-]{1,64}$/.test(x)).slice(0, 20) : []);
+  if (Array.isArray(t.split)) {
+    const sp = t.split.flatMap((x, i) => {
+      const s = x as Record<string, unknown>;
+      if (!s || typeof s.title !== "string" || !s.title.trim()) return [];
+      const after = Array.isArray(s.after) ? s.after.filter((n): n is number => Number.isInteger(n) && n >= 0 && n < i) : [];
+      return [{ title: s.title.trim().slice(0, 200), ...(typeof s.body === "string" && s.body ? { body: s.body.slice(0, 8000) } : {}),
+        roles: Array.isArray(s.roles) ? s.roles.map(cleanRole).filter((r): r is string => !!r).slice(0, 20) : [], ...(after.length ? { after } : {}) }];
+    }).slice(0, 8);
+    if (sp.length) out.split = sp;
+  }
+  if (ids(t.children).length) out.children = ids(t.children);
+  if (ids(t.dependsOn).length) out.dependsOn = ids(t.dependsOn);
+  if (ids([t.parentId]).length) out.parentId = t.parentId as string;
   const c = t.consult as Record<string, unknown> | undefined;
   if (c && typeof c === "object" && int(c.stage) !== undefined && cleanRole(c.from) && typeof c.question === "string")
     out.consult = { stage: int(c.stage)!, from: cleanRole(c.from)!, question: c.question.slice(0, 4000) };
@@ -127,7 +141,7 @@ export function applyOp(root: string, op: CrewOp, now = Date.now()): CrewBoard {
 }
 
 // #1102 서버 전용 — 오케스트레이터가 카드의 흐름 필드·칸을 바꿈(라우트로는 노출 안 함). undefined 값 = 그 필드 지움.
-export type FlowPatch = Partial<Pick<CrewTask, "pipeline" | "stage" | "loops" | "fails" | "gate" | "note" | "consult" | "consults" | "reviews" | "pr">> & { status?: CrewStatus };
+export type FlowPatch = Partial<Pick<CrewTask, "pipeline" | "stage" | "loops" | "fails" | "gate" | "note" | "consult" | "consults" | "reviews" | "pr" | "split" | "children" | "parentId" | "dependsOn">> & { status?: CrewStatus };
 export function patchTask(root: string, id: string, patch: FlowPatch, now = Date.now()): CrewBoard {
   const board = readBoard(root);
   const i = board.tasks.findIndex((x) => x.id === id);
