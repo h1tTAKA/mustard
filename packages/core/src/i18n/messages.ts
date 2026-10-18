@@ -4329,11 +4329,23 @@ export function translate(locale: string | undefined, key: string, vars?: Record
 export const allLocaleValues = (key: string): string[] => (Object.keys(MESSAGES) as Locale[]).map((l) => MESSAGES[l][key]).filter(Boolean);
 // #1125 저장 시점 언어로 굳은 문구를 지금 언어로 다시 — 키들의 모든 언어 틀({변수} 자리 포함)과 맞춰 보고,
 // 맞으면 뽑은 변수로 지금 언어 문구를 만듦. 안 맞으면(사용자가 지은 이름 등) 그대로.
+// 틀 → 정규식은 키마다 한 번만 만들어 둠(렌더마다 도는 자리라). 변수 자리는 숫자 변수({n})면 숫자만 — 넓은 틀이 다른 문구를 삼키지 않게.
+const tplCache = new Map<string, { re: RegExp; names: string[] }[]>();
+function tplsOf(key: string) {
+  let v = tplCache.get(key);
+  if (!v) {
+    v = allLocaleValues(key).map((tpl) => {
+      const names: string[] = [];
+      const re = new RegExp("^" + tpl.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\\?\{(\w+)\\?\}/g, (_, n) => { names.push(n); return n === "n" ? "(\\d+)" : "([\\s\\S]+?)"; }) + "$");
+      return { re, names };
+    });
+    tplCache.set(key, v);
+  }
+  return v;
+}
 export function relocalize(text: string, keys: string[], t: (key: string, vars?: Record<string, string | number>) => string): string {
   for (const key of keys) {
-    for (const tpl of allLocaleValues(key)) {
-      const names: string[] = [];
-      const re = new RegExp("^" + tpl.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\\?\{(\w+)\\?\}/g, (_, n) => { names.push(n); return "([\\s\\S]+?)"; }) + "$");
+    for (const { re, names } of tplsOf(key)) {
       const m = text.match(re);
       if (m) return t(key, Object.fromEntries(names.map((n, i) => [n, m[i + 1]])));
     }
@@ -4343,10 +4355,11 @@ export function relocalize(text: string, keys: string[], t: (key: string, vars?:
 // 저장된 카드 출처 문구 중 앱이 만든 것(워크스페이스·암기 챗)을 지금 언어로(#1125). 분석 제목 등은 그대로.
 export const CARD_SOURCE_KEYS = ["card.workspaceSource", "mem.chatSource"];
 // Crew 보드·시스템이 저장한 문구(채팅·관문 사유·실행 오류)의 키 — 옛 메시지(키 없이 text만)를 지금 언어로(#1125).
-export const CREW_TEXT_KEYS = Object.keys(MESSAGES.ko).filter((k) => /^(crewchat\.|crewsplit\.|crewtrig\.\w*Chat$|crew\.reason\.)/.test(k));
-// 답변·분석 실패 문구(#1125) — 실패 순간의 언어로 저장되므로(채팅 기록·분석 요약·경고·캐치업 설명) 보여 줄 때 지금 언어로.
-export const FAILURE_TEXT_KEYS = ["fallback.emptyResponse", "fallback.error", "fallback.requestFailed", "fallback.summaryFailed", "fallback.chatRequestFailed", "fallback.chatError", "chat.replyFailed", "chat.replyError", "analyze.cancelled", "provider.runtimeFailed", "provider.runtimeConnectFailed", "provider.httpError", "provider.connectFailed", "analyze.partialParse", "explain.conceptParseFailed", "explain.tokenParseFailed", "text.parseFailed", "text.summaryFailed"];
-// ponytail: 실패 문구는 짧음 — 긴 정상 답변은 정규식 54개 안 돌리고 통과(런타임 오류 원문이 이보다 길면 원문 그대로)
+// 저장되는 키만(화면 버튼·라벨 키를 넣으면 넓은 틀이 사람 말을 번역해 버림 — 리뷰).
+export const CREW_TEXT_KEYS = ["crewchat.permission", "crewchat.gate.merge", "crewchat.gate.blocked", "crewchat.gate.schema", "crewchat.gate.spec", "crewchat.start", "crewchat.restart", "crewchat.decision.approve", "crewchat.decision.retry", "crewchat.prCreated", "crewsplit.created", "crewsplit.parentDone", "crewtrig.ciChat", "crewtrig.issueChat", "crewtrig.scheduleChat", "crew.reason.interrupted", "crew.reason.stopped", "crew.reason.flowError"];
+// 답변·분석 실패 문구(#1125, ko가 같은 chat.reply*가 먼저 — 옛 fallback.chat* 저장분도 같은 뜻으로) — 실패 순간의 언어로 저장되므로(채팅 기록·분석 요약·경고·캐치업 설명) 보여 줄 때 지금 언어로.
+export const FAILURE_TEXT_KEYS = ["fallback.emptyResponse", "fallback.error", "fallback.requestFailed", "fallback.summaryFailed", "chat.replyFailed", "chat.replyError", "fallback.chatRequestFailed", "fallback.chatError", "analyze.cancelled", "provider.runtimeFailed", "provider.runtimeConnectFailed", "provider.httpError", "provider.connectFailed", "analyze.partialParse", "explain.conceptParseFailed", "explain.tokenParseFailed", "text.parseFailed", "text.summaryFailed"];
+// ponytail: 실패 문구는 짧음 — 긴 정상 답변은 비교 안 하고 통과(런타임 오류 원문이 이보다 길면 원문 그대로)
 export const relocalizeFailure = (text: string, t: (key: string, vars?: Record<string, string | number>) => string) => (text.length > 600 ? text : relocalize(text, FAILURE_TEXT_KEYS, t));
 // 질문 카드 출처 "폴더 / 세션 / 질문" — 기본 이름 조각만 지금 언어로(사용자가 지은 이름은 그대로).
 const ASK_PART_KEYS = ["ask.folderN", "ask.sessionN", "ask.thread"];

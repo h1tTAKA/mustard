@@ -614,7 +614,7 @@ export function useCodeAnalysis(shared: CodeAnalysisShared, initialMode: Analyze
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ providerId, request: { code: input || "(코드 없음)", locale: getAnalysisLocale(), providerId, mode: "chat", messages: contextMessages, providerSettings } }),
         });
-        if (!res.ok || !res.body) { appendToSession(sid, { role: "assistant", content: translate(getAnalysisLocale(), "fallback.chatRequestFailed") }); return; }
+        if (!res.ok || !res.body) { appendToSession(sid, { role: "assistant", content: translate(getAnalysisLocale(), "chat.replyFailed") }); return; }
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -636,7 +636,7 @@ export function useCodeAnalysis(shared: CodeAnalysisShared, initialMode: Analyze
         }
         appendToSession(sid, { role: "assistant", content: answer || translate(getAnalysisLocale(), "fallback.emptyResponse") });
       } catch {
-        appendToSession(sid, { role: "assistant", content: translate(getAnalysisLocale(), "fallback.chatError") });
+        appendToSession(sid, { role: "assistant", content: translate(getAnalysisLocale(), "chat.replyError") });
       } finally {
         setChatStreaming(null);
         setChatLoading(false);

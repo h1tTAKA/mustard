@@ -16,6 +16,9 @@ type Probe = { loading: boolean; state?: AuthState; detail?: string };
 type OpenItem = { kind: "issue" | "pr"; number: number }; // 상세 열림 — 반반 분할(#824)이라 kind로 이슈/PR 구분
 
 // onOpenPrDiff = PR 변경 파일 클릭 → 가운데 diff 탭(#1123)
+// 진단 안내 중 앱이 낸 문구는 표시 때 번역(언어 바뀌어도 재진단 없이 따라옴, #1125) — gh/glab detail은 원문 그대로.
+const DESKTOP_ONLY = "\u0000desktopOnly";
+
 export default function GithubPanel({ root, ciDot, onOpenPrDiff }: { root: string; ciDot?: CiDot; onOpenPrDiff?: (pr: number, file: string) => void }) {
   const t = useT();
   const [probe, setProbe] = useState<Probe>({ loading: true });
@@ -60,25 +63,24 @@ export default function GithubPanel({ root, ciDot, onOpenPrDiff }: { root: strin
   // #964 host별 진단 — gitlab이면 glabStatus, else gh auth.
   const run = useCallback(async (h: "github" | "gitlab" | "other" = "github") => {
     const nd = window.nunopiDesktop;
-    if (!root) { setProbe({ loading: false, state: "error", detail: t("github.desktopOnly") }); return; }
+    if (!root) { setProbe({ loading: false, state: "error", detail: DESKTOP_ONLY }); return; }
     setProbe({ loading: true });
     try {
       if (h === "gitlab") {
         const int = nd?.integrations;
-        if (!int?.glabStatus) { if (mountedRef.current) setProbe({ loading: false, state: "error", detail: t("github.desktopOnly") }); return; }
+        if (!int?.glabStatus) { if (mountedRef.current) setProbe({ loading: false, state: "error", detail: DESKTOP_ONLY }); return; }
         const r = await int.glabStatus(root);
         if (mountedRef.current) setProbe({ loading: false, state: r.state, detail: r.detail });
       } else {
         const gh = nd?.github;
-        if (!gh?.auth) { if (mountedRef.current) setProbe({ loading: false, state: "error", detail: t("github.desktopOnly") }); return; }
+        if (!gh?.auth) { if (mountedRef.current) setProbe({ loading: false, state: "error", detail: DESKTOP_ONLY }); return; }
         const r = await gh.auth(root);
         if (mountedRef.current) setProbe({ loading: false, state: r.state, detail: r.detail });
       }
     } catch (e) {
       if (mountedRef.current) setProbe({ loading: false, state: "error", detail: String((e as Error)?.message || e) });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- t 제외: 로케일 전환 시 재진단 방지
-  }, [root, t]); // t: 언어 바뀌면 안내 문구도(#1125)
+  }, [root]);
 
   // 토큰 존재 여부 로드(#826) — 마운트 시 1회.
   useEffect(() => {
@@ -189,7 +191,7 @@ export default function GithubPanel({ root, ciDot, onOpenPrDiff }: { root: strin
                     : probe.state === "rate-limited" ? t("github.rateLimited")
                     : t("github.error")}
                 </p>
-                {probe.detail && <p className="mt-1 break-words text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{probe.detail}</p>}
+                {probe.detail && <p className="mt-1 break-words text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{probe.detail === DESKTOP_ONLY ? t("github.desktopOnly") : probe.detail}</p>}
               </div>
             </div>
             <button type="button" onClick={() => void run(host)}

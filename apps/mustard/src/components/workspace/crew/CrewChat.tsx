@@ -33,8 +33,8 @@ function Avatar({ from, known, size = 32 }: { from: string; known: Set<string>; 
 
 export default function CrewChat({ root }: { root: string }) {
   const t = useT();
-  // #1125 보드·시스템 메시지는 키로 지금 언어 번역(옛 메시지는 text를 틀과 맞춰 다시 번역), 사람·에이전트 말은 그대로
-  const msgText = (m: CrewMsg) => (m.i18n ? t(m.i18n.key, m.i18n.vars) + (m.i18n.suffix ?? "") : relocalize(m.text, CREW_TEXT_KEYS, t));
+  // #1125 보드·시스템 메시지는 키로 지금 언어 번역(옛 메시지는 text를 틀과 맞춰 다시 번역), 사람이 친 말은 그대로(승인 버튼이 남긴 decision만 앱 문구)
+  const msgText = (m: CrewMsg) => (m.i18n ? t(m.i18n.key, m.i18n.vars) + (m.i18n.suffix ?? "") : m.from === "human" && m.kind !== "decision" ? m.text : relocalize(m.text, CREW_TEXT_KEYS, t));
   const toast = useToast();
   const [roles, setRoles] = useCrewRoles();
   const [runs] = useCrewRuns(root, () => {});
@@ -187,7 +187,7 @@ export default function CrewChat({ root }: { root: string }) {
               ) : isMe ? (
                 /* 나 — 오른쪽 겨자 말풍선 */
                 <div className={`flex flex-col items-end ${first ? "mt-2.5" : "mt-0.5"}`}>
-                  {parent && <div className="mb-0.5 max-w-[80%] truncate text-[10.5px] text-zinc-400"><IconArrowBackUp size={10} className="mr-0.5 inline" aria-hidden />{who(parent.from)}: {parent.text.slice(0, 60)}</div>}
+                  {parent && <div className="mb-0.5 max-w-[80%] truncate text-[10.5px] text-zinc-400"><IconArrowBackUp size={10} className="mr-0.5 inline" aria-hidden />{who(parent.from)}: {msgText(parent).slice(0, 60)}</div>}
                   <div className="flex max-w-[85%] items-end gap-1.5">
                     {last && <span className="shrink-0 pb-0.5 text-[9.5px] tabular-nums text-zinc-400">{time(m.ts)}</span>}
                     <div className={`whitespace-pre-wrap break-words rounded-2xl bg-mustard-500 px-3 py-1.5 text-[12.5px] leading-relaxed text-brown-900 ${first ? "rounded-tr-md" : ""}`}>{renderText(msgText(m))}</div>

@@ -10,6 +10,7 @@ export interface CustomDeck {
   name: string;
   cardKeys: string[];
   goal?: string; // 에이전트 생성 시 유저 목표 프롬프트(참고)
+  defaultName?: boolean; // #1125 이름 없이 만들어 기본 이름을 씀 → 표시 때 지금 언어로(유저가 "덱"이라 지은 것과 구분)
   createdAt: string;
 }
 
@@ -19,9 +20,10 @@ export function loadCustomDecks(): CustomDeck[] {
     const arr = raw ? (JSON.parse(raw) as CustomDeck[]) : [];
     if (!Array.isArray(arr)) return [];
     // #1125 이름 없이 만든 덱의 기본 이름("덱" 등, 만들 때 언어로 굳음)은 지금 언어로 — 읽는 한 곳에서 처리(표시처 6곳 공통).
+    // 표시가 없는 옛 덱만 이름으로 판정(ponytail: 옛 덱 중 유저가 정확히 "덱"이라 지은 것도 번역됨 — 표시 생긴 뒤엔 없음).
     const defaults = new Set(allLocaleValues("deck.defaultName"));
     const cur = translate(localStorage.getItem("nunopi:locale") ?? "ko", "deck.defaultName");
-    return arr.map((d) => (d && defaults.has(d.name) ? { ...d, name: cur } : d));
+    return arr.map((d) => (d && (d.defaultName ?? defaults.has(d.name)) ? { ...d, name: cur } : d));
   } catch {
     return [];
   }
@@ -50,6 +52,7 @@ export function addCustomDeck(name: string, cardKeys: string[], goal?: string): 
     name: name.trim() || translate(typeof localStorage !== "undefined" ? (localStorage.getItem("nunopi:locale") ?? "ko") : "ko", "deck.defaultName"), // #1095 앱 언어
     cardKeys: [...new Set(cardKeys)], // 중복 제거
     goal,
+    defaultName: !name.trim(),
     createdAt: new Date().toISOString(),
   };
   saveAll([...loadCustomDecks(), deck]);
