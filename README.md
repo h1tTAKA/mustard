@@ -95,4 +95,6 @@ npm run lint    # ESLint
 
 ## Repository
 
-[https://github.com/h1tTAKA/nunopi](https://github.com/h1tTAKA/nunopi)
+[https://github.com/h1tTAKA/mustard](https://github.com/h1tTAKA/mustard) — 원본(모노레포: Mustard 워크스페이스 + nunopi 학습 모듈)
+
+nunopi 단독 앱만 필요하면 [h1tTAKA/nunopi](https://github.com/h1tTAKA/nunopi) — 이 레포의 `apps/nunopi`·`packages/core`·`packages/nunopi`를 main 머지마다 자동 동기화(`scripts/export-nunopi.mjs`, `.github/workflows/sync-nunopi.yml`). 수정은 이 레포에서.
