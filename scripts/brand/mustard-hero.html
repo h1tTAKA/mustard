@@ -2,29 +2,29 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:1200px;height:630px;overflow:hidden}
-body{font-family:-apple-system,"SF Pro Display","Helvetica Neue",Inter,sans-serif;color:#f4efe2;position:relative;
- background:radial-gradient(700px 360px at 50% 18%,rgba(212,160,23,.22),transparent 70%),radial-gradient(900px 500px at 50% 120%,rgba(212,160,23,.12),transparent 60%),linear-gradient(180deg,#141418 0%,#0a0a0c 100%)}
-.grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:40px 40px;mask-image:radial-gradient(700px 420px at 50% 30%,#000 25%,transparent 80%)}
-.head{position:absolute;left:0;right:0;top:44px;display:flex;flex-direction:column;align-items:center;text-align:center;z-index:2}
-.row{display:flex;align-items:center;gap:22px}
-.icon{width:92px;height:92px;filter:drop-shadow(0 16px 36px rgba(212,160,23,.35))}
-h1{font-size:104px;font-weight:800;letter-spacing:-4px;line-height:1;background:linear-gradient(180deg,#ffe08a,#d4a017 70%,#b7860f);-webkit-background-clip:text;color:transparent}
-.tag{margin-top:16px;font-size:16px;font-weight:700;letter-spacing:7px;text-transform:uppercase;color:#f4efe2}
-.tag span{color:#d4a017}
-p.sub{margin-top:12px;font-size:20px;color:#c9c3b4}
-.stage{position:absolute;left:50%;top:300px;width:980px;height:615px;margin-left:-490px;perspective:2000px;z-index:1}
-.shot{width:100%;height:100%;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.14);
- transform:rotateX(38deg) rotateZ(-9deg) translateY(-30px);transform-origin:50% 0;
- box-shadow:0 60px 120px rgba(0,0,0,.7),0 0 0 1px rgba(0,0,0,.5),0 -10px 80px rgba(212,160,23,.18)}
+body{font-family:-apple-system,"SF Pro Display","Helvetica Neue",Inter,sans-serif;color:#f4efe2;position:relative;background:#0a0a0c}
+.stage{position:absolute;inset:0;perspective:800px;perspective-origin:50% 30%;overflow:hidden}
+.shot{position:absolute;left:50%;top:-180px;width:1300px;height:816px;margin-left:-650px;border-radius:18px;overflow:hidden;transform:rotateX(50deg);transform-origin:50% 100%;opacity:.92;border:1px solid rgba(255,255,255,.14);box-shadow:0 0 140px rgba(212,160,23,.2)}
 .shot img{display:block;width:100%;height:100%}
-.fade{position:absolute;left:0;right:0;bottom:0;height:150px;background:linear-gradient(180deg,transparent,#0a0a0c 85%);z-index:3}
-</style></head><body><div class="grid"></div>
+/* hide the app behind the text; let it show only around it */
+.veil{position:absolute;inset:0;background:
+ radial-gradient(640px 250px at 50% 47%,rgba(10,10,12,.97) 0%,rgba(10,10,12,.9) 50%,rgba(10,10,12,.4) 78%,transparent 100%),
+ linear-gradient(180deg,#0a0a0c 0%,rgba(10,10,12,.55) 18%,rgba(10,10,12,.1) 50%,rgba(10,10,12,.3) 100%)}
+.glow{position:absolute;inset:0;background:radial-gradient(520px 220px at 50% 42%,rgba(212,160,23,.16),transparent 70%)}
+.head{position:absolute;left:0;right:0;top:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-bottom:40px}
+.row{display:flex;align-items:center;gap:24px}
+.icon{width:100px;height:100px;filter:drop-shadow(0 16px 40px rgba(212,160,23,.4))}
+h1{font-size:118px;font-weight:800;letter-spacing:-4.5px;line-height:1;background:linear-gradient(180deg,#ffe08a,#d4a017 70%,#b7860f);-webkit-background-clip:text;color:transparent;filter:drop-shadow(0 6px 24px rgba(0,0,0,.6))}
+.tag{margin-top:20px;font-size:17px;font-weight:700;letter-spacing:8px;text-transform:uppercase;color:#f4efe2}
+.tag span{color:#d4a017}
+p.sub{margin-top:14px;font-size:21px;color:#d6d0c1;text-shadow:0 2px 12px rgba(0,0,0,.9)}
+</style></head><body>
+<div class="stage"><div class="shot"><img src="app-screenshot.png" alt=""></div></div>
+<div class="veil"></div><div class="glow"></div>
 <div class="head">
  <div class="row"><div class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 120 120"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f0c445"/><stop offset="1" stop-color="#c8960f"/></linearGradient><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c1c22"/><stop offset="1" stop-color="#0b0b0d"/></linearGradient><radialGradient id="gl" cx="0.5" cy="0.42" r="0.5"><stop offset="0" stop-color="#d4a017" stop-opacity="0.16"/><stop offset="1" stop-color="#d4a017" stop-opacity="0"/></radialGradient></defs><rect width="120" height="120" rx="27" fill="url(#bg)"/><rect width="120" height="120" rx="27" fill="url(#gl)"/><g transform="translate(-7.2 -14.5) scale(1.12)"><path d="M60 108 C60 92 56 82 60 70" fill="none" stroke="#b7860f" stroke-width="3" stroke-linecap="round"/><path d="M59 92 C67 90 73 84 75 76 C66 76 60 82 59 92 Z" fill="#b7860f"/><path d="M61 98 C53 96 47 90 45 82 C54 82 60 88 61 98 Z" fill="#b7860f"/><g transform="translate(60 34) scale(0.55)"><g fill="url(#g)"><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(0)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(90)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(180)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(270)"/></g><circle cx="0" cy="0" r="4.5" fill="#f0c445"/></g><g transform="translate(49 46) scale(0.5)"><g fill="url(#g)"><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(0)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(90)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(180)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(270)"/></g><circle cx="0" cy="0" r="4.5" fill="#f0c445"/></g><g transform="translate(71 46) scale(0.5)"><g fill="url(#g)"><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(0)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(90)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(180)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(270)"/></g><circle cx="0" cy="0" r="4.5" fill="#f0c445"/></g><g transform="translate(60 54) scale(0.6)"><g fill="url(#g)"><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(0)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(90)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(180)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(270)"/></g><circle cx="0" cy="0" r="4.5" fill="#f0c445"/></g></g></svg>
 </div><h1>Mustard</h1></div>
  <div class="tag">Must-have <span>ADE</span></div>
  <p class="sub">Work alongside AI coding agents — and understand what they build.</p>
 </div>
-<div class="stage"><div class="shot"><img src="app-screenshot.png" alt=""></div></div>
-<div class="fade"></div>
 </body></html>
