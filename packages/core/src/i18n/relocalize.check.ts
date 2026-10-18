@@ -1,6 +1,6 @@
 // relocalize 점검 — node --experimental-strip-types packages/core/src/i18n/relocalize.check.ts
 import assert from "node:assert";
-import { relocalize, relocalizeCardSource, translate, CARD_SOURCE_KEYS } from "./messages.ts";
+import { relocalize, relocalizeCardSource, relocalizeFailure, translate, CARD_SOURCE_KEYS } from "./messages.ts";
 const en = (k: string, v?: Record<string, string | number>) => translate("en", k, v);
 const koWs = translate("ko", "card.workspaceSource", { repo: "taskboard" });
 const koChat = translate("ko", "mem.chatSource", { front: "useState" });
@@ -10,4 +10,8 @@ assert.strictEqual(relocalize(koChat, CARD_SOURCE_KEYS, en), translate("en", "me
 assert.strictEqual(relocalize("React 공식 문서", CARD_SOURCE_KEYS, en), "React 공식 문서");
 const askPath = `내 폴더 / ${translate("ko", "ask.sessionN", { n: 2 })} / ${translate("ko", "ask.thread", { n: 3 })}`;
 assert.strictEqual(relocalizeCardSource(askPath, en), `내 폴더 / ${translate("en", "ask.sessionN", { n: 2 })} / ${translate("en", "ask.thread", { n: 3 })}`, "질문 경로 기본 이름 조각만");
+const koFail = translate("ko", "provider.runtimeFailed", { msg: "exit 1\nstderr: boom" });
+assert.strictEqual(relocalizeFailure(koFail, en), translate("en", "provider.runtimeFailed", { msg: "exit 1\nstderr: boom" }), "여러 줄 오류 원문도");
+assert.strictEqual(relocalizeFailure(translate("ja", "fallback.emptyResponse"), en), translate("en", "fallback.emptyResponse"));
+assert.strictEqual(relocalizeFailure("정상 답변입니다.", en), "정상 답변입니다.");
 console.log("relocalize ok", relocalize(koWs, CARD_SOURCE_KEYS, en));

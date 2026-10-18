@@ -10,7 +10,7 @@ import { IconMessageCircle, IconArrowUp, IconLoader2, IconFileCode, IconFileText
 import { Markdown } from "@mustard/core";
 import WorkspaceQuizPanel from "@/components/workspace/WorkspaceQuizPanel";
 import { formatChatAsMarkdown } from "@mustard/nunopi";
-import { parseCardSuggestions, stripStreamingCardBlock, stripCardBlock, removeSuggestedCard, type SuggestedCard } from "@mustard/core";
+import { parseCardSuggestions, relocalizeFailure, stripStreamingCardBlock, stripCardBlock, removeSuggestedCard, type SuggestedCard } from "@mustard/core";
 import { createChatCard, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { bookmarkedTermExists } from "@mustard/core";
 import { collectCards } from "@mustard/nunopi";
@@ -761,7 +761,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
                 <div key={i} className="self-end max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-100 px-3 py-1.5 text-[12px] leading-relaxed text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100">{m.content}</div>
               );
               // 어시스턴트 — 본문 + nunopi-cards 칩(다른 챗룸과 동일). 파일/심볼 카드는 제외(#746).
-              const parsedCards = parseCardSuggestions(m.content);
+              const parsedCards = parseCardSuggestions(relocalizeFailure(m.content, t));
               const text = parsedCards.text;
               const cards = parsedCards.cards.filter(keepCard);
               return (

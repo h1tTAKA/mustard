@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { IconArrowUp, IconPlus, IconCheck, IconSparkles, IconLayoutColumns, IconX, IconCommand, IconCards, IconFileText, IconListCheck, IconEye, IconEyeOff } from "@tabler/icons-react";
 import { Markdown } from "@mustard/core";
 import { formatChatAsMarkdown } from "../learning/ChatRoom";
-import { useT } from "@mustard/core";
+import { useT, relocalizeFailure } from "@mustard/core";
 import { useToast } from "@mustard/core";
 import { parseCardSuggestions, stripStreamingCardBlock, type SuggestedCard } from "@mustard/core";
 import { bookmarkedTermExists } from "@mustard/core";
@@ -250,7 +250,7 @@ export default function AskChat({
               }
               // 어시스턴트 — 버블 없이 폭 전체. nunopi-cards 블록은 칩으로.
               // 이미 카드인 용어도 칩은 띄우되 "이미 담김" 상태로 표시(#511).
-              const { text, cards } = parseCardSuggestions(m.content);
+              const { text, cards } = parseCardSuggestions(relocalizeFailure(m.content, t));
               return (
                 <div key={i} className="flex flex-col items-start gap-2">
                   <div className="w-full select-text text-zinc-800 dark:text-zinc-100">

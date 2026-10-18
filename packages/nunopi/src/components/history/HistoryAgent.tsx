@@ -6,7 +6,7 @@ import { useLocale, useT } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import { collectHistory } from "../../lib/history/collect";
 import { buildHistoryContext } from "../../lib/history/context";
-import { parseCardSuggestions, stripStreamingCardBlock } from "@mustard/core";
+import { parseCardSuggestions, relocalizeFailure, stripStreamingCardBlock } from "@mustard/core";
 import { dayKey } from "../../lib/srs/activityLog";
 import { summary } from "../../lib/srs/stats";
 import { categoryCounts, dueCards } from "../../lib/srs/due";
@@ -175,7 +175,7 @@ export default function HistoryAgent({ providerId, providerSettings }: HistoryAg
                 <div key={i} className="flex justify-start">
                   <div className="max-w-[90%] select-text rounded-2xl rounded-bl-md bg-zinc-100 px-3.5 py-2 text-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-200">
                     {/* nunopi-cards 블록은 이 에이전트선 안 씀 — 본문만(파싱해서 카드 JSON 제거). */}
-                    <Markdown>{parseCardSuggestions(m.content).text}</Markdown>
+                    <Markdown>{parseCardSuggestions(relocalizeFailure(m.content, t)).text}</Markdown>
                   </div>
                 </div>
               ),

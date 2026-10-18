@@ -4324,7 +4324,7 @@ export function relocalize(text: string, keys: string[], t: (key: string, vars?:
   for (const key of keys) {
     for (const tpl of allLocaleValues(key)) {
       const names: string[] = [];
-      const re = new RegExp("^" + tpl.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\\?\{(\w+)\\?\}/g, (_, n) => { names.push(n); return "(.+?)"; }) + "$");
+      const re = new RegExp("^" + tpl.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\\?\{(\w+)\\?\}/g, (_, n) => { names.push(n); return "([\\s\\S]+?)"; }) + "$");
       const m = text.match(re);
       if (m) return t(key, Object.fromEntries(names.map((n, i) => [n, m[i + 1]])));
     }
@@ -4335,6 +4335,10 @@ export function relocalize(text: string, keys: string[], t: (key: string, vars?:
 export const CARD_SOURCE_KEYS = ["card.workspaceSource", "mem.chatSource"];
 // Crew 보드·시스템이 저장한 문구(채팅·관문 사유·실행 오류)의 키 — 옛 메시지(키 없이 text만)를 지금 언어로(#1125).
 export const CREW_TEXT_KEYS = Object.keys(MESSAGES.ko).filter((k) => /^(crewchat\.|crewsplit\.|crewtrig\.\w*Chat$|crew\.reason\.)/.test(k));
+// 답변·분석 실패 문구(#1125) — 실패 순간의 언어로 저장되므로(채팅 기록·분석 요약·경고·캐치업 설명) 보여 줄 때 지금 언어로.
+export const FAILURE_TEXT_KEYS = ["fallback.emptyResponse", "fallback.error", "fallback.requestFailed", "fallback.summaryFailed", "fallback.chatRequestFailed", "fallback.chatError", "chat.replyFailed", "chat.replyError", "analyze.cancelled", "provider.runtimeFailed", "provider.runtimeConnectFailed", "provider.httpError", "provider.connectFailed", "analyze.partialParse", "explain.conceptParseFailed", "explain.tokenParseFailed", "text.parseFailed", "text.summaryFailed"];
+// ponytail: 실패 문구는 짧음 — 긴 정상 답변은 정규식 54개 안 돌리고 통과(런타임 오류 원문이 이보다 길면 원문 그대로)
+export const relocalizeFailure = (text: string, t: (key: string, vars?: Record<string, string | number>) => string) => (text.length > 600 ? text : relocalize(text, FAILURE_TEXT_KEYS, t));
 // 질문 카드 출처 "폴더 / 세션 / 질문" — 기본 이름 조각만 지금 언어로(사용자가 지은 이름은 그대로).
 const ASK_PART_KEYS = ["ask.folderN", "ask.sessionN", "ask.thread"];
 export function relocalizeCardSource(text: string, t: (key: string, vars?: Record<string, string | number>) => string): string {

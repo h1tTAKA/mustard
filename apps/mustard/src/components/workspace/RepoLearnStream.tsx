@@ -16,7 +16,7 @@ import { isDocEdit } from "@/lib/mcpActivity";
 import { isNunopiEnabled } from "@/lib/product";
 import { mergeTerms, parseNarrationTerms, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
-import { useT, relocalize, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
+import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
 import { useFlyCard, collectCards } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
@@ -671,7 +671,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {c.status === "done" ? (() => {
                         // #1066 diff 구간별: [N~M번째 줄 ▸ 그 구간 코드 펼치기] + 설명. 한 파일 여러 변경이 한 카드여도 어느 설명이 어느 줄인지 보임
                         const d = c.kind === "diff" ? parseDiffItemKey(c.key) : null; const secs = d ? diffSections(c.expl ?? "") : null;
-                        if (!d || !secs) return <Markdown>{c.expl ?? ""}</Markdown>;
+                        if (!d || !secs) return <Markdown>{relocalizeFailure(c.expl ?? "", t)}</Markdown>;
                         return secs.map((sec, i) => (
                           <div key={i} className={i > 0 ? "mt-3 border-t border-zinc-200/70 pt-2 dark:border-zinc-800" : ""}>
                             <CatchupDiffCode root={root} hash={d.hash} file={d.file} range={sec}
