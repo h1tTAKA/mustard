@@ -35,10 +35,13 @@ function readLocale(): Locale {
   return memLocale;
 }
 function subscribeLocale(cb: () => void): () => void {
-  const onStorage = (e: StorageEvent) => { if (e.key === STORAGE_KEY) { wroteHere = false; cb(); } };
+  const onStorage = (e: StorageEvent) => { if (e.key === STORAGE_KEY || e.key === null) { wroteHere = false; cb(); } }; // null = 다른 창 clear()
+  // 쓰기 실패로 메모리만 가진 창 — 포커스 때 다시 써 봄. 되면 저장소로 합류(다른 창도 storage 이벤트로 따라옴).
+  const onFocus = () => { if (!wroteHere) return; try { localStorage.setItem(STORAGE_KEY, memLocale); wroteHere = false; cb(); } catch { /* 아직 불가 */ } };
   window.addEventListener("storage", onStorage);
+  window.addEventListener("focus", onFocus);
   window.addEventListener(CHANGE_EVENT, cb);
-  return () => { window.removeEventListener("storage", onStorage); window.removeEventListener(CHANGE_EVENT, cb); };
+  return () => { window.removeEventListener("storage", onStorage); window.removeEventListener("focus", onFocus); window.removeEventListener(CHANGE_EVENT, cb); };
 }
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
