@@ -48,6 +48,8 @@ interface SettingsDrawerProps {
   // apps/mustard는 isNunopiEnabled/setNunopiEnabled 주입(변경 시 reload로 게이트 반영). apps/nunopi 스탠드얼론은 미주입.
   nunopiEnabled?: boolean;
   onNunopiEnabledChange?: (on: boolean) => void;
+  // 머스타드 전용 섹션(터미널·워크스페이스·Git·캐치업·연동) 표시(#1116). apps/nunopi 스탠드얼론은 false.
+  workspaceSettings?: boolean;
 }
 
 // 연동(#960) 브랜드 로고 — tabler 부실해 공식 로고 SVG 인라인(CSP상 외부 로드 불가). tabler 아이콘과 동일 시그니처(size/className).
@@ -125,6 +127,7 @@ export default function SettingsDrawer({
   onModeModelChange,
   nunopiEnabled,
   onNunopiEnabledChange,
+  workspaceSettings = true,
 }: SettingsDrawerProps) {
   const { locale, setLocale } = useLocale();
   const t = useT();
@@ -321,13 +324,13 @@ export default function SettingsDrawer({
     { id: "set-language", label: t("settings.language"), Icon: IconLanguage, show: true, group: t("settings.groupGeneral") },
     { id: "set-notifications", label: t("settings.notifications"), Icon: IconBell, show: true, group: t("settings.groupGeneral") },
     { id: "set-confirm", label: t("settings.confirmations"), Icon: IconShieldHalf, show: true, group: t("settings.groupGeneral") },
-    { id: "set-terminal", label: t("settings.terminalSection"), Icon: IconTerminal2, show: true, group: t("settings.groupEnvironment") },
-    { id: "set-workspace", label: t("settings.workspaceSection"), Icon: IconFolder, show: true, group: t("settings.groupEnvironment") },
-    { id: "set-git", label: t("settings.gitSection"), Icon: IconGitBranch, show: true, group: t("settings.groupEnvironment") },
+    { id: "set-terminal", label: t("settings.terminalSection"), Icon: IconTerminal2, show: workspaceSettings, group: t("settings.groupEnvironment") },
+    { id: "set-workspace", label: t("settings.workspaceSection"), Icon: IconFolder, show: workspaceSettings, group: t("settings.groupEnvironment") },
+    { id: "set-git", label: t("settings.gitSection"), Icon: IconGitBranch, show: workspaceSettings, group: t("settings.groupEnvironment") },
     { id: "set-shortcuts", label: t("settings.shortcutsSection"), Icon: IconKeyboard, show: true, group: t("settings.groupEnvironment") }, // #1027
     { id: "set-agents", label: t("settings.provider"), Icon: IconRobot, show: true, group: t("settings.groupAgents") },
-    { id: "set-catchup", label: t("settings.catchupSection"), Icon: IconActivity, show: true, group: t("settings.groupAgents") }, // #1049
-    { id: "set-integrations", label: t("settings.integrations"), Icon: IconPlug, show: true, group: t("settings.groupAgents") },
+    { id: "set-catchup", label: t("settings.catchupSection"), Icon: IconActivity, show: workspaceSettings, group: t("settings.groupAgents") }, // #1049
+    { id: "set-integrations", label: t("settings.integrations"), Icon: IconPlug, show: workspaceSettings, group: t("settings.groupAgents") },
     { id: "set-nunopi", label: t("settings.nunopiModule"), Icon: IconSparkles, show: !!onNunopiEnabledChange, group: t("settings.groupAgents") },
   ];
   // 외관(#937) — 즉시 적용(저장 + 실제 반영).

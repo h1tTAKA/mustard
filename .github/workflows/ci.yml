@@ -30,3 +30,10 @@ jobs:
 
       - name: Build
         run: npm run build --workspace apps/mustard
+
+      # 누노피 단독 앱(apps/nunopi) — 같은 패키지를 쓰므로 머스타드만 빌드하면 표류함(#1116). 누노피 레포 동기화 전 검증.
+      - name: Lint (nunopi standalone)
+        run: npm run lint --workspace apps/nunopi
+
+      - name: Build (nunopi standalone)
+        run: npm run build --workspace apps/nunopi
