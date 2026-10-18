@@ -729,11 +729,12 @@ ipcMain.handle("github:merge", (_e, { cwd, number, method }) => {
 });
 // PR 리뷰 1(#1123) — 변경 파일(봤음 상태 포함)·파일별 diff·봤음 표시. GraphQL은 gh api가 {owner}/{repo}를 현재 레포로 치환.
 const prDiffCache = new Map(); // `${cwd}#${n}` → { at, files }
+const prDiffGen = new Map(); // `${cwd}#${n}` → 세대 — 목록 새로고침 중 늦게 끝난 옛 diff가 다시 들어오지 않게(재리뷰)
 const PR_FILES_Q = "query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id files(first:100,after:$after){nodes{path additions deletions changeType viewerViewedState}pageInfo{hasNextPage endCursor}}}}}";
 ipcMain.handle("github:pr-files", async (_e, { cwd, number }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
-  prDiffCache.delete(`${cwd}#${n}`); // 목록을 새로 불러오면 diff도 새로(push 직후 옛 diff 방지, 리뷰)
+  prDiffCache.delete(`${cwd}#${n}`); prDiffGen.set(`${cwd}#${n}`, (prDiffGen.get(`${cwd}#${n}`) ?? 0) + 1); // 목록을 새로 불러오면 diff도 새로(push 직후 옛 diff 방지, 리뷰)
   const files = []; let prId = null; let after = null; let truncated = false;
   for (let page = 0; page < 30; page++) { // 최대 3,000개
     const args = ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", `number=${n}`, "-f", `query=${PR_FILES_Q}`];
@@ -758,10 +759,11 @@ ipcMain.handle("github:pr-file-diff", async (_e, { cwd, number, path }) => {
   const key = `${cwd}#${n}`;
   let hit = prDiffCache.get(key);
   if (!hit || Date.now() - hit.at > 30_000) {
+    const gen = prDiffGen.get(key) ?? 0;
     const r = await githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "diff", String(n), "--color", "never"], timeout: 30000 });
     if (!r.ok) return r;
     hit = { at: Date.now(), files: githubBridge.splitDiffByFile(r.stdout) };
-    prDiffCache.set(key, hit);
+    if ((prDiffGen.get(key) ?? 0) === gen) prDiffCache.set(key, hit); // 받는 사이 새로고침됐으면 저장 안 함(이번 응답만 사용)
     if (prDiffCache.size > 20) prDiffCache.delete(prDiffCache.keys().next().value);
   }
   // PR엔 있는데 gh pr diff 결과에 없음(아주 큰 PR 등) → "변경 없음"이 아니라 missing으로(리뷰).

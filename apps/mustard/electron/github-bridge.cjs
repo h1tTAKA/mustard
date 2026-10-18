@@ -53,12 +53,12 @@ async function authDiagnose({ gh, cwd, env }) {
 function unquote(p) {
   const s = p.trim();
   if (!(s.startsWith('"') && s.endsWith('"'))) return s;
-  const body = s.slice(1, -1), bytes = [];
+  const body = Array.from(s.slice(1, -1)), bytes = []; // 코드 포인트 단위(이모지 등 서로게이트 쌍 안 쪼갬, 재리뷰)
   for (let i = 0; i < body.length; i++) {
     const ch = body[i];
     if (ch !== "\\") { for (const b of Buffer.from(ch, "utf8")) bytes.push(b); continue; }
     const nx = body[i + 1];
-    if (/[0-7]/.test(nx || "")) { const oct = body.slice(i + 1, i + 4); bytes.push(parseInt(oct, 8)); i += 3; continue; }
+    if (/[0-7]/.test(nx || "")) { const oct = body.slice(i + 1, i + 4).join(""); bytes.push(parseInt(oct, 8)); i += 3; continue; }
     bytes.push(({ n: 10, t: 9, r: 13, '"': 34, "\\": 92, a: 7, b: 8, f: 12, v: 11 })[nx] ?? (nx || "").charCodeAt(0)); i += 1;
   }
   return Buffer.from(bytes).toString("utf8");

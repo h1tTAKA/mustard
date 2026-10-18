@@ -17,4 +17,6 @@ assert.ok(m["src/a.ts"].includes("+y") && !m["src/a.ts"].includes("new.md"), "�
 assert.ok(m["gone.txt"].includes("-bye"));
 assert.deepStrictEqual(Object.keys(splitDiffByFile("")), []);
 assert.strictEqual(splitDiffByFile(raw).constructor, undefined, "프로토타입 없음");
+const emo = splitDiffByFile('diff --git "a/🙂 \\t.md" "b/🙂 \\t.md"\n--- "a/🙂 \\t.md"\n+++ "b/🙂 \\t.md"\n@@ -1 +1 @@\n-a\n+b\n');
+assert.deepStrictEqual(Object.keys(emo), ["🙂 \t.md"], "이모지 + 이스케이프 섞인 경로");
 console.log("github-bridge.test ok");
