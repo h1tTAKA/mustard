@@ -17,5 +17,6 @@ assert.strictEqual(parseFindings("no json here", valid, id), null, "형식 위�
 assert.strictEqual(parseFindings("[{broken", valid, id), null);
 assert.strictEqual(parseFindings('[{"file":"x.js","line":4,"title":"t","body":"b"}]', valid, id)?.length, 1, "펜스 없는 배열");
 assert.strictEqual(parseFindings('Found [2 issues]: [{"file":"x.js","line":2,"title":"t"}]', valid, id)?.length, 1, "앞 설명의 괄호 건너뜀");
+assert.strictEqual(parseFindings('See:\n```diff\n- a\n+ b\n```\n```json\n[{"file":"x.js","line":2,"title":"t"}]\n```', valid, id)?.length, 1, "JSON 아닌 펜스 뒤의 JSON 블록");
 assert.ok(buildReviewPrompt("ja").includes("Japanese"));
 console.log("prReview ok");

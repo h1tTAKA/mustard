@@ -43,13 +43,15 @@ ${FORMAT} The array must contain exactly one item.`;
 const SEV = new Set<Severity>(["high", "medium", "low"]);
 // 답에서 JSON 배열을 뽑아 검증 — 모르는 파일·diff 밖 줄·빈 내용은 버림. JSON 배열이 아예 없으면 null(= 형식 위반, "문제 없음"과 구분).
 export function parseFindings(text: string, valid: Map<string, Set<number>>, newId: () => string): Finding[] | null {
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text)?.[1];
-  const src = fenced ?? text;
-  // 앞 설명에 "[2건]" 같은 괄호가 있어도 — 여는 괄호마다 맨 끝 "]"까지 파싱 시도(리뷰)
-  const b = src.lastIndexOf("]");
+  // 펜스 블록마다 → 그다음 전체 글에서. 앞 설명에 "[2건]" 같은 괄호나 JSON 아닌 펜스(diff 인용)가 있어도 — 여는 괄호마다 맨 끝 "]"까지 파싱 시도(리뷰)
+  const sources = [...[...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)].map((m) => m[1]), text];
   let arr: unknown = null;
-  for (let a = src.indexOf("["); a >= 0 && a < b; a = src.indexOf("[", a + 1)) {
-    try { arr = JSON.parse(src.slice(a, b + 1)); break; } catch { /* 다음 괄호 */ }
+  for (const src of sources) {
+    const b = src.lastIndexOf("]");
+    for (let a = src.indexOf("["); a >= 0 && a < b && !Array.isArray(arr); a = src.indexOf("[", a + 1)) {
+      try { const v: unknown = JSON.parse(src.slice(a, b + 1)); if (Array.isArray(v) && (!v.length || v.some((x) => x && typeof x === "object"))) arr = v; } catch { /* 다음 괄호 */ } // 코드 인용 속 [1,2] 같은 배열은 답으로 안 침
+    }
+    if (Array.isArray(arr)) break;
   }
   if (!Array.isArray(arr)) return null;
   const out: Finding[] = [];
