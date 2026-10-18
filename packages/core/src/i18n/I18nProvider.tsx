@@ -26,13 +26,16 @@ function interpolate(s: string, vars?: Record<string, string | number>): string 
 // 클라 마운트(머스타드는 SPLASH 뒤 마운트)는 처음부터 저장 언어, SSR 하이드레이션(누노피 단독)은 서버 스냅샷 ko로 불일치 없이 맞춘 뒤 바로 갱신.
 // storage 이벤트 = 다른 창(분리 브라우저 창 등)에서 바꿔도 따라옴.
 // 저장소가 막힌 환경(사생활 창 등)에서도 이 창 안에서는 바꿀 수 있게 메모리 값도 둠(리뷰).
+// 이 창에서 바꿨으면 메모리 값 우선(쓰기만 실패하고 읽기는 옛 값일 때도 바뀌게), 다른 창이 바꾸면(storage 이벤트) 다시 저장소 기준.
 let memLocale: Locale = "ko";
+let wroteHere = false;
 function readLocale(): Locale {
+  if (wroteHere) return memLocale;
   try { const s = localStorage.getItem(STORAGE_KEY); if (s === "ko" || s === "ja" || s === "en") return s; } catch { /* 저장소 불가 */ }
   return memLocale;
 }
 function subscribeLocale(cb: () => void): () => void {
-  const onStorage = (e: StorageEvent) => { if (e.key === STORAGE_KEY) cb(); };
+  const onStorage = (e: StorageEvent) => { if (e.key === STORAGE_KEY) { wroteHere = false; cb(); } };
   window.addEventListener("storage", onStorage);
   window.addEventListener(CHANGE_EVENT, cb);
   return () => { window.removeEventListener("storage", onStorage); window.removeEventListener(CHANGE_EVENT, cb); };
@@ -49,7 +52,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   }, [locale]);
 
   const setLocale = useCallback((l: Locale) => {
-    memLocale = l;
+    memLocale = l; wroteHere = true;
     try { localStorage.setItem(STORAGE_KEY, l); } catch { /* ignore */ }
     window.dispatchEvent(new Event(CHANGE_EVENT)); // 같은 창 구독자 갱신(storage 이벤트는 다른 창에만 옴)
   }, []);

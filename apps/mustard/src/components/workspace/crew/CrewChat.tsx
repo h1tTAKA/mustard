@@ -31,10 +31,12 @@ function Avatar({ from, known, size = 32 }: { from: string; known: Set<string>; 
   return <span style={s} className={`flex shrink-0 items-center justify-center rounded-full ${tint(from)}`}><RoleIcon role={known.has(from) ? from : "custom"} size={size * 0.5} /></span>;
 }
 
+const DECISION_KEYS = ["crewchat.decision.approve", "crewchat.decision.retry"];
+
 export default function CrewChat({ root }: { root: string }) {
   const t = useT();
-  // #1125 보드·시스템 메시지는 키로 지금 언어 번역(옛 메시지는 text를 틀과 맞춰 다시 번역), 사람이 친 말은 그대로(승인 버튼이 남긴 decision만 앱 문구)
-  const msgText = (m: CrewMsg) => (m.i18n ? t(m.i18n.key, m.i18n.vars) + (m.i18n.suffix ?? "") : m.from === "human" && m.kind !== "decision" ? m.text : relocalize(m.text, CREW_TEXT_KEYS, t));
+  // #1125 보드·시스템 메시지는 키로 지금 언어 번역(옛 메시지는 text를 틀과 맞춰 다시 번역), 사람이 친 말은 그대로(키 없는 옛 승인 버튼 문구만 — 고정 문장 통째 일치)
+  const msgText = (m: CrewMsg) => (m.i18n ? t(m.i18n.key, m.i18n.vars) + (m.i18n.suffix ?? "") : m.from === "human" ? (m.kind === "decision" ? relocalize(m.text, DECISION_KEYS, t) : m.text) : relocalize(m.text, CREW_TEXT_KEYS, t));
   const toast = useToast();
   const [roles, setRoles] = useCrewRoles();
   const [runs] = useCrewRuns(root, () => {});
