@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src=".github/assets/mustard-icon.svg" alt="" width="56"><br>
-  <b>Mustard</b> — the <b>must-have ADE</b> (Agentic Development Environment).<br>
+  <b>Mustard</b> — <b>Must-have ADE</b> (Agentic Development Environment).<br>
   Work alongside AI coding agents, and understand what they build.
 </p>
 
