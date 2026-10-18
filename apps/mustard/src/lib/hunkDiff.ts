@@ -78,3 +78,9 @@ export function diffSections(expl: string): { from: number; to: number; text: st
 
 // #1127 parseDiff 수정 전 노트 키 → 지금 키(끝 개행이 만든 빈 문맥 줄 "  "·"\ No newline" 문맥 줄 제거). loadNotes가 별칭으로 씀.
 export const legacyNoteKey = (k: string) => k.split("\n").filter((l) => l !== "  \\ No newline at end of file").join("\n").replace(/\n  $/, "");
+// 저장된 노트(원본)에 옛 키 별칭을 더한 새 객체 — 원본은 안 바꿈(저장은 원본에만, 별칭이 굳지 않게), 진짜 키가 항상 우선.
+export function withLegacyAliases(raw: Record<string, string>): Record<string, string> {
+  const out = { ...raw };
+  for (const [k, v] of Object.entries(raw)) { const nk = legacyNoteKey(k); if (nk !== k && !(nk in out)) out[nk] = v; }
+  return out;
+}

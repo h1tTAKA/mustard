@@ -1,6 +1,6 @@
 // hunkDiff 점검 — node --experimental-strip-types src/lib/hunkDiff.check.ts
 import assert from "node:assert";
-import { diffMark, diffSections, DIFF_SEP, groupHunks, legacyNoteKey, noteStoreKey, parseDiff } from "./hunkDiff.ts";
+import { diffMark, diffSections, DIFF_SEP, groupHunks, legacyNoteKey, noteStoreKey, withLegacyAliases, parseDiff } from "./hunkDiff.ts";
 
 const diff = ["diff --git a/x.ts b/x.ts", "--- a/x.ts", "+++ b/x.ts", "@@ -1,12 +1,12 @@",
   " a", "-b", "+B", " c", " d", " e", " f", " g", " h", "-i", "+I", " j"].join("\n");
@@ -34,4 +34,7 @@ const nowKey = groupHunks(parseDiff(eofDiff))[0].diffText;
 const oldKey = ["  a", "- b", "  \\ No newline at end of file", "+ c", "  \\ No newline at end of file", "  "].join("\n");
 assert.strictEqual(legacyNoteKey(oldKey), nowKey, "옛 노트 키 별칭");
 assert.strictEqual(legacyNoteKey("  a\n- b\n+ c\n  d"), "  a\n- b\n+ c\n  d", "끝까지 안 닿은 구간은 그대로");
+const raw = { [oldKey]: "old", [nowKey]: "real" }; const aliased = withLegacyAliases(raw);
+assert.strictEqual(aliased[nowKey], "real", "진짜 키 우선"); assert.strictEqual(Object.keys(raw).length, 2, "원본 안 바꿈");
+assert.strictEqual(withLegacyAliases({ [oldKey]: "old" })[nowKey], "old", "옛 키로 찾힘");
 console.log("hunkDiff ok");
