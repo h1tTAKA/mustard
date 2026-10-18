@@ -1,0 +1,20 @@
+// prReview 점검 — node --experimental-strip-types src/lib/prReview.check.ts
+import assert from "node:assert";
+import { buildReviewPrompt, numberDiff, parseFindings } from "./prReview.ts";
+
+const diff = ["diff --git a/x.js b/x.js", "--- a/x.js", "+++ b/x.js", "@@ -1,3 +1,4 @@", " a", "-b", "+c", "+d", " e"].join("\n");
+const n = numberDiff(diff);
+assert.deepStrictEqual([...n.lines], [1, 2, 3, 4], "문맥·추가 줄만 지적 가능");
+assert.ok(n.text.includes("L2    + c") && n.text.includes("      - b") && !n.text.includes("+++"), n.text);
+
+let i = 0; const id = () => `f${i++}`;
+const valid = new Map([["x.js", n.lines]]);
+const ans = 'Here:\n```json\n[{"file":"x.js","line":2,"severity":"high","title":"bug","body":"fix"},{"file":"x.js","line":99,"title":"out of diff"},{"file":"y.js","line":1,"title":"unknown file"},{"file":"x.js","line":"3","severity":"weird","title":"str line"},{"file":"x.js","line":1,"title":""}]\n```';
+const fs = parseFindings(ans, valid, id);
+assert.deepStrictEqual(fs.map((f) => [f.line, f.severity, f.status]), [[2, "high", "open"], [3, "medium", "open"]], "diff 밖 줄·모르는 파일·빈 제목 버림, 심각도 기본 medium");
+assert.deepStrictEqual(parseFindings("[]", valid, id), []);
+assert.deepStrictEqual(parseFindings("no json here", valid, id), []);
+assert.deepStrictEqual(parseFindings("[{broken", valid, id), []);
+assert.strictEqual(parseFindings('[{"file":"x.js","line":4,"title":"t","body":"b"}]', valid, id).length, 1, "펜스 없는 배열");
+assert.ok(buildReviewPrompt("ja").includes("Japanese"));
+console.log("prReview ok");
