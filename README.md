@@ -1,100 +1,111 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="public/brand/nunopi-lockup-transparent.png">
-    <img src="public/brand/nunopi-lockup-white.png" alt="nunopi" width="320">
-  </picture>
+  <img src=".github/assets/mustard-hero.png" alt="Mustard — Must-have ADE" width="100%">
+</p>
+
+<h3 align="center">The agentic development environment that keeps you in the loop.</h3>
+
+<p align="center">
+  Run Claude Code, Codex and friends in a real terminal — with Git, GitHub, docs, a browser<br>
+  and a live explanation of everything your agents do, all in one window.
 </p>
 
 <p align="center">
-  바이브 코더를 위한 AI 코드·글 학습 도구 — 붙여넣으면 한 줄 한 줄, 한 용어 한 용어, 이해하기 쉽게 한 화면에 눈높이로 설명한다.
+  <img alt="macOS" src="https://img.shields.io/badge/macOS-000000?style=flat-square&logo=apple&logoColor=white">
+  <img alt="Electron" src="https://img.shields.io/badge/Electron-2b2e3a?style=flat-square&logo=electron&logoColor=9feaf9">
+  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-000000?style=flat-square&logo=nextdotjs&logoColor=white">
+  <img alt="Node 24" src="https://img.shields.io/badge/node-24-d4a017?style=flat-square&logo=nodedotjs&logoColor=white">
+  <a href="https://github.com/h1tTAKA/mustard/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/h1tTAKA/mustard?style=flat-square&color=d4a017"></a>
+</p>
+
+<p align="center">
+  <a href="#-why-mustard">Why</a> ·
+  <a href="#-features">Features</a> ·
+  <a href="#-quick-start">Quick start</a> ·
+  <a href="#-nunopi">nunopi</a> ·
+  <a href="#-contributing">Contributing</a>
 </p>
 
 ---
 
-## 무엇
+## 🌼 Why Mustard
 
-바이브 코딩은 빠르게 동작하는 코드를 만들지만, 정작 내가 다 이해 못 한 코드가 남는다. 기술 글도 모르는 IT 용어(외계어)로 가득하다.
+Coding agents now write hundreds of lines in minutes. **Writing is no longer the bottleneck — understanding is.** You still have to review what the agent did, know why it did it, and own the result.
 
-nunopi는 그 순간을 위한 도구다. 왼쪽에 **코드나 글을 붙여넣으면**, 오른쪽에서 AI 에이전트가 **한 줄/한 용어씩 스트리밍으로** 풀어준다.
+Meanwhile everything you need lives somewhere else: issues in the browser, plans in a notes app, previews in another tab. Every switch costs focus.
 
-- 코드: 각 줄이 무엇을 하는지, 토큰(`useState`, `props`, `async`…)이 뭔지, 어떤 개념이 쓰였는지.
-- 글: 글에 나온 IT 용어 사전 + 그 용어를 이해하는 데 필요한 관련 개념.
+Mustard puts it all around the terminal your agents already run in, and explains the work while it happens.
 
-## 기능
+- **Terminal-first.** Your agents run as they always do. Mustard never replaces the terminal — it organizes everything around it.
+- **Bring your own agents.** Claude Code, Codex, OpenCode, Grok Build, Cursor. Your existing subscriptions, your MCP servers, your project rules. No API keys.
+- **Local by default.** Your code stays on your machine and only goes to the AI you chose.
 
-### 코드 분석
-- **줄별 설명 스트리밍** — 청크 병렬로 분석해 도착하는 대로 점진 표시(진행률 표시).
-- **토큰 사전** — 줄 속 토큰을 클릭하면 on-demand 설명. 북마크 가능.
-- **개념 카드** — 코드에 쓰인 개념을 모아 설명.
-- **이어서 분석** — 중간에 멈춰도 복원 후 멈춘 지점부터.
+## ✨ Features
 
-### 글(IT 용어) 분석
-- **단일 호출 스트리밍** — 용어가 분석되는 대로 하나씩, 이어서 관련 개념도 하나씩.
-- **IT 용어 사전 + 관련 개념** — 용어를 클릭하면 관련 개념 카드로 스크롤·강조.
-- **원문 용어 하이라이트** — 분석된 글에서 IT 용어를 하이라이트, 클릭하면 학습 패널의 해당 카드로 스크롤.
-- **이어서 분석** — 멈춘 지점부터 안 한 용어/개념만.
-
-### 공통
-- 분석 결과 **목록(컬렉션)** — 코드/글 모드별로 분리, 히스토리·북마크·HTML 내보내기.
-- 라이트/다크 테마.
-
-## Provider
-
-이미 쓰는 AI 도구에 연결한다.
-
-| Provider | 설명 |
+### 🖥️ Workspace
+| | |
 |---|---|
-| Claude Agent (기본) | 로컬 `claude` CLI (구독 sonnet) |
-| Codex Agent | 로컬 `codex` CLI |
-| OpenAI-compatible | 사용자 설정 endpoint |
+| **Terminal** | Multi-tab terminals in a background daemon — sessions survive app restarts. |
+| **Git** | Commit graph, diffs, working-tree changes and branches beside the terminal. |
+| **GitHub** | Issues, pull requests and CI checks without leaving the app. |
+| **Docs** | Read research notes and plans (Markdown) in tabs. |
+| **Browser** | Preview your app, pick an element and hand it straight to the agent. |
+| **Architecture** | A code graph the agent reads through MCP, explained back to you as feature flows. |
 
-## 아키텍처
+### ⚡ Catch-up — understand what your agents did
+- **Live narration** of every tool call: what the agent is doing, and why.
+- **Commit ↔ conversation.** Every commit links to the exact agent session that produced it — from your prompt to the end of the committing turn. Open it in a code review or an incident months later.
+- **Ask anything** about a change; answers link back to the related diff and session.
 
-```txt
-코드/글 입력 (왼쪽 패널)
-  ↓
-POST /api/agent/analyze  (NDJSON 스트림: progress / partial / result)
-  ↓
-Provider 어댑터  (claude: --effort low, --tools "" 로 빠른 스트리밍)
-  ├─ 코드 → chunkedCodeAnalyze (outline → 줄범위 청크 병렬 → 도착 순 스트리밍)
-  └─ 글   → 단일 호출 + 점진 JSON 파싱 (용어/개념 하나씩)
-  ↓
-LearningPanel (오른쪽)  — 줄별 설명 / 용어 사전 / 관련 개념 점진 표시
-```
+### 👥 Crew — agent teams with human gates
+- A kanban board where role agents — scope planner, builder, tester, release checker — hand cards to each other in an order enforced by code.
+- **Mix vendors per role:** Claude builds, Codex tests, another agent reviews.
+- **Team chat** — agents report to each other; `@mention` a role to start a card.
+- **Triggers** — CI failures, labeled issues or a schedule create cards automatically.
+- **Subtasks** run in dependency order, each in its own git worktree.
+- **Humans stay in charge.** Agents never push or merge. You approve specs, destructive data changes and merges, and open draft PRs with one click.
 
-## Getting Started
+## 🚀 Quick start
+
+Requirements: macOS, Node.js 24, and at least one agent CLI you are logged in to.
 
 ```bash
+git clone https://github.com/h1tTAKA/mustard.git
+cd mustard
 npm install
-npm run dev
+npm run electron:dev        # desktop app
 ```
 
-[http://localhost:3000](http://localhost:3000) 접속. (분석엔 로컬 `claude` CLI 등 provider 필요.)
-
-## Scripts
+<details>
+<summary>More commands</summary>
 
 ```bash
-npm run dev     # 개발 서버
-npm run build   # 프로덕션 빌드
-npm run lint    # ESLint
+npm run dev                                            # web UI only (http://localhost:3000)
+npm run electron:dist:dir --workspace apps/mustard     # package the .app into apps/mustard/dist_electron
+```
+</details>
+
+## 🌱 nunopi
+
+Mustard ships with **nunopi**, an optional learning module named after the Korean word *눈높이* — "at eye level".
+
+Paste code or tech writing and get line-by-line explanations, a term dictionary and concept cards. Branch your questions into threads that stay organized, and review what you learned with spaced-repetition decks — sorted for you by an agent.
+
+Want just the learning app? → **[h1tTAKA/nunopi](https://github.com/h1tTAKA/nunopi)** (synced automatically from this repository).
+
+## 🗂️ Repository layout
+
+```
+apps/
+  mustard/        Mustard desktop app (Next.js + Electron)
+  nunopi/         nunopi standalone app
+packages/
+  core/           shared UI, i18n (en / ja / ko), agent runtime client
+  nunopi/         nunopi learning module
+scripts/
+  export-nunopi.mjs   builds the standalone nunopi repository
 ```
 
-## Stack
+## 🤝 Contributing
 
-- Next.js 16 (App Router, Turbopack)
-- React · TypeScript (strict)
-- Tailwind CSS v4
-- Monaco Editor · shiki (코드 하이라이트)
-- Tabler Icons
+Issues and pull requests are welcome — including changes to nunopi, which is developed here. The standalone nunopi repository is generated, so changes made there are overwritten on the next sync.
 
-## Roadmap
-
-- 데스크톱 앱(Tauri)
-- 브랜드 팔레트 UI 정렬 · 파비콘/앱아이콘
-- 로고 SVG 벡터화
-
-## Repository
-
-[https://github.com/h1tTAKA/mustard](https://github.com/h1tTAKA/mustard) — 원본(모노레포: Mustard 워크스페이스 + nunopi 학습 모듈)
-
-nunopi 단독 앱만 필요하면 [h1tTAKA/nunopi](https://github.com/h1tTAKA/nunopi) — 이 레포의 `apps/nunopi`·`packages/core`·`packages/nunopi`를 main 머지마다 자동 동기화(`scripts/export-nunopi.mjs`, `.github/workflows/sync-nunopi.yml`). 수정은 이 레포에서.
