@@ -2,7 +2,7 @@
 // 워크스페이스 diff 뷰(#649) — 커밋+파일의 git diff. shiki 신택스 하이라이팅 + 빨강(−)/초록(+) 배경.
 import { Fragment, useEffect, useRef, useState } from "react";
 import { codeToTokens, type ThemedToken, type BundledLanguage } from "shiki";
-import { IconLoader2, IconAlertTriangle, IconGitCompare, IconSparkles, IconRefresh } from "@tabler/icons-react";
+import { IconLoader2, IconAlertTriangle, IconGitCompare, IconSparkles, IconRefresh, IconBrandGithub } from "@tabler/icons-react";
 import { useLocale, useT } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
@@ -160,8 +160,8 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const allHunks = groupHunks(lines);
   const hunkStart = new Map(allHunks.map((h) => [h.startLine, h]));
   const hunkEnd = new Map(allHunks.map((h) => [h.endLine, h]));
-  return (
-    <div className="relative h-full bg-white dark:bg-[var(--s-pane)]"
+  const body = (
+    <div className={`relative bg-white dark:bg-[var(--s-pane)] ${pr ? "min-h-0 flex-1" : "h-full"}`}
       onMouseEnter={() => { if (hideTimer.current) clearTimeout(hideTimer.current); setShowRuler(true); }}
       onMouseLeave={() => { if (hideTimer.current) clearTimeout(hideTimer.current); hideTimer.current = setTimeout(() => setShowRuler(false), 400); }}>
       <div ref={scrollRef} onScroll={() => { syncVp(); reveal(); }} className="h-full overflow-auto pr-3 font-mono text-[11px] leading-[1.55] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -225,6 +225,18 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
         {/* 뷰포트 썸(지금 보고 있는 구간) — 스크롤·호버 시만(미니맵 마크는 항상). */}
         <div className={`pointer-events-none absolute inset-x-0 rounded border border-zinc-400/60 bg-zinc-400/40 transition-opacity duration-300 dark:border-zinc-500/60 dark:bg-zinc-500/40 ${showRuler ? "opacity-100" : "opacity-0"}`} style={{ top: `${vp.top}%`, height: `${Math.max(6, vp.height)}%`, minHeight: 18 }} />
       </div>
+    </div>
+  );
+  if (!pr) return body;
+  // #1123 PR 리뷰 diff는 내 작업 diff와 구분되게 머리 띠(GitHub 아이콘 + PR 번호 + 파일).
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-zinc-200 bg-zinc-50 px-3 py-1 text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">
+        <IconBrandGithub size={13} stroke={2} className="shrink-0" aria-hidden />
+        <span className="shrink-0 font-medium">{t("github.prReviewBanner", { n: pr })}</span>
+        <span className="truncate font-mono text-[10.5px] text-zinc-400 dark:text-zinc-500">{file}</span>
+      </div>
+      {body}
     </div>
   );
 }
