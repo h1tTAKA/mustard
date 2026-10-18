@@ -47,4 +47,37 @@ async function authDiagnose({ gh, cwd, env }) {
   return { state: r.kind, detail: r.detail };
 }
 
-module.exports = { ghRun, ghJson, authDiagnose, classifyGhError };
+// PR diff(#1123) — `gh pr diff N` 전체를 파일별로 자름. 경로는 `+++ b/…`(삭제면 `--- a/…`)에서 — 이름에 공백 있어
+// `diff --git "a/x y" "b/x y"`처럼 따옴표로 감싸져도 +++/--- 줄 기준이라 안전. 반환 { [path]: 그 파일의 diff 텍스트 }.
+// git은 비ASCII(한글 등)·특수문자 경로를 "…"로 감싸고 C식 이스케이프(\\, \", \t, \n, \NNN 8진 바이트)로 씀 → UTF-8로 복원(리뷰).
+function unquote(p) {
+  const s = p.trim();
+  if (!(s.startsWith('"') && s.endsWith('"'))) return s;
+  const body = Array.from(s.slice(1, -1)), bytes = []; // 코드 포인트 단위(이모지 등 서로게이트 쌍 안 쪼갬, 재리뷰)
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch !== "\\") { for (const b of Buffer.from(ch, "utf8")) bytes.push(b); continue; }
+    const nx = body[i + 1];
+    if (/[0-7]/.test(nx || "")) { const oct = body.slice(i + 1, i + 4).join(""); bytes.push(parseInt(oct, 8)); i += 3; continue; }
+    bytes.push(({ n: 10, t: 9, r: 13, '"': 34, "\\": 92, a: 7, b: 8, f: 12, v: 11 })[nx] ?? (nx || "").charCodeAt(0)); i += 1;
+  }
+  return Buffer.from(bytes).toString("utf8");
+}
+function splitDiffByFile(raw) {
+  const out = Object.create(null); // 'constructor' 같은 경로가 프로토타입과 안 섞이게(리뷰)
+  const parts = String(raw || "").split(/^(?=diff --git )/m).filter((x) => x.startsWith("diff --git "));
+  for (const part of parts) {
+    const plus = part.match(/^\+\+\+ (.+)$/m), minus = part.match(/^--- (.+)$/m);
+    let path = null;
+    if (plus && unquote(plus[1]) !== "/dev/null") path = unquote(plus[1]).replace(/^b\//, "");
+    else if (minus && unquote(minus[1]) !== "/dev/null") path = unquote(minus[1]).replace(/^a\//, "");
+    if (!path) { // 바이너리·모드만 바뀜 등 +++/--- 없음 → 헤더에서
+      const m = part.match(/^diff --git (?:"?a\/)(.+?)"? (?:"?b\/)(.+?)"?$/m);
+      if (m) path = m[2];
+    }
+    if (path) out[path] = part;
+  }
+  return out;
+}
+
+module.exports = { ghRun, ghJson, authDiagnose, classifyGhError, splitDiffByFile };

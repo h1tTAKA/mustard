@@ -15,7 +15,8 @@ const EXT_LANG: Record<string, string> = {
 };
 const langOf = (file: string) => EXT_LANG[file.split(".").pop()?.toLowerCase() ?? ""] ?? "text";
 
-export default function DiffPane({ root, hash, file, worktree, providerId, providerSettings }: { root: string; hash?: string; file: string; worktree?: "staged" | "unstaged" | "untracked"; providerId: AgentProviderKind; providerSettings: ProviderSettings }) {
+// pr = PR 리뷰 diff(#1123) — GitHub PR의 그 파일 diff. AI 구간 설명은 숨김(캐치업과 분리).
+export default function DiffPane({ root, hash, file, worktree, pr, providerId, providerSettings }: { root: string; hash?: string; file: string; worktree?: "staged" | "unstaged" | "untracked"; pr?: number; providerId: AgentProviderKind; providerSettings: ProviderSettings }) {
   const t = useT();
   const { locale } = useLocale();
   // 변경 구간별 에이전트 노트. key = diffText 해시(구간 내용 기반 안정 키 → 같은 diff 재오픈 시 매칭).
@@ -108,13 +109,21 @@ export default function DiffPane({ root, hash, file, worktree, providerId, provi
     (async () => {
       try {
         // 워킹트리(커밋 전) diff면 git-diff, 커밋 diff면 git-show.
-        const r = worktree
-          ? await fetch("/api/repo/git-diff", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, file, kind: worktree }) })
-          : await fetch("/api/repo/git-show", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, hash, file }) });
-        const d = await r.json();
-        if (cancelled) return;
-        if (!r.ok || !d.ok) { setStatus("error"); return; }
-        const raw = String(d.diff ?? "");
+        let raw: string;
+        if (pr) { // PR diff — gh(Electron)로
+          const r = await window.nunopiDesktop?.github?.prFileDiff?.(root, pr, file);
+          if (cancelled) return;
+          if (!r?.ok || r.data?.missing) { setStatus("error"); return; } // missing = gh diff에 없음(큰 PR) → '변경 없음' 대신 오류
+          raw = r.data?.diff ?? "";
+        } else {
+          const r = worktree
+            ? await fetch("/api/repo/git-diff", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, file, kind: worktree }) })
+            : await fetch("/api/repo/git-show", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, hash, file }) });
+          const d = await r.json();
+          if (cancelled) return;
+          if (!r.ok || !d.ok) { setStatus("error"); return; }
+          raw = String(d.diff ?? "");
+        }
         // 변경 없음(이미 커밋됐거나 목록이 오래됨) → 빈 창 대신 안내.
         if (!raw.trim()) { setStatus("empty"); return; }
         const parsed = parseDiff(raw);
@@ -127,7 +136,7 @@ export default function DiffPane({ root, hash, file, worktree, providerId, provi
       } catch { if (!cancelled) setStatus("error"); }
     })();
     return () => { cancelled = true; };
-  }, [root, hash, file, worktree, isDark]);
+  }, [root, hash, file, worktree, pr, isDark]);
 
   if (status === "loading") return <div className="flex h-full items-center justify-center text-zinc-400"><IconLoader2 size={16} stroke={2} className="animate-spin" aria-hidden /></div>;
   if (status === "empty") return <div className="flex h-full flex-col items-center justify-center gap-1 px-4 text-center text-[12px] text-zinc-400 dark:text-zinc-500"><IconGitCompare size={16} stroke={1.75} aria-hidden /><span>{t("workspace.diffEmpty")}</span></div>;
@@ -163,8 +172,8 @@ export default function DiffPane({ root, hash, file, worktree, providerId, provi
         const bg = l.kind === "add" ? "bg-emerald-500/20" : l.kind === "del" ? "bg-rose-500/20" : "";
         const mark = l.kind === "add" ? "+" : l.kind === "del" ? "−" : " ";
         const markCls = l.kind === "add" ? "text-emerald-600 dark:text-emerald-500" : l.kind === "del" ? "text-rose-600 dark:text-rose-500" : "text-transparent";
-        const startH = hunkStart.get(i); // 구간 시작 → 위에 설명 버튼
-        const endH = hunkEnd.get(i);     // 구간 끝 → 아래에 노트
+        const startH = pr ? undefined : hunkStart.get(i); // PR diff는 AI 설명 없음 // 구간 시작 → 위에 설명 버튼
+        const endH = pr ? undefined : hunkEnd.get(i); // 구간 끝 → 아래에 노트(PR diff는 없음)
         const row = (
           <div key={i} className={`flex w-max min-w-full ${bg}`}>
             <span className="w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">{l.oldN ?? ""}</span>

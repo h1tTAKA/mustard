@@ -727,6 +727,57 @@ ipcMain.handle("github:merge", (_e, { cwd, number, method }) => {
   const flag = { merge: "--merge", squash: "--squash", rebase: "--rebase" }[method] || "--merge";
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "merge", String(n), flag, "--delete-branch"] });
 });
+// PR 리뷰 1(#1123) — 변경 파일(봤음 상태 포함)·파일별 diff·봤음 표시. GraphQL은 gh api가 {owner}/{repo}를 현재 레포로 치환.
+const prDiffCache = new Map(); // `${cwd}#${n}` → { at, files }
+const prDiffGen = new Map(); // `${cwd}#${n}` → 세대 — 목록 새로고침 중 늦게 끝난 옛 diff가 다시 들어오지 않게(재리뷰)
+const PR_FILES_Q = "query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id files(first:100,after:$after){nodes{path additions deletions changeType viewerViewedState}pageInfo{hasNextPage endCursor}}}}}";
+ipcMain.handle("github:pr-files", async (_e, { cwd, number }) => {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
+  prDiffCache.delete(`${cwd}#${n}`); prDiffGen.set(`${cwd}#${n}`, (prDiffGen.get(`${cwd}#${n}`) ?? 0) + 1);
+  if (prDiffGen.size > 50) prDiffGen.delete(prDiffGen.keys().next().value); // 상한(재리뷰) // 목록을 새로 불러오면 diff도 새로(push 직후 옛 diff 방지, 리뷰)
+  const files = []; let prId = null; let after = null; let truncated = false;
+  for (let page = 0; page < 30; page++) { // 최대 3,000개
+    const args = ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", `number=${n}`, "-f", `query=${PR_FILES_Q}`];
+    if (after) args.push("-f", `after=${after}`);
+    const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args });
+    if (!r.ok) return r;
+    const pr = r.data?.data?.repository?.pullRequest;
+    if (!pr) return { ok: false, kind: "error", detail: "pull request not found" };
+    prId = pr.id;
+    for (const f of pr.files?.nodes ?? []) files.push({ path: f.path, additions: f.additions, deletions: f.deletions, changeType: f.changeType, viewed: f.viewerViewedState === "VIEWED" });
+    if (!pr.files?.pageInfo?.hasNextPage) break;
+    after = pr.files.pageInfo.endCursor;
+    if (page === 29) truncated = true; // 상한 도달 — 화면에 안내(리뷰)
+  }
+  return { ok: true, data: { prId, files, truncated } };
+});
+// 파일별 diff — gh pr diff는 PR 전체라, 같은 PR을 연달아 열 때 다시 받지 않게 짧게 캐시(30s).
+ipcMain.handle("github:pr-file-diff", async (_e, { cwd, number, path }) => {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
+  if (typeof path !== "string" || !path) return { ok: false, kind: "error", detail: "path required" };
+  const key = `${cwd}#${n}`;
+  let hit = prDiffCache.get(key);
+  if (!hit || Date.now() - hit.at > 30_000) {
+    const gen = prDiffGen.get(key) ?? 0;
+    const r = await githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "diff", String(n), "--color", "never"], timeout: 30000 });
+    if (!r.ok) return r;
+    hit = { at: Date.now(), files: githubBridge.splitDiffByFile(r.stdout) };
+    if ((prDiffGen.get(key) ?? 0) === gen) prDiffCache.set(key, hit); // 받는 사이 새로고침됐으면 저장 안 함(이번 응답만 사용)
+    if (prDiffCache.size > 20) prDiffCache.delete(prDiffCache.keys().next().value);
+  }
+  // PR엔 있는데 gh pr diff 결과에 없음(아주 큰 PR 등) → "변경 없음"이 아니라 missing으로(리뷰).
+  if (!Object.hasOwn(hit.files, path)) return { ok: true, data: { diff: "", missing: true } };
+  return { ok: true, data: { diff: hit.files[path] } };
+});
+// 봤음 표시 — GitHub에 저장(웹·다른 기기와 같은 상태).
+ipcMain.handle("github:pr-file-viewed", (_e, { cwd, prId, path, viewed }) => {
+  if (typeof prId !== "string" || !prId || typeof path !== "string" || !path) return { ok: false, kind: "error", detail: "invalid args" };
+  const m = viewed ? "markFileAsViewed" : "unmarkFileAsViewed";
+  const q = `mutation($id:ID!,$path:String!){${m}(input:{pullRequestId:$id,path:$path}){clientMutationId}}`;
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "graphql", "-f", `id=${prId}`, "-f", `path=${path}`, "-f", `query=${q}`] });
+});
 // PR 생성(#944) — 성공 시 stdout=생성된 PR URL. base/head 빈값이면 플래그 생략(gh 기본: 현재 브랜치/origin default).
 ipcMain.handle("github:pr-create", (_e, { cwd, base, head, title, body, draft }) => {
   if (!title || typeof title !== "string" || !title.trim()) return { ok: false, kind: "error", detail: "title required" };

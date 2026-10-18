@@ -1436,6 +1436,12 @@ const ko: Dict = {
   "crewsplit.approve": "나눠서 진행",
   "crewsplit.progress": "하위 {done}/{total}",
   "crewsplit.waiting": "기다림: {title}",
+  "github.tabConversation": "대화",
+  "github.tabFiles": "변경 파일",
+  "github.viewed": "봤음",
+  "github.viewedProgress": "{n}/{total} 봤음",
+  "github.filesEmpty": "변경된 파일이 없어요.",
+  "github.filesTruncated": "파일이 너무 많아 처음 {n}개만 보여요. 나머지는 GitHub에서 확인하세요.",
 };
 
 const ja: Dict = {
@@ -2856,6 +2862,12 @@ const ja: Dict = {
   "crewsplit.approve": "分けて進める",
   "crewsplit.progress": "サブ {done}/{total}",
   "crewsplit.waiting": "待機: {title}",
+  "github.tabConversation": "会話",
+  "github.tabFiles": "変更ファイル",
+  "github.viewed": "確認済み",
+  "github.viewedProgress": "{n}/{total} 確認済み",
+  "github.filesEmpty": "変更されたファイルはありません。",
+  "github.filesTruncated": "ファイルが多すぎるため最初の{n}件のみ表示しています。残りはGitHubで確認してください。",
 };
 
 const en: Dict = {
@@ -4276,6 +4288,12 @@ const en: Dict = {
   "crewsplit.approve": "Split and run",
   "crewsplit.progress": "Subtasks {done}/{total}",
   "crewsplit.waiting": "Waiting: {title}",
+  "github.tabConversation": "Conversation",
+  "github.tabFiles": "Files changed",
+  "github.viewed": "Viewed",
+  "github.viewedProgress": "{n} of {total} viewed",
+  "github.filesEmpty": "No files changed.",
+  "github.filesTruncated": "Too many files — showing the first {n}. See the rest on GitHub.",
 };
 
 export const MESSAGES: Record<Locale, Dict> = { ko, ja, en };

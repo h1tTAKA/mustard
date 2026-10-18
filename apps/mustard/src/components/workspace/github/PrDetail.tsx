@@ -12,6 +12,7 @@ import CommentComposer from "@/components/workspace/github/CommentComposer";
 import CommentItem from "@/components/workspace/github/CommentItem";
 import GhAvatar from "@/components/workspace/github/GhAvatar";
 import ReactionBar from "@/components/workspace/github/ReactionBar";
+import PrFiles from "@/components/workspace/github/PrFiles";
 
 type Load = { loading: boolean; data?: GhPrDetail; error?: string };
 
@@ -23,9 +24,12 @@ function stateLabel(d: GhPrDetail, t: (k: string) => string): { text: string; cl
   return { text: d.state, cls: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" };
 }
 
-export default function PrDetail({ root, number, reloadKey, host = "github", onBack }: { root: string; number: number; reloadKey: number; host?: "github" | "gitlab" | "other"; onBack: () => void }) {
+// onOpenFile = 변경 파일 → 가운데 diff 탭(#1123, Files changed 탭에서 사용)
+export default function PrDetail({ root, number, reloadKey, host = "github", onBack, onOpenFile }: { root: string; number: number; reloadKey: number; host?: "github" | "gitlab" | "other"; onBack: () => void; onOpenFile?: (file: string) => void }) {
   const t = useT();
   const [load, setLoad] = useState<Load>({ loading: true });
+  const [tab, setTab] = useState<"conversation" | "files">("conversation"); // #1123 대화 | 변경 파일
+  const [fileCount, setFileCount] = useState<number | null>(null);
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const reqIdRef = useRef(0);
@@ -87,7 +91,24 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
           <IconArrowLeft size={13} stroke={2} aria-hidden /> {t("github.back")}
         </button>
         <span className="ml-1 shrink-0 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">#{number}</span>
+        {/* #1123 대화 | 변경 파일 — GitHub만(GitLab은 조회 전용) */}
+        {host === "github" && (
+          <div className="ml-auto flex items-center gap-0.5 rounded-md bg-zinc-100 p-0.5 dark:bg-zinc-800/70">
+            {(["conversation", "files"] as const).map((k) => (
+              <button key={k} type="button" onClick={() => setTab(k)}
+                className={`rounded px-2 py-0.5 text-[11px] font-medium transition ${tab === k ? "bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
+                {k === "conversation" ? t("github.tabConversation") : t("github.tabFiles")}
+                {k === "files" && fileCount !== null && <span className="ml-1 tabular-nums text-zinc-400">{fileCount}</span>}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+      {host === "github" && tab === "files" ? (
+        <div className="min-h-0 flex-1 overflow-auto">
+          <PrFiles root={root} number={number} reloadKey={reloadKey} onOpenFile={onOpenFile} onCount={setFileCount} />
+        </div>
+      ) : (
       <div className="min-h-0 flex-1 overflow-auto p-4">
         {load.loading && !d ? (
           <div className="flex items-center gap-2 text-[12px] text-zinc-400 dark:text-zinc-500"><IconLoader2 size={14} className="animate-spin" aria-hidden /> …</div>
@@ -189,6 +210,7 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
