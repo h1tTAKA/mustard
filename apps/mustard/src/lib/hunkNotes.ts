@@ -38,10 +38,11 @@ export const explainDiffText = (diffText: string, providerId: AgentProviderKind,
   askAgent(diffText, PROMPT, providerId, providerSettings, locale);
 
 // 자료(code) + 지시(prompt) → 답(카드 블록 제거). 커밋 세션 요약(#1064)도 같은 경로.
-export async function askAgent(code: string, prompt: string, providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string): Promise<string> {
+// mode "pr-review"(#1127)는 code에 지시까지 완성해 보냄(튜터 시스템프롬프트 대신 리뷰어용) — prompt는 대화 기록용으로만.
+export async function askAgent(code: string, prompt: string, providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string, mode: "chat" | "pr-review" = "chat"): Promise<string> {
   const res = await fetch("/api/agent/analyze", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ providerId, request: { code, locale, providerId, mode: "chat", messages: [{ role: "user", content: prompt }], providerSettings } }),
+    body: JSON.stringify({ providerId, request: { code, locale, providerId, mode, messages: [{ role: "user", content: prompt }], providerSettings } }),
   });
   if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
   const reader = res.body.getReader(); const dec = new TextDecoder();

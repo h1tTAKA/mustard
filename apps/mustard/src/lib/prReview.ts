@@ -41,8 +41,8 @@ ${FORMAT} The array must contain exactly one item.`;
 }
 
 const SEV = new Set<Severity>(["high", "medium", "low"]);
-// 답에서 JSON 배열을 뽑아 검증 — 모르는 파일·diff 밖 줄·빈 내용은 버림.
-export function parseFindings(text: string, valid: Map<string, Set<number>>, newId: () => string): Finding[] {
+// 답에서 JSON 배열을 뽑아 검증 — 모르는 파일·diff 밖 줄·빈 내용은 버림. JSON 배열이 아예 없으면 null(= 형식 위반, "문제 없음"과 구분).
+export function parseFindings(text: string, valid: Map<string, Set<number>>, newId: () => string): Finding[] | null {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text)?.[1];
   const src = fenced ?? text;
   // 앞 설명에 "[2건]" 같은 괄호가 있어도 — 여는 괄호마다 맨 끝 "]"까지 파싱 시도(리뷰)
@@ -51,7 +51,7 @@ export function parseFindings(text: string, valid: Map<string, Set<number>>, new
   for (let a = src.indexOf("["); a >= 0 && a < b; a = src.indexOf("[", a + 1)) {
     try { arr = JSON.parse(src.slice(a, b + 1)); break; } catch { /* 다음 괄호 */ }
   }
-  if (!Array.isArray(arr)) return [];
+  if (!Array.isArray(arr)) return null;
   const out: Finding[] = [];
   for (const x of arr) {
     if (!x || typeof x !== "object") continue;

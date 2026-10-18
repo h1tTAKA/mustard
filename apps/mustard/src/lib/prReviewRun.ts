@@ -26,7 +26,7 @@ export function runPrReview(root: string, pr: number, providerId: AgentProviderK
   const done = (title: string, body: string) => void desktopNotify({ title, body, suppressWhileFocused: false, target: { repoPath: root } }).catch(() => {});
   const p = runOnce(root, pr, providerId, settings, locale, onProgress)
     .then((r) => { done(translate(locale, "prReview.notifyDone", { pr }), translate(locale, "prReview.notifyBody", { n: r.findings.filter((f) => f.status === "open").length })); return r; },
-      (e) => { done(translate(locale, "prReview.notifyFailed", { pr }), String((e as Error)?.message || e).slice(0, 200)); throw e; })
+      (e) => { done(translate(locale, "prReview.notifyFailed", { pr }), translate(locale, "prReview.notifyFailedBody")); throw e; })
     .finally(() => inflight.delete(key));
   inflight.set(key, p);
   return p;
@@ -48,10 +48,13 @@ async function runOnce(root: string, pr: number, providerId: AgentProviderKind, 
     size += chunk.length; parts.push(chunk); valid.set(f.path, lines);
   }
   onProgress?.(done, files.data.files.length);
-  const answer = parts.length ? await askAgent(parts.join("\n"), buildReviewPrompt(locale), providerId, settings, locale) : "[]";
+  const prompt = buildReviewPrompt(locale);
+  const answer = parts.length ? await askAgent(`${prompt}\n\n${parts.join("\n")}`, prompt, providerId, settings, locale, "pr-review") : "[]";
+  const found = parseFindings(answer, valid, newId);
+  if (!found) throw new Error(`unreadable: ${answer.slice(0, 120)}`); // 형식 안 지킨 답 — "문제 없음"으로 덮지 않음
   // 채택한 지적은 남김 — 단 지금 diff에 그 줄이 아직 있을 때만(코드가 바뀌어 사라진 줄은 버림)
   const kept = (loadPrReview(root, pr)?.findings ?? []).filter((x) => x.status === "adopted" && valid.get(x.file)?.has(x.line)).slice(0, MAX_KEPT);
-  return save(root, pr, { at: Date.now(), findings: [...kept, ...parseFindings(answer, valid, newId)], ...(skipped.length ? { skipped } : {}) });
+  return save(root, pr, { at: Date.now(), findings: [...kept, ...found], ...(skipped.length ? { skipped } : {}) });
 }
 
 // 지적 하나만 다시 — 같은 자리를 새 지적으로 바꿈(마음에 들 때까지 반복). 못 받으면 throw(기존 지적 유지).
@@ -59,8 +62,9 @@ export async function retryFinding(root: string, pr: number, f: Finding, provide
   const d = await fileDiff(root, pr, f.file);
   if (d == null) throw new Error("diff");
   const { text, lines } = numberDiff(d);
-  const answer = await askAgent(`=== FILE: ${f.file}\n${text}`, buildRetryPrompt(f, locale), providerId, settings, locale);
-  const [next] = parseFindings(answer, new Map([[f.file, lines]]), newId);
+  const prompt = buildRetryPrompt(f, locale);
+  const answer = await askAgent(`${prompt}\n\n=== FILE: ${f.file}\n${text}`, prompt, providerId, settings, locale, "pr-review");
+  const [next] = parseFindings(answer, new Map([[f.file, lines]]), newId) ?? [];
   if (!next) throw new Error("no finding");
   // 그사이 전체 리뷰로 바뀌었으면 자리가 없음 → 오류. 그사이 채택·버림했으면 그 상태 유지(새 내용만 바꿈).
   const cur = loadPrReview(root, pr);

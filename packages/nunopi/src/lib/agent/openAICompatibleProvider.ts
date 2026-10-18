@@ -105,7 +105,7 @@ function normalizeOpenAICompatibleResponse(
 
   // 챗은 자유 텍스트, 글 모드는 텍스트 정규화, explain-token/concept는 각 1개.
   // 중복묶기(dedup-cards)·덱에이전트(deck-agent)도 자유 텍스트(블록 포함)를 그대로 담아 클라가 파싱.
-  if (request.mode === "chat" || request.mode === "explain-card" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz") {
+  if (request.mode === "chat" || request.mode === "explain-card" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz" || request.mode === "pr-review") {
     return normalizeChatOutput(content, "openai-compatible");
   }
   if (request.mode === "explain-concept") {
@@ -212,7 +212,7 @@ async function fetchOpenAICompatibleResponse(
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
       const httpMsg = `HTTP ${res.status} ${res.statusText}: ${errText.slice(0, 200)}`;
-      if (request.mode === "chat" || request.mode === "explain-card" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz") {
+      if (request.mode === "chat" || request.mode === "explain-card" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz" || request.mode === "pr-review") {
         return chatModeResponse("openai-compatible", translate(request.locale, "provider.httpError", { status: res.status }), [{ code: "PARSE_FAILED", message: httpMsg }]);
       }
       if (request.mode === "explain-concept") {
@@ -307,7 +307,7 @@ async function fetchOpenAICompatibleResponse(
     // 사용자 취소는 route로 전파(499 처리).
     if (signal?.aborted) throw err;
     const netMsg = err instanceof Error ? err.message : "Network error.";
-    if (request.mode === "chat" || request.mode === "explain-card" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz") {
+    if (request.mode === "chat" || request.mode === "explain-card" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz" || request.mode === "pr-review") {
       return chatModeResponse("openai-compatible", translate(request.locale, "provider.connectFailed"), [{ code: "PARSE_FAILED", message: netMsg }]);
     }
     if (request.mode === "explain-concept") {
@@ -379,6 +379,13 @@ function buildOpenAICompatibleMessages(
     return [
       { role: "system", content: deckAgentSystemPrompt(request.locale) },
       { role: "user", content: buildDeckAgentPrompt(request) },
+    ];
+  }
+  // #1127 PR 리뷰: 요청 code에 지시+diff가 완성돼 있음. 리뷰어 시스템(튜터 "JSON 금지"와 분리).
+  if (request.mode === "pr-review") {
+    return [
+      { role: "system", content: "You are a meticulous senior code reviewer. Follow the output format in the user message exactly. Output ONLY the requested JSON array — no prose before or after, no markdown headings." },
+      { role: "user", content: request.code },
     ];
   }
   // 퀴즈: 요청 code에 MODE(GENERATE/GRADE)·재료·규칙·출력언어가 완성돼 있음. 블록만 내라는 경량 시스템.
