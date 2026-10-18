@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { Monaco, OnMount } from "@monaco-editor/react";
+import { useT } from "@mustard/core";
 
 type MonacoEditorInstance = Parameters<OnMount>[0];
 type DecorationsCollection = ReturnType<MonacoEditorInstance["createDecorationsCollection"]>;
@@ -108,9 +109,10 @@ function beforeMount(monaco: Monaco) {
 }
 
 function EditorFallback() {
+  const t = useT();
   return (
     <div className="flex min-h-[160px] md:min-h-[320px] w-full items-center justify-center rounded-2xl border border-zinc-200 bg-white text-sm text-zinc-400 dark:border-zinc-800 dark:bg-[var(--ink)] dark:text-zinc-500">
-      에디터 로딩 중…
+      {t("editor.loading")}
     </div>
   );
 }

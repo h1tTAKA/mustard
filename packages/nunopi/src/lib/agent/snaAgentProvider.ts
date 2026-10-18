@@ -103,7 +103,7 @@ async function acquireSnaSlot(signal?: AbortSignal): Promise<() => void> {
       snaQ.waiters.push(wake);
       signal?.addEventListener("abort", onAbort, { once: true });
     });
-    if (signal?.aborted) { if (woken) snaQ.waiters.shift()?.(); throw new Error("분석이 취소되었습니다."); } // 깨움을 받았으면 다음 대기자에게
+    if (signal?.aborted) { if (woken) snaQ.waiters.shift()?.(); throw new Error("Analysis cancelled."); } // 깨움을 받았으면 다음 대기자에게
   }
   snaQ.busy++;
   let done = false;
@@ -122,7 +122,7 @@ async function runViaSna(prompt: string, opts: Parameters<typeof runViaSnaOnce>[
       if (!isSessionLimit(e) || opts.signal?.aborted || Date.now() + wait > deadline) throw e;
     } finally { release(); }
     await sleep(wait, opts.signal);
-    if (opts.signal?.aborted) throw new Error("분석이 취소되었습니다.");
+    if (opts.signal?.aborted) throw new Error("Analysis cancelled.");
   }
 }
 
@@ -143,7 +143,7 @@ async function runViaSnaOnce(
     workspace?: { cwd: string; addDirs?: string[] }; // #998 읽기 전용 작업 범위(서버 검증값)
   },
 ): Promise<RunResult> {
-  if (opts.signal?.aborted) throw new Error("분석이 취소되었습니다.");
+  if (opts.signal?.aborted) throw new Error("Analysis cancelled.");
   const client = await getSnaClient();
   const isClaude = opts.runtime === "claude-code";
   const isCodex = opts.runtime === "codex";
@@ -183,7 +183,7 @@ async function runViaSnaOnce(
     timeout: 600_000, // 큰/청크 분석 대비 충분히 크게.
     ...runtimeOpts,
   })) {
-    if (opts.signal?.aborted) throw new Error("분석이 취소되었습니다.");
+    if (opts.signal?.aborted) throw new Error("Analysis cancelled.");
     const type = ev.type as string | undefined;
     if (type === "tool_use" || type === "tool_call" || type === "tool_result") {
       // #1081 도구를 쓰는 대화(질문 화면): 도구 호출 전에 쓴 중간 혼잣말("찾아볼게요", "Lines are long…")은 답이 아님 →
