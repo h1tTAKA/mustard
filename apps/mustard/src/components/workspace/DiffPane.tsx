@@ -195,7 +195,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
             <span className="w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">{l.oldN ?? ""}</span>
             <span className="w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">{l.newN ?? ""}</span>
             {lineF
-              ? <button type="button" title={lineF.map((f) => f.title).join("\n")} aria-expanded={openLines.has(lineN)}
+              ? <button type="button" title={lineF.map((f) => f.title).join("\n")} aria-label={`${t("github.tabAgentReview")}: ${lineF.map((f) => f.title).join(", ")}`} aria-expanded={openLines.has(lineN)} aria-controls={`prf-${lineN}`}
                   onClick={() => setOpenLines((s) => { const x = new Set(s); if (x.has(lineN)) x.delete(lineN); else x.add(lineN); return x; })}
                   className="flex w-4 shrink-0 select-none items-center justify-center text-mustard-600 hover:text-mustard-500 dark:text-mustard-400"><IconRobot size={11} stroke={2} aria-hidden /></button>
               : <span className={`w-4 shrink-0 select-none text-center ${markCls}`}>{mark}</span>}
@@ -209,7 +209,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
           return (
             <Fragment key={`f-${i}`}>
               {row}
-              {opened && lineF.map((f) => (
+              {opened && <div id={`prf-${lineN}`}>{lineF.map((f) => (
                 <div key={f.id} style={{ width: paneW ? paneW - 20 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-mustard-500/30 bg-mustard-50/80 px-3 py-2 font-sans dark:bg-mustard-500/[0.07]">
                   <div className="flex items-center gap-1.5 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400">
                     <IconRobot size={11} stroke={2} aria-hidden />{t(`prReview.sev.${f.severity}`)}
@@ -224,7 +224,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
                     </div>
                   )}
                 </div>
-              ))}
+              ))}</div>}
             </Fragment>
           );
         }

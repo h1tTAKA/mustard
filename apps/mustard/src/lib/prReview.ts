@@ -45,10 +45,12 @@ const SEV = new Set<Severity>(["high", "medium", "low"]);
 export function parseFindings(text: string, valid: Map<string, Set<number>>, newId: () => string): Finding[] {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text)?.[1];
   const src = fenced ?? text;
-  const a = src.indexOf("["), b = src.lastIndexOf("]");
-  if (a < 0 || b <= a) return [];
-  let arr: unknown;
-  try { arr = JSON.parse(src.slice(a, b + 1)); } catch { return []; }
+  // 앞 설명에 "[2건]" 같은 괄호가 있어도 — 여는 괄호마다 맨 끝 "]"까지 파싱 시도(리뷰)
+  const b = src.lastIndexOf("]");
+  let arr: unknown = null;
+  for (let a = src.indexOf("["); a >= 0 && a < b; a = src.indexOf("[", a + 1)) {
+    try { arr = JSON.parse(src.slice(a, b + 1)); break; } catch { /* 다음 괄호 */ }
+  }
   if (!Array.isArray(arr)) return [];
   const out: Finding[] = [];
   for (const x of arr) {
@@ -74,7 +76,9 @@ export function loadPrReview(root: string, pr: number): PrReview | null {
     return v && Array.isArray(v.findings) ? v : null;
   } catch { return null; }
 }
-export function savePrReview(root: string, pr: number, v: PrReview): void {
-  try { localStorage.setItem(prReviewKey(root, pr), JSON.stringify(v)); } catch { /* 저장 불가 — 이번 화면만 */ }
+// 저장 실패(용량 등)면 false — 이벤트도 안 쏨(다시 읽은 화면이 옛 값으로 되돌아가 보이지 않게, 호출부가 오류 표시).
+export function savePrReview(root: string, pr: number, v: PrReview): boolean {
+  try { localStorage.setItem(prReviewKey(root, pr), JSON.stringify(v)); } catch { return false; }
   window.dispatchEvent(new CustomEvent(PR_REVIEW_EVENT, { detail: prReviewKey(root, pr) }));
+  return true;
 }

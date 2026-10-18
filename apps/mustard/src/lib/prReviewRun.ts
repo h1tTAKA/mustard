@@ -1,9 +1,13 @@
 // 에이전트 PR 리뷰 실행(#1127) — PR diff(gh, Electron) 모아 askAgent(앱에서 고른 프로바이더·구독)로 지적 받기.
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { askAgent } from "@/lib/hunkNotes";
-import { buildRetryPrompt, buildReviewPrompt, loadPrReview, numberDiff, parseFindings, savePrReview, type Finding, type PrReview } from "@/lib/prReview";
+import { buildRetryPrompt, buildReviewPrompt, loadPrReview, numberDiff, parseFindings, prReviewKey, savePrReview, type Finding, type PrReview } from "@/lib/prReview";
 
 const MAX_CHARS = 60_000; // 에이전트에 보낼 diff 상한 — 넘는 파일은 건너뛰고 "생략"으로 표시
+const MAX_KEPT = 50;      // 다시 돌려도 남기는 채택 지적 상한
+const inflight = new Map<string, Promise<PrReview>>(); // 레포·PR별 진행 중 전체 리뷰 — 같은 PR 중복 실행 막고, 다시 연 화면이 이어받음(리뷰)
+export const prReviewInflight = (root: string, pr: number) => inflight.get(prReviewKey(root, pr));
+const save = (root: string, pr: number, v: PrReview) => { if (!savePrReview(root, pr, v)) throw new Error("storage"); return v; };
 const newId = () => Math.random().toString(36).slice(2, 10);
 
 async function fileDiff(root: string, pr: number, path: string): Promise<string | null> {
@@ -12,7 +16,16 @@ async function fileDiff(root: string, pr: number, path: string): Promise<string 
 }
 
 // 전체 리뷰 — 기존 지적 중 채택한 것은 남기고(대기 댓글), 나머지는 새 결과로.
-export async function runPrReview(root: string, pr: number, providerId: AgentProviderKind, settings: ProviderSettings, locale: string, onProgress?: (done: number, total: number) => void): Promise<PrReview> {
+export function runPrReview(root: string, pr: number, providerId: AgentProviderKind, settings: ProviderSettings, locale: string, onProgress?: (done: number, total: number) => void): Promise<PrReview> {
+  const key = prReviewKey(root, pr);
+  const cur = inflight.get(key);
+  if (cur) return cur;
+  const p = runOnce(root, pr, providerId, settings, locale, onProgress).finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
+
+async function runOnce(root: string, pr: number, providerId: AgentProviderKind, settings: ProviderSettings, locale: string, onProgress?: (done: number, total: number) => void): Promise<PrReview> {
   const files = await window.nunopiDesktop?.github?.prFiles?.(root, pr);
   if (!files?.ok || !files.data) throw new Error(files?.detail || "pr files");
   const parts: string[] = [], skipped: string[] = [], valid = new Map<string, Set<number>>();
@@ -29,10 +42,9 @@ export async function runPrReview(root: string, pr: number, providerId: AgentPro
   }
   onProgress?.(done, files.data.files.length);
   const answer = parts.length ? await askAgent(parts.join("\n"), buildReviewPrompt(locale), providerId, settings, locale) : "[]";
-  const kept = (loadPrReview(root, pr)?.findings ?? []).filter((x) => x.status === "adopted");
-  const review: PrReview = { at: Date.now(), findings: [...kept, ...parseFindings(answer, valid, newId)], ...(skipped.length ? { skipped } : {}) };
-  savePrReview(root, pr, review);
-  return review;
+  // 채택한 지적은 남김 — 단 지금 diff에 그 줄이 아직 있을 때만(코드가 바뀌어 사라진 줄은 버림)
+  const kept = (loadPrReview(root, pr)?.findings ?? []).filter((x) => x.status === "adopted" && valid.get(x.file)?.has(x.line)).slice(0, MAX_KEPT);
+  return save(root, pr, { at: Date.now(), findings: [...kept, ...parseFindings(answer, valid, newId)], ...(skipped.length ? { skipped } : {}) });
 }
 
 // 지적 하나만 다시 — 같은 자리를 새 지적으로 바꿈(마음에 들 때까지 반복). 못 받으면 throw(기존 지적 유지).
@@ -43,10 +55,11 @@ export async function retryFinding(root: string, pr: number, f: Finding, provide
   const answer = await askAgent(`=== FILE: ${f.file}\n${text}`, buildRetryPrompt(f, locale), providerId, settings, locale);
   const [next] = parseFindings(answer, new Map([[f.file, lines]]), newId);
   if (!next) throw new Error("no finding");
-  const cur = loadPrReview(root, pr) ?? { at: Date.now(), findings: [] };
-  const review = { ...cur, findings: cur.findings.map((x) => (x.id === f.id ? next : x)) };
-  savePrReview(root, pr, review);
-  return review;
+  // 그사이 전체 리뷰로 바뀌었으면 자리가 없음 → 오류. 그사이 채택·버림했으면 그 상태 유지(새 내용만 바꿈).
+  const cur = loadPrReview(root, pr);
+  const old = cur?.findings.find((x) => x.id === f.id);
+  if (!cur || !old) throw new Error("gone");
+  return save(root, pr, { ...cur, findings: cur.findings.map((x) => (x.id === f.id ? { ...next, id: f.id, status: old.status } : x)) });
 }
 
 // 채택·버림·되돌리기
@@ -54,6 +67,5 @@ export function setFindingStatus(root: string, pr: number, id: string, status: F
   const cur = loadPrReview(root, pr);
   if (!cur) return null;
   const review = { ...cur, findings: cur.findings.map((x) => (x.id === id ? { ...x, status } : x)) };
-  savePrReview(root, pr, review);
-  return review;
+  return savePrReview(root, pr, review) ? review : null;
 }

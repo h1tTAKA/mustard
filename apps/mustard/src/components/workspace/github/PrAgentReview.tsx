@@ -7,7 +7,7 @@ import { useT, useLocale, Markdown } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { relTime } from "@/lib/relTime";
 import { loadPrReview, prReviewKey, PR_REVIEW_EVENT, type Finding, type PrReview } from "@/lib/prReview";
-import { runPrReview, retryFinding, setFindingStatus } from "@/lib/prReviewRun";
+import { runPrReview, retryFinding, setFindingStatus, prReviewInflight } from "@/lib/prReviewRun";
 
 const SEV_CLS: Record<Finding["severity"], string> = {
   high: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
@@ -25,6 +25,14 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
   const [showDiscarded, setShowDiscarded] = useState(false);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  // 다른 PR 보다 돌아왔는데 이 PR 리뷰가 아직 진행 중이면 이어받아 "실행 중" 표시
+  useEffect(() => {
+    const p = prReviewInflight(root, number);
+    if (!p) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 진행 중 리뷰 이어받기(마운트 시 1회)
+    setRunning({ done: 0, total: 0 });
+    p.then((r) => { if (mounted.current) setRev(r); }, () => {}).finally(() => { if (mounted.current) setRunning(null); });
+  }, [root, number]);
   // 다른 화면(파일 목록·가운데 diff)이나 다른 실행이 바꾸면 다시 읽음
   useEffect(() => {
     const key = prReviewKey(root, number);
@@ -50,7 +58,7 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
     catch { if (mounted.current) setErr(t("prReview.retryFailed")); }
     finally { if (mounted.current) setBusy((b) => { const n = new Set(b); n.delete(f.id); return n; }); }
   };
-  const mark = (f: Finding, status: Finding["status"]) => { const r = setFindingStatus(root, number, f.id, status); if (r) setRev(r); };
+  const mark = (f: Finding, status: Finding["status"]) => { const r = setFindingStatus(root, number, f.id, status); if (r) setRev(r); else setErr(t("prReview.saveFailed")); };
 
   const findings = rev?.findings ?? [];
   const open = findings.filter((f) => f.status === "open");

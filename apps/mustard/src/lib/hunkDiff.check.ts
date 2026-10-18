@@ -22,4 +22,10 @@ assert.deepStrictEqual(diffSections(body), [{ from: 2, to: 2, text: "설명 A" }
 assert.strictEqual(diffSections("옛 카드" + DIFF_SEP + "설명"), null, "표지 없음 = 옛 카드");
 const withRule = [diffMark(hunks[0]) + "요약\n\n---\n\n## 코드 흐름\n본문", diffMark(hunks[1]) + "설명 B"].join(DIFF_SEP);
 assert.deepStrictEqual(diffSections(withRule), [{ from: 2, to: 2, text: "요약\n\n---\n\n## 코드 흐름\n본문" }, { from: 9, to: 9, text: "설명 B" }], "설명 안 구분선(---)에서 안 잘림");
+// #1127 리뷰: 안쪽 "-- x"·"++x" 줄은 머리 아님, "\ No newline"은 줄 번호 안 셈, 머리 쪽 Binary·mode 줄은 meta, 끝 빈 줄 없음
+const tricky = parseDiff(["diff --git a/q.sql b/q.sql", "old mode 100644", "new mode 100755", "--- a/q.sql", "+++ b/q.sql", "@@ -1,3 +1,3 @@", " x", "--- old comment", "+++ added plus", "-tail", "\\ No newline at end of file", "+tail2", "\\ No newline at end of file", ""].join("\n"));
+assert.deepStrictEqual(tricky.filter((l) => l.kind === "add").map((l) => [l.text, l.newN]), [["++ added plus", 2], ["tail2", 3]], "안쪽 +++/--- 줄과 No newline");
+assert.deepStrictEqual(tricky.filter((l) => l.kind === "del").map((l) => l.text), ["-- old comment", "tail"]);
+assert.ok(!tricky.some((l) => l.kind === "ctx" && l.text === ""), "끝 빈 줄 없음");
+assert.strictEqual(parseDiff("diff --git a/i.png b/i.png\nBinary files a/i.png and b/i.png differ\n").every((l) => l.kind === "meta"), true, "Binary는 meta");
 console.log("hunkDiff ok");
