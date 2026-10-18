@@ -89,7 +89,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   const t = useT();
   // #1120 오래 사는 폴링 effect·타이머는 첫 렌더의 t(언어 불러오기 전 ko)를 붙잡음 → 알림은 이 ref로 최신 언어를 읽음.
   const tRef = useRef(t);
-  tRef.current = t;
+  useEffect(() => { tRef.current = t; }, [t]); // tabsRef·activeKeyRef와 같은 방식(렌더 중 ref 쓰기 회피). 알림은 1.5s 뒤라 타이밍 안전
   const toast = useToast();
   const confirm = useConfirm();
   const [mounted, setMounted] = useState(false);
