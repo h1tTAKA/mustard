@@ -1441,6 +1441,7 @@ const ko: Dict = {
   "github.viewed": "봤음",
   "github.viewedProgress": "{n}/{total} 봤음",
   "github.filesEmpty": "변경된 파일이 없어요.",
+  "github.filesTruncated": "파일이 너무 많아 처음 {n}개만 보여요. 나머지는 GitHub에서 확인하세요.",
 };
 
 const ja: Dict = {
@@ -2866,6 +2867,7 @@ const ja: Dict = {
   "github.viewed": "確認済み",
   "github.viewedProgress": "{n}/{total} 確認済み",
   "github.filesEmpty": "変更されたファイルはありません。",
+  "github.filesTruncated": "ファイルが多すぎるため最初の{n}件のみ表示しています。残りはGitHubで確認してください。",
 };
 
 const en: Dict = {
@@ -4291,6 +4293,7 @@ const en: Dict = {
   "github.viewed": "Viewed",
   "github.viewedProgress": "{n} of {total} viewed",
   "github.filesEmpty": "No files changed.",
+  "github.filesTruncated": "Too many files — showing the first {n}. See the rest on GitHub.",
 };
 
 export const MESSAGES: Record<Locale, Dict> = { ko, ja, en };

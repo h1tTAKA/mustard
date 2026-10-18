@@ -728,11 +728,13 @@ ipcMain.handle("github:merge", (_e, { cwd, number, method }) => {
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "merge", String(n), flag, "--delete-branch"] });
 });
 // PR 리뷰 1(#1123) — 변경 파일(봤음 상태 포함)·파일별 diff·봤음 표시. GraphQL은 gh api가 {owner}/{repo}를 현재 레포로 치환.
+const prDiffCache = new Map(); // `${cwd}#${n}` → { at, files }
 const PR_FILES_Q = "query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id files(first:100,after:$after){nodes{path additions deletions changeType viewerViewedState}pageInfo{hasNextPage endCursor}}}}}";
 ipcMain.handle("github:pr-files", async (_e, { cwd, number }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
-  const files = []; let prId = null; let after = null;
+  prDiffCache.delete(`${cwd}#${n}`); // 목록을 새로 불러오면 diff도 새로(push 직후 옛 diff 방지, 리뷰)
+  const files = []; let prId = null; let after = null; let truncated = false;
   for (let page = 0; page < 30; page++) { // 최대 3,000개
     const args = ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", `number=${n}`, "-f", `query=${PR_FILES_Q}`];
     if (after) args.push("-f", `after=${after}`);
@@ -744,11 +746,11 @@ ipcMain.handle("github:pr-files", async (_e, { cwd, number }) => {
     for (const f of pr.files?.nodes ?? []) files.push({ path: f.path, additions: f.additions, deletions: f.deletions, changeType: f.changeType, viewed: f.viewerViewedState === "VIEWED" });
     if (!pr.files?.pageInfo?.hasNextPage) break;
     after = pr.files.pageInfo.endCursor;
+    if (page === 29) truncated = true; // 상한 도달 — 화면에 안내(리뷰)
   }
-  return { ok: true, data: { prId, files } };
+  return { ok: true, data: { prId, files, truncated } };
 });
 // 파일별 diff — gh pr diff는 PR 전체라, 같은 PR을 연달아 열 때 다시 받지 않게 짧게 캐시(30s).
-const prDiffCache = new Map(); // `${cwd}#${n}` → { at, files }
 ipcMain.handle("github:pr-file-diff", async (_e, { cwd, number, path }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
@@ -762,7 +764,9 @@ ipcMain.handle("github:pr-file-diff", async (_e, { cwd, number, path }) => {
     prDiffCache.set(key, hit);
     if (prDiffCache.size > 20) prDiffCache.delete(prDiffCache.keys().next().value);
   }
-  return { ok: true, data: { diff: hit.files[path] ?? "" } };
+  // PR엔 있는데 gh pr diff 결과에 없음(아주 큰 PR 등) → "변경 없음"이 아니라 missing으로(리뷰).
+  if (!Object.hasOwn(hit.files, path)) return { ok: true, data: { diff: "", missing: true } };
+  return { ok: true, data: { diff: hit.files[path] } };
 });
 // 봤음 표시 — GitHub에 저장(웹·다른 기기와 같은 상태).
 ipcMain.handle("github:pr-file-viewed", (_e, { cwd, prId, path, viewed }) => {

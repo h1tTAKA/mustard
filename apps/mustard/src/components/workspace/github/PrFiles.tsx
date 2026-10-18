@@ -6,7 +6,7 @@ import { IconLoader2, IconAlertTriangle, IconFolder } from "@tabler/icons-react"
 import { useT } from "@mustard/core";
 
 type PrFile = { path: string; additions: number; deletions: number; changeType: string; viewed: boolean };
-type Load = { loading: boolean; prId?: string; files?: PrFile[]; error?: string };
+type Load = { loading: boolean; prId?: string; files?: PrFile[]; truncated?: boolean; error?: string };
 
 // 변경 종류 → 한 글자 배지(VS Code·git 표기). RENAMED/COPIED 등은 R/C.
 const CHANGE: Record<string, { ch: string; cls: string }> = {
@@ -38,7 +38,7 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
     setLoad((p) => ({ ...p, loading: true }));
     void get(root, number).then((r) => {
       if (myId !== reqIdRef.current) return;
-      if (r.ok && r.data) { setLoad({ loading: false, prId: r.data.prId, files: r.data.files }); onCountRef.current?.(r.data.files.length); }
+      if (r.ok && r.data) { setLoad({ loading: false, prId: r.data.prId, files: r.data.files, truncated: r.data.truncated }); onCountRef.current?.(r.data.files.length); }
       else setLoad({ loading: false, error: r.detail || t("github.error") });
     }).catch(() => { if (myId === reqIdRef.current) setLoad({ loading: false, error: t("github.error") }); });
   }, [root, number, reloadKey, t]);
@@ -78,6 +78,7 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
           <div className="h-full rounded-full bg-mustard-500 transition-[width]" style={{ width: `${(viewed / files.length) * 100}%` }} />
         </div>
       </div>
+      {load.truncated && <p className="px-3 pt-2 text-[10.5px] text-amber-600 dark:text-amber-500">{t("github.filesTruncated", { n: files.length })}</p>}
       {err && <p className="px-3 pt-2 text-[10px] text-rose-500">{err}</p>}
       <div className="py-1">
         {groups.map((g) => (

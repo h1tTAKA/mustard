@@ -113,7 +113,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
         if (pr) { // PR diff — gh(Electron)로
           const r = await window.nunopiDesktop?.github?.prFileDiff?.(root, pr, file);
           if (cancelled) return;
-          if (!r?.ok) { setStatus("error"); return; }
+          if (!r?.ok || r.data?.missing) { setStatus("error"); return; } // missing = gh diff에 없음(큰 PR) → '변경 없음' 대신 오류
           raw = r.data?.diff ?? "";
         } else {
           const r = worktree
