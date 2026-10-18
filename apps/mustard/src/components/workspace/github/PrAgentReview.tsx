@@ -64,7 +64,7 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
     if (busy.has(f.id)) return;
     setBusy((b) => new Set(b).add(f.id)); setErr(null);
     try { const r = await postFinding(root, number, f, locale); if (r && mounted.current) setRev(r); }
-    catch (e) { const m = String((e as Error)?.message || e); if (mounted.current) setErr(m === "posted-unsaved" ? t("prReview.postedUnsaved") : t("prReview.postFailed", { msg: m })); }
+    catch (e) { const m = String((e as Error)?.message || e); if (mounted.current) setErr(m === "posted-unsaved" ? t("prReview.postedUnsaved") : m === "gone" ? t("prReview.gone") : t("prReview.postFailed", { msg: m })); }
     finally { if (mounted.current) setBusy((b) => { const n = new Set(b); n.delete(f.id); return n; }); }
   };
   const mark = (f: Finding, status: Finding["status"]) => { const r = setFindingStatus(root, number, f.id, status); if (r) setRev(r); else setErr(t("prReview.saveFailed")); };

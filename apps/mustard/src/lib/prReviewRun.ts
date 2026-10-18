@@ -89,7 +89,8 @@ const postedUrl = new Map<string, string>();
 export async function postFinding(root: string, pr: number, f: Finding, locale: string): Promise<PrReview | null> {
   const cur0 = loadPrReview(root, pr);
   const cur0f = cur0?.findings.find((x) => x.id === f.id);
-  if (posting.has(f.id) || !cur0f || cur0f.status !== "open") return cur0; // 목록에 없거나 이미 처리된 지적은 안 올림
+  if (!cur0f) throw new Error("gone"); // 목록에서 사라진 지적(다시 리뷰로 바뀜 등) — 안 올리고 알림
+  if (posting.has(f.id) || cur0f.status !== "open") return cur0; // 올리는 중·이미 처리됨
   posting.add(f.id);
   try {
     let url = postedUrl.get(f.id);

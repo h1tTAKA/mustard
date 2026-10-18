@@ -33,7 +33,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
     if (!pr || posting.has(f.id)) return;
     setPosting((s) => new Set(s).add(f.id));
     try { await postFinding(root, pr, f, locale); } // 저장 이벤트로 findings 갱신
-    catch (e) { const m = String((e as Error)?.message || e); toast(m === "posted-unsaved" ? t("prReview.postedUnsaved") : t("prReview.postFailed", { msg: m }), "error"); }
+    catch (e) { const m = String((e as Error)?.message || e); toast(m === "posted-unsaved" ? t("prReview.postedUnsaved") : m === "gone" ? t("prReview.gone") : t("prReview.postFailed", { msg: m }), "error"); }
     finally { setPosting((s) => { const n = new Set(s); n.delete(f.id); return n; }); }
   };
   useEffect(() => {

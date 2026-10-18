@@ -24,5 +24,9 @@ const cb2 = findingCommentBody({ title: "![t](https://evil/t.png)", body: "a ![p
 assert.ok(!cb2.includes("![") && cb2.includes("[2]: https://a"), cb2); // 이미지는 전부 링크로, 보통 참조 링크는 유지
 const cb3 = findingCommentBody({ title: "t", body: "!![x](https://evil/x.png) !!![y](https://evil/y.png) <picture><source srcset=\"https://evil/s.png\"></picture>" }, "Low");
 assert.ok(!/!\[/.test(cb3) && !/<(?:picture|source)/i.test(cb3), cb3);
+for (const evil of ["!<img src=https://e/x.png>[a](https://e/y.png)", "<<img src=https://e/x.png>img src=https://e/y.png>", "<video poster=https://e/p.png></video> <svg><image href=https://e/i.png/></svg>"]) {
+  const out = findingCommentBody({ title: "t", body: evil }, "Low");
+  assert.ok(!/!\[/.test(out) && !/<(?:img|video|svg|image)\b/i.test(out), out); // 지우며 다시 생기는 문법까지
+}
 assert.ok(buildReviewPrompt("ja").includes("Japanese"));
 console.log("prReview ok");
