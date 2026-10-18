@@ -26,7 +26,7 @@ function interpolate(s: string, vars?: Record<string, string | number>): string 
 // 클라 마운트(머스타드는 SPLASH 뒤 마운트)는 처음부터 저장 언어, SSR 하이드레이션(누노피 단독)은 서버 스냅샷 ko로 불일치 없이 맞춘 뒤 바로 갱신.
 // storage 이벤트 = 다른 창(분리 브라우저 창 등)에서 바꿔도 따라옴.
 // 저장소가 막힌 환경(사생활 창 등)에서도 이 창 안에서는 바꿀 수 있게 메모리 값(= 마지막으로 알던 언어)도 둠(리뷰).
-// 쓰기만 실패하면 옛 값을 지워서 읽기가 메모리 값으로 떨어지게(플래그 없이 — 창끼리 상태가 갈리지 않게).
+// ponytail: 읽기는 되고 쓰기만 실패(용량 꽉 참)하면 언어가 안 바뀜 — 3바이트 값이라 사실상 없음. 필요해지면 "쓰기 실패" 표시를 두고 메모리 우선.
 let memLocale: Locale = "ko";
 function readLocale(): Locale {
   try { const s = localStorage.getItem(STORAGE_KEY); if (s === "ko" || s === "ja" || s === "en") return (memLocale = s); } catch { /* 저장소 불가 */ }
@@ -51,7 +51,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
 
   const setLocale = useCallback((l: Locale) => {
     memLocale = l;
-    try { localStorage.setItem(STORAGE_KEY, l); } catch { try { localStorage.removeItem(STORAGE_KEY); } catch { /* 저장소 불가 */ } }
+    try { localStorage.setItem(STORAGE_KEY, l); } catch { /* 저장소 불가 — 읽기도 막혔으면 메모리 값으로 바뀜 */ }
     window.dispatchEvent(new Event(CHANGE_EVENT)); // 같은 창 구독자 갱신(storage 이벤트는 다른 창에만 옴)
   }, []);
 
