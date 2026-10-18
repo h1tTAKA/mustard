@@ -5,7 +5,7 @@ import { loadTokenDetails, loadTermDetails, loadConceptDetails } from "@mustard/
 import { loadActivity } from "../srs/activityLog";
 import { collectCards } from "../srs/collect";
 import type { UnifiedHistoryEvent } from "./types";
-import { translate } from "@mustard/core/messages";
+import { translate, relocalizeCardSource } from "@mustard/core/messages";
 
 // 첫 유저 메시지 요약(제목용). 없으면 폴백.
 function firstQuestion(messages: { role: string; content: string }[], fallback: string): string {
@@ -110,7 +110,7 @@ export async function collectHistory(locale = "ko"): Promise<UnifiedHistoryEvent
         if (!d?.bookmarkedAt) continue;
         // 출처 경로: 어디서 이 카드를 저장했나.
         const from = d.sourceTitle
-          ? tr("history.evt.savedFrom", { title: d.sourceTitle })
+          ? tr("history.evt.savedFrom", { title: relocalizeCardSource(d.sourceTitle, tr) }) // #1125 저장 언어로 굳은 출처를 지금 언어로
           : d.sourceKind === "ask"
             ? tr("history.evt.savedFromAsk")
             : d.sourceKind === "card"

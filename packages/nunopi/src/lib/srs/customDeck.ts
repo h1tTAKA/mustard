@@ -1,4 +1,4 @@
-import { translate } from "@mustard/core/messages";
+import { translate, allLocaleValues } from "@mustard/core/messages";
 // 커스텀 덱 — 유저(또는 에이전트)가 큐레이션한 카드 key 목록. 고정 덱(code/text/all)과 별개 축.
 // 카드는 key로만 참조(내용은 collectCards에서 파생). 삭제된 카드 key는 세션/카운트 시 스킵.
 const KEY = "nunopi:mem-custom-decks";
@@ -17,7 +17,11 @@ export function loadCustomDecks(): CustomDeck[] {
   try {
     const raw = localStorage.getItem(KEY);
     const arr = raw ? (JSON.parse(raw) as CustomDeck[]) : [];
-    return Array.isArray(arr) ? arr : [];
+    if (!Array.isArray(arr)) return [];
+    // #1125 이름 없이 만든 덱의 기본 이름("덱" 등, 만들 때 언어로 굳음)은 지금 언어로 — 읽는 한 곳에서 처리(표시처 6곳 공통).
+    const defaults = new Set(allLocaleValues("deck.defaultName"));
+    const cur = translate(localStorage.getItem("nunopi:locale") ?? "ko", "deck.defaultName");
+    return arr.map((d) => (d && defaults.has(d.name) ? { ...d, name: cur } : d));
   } catch {
     return [];
   }

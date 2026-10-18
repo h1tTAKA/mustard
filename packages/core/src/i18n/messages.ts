@@ -4306,3 +4306,25 @@ export function translate(locale: string | undefined, key: string, vars?: Record
 }
 // 한 키의 모든 언어 값 — 옛 저장값·다른 언어로 저장된 값 판정용(실패 문구 등).
 export const allLocaleValues = (key: string): string[] => (Object.keys(MESSAGES) as Locale[]).map((l) => MESSAGES[l][key]).filter(Boolean);
+// #1125 저장 시점 언어로 굳은 문구를 지금 언어로 다시 — 키들의 모든 언어 틀({변수} 자리 포함)과 맞춰 보고,
+// 맞으면 뽑은 변수로 지금 언어 문구를 만듦. 안 맞으면(사용자가 지은 이름 등) 그대로.
+export function relocalize(text: string, keys: string[], t: (key: string, vars?: Record<string, string | number>) => string): string {
+  for (const key of keys) {
+    for (const tpl of allLocaleValues(key)) {
+      const names: string[] = [];
+      const re = new RegExp("^" + tpl.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\\?\{(\w+)\\?\}/g, (_, n) => { names.push(n); return "(.+?)"; }) + "$");
+      const m = text.match(re);
+      if (m) return t(key, Object.fromEntries(names.map((n, i) => [n, m[i + 1]])));
+    }
+  }
+  return text;
+}
+// 저장된 카드 출처 문구 중 앱이 만든 것(워크스페이스·암기 챗)을 지금 언어로(#1125). 분석 제목 등은 그대로.
+export const CARD_SOURCE_KEYS = ["card.workspaceSource", "mem.chatSource"];
+// 질문 카드 출처 "폴더 / 세션 / 질문" — 기본 이름 조각만 지금 언어로(사용자가 지은 이름은 그대로).
+const ASK_PART_KEYS = ["ask.folderN", "ask.sessionN", "ask.thread"];
+export function relocalizeCardSource(text: string, t: (key: string, vars?: Record<string, string | number>) => string): string {
+  const whole = relocalize(text, CARD_SOURCE_KEYS, t);
+  if (whole !== text || !text.includes(" / ")) return whole;
+  return text.split(" / ").map((p) => relocalize(p, ASK_PART_KEYS, t)).join(" / ");
+}

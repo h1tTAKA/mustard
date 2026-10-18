@@ -11,6 +11,7 @@ import AskSessionQuiz from "./AskSessionQuiz";
 import { FlyCardProvider } from "../memorize/FlyCard";
 import { collectCards } from "../../lib/srs/collect";
 import { CARDS_CHANGED_EVENT } from "@mustard/core";
+import { MESSAGES } from "@mustard/core";
 import { reassignAskSubSession } from "@mustard/core";
 import type { Card } from "@mustard/core";
 import {
@@ -51,6 +52,9 @@ const clampPanel = (w: number) => Math.min(PANEL_MAX, Math.max(PANEL_MIN, w));
 
 // 에이전트 질문(Ask) 모드 — 좌측 세션 히스토리 + 활성 세션 챗(이슈2).
 // 서브세션 탭/분할은 후속 이슈. 지금은 세션당 단일 챗(subs[0]).
+// 모든 언어의 "제목 없음" — 저장된 기본 제목 판별용(#1125)
+const UNTITLED_ANY = new Set(Object.values(MESSAGES).map((d) => d["ask.untitled"]).filter(Boolean));
+
 export default function AskView({ active = true, providerId, providerSettings, goToTarget, collapsed = false }: {
   active?: boolean;
   providerId: AgentProviderKind;
@@ -195,7 +199,8 @@ export default function AskView({ active = true, providerId, providerSettings, g
 
   // 세션 표시 라벨 — 이름 없으면 "세션 N"(같은 폴더 스코프 내 순번). 스코프별 1부터.
   function sessionLabel(s: AskSession): string {
-    if (s.title) return s.title;
+    // #1125 예전 마이그레이션이 저장한 기본 제목("제목 없음" 등, 어느 언어든)은 이름 없는 것으로
+    if (s.title && !UNTITLED_ANY.has(s.title)) return s.title;
     const scope = (s.folderId ?? null);
     const siblings = store.sessions.filter((x) => (x.folderId ?? null) === scope);
     return t("ask.sessionN", { n: Math.max(0, siblings.findIndex((x) => x.id === s.id)) + 1 });

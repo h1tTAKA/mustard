@@ -193,7 +193,8 @@ function migrateLegacyThread(fallbackTitle: string): AskSession | null {
     const arr = JSON.parse(raw) as ChatMessage[];
     localStorage.removeItem(LEGACY_THREAD_KEY);
     if (!Array.isArray(arr) || arr.length === 0) return null;
-    const session = createSession(fallbackTitle);
+    const session = createSession(""); // #1125 제목을 저장하지 않음 — 표시할 때 "세션 N"으로 번역(fallbackTitle은 호환용으로만 남김)
+    void fallbackTitle;
     session.subs[0].messages = arr;
     return session;
   } catch {
