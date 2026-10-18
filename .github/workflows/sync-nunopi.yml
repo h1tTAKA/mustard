@@ -1,0 +1,56 @@
+name: Sync nunopi repo
+
+# 누노피 단독 레포(h1tTAKA/nunopi) 자동 동기화(#1116). 원본은 이 레포 — 누노피 레포는 덮어써짐.
+# 인증: 누노피 레포에 쓰기 권한 deploy key, 비밀키는 이 레포 secret NUNOPI_DEPLOY_KEY.
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/nunopi/**
+      - packages/core/**
+      - packages/nunopi/**
+      - scripts/export-nunopi.mjs
+      - scripts/nunopi-repo/**
+      - package.json
+      - package-lock.json
+  workflow_dispatch:
+
+concurrency:
+  group: sync-nunopi
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Export standalone tree
+        run: |
+          node scripts/export-nunopi.mjs "$RUNNER_TEMP/export"
+          cd "$RUNNER_TEMP/export" && npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Push to h1tTAKA/nunopi
+        env:
+          DEPLOY_KEY: ${{ secrets.NUNOPI_DEPLOY_KEY }}
+          HEAD_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          mkdir -p ~/.ssh && echo "$DEPLOY_KEY" > ~/.ssh/nunopi && chmod 600 ~/.ssh/nunopi
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/nunopi -o IdentitiesOnly=yes"
+          # 첫 동기화 = 빈 레포(브랜치 없음) → 새로 init
+          if ! git clone --depth 1 git@github.com:h1tTAKA/nunopi.git "$RUNNER_TEMP/target"; then
+            mkdir -p "$RUNNER_TEMP/target" && git -C "$RUNNER_TEMP/target" init -q -b main
+            git -C "$RUNNER_TEMP/target" remote add origin git@github.com:h1tTAKA/nunopi.git
+          fi
+          cd "$RUNNER_TEMP/target"
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a "$RUNNER_TEMP/export/." .
+          git add -A
+          if git diff --cached --quiet; then echo "no changes"; exit 0; fi
+          git -c user.name="mustard-sync" -c user.email="mustard-sync@users.noreply.github.com" \
+            commit -qm "sync from mustard@${GITHUB_SHA::8}" -m "${HEAD_MSG:-manual sync}"
+          git push origin HEAD:main

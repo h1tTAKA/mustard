@@ -1,0 +1,66 @@
+# dependencies
+node_modules/
+
+# next.js build output
+.next/
+out/
+
+# production build
+build/
+# electron-builder buildResources(앱 아이콘 등)는 추적(#906)
+!apps/mustard/build/
+!apps/mustard/build/**
+dist/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# local env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# macOS
+.DS_Store
+
+# editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# test / coverage
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# runtime / temporary files
+*.pid
+*.seed
+*.pid.lock
+.tmp/
+tmp/
+.sna/
+.antigravitycli/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# electron-builder output
+dist_electron/
+graphify-out/
+
+# openwiki (레포 분석 도구 실험 산출물 — 우리 레포엔 커밋 안 함. 도입 확정 시 재검토)
+openwiki/
+.github/workflows/openwiki-update.yml
+
+# 로컬 전용 학습정리·학습TODO(리포 미포함)
+docs/
