@@ -15,6 +15,8 @@ export interface CrewMsg {
   mentions?: string[];     // @역할(또는 "you" = 사람)
   provider?: string;       // 역할 메시지 — 실행 AI
   replyTo?: string;        // 사람 답글 — 대상 메시지 id
+  // #1125 보드·시스템 문구는 번역 키도 저장 → 화면이 지금 언어로 번역(text = 저장 시점 언어, 옛 메시지·대체값)
+  i18n?: { key: string; vars?: Record<string, string | number>; suffix?: string };
 }
 
 const normPath = (p: string) => p.replace(/\/+$/, "");

@@ -5,7 +5,7 @@ import { loadTokenDetails, loadTermDetails, loadConceptDetails } from "@mustard/
 import { loadActivity } from "../srs/activityLog";
 import { collectCards } from "../srs/collect";
 import type { UnifiedHistoryEvent } from "./types";
-import { translate } from "@mustard/core/messages";
+import { translate, relocalizeCardSource, allLocaleValues } from "@mustard/core/messages";
 
 // 첫 유저 메시지 요약(제목용). 없으면 폴백.
 function firstQuestion(messages: { role: string; content: string }[], fallback: string): string {
@@ -53,8 +53,9 @@ export async function collectHistory(locale = "ko"): Promise<UnifiedHistoryEvent
   // 2) 질문(질문모드) + 퀴즈
   try {
     const store = loadAskStore("");
+    const untitled = new Set(allLocaleValues("ask.untitled")); // 옛 기본 제목(만든 때 언어) = 이름 없음 취급(AskView와 같음, #1125)
     for (const s of store.sessions) {
-      const sessLabel = tr("history.evt.askSession", { title: s.title || tr("history.evt.session") });
+      const sessLabel = tr("history.evt.askSession", { title: (s.title && !untitled.has(s.title) ? s.title : "") || tr("history.evt.session") });
       for (const sub of s.subs) {
         if (sub.messages.length > 0) {
           out.push({
@@ -110,7 +111,7 @@ export async function collectHistory(locale = "ko"): Promise<UnifiedHistoryEvent
         if (!d?.bookmarkedAt) continue;
         // 출처 경로: 어디서 이 카드를 저장했나.
         const from = d.sourceTitle
-          ? tr("history.evt.savedFrom", { title: d.sourceTitle })
+          ? tr("history.evt.savedFrom", { title: relocalizeCardSource(d.sourceTitle, tr) }) // #1125 저장 언어로 굳은 출처를 지금 언어로
           : d.sourceKind === "ask"
             ? tr("history.evt.savedFromAsk")
             : d.sourceKind === "card"

@@ -204,7 +204,7 @@ export default function AnalysisHistory({
       />
       {entries.length === 0 ? (
         <p className="py-4 text-center text-sm text-zinc-400 dark:text-zinc-500">
-          분석 히스토리가 없다.
+          {t("history.emptyAll")}
         </p>
       ) : filteredEntries.length === 0 ? (
         <p className="py-2 text-center text-xs text-zinc-400 dark:text-zinc-500">
@@ -412,7 +412,7 @@ export default function AnalysisHistory({
           onClick={() => { setIsOpen((v) => !v); setQuery(""); }}
           className="text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
         >
-          {effectiveOpen ? "▲" : "▼"} 히스토리 {effectiveOpen && query.trim() ? `${filteredEntries.length}/${entries.length}` : entries.length}개
+          {effectiveOpen ? "▲" : "▼"} {t("history.count", { n: effectiveOpen && query.trim() ? `${filteredEntries.length}/${entries.length}` : entries.length })}
         </button>
         {effectiveOpen && (
           <button

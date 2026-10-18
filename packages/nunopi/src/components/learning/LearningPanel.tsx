@@ -35,7 +35,7 @@ import ConceptSection from "./ConceptSection";
 import { conceptShort } from "./conceptDescriptions";
 import LineExplanationList from "./LineExplanationList";
 import ResizableBody from "./ResizableBody";
-import { useConfirm, CKEYS } from "@mustard/core";
+import { useConfirm, CKEYS, relocalizeFailure } from "@mustard/core";
 import { useToast } from "@mustard/core";
 import { CARDS_CHANGED_EVENT } from "@mustard/core";
 import { useT, useLocale } from "@mustard/core";
@@ -61,7 +61,7 @@ function formatResultAsMarkdown(result: AgentAnalyzeResponse, t: TFn): string {
     `${t("export.metaLanguage")}: ${result.language}`,
     "",
     `## ${t("export.summary")}`,
-    result.summary,
+    relocalizeFailure(result.summary, t),
   ];
 
   if (result.lineExplanations.length > 0) {
@@ -75,7 +75,7 @@ function formatResultAsMarkdown(result: AgentAnalyzeResponse, t: TFn): string {
   if (result.warnings.length > 0) {
     lines.push("", `## ${t("export.warnings")}`);
     for (const w of result.warnings) {
-      lines.push(`- [${w.code}] ${w.message}`);
+      lines.push(`- [${w.code}] ${relocalizeFailure(w.message, t)}`);
     }
   }
 
@@ -951,7 +951,7 @@ export default function LearningPanel({
             </div>
             {result.summary.trim() ? (
               <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
-                {result.summary}
+                {relocalizeFailure(result.summary, t)}
               </p>
             ) : isLoading ? (
               <p className="mt-2 text-sm italic text-zinc-400 dark:text-zinc-500">
@@ -959,7 +959,7 @@ export default function LearningPanel({
               </p>
             ) : (
               <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
-                {result.summary}
+                {relocalizeFailure(result.summary, t)}
               </p>
             )}
             <div className="mt-3 flex flex-wrap gap-3 text-xs text-zinc-400 dark:text-zinc-500">
@@ -996,7 +996,7 @@ export default function LearningPanel({
                     className={`rounded-2xl border p-4 text-sm ${colorClass}`}
                   >
                     <span className="font-medium">[{warning.code}]</span>{" "}
-                    {warning.message}
+                    {relocalizeFailure(warning.message, t)}
                     {isPartial && onResumePartial && (
                       <button
                         type="button"

@@ -13,6 +13,8 @@ interface Tab { id: string; title: string; customTitle?: string } // customTitle
 const genId = () => globalThis.crypto?.randomUUID?.() ?? String(Math.random()).slice(2);
 // 새 탭 번호 = 현재 안 쓰는 가장 낮은 양수(#756). 닫은 자리를 다시 채워 "터미널 4처럼 계속 증가" 방지.
 // 제목 끝 숫자로 판별(모든 로케일 포맷이 "… {n}"이라 안전).
+// #1125 저장된 기본 탭 이름("터미널 N" — 만들 때 언어로 굳음)은 번호만 살려 보여 줄 때 번역. 번호 없는 이름은 그대로.
+const tabNum = (title: string) => title.match(/(\d+)\s*$/)?.[1];
 function nextNum(tabs: Tab[]): number {
   const used = new Set<number>();
   for (const tb of tabs) { const m = tb.title.match(/(\d+)\s*$/); if (m) used.add(parseInt(m[1], 10)); }
@@ -45,6 +47,7 @@ export function requestTerminalFocus(cwd: string, termId: string) {
 
 export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: string; active?: boolean }) {
   const t = useT();
+  const termLabel = (title: string) => { const n = tabNum(title); return n ? t("workspace.terminalTab", { n }) : title; };
   const store = `nunopi:ws-terms:${cwd}`;
   const initial = useMemo(() => loadTabs(store, t("workspace.terminalTab", { n: 1 })), []); // eslint-disable-line react-hooks/exhaustive-deps -- 마운트 1회 복원(cwd 변경은 아래 이펙트)
   const [tabs, setTabs] = useState<Tab[]>(initial.tabs);
@@ -224,7 +227,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
           // 아이콘=에이전트 로고(실행 중)/터미널. 제목 우선순위(#970): 유저 리네임 > 세션 제목(OSC 타이틀) > 에이전트 라벨 > "터미널 N".
           const agent = agentById[tab.id] ?? null;
           const sessionTitle = sessionTitleById[tab.id];
-          const label = tab.customTitle || sessionTitle || (agent ? AGENT_META[agent].label : tab.title);
+          const label = tab.customTitle || sessionTitle || (agent ? AGENT_META[agent].label : termLabel(tab.title));
           const editing = editingId === tab.id;
           return (
             <div key={tab.id} ref={on ? scrollTabIntoView : undefined}

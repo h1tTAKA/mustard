@@ -10,7 +10,7 @@ import { IconMessageCircle, IconArrowUp, IconLoader2, IconFileCode, IconFileText
 import { Markdown } from "@mustard/core";
 import WorkspaceQuizPanel from "@/components/workspace/WorkspaceQuizPanel";
 import { formatChatAsMarkdown } from "@mustard/nunopi";
-import { parseCardSuggestions, stripStreamingCardBlock, stripCardBlock, removeSuggestedCard, type SuggestedCard } from "@mustard/core";
+import { parseCardSuggestions, relocalizeFailure, stripStreamingCardBlock, stripCardBlock, removeSuggestedCard, type SuggestedCard } from "@mustard/core";
 import { createChatCard, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { bookmarkedTermExists } from "@mustard/core";
 import { collectCards } from "@mustard/nunopi";
@@ -145,6 +145,8 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
   const confirm = useConfirm();
   const toast = useToast();
   const store = `nunopi:ws-chat:${root}`;
+  // #1125 레포 세션 이름은 저장값(만들 때 언어로 굳음) 대신 보여 줄 때 번역
+  const labelOf = (kind: SessionKind, label: string) => (kind === "repo" ? t("workspace.chatRepo") : label);
 
   // 마운트 시 저장소에서 동기 복원(lazy init) — 새로고침/모드전환/재오픈 즉시 올바른 데이터로 시작.
   const initial = useMemo(() => loadStore(store, t("workspace.chatRepo")), []); // eslint-disable-line react-hooks/exhaustive-deps -- 마운트 1회 복원(store 변경은 아래 이펙트가 처리)
@@ -662,10 +664,10 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
             <button key={s.key} type="button" onClick={() => setActiveKey(s.key)} title={s.key}
               className={`group inline-flex min-w-0 shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium transition ${on ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" /* #1078 캐치업 필터 칩과 같은 강조색 */ : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"}`}>
               {kindGlyph(s.kind, 11, "shrink-0")}
-              <span className="max-w-[92px] truncate">{s.label}</span>
+              <span className="max-w-[92px] truncate">{labelOf(s.kind, s.label)}</span>
               {s.key !== REPO_KEY && (
                 <span role="button" tabIndex={-1} onClick={(e) => { e.stopPropagation(); closeSession(s.key); }}
-                  className={`ml-0.5 shrink-0 rounded ${on ? "hover:bg-white/25" : "hover:bg-zinc-300 dark:hover:bg-zinc-600"}`} aria-label="close session">
+                  className={`ml-0.5 shrink-0 rounded ${on ? "hover:bg-white/25" : "hover:bg-zinc-300 dark:hover:bg-zinc-600"}`} aria-label={t("mem.close")}>
                   <IconX size={10} stroke={2.5} aria-hidden />
                 </span>
               )}
@@ -677,7 +679,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
       {/* 헤더 — 현재 세션 표시 */}
       <div className="flex items-center gap-1.5 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
         {kindGlyph(active.kind, 14, "shrink-0 text-mustard-600 dark:text-mustard-400")}
-        <span className="min-w-0 truncate text-[12px] font-semibold text-zinc-700 dark:text-zinc-200" title={active.key}>{active.label}</span>
+        <span className="min-w-0 truncate text-[12px] font-semibold text-zinc-700 dark:text-zinc-200" title={active.key}>{labelOf(active.kind, active.label)}</span>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {/* 테스트(퀴즈, #760) — 대화 없어도 세션 자료로 출제 가능하므로 상시 노출. 카드/히스토리와 배타. */}
           <button type="button" onClick={() => { setHistoryOpen(false); setCardsOpen(false); setTestOpen((v) => !v); }} className={`rounded p-1 transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${testOpen ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"}`} title={t("quiz.title")} aria-label={t("quiz.title")} aria-pressed={testOpen}>
@@ -759,7 +761,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
                 <div key={i} className="self-end max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-100 px-3 py-1.5 text-[12px] leading-relaxed text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100">{m.content}</div>
               );
               // 어시스턴트 — 본문 + nunopi-cards 칩(다른 챗룸과 동일). 파일/심볼 카드는 제외(#746).
-              const parsedCards = parseCardSuggestions(m.content);
+              const parsedCards = parseCardSuggestions(relocalizeFailure(m.content, t));
               const text = parsedCards.text;
               const cards = parsedCards.cards.filter(keepCard);
               return (
@@ -822,7 +824,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
                     className="flex w-full items-start gap-2 px-3 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800">
                     <span className="mt-0.5 shrink-0">{kindGlyph(h.kind, 13, "text-zinc-400")}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[10px] text-zinc-400 dark:text-zinc-500">{h.label}</span>
+                      <span className="block truncate text-[10px] text-zinc-400 dark:text-zinc-500">{labelOf(h.kind, h.label)}</span>
                       <span className="line-clamp-2 text-[12px] leading-snug text-zinc-700 dark:text-zinc-200">{h.question}</span>
                     </span>
                     <span className="mt-0.5 shrink-0 rounded bg-zinc-100 px-1 text-[9px] font-medium text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">{h.count}</span>

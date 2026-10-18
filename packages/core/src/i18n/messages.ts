@@ -1040,6 +1040,9 @@ const ko: Dict = {
   "history.clearAllTitle": "히스토리 전체 삭제",
   "history.newCollection": "+ 새 목록",
   "history.search": "제목 또는 provider 검색…",
+  "history.emptyAll": "분석 히스토리가 없다.",
+  "history.count": "히스토리 {n}개",
+  "editor.loading": "에디터 로딩 중…",
   "history.collectionName": "목록 이름…",
   "history.empty": "이 목록에 담긴 분석이 없다.",
   "history.noSearch": "검색 결과가 없다.",
@@ -1440,8 +1443,13 @@ const ko: Dict = {
   "github.tabFiles": "변경 파일",
   "github.viewed": "봤음",
   "github.viewedProgress": "{n}/{total} 봤음",
+  "github.prReviewBanner": "GitHub PR #{n} 리뷰",
   "github.filesEmpty": "변경된 파일이 없어요.",
   "github.filesTruncated": "파일이 너무 많아 처음 {n}개만 보여요. 나머지는 GitHub에서 확인하세요.",
+  "crew.reason.interrupted": "중단됨(앱 재시작)",
+  "crew.reason.stopped": "사용자가 멈춤",
+  "crew.reason.flowError": "흐름 오류: {err}",
+  "crew.scheduledTask": "예약 작업",
 };
 
 const ja: Dict = {
@@ -2466,6 +2474,9 @@ const ja: Dict = {
   "history.clearAllTitle": "履歴をすべて削除",
   "history.newCollection": "+ 新規リスト",
   "history.search": "タイトルまたはproviderで検索…",
+  "history.emptyAll": "分析履歴はありません。",
+  "history.count": "履歴 {n}件",
+  "editor.loading": "エディタを読み込み中…",
   "history.collectionName": "リスト名…",
   "history.empty": "このリストに分析がありません。",
   "history.noSearch": "検索結果がありません。",
@@ -2866,8 +2877,13 @@ const ja: Dict = {
   "github.tabFiles": "変更ファイル",
   "github.viewed": "確認済み",
   "github.viewedProgress": "{n}/{total} 確認済み",
+  "github.prReviewBanner": "GitHub PR #{n} レビュー",
   "github.filesEmpty": "変更されたファイルはありません。",
   "github.filesTruncated": "ファイルが多すぎるため最初の{n}件のみ表示しています。残りはGitHubで確認してください。",
+  "crew.reason.interrupted": "中断(アプリ再起動)",
+  "crew.reason.stopped": "ユーザーが停止",
+  "crew.reason.flowError": "フローエラー: {err}",
+  "crew.scheduledTask": "予約タスク",
 };
 
 const en: Dict = {
@@ -3892,6 +3908,9 @@ const en: Dict = {
   "history.clearAllTitle": "Delete all history",
   "history.newCollection": "+ New list",
   "history.search": "Search by title or provider…",
+  "history.emptyAll": "No analysis history.",
+  "history.count": "History ({n})",
+  "editor.loading": "Loading editor…",
   "history.collectionName": "List name…",
   "history.empty": "No analyses in this list.",
   "history.noSearch": "No results.",
@@ -4292,8 +4311,13 @@ const en: Dict = {
   "github.tabFiles": "Files changed",
   "github.viewed": "Viewed",
   "github.viewedProgress": "{n} of {total} viewed",
+  "github.prReviewBanner": "GitHub PR #{n} review",
   "github.filesEmpty": "No files changed.",
   "github.filesTruncated": "Too many files — showing the first {n}. See the rest on GitHub.",
+  "crew.reason.interrupted": "Interrupted (app restarted)",
+  "crew.reason.stopped": "Stopped by user",
+  "crew.reason.flowError": "Flow error: {err}",
+  "crew.scheduledTask": "Scheduled task",
 };
 
 export const MESSAGES: Record<Locale, Dict> = { ko, ja, en };
@@ -4306,3 +4330,44 @@ export function translate(locale: string | undefined, key: string, vars?: Record
 }
 // 한 키의 모든 언어 값 — 옛 저장값·다른 언어로 저장된 값 판정용(실패 문구 등).
 export const allLocaleValues = (key: string): string[] => (Object.keys(MESSAGES) as Locale[]).map((l) => MESSAGES[l][key]).filter(Boolean);
+// #1125 저장 시점 언어로 굳은 문구를 지금 언어로 다시 — 키들의 모든 언어 틀({변수} 자리 포함)과 맞춰 보고,
+// 맞으면 뽑은 변수로 지금 언어 문구를 만듦. 안 맞으면(사용자가 지은 이름 등) 그대로.
+// 틀 → 정규식은 키마다 한 번만 만들어 둠(렌더마다 도는 자리라). 변수 자리는 숫자 변수({n})면 숫자만 — 넓은 틀이 다른 문구를 삼키지 않게.
+const tplCache = new Map<string, { re: RegExp; names: string[] }[]>();
+function tplsOf(key: string) {
+  let v = tplCache.get(key);
+  if (!v) {
+    v = allLocaleValues(key).map((tpl) => {
+      const names: string[] = [];
+      const re = new RegExp("^" + tpl.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\\?\{(\w+)\\?\}/g, (_, n) => { names.push(n); return n === "n" ? "(\\d+)" : "([\\s\\S]+?)"; }) + "$");
+      return { re, names };
+    });
+    tplCache.set(key, v);
+  }
+  return v;
+}
+export function relocalize(text: string, keys: string[], t: (key: string, vars?: Record<string, string | number>) => string): string {
+  for (const key of keys) {
+    for (const { re, names } of tplsOf(key)) {
+      const m = text.match(re);
+      if (m) return t(key, Object.fromEntries(names.map((n, i) => [n, m[i + 1]])));
+    }
+  }
+  return text;
+}
+// 저장된 카드 출처 문구 중 앱이 만든 것(워크스페이스·암기 챗)을 지금 언어로(#1125). 분석 제목 등은 그대로.
+export const CARD_SOURCE_KEYS = ["card.workspaceSource", "mem.chatSource"];
+// Crew 보드·시스템이 저장한 문구(채팅·관문 사유·실행 오류)의 키 — 옛 메시지(키 없이 text만)를 지금 언어로(#1125).
+// 저장되는 키만(화면 버튼·라벨 키를 넣으면 넓은 틀이 사람 말을 번역해 버림 — 리뷰).
+export const CREW_TEXT_KEYS = ["crewchat.permission", "crewchat.gate.merge", "crewchat.gate.blocked", "crewchat.gate.schema", "crewchat.gate.spec", "crewchat.start", "crewchat.restart", "crewchat.decision.approve", "crewchat.decision.retry", "crewchat.prCreated", "crewsplit.created", "crewsplit.parentDone", "crewtrig.ciChat", "crewtrig.issueChat", "crewtrig.scheduleChat", "crew.reason.interrupted", "crew.reason.stopped", "crew.reason.flowError"];
+// 답변·분석 실패 문구(#1125, ko가 같은 chat.reply*가 먼저 — 옛 fallback.chat* 저장분도 같은 뜻으로) — 실패 순간의 언어로 저장되므로(채팅 기록·분석 요약·경고·캐치업 설명) 보여 줄 때 지금 언어로.
+export const FAILURE_TEXT_KEYS = ["fallback.emptyResponse", "fallback.error", "fallback.requestFailed", "fallback.summaryFailed", "chat.replyFailed", "chat.replyError", "fallback.chatRequestFailed", "fallback.chatError", "analyze.cancelled", "provider.runtimeFailed", "provider.runtimeConnectFailed", "provider.httpError", "provider.connectFailed", "analyze.partialParse", "explain.conceptParseFailed", "explain.tokenParseFailed", "text.parseFailed", "text.summaryFailed"];
+// ponytail: 실패 문구는 짧음 — 긴 정상 답변은 비교 안 하고 통과(런타임 오류 원문이 이보다 길면 원문 그대로)
+export const relocalizeFailure = (text: string, t: (key: string, vars?: Record<string, string | number>) => string) => (text.length > 600 ? text : relocalize(text, FAILURE_TEXT_KEYS, t));
+// 질문 카드 출처 "폴더 / 세션 / 질문" — 기본 이름 조각만 지금 언어로(사용자가 지은 이름은 그대로).
+const ASK_PART_KEYS = ["ask.folderN", "ask.sessionN", "ask.thread"];
+export function relocalizeCardSource(text: string, t: (key: string, vars?: Record<string, string | number>) => string): string {
+  const whole = relocalize(text, CARD_SOURCE_KEYS, t);
+  if (whole !== text || !text.includes(" / ")) return whole;
+  return text.split(" / ").map((p) => relocalize(p, ASK_PART_KEYS, t)).join(" / ");
+}

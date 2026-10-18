@@ -1,4 +1,5 @@
 import { snaClaudeProvider, snaCodexProvider, snaOpenCodeProvider } from "@mustard/nunopi/server";
+import { translate } from "@mustard/core/messages";
 import {
   analyzeCodeChunked,
   createAgentRegistry,
@@ -133,7 +134,7 @@ export async function POST(
         send({ type: "result", providerId, response });
       } catch (error) {
         const message = request.signal.aborted
-          ? "분석이 취소되었습니다."
+          ? translate(providerRequest.locale, "analyze.cancelled")
           : formatErrorMessage(error);
         send({ type: "error", message });
       } finally {

@@ -10,6 +10,7 @@ import { deckStats } from "../lib/srs/due";
 import { detectLanguage } from "../lib/translator/detectLanguage";
 import { type LanguageChoice } from "../components/translator/CodeInputArea";
 import { MESSAGES } from "@mustard/core";
+import { useLocale } from "@mustard/core";
 import { desktopNotify } from "@mustard/core";
 import type { CodeToken } from "@mustard/core";
 import type { AgentAnalyzeResponse, AgentProviderKind, AnalyzeMode, ChatMessage, ProviderSettings } from "../lib/agent";
@@ -104,6 +105,7 @@ export interface CodeAnalysisShared {
 
 export function useCodeAnalysis(shared: CodeAnalysisShared, initialMode: AnalyzeMode = "code") {
   const { historyEntries, setHistoryEntries, collections, setCollections, setExcludedTerms, providerId, setProviderId, providerSettings: baseProviderSettings, setMemorizeDue, modeProviders, setModeProvider, modeModels } = shared;
+  const { locale: uiLocale } = useLocale(); // 창 제목 언어 갱신용(#1125)
 
   // 분석 모드(코드/글). 모드별로 입력을 따로 유지해 토글해도 서로 안 지워지게 한다.
   const [mode, setMode] = useState<AnalyzeMode>(initialMode);
@@ -255,7 +257,7 @@ export function useCodeAnalysis(shared: CodeAnalysisShared, initialMode: Analyze
     } else {
       document.title = "Nunopi";
     }
-  }, [isLoading, errorMessage, analysisResult]);
+  }, [isLoading, errorMessage, analysisResult, uiLocale]); // uiLocale: 언어 바꾸면 창 제목도(#1125)
 
 
   function handleCodeChange(nextCode: string) {
@@ -612,7 +614,7 @@ export function useCodeAnalysis(shared: CodeAnalysisShared, initialMode: Analyze
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ providerId, request: { code: input || "(코드 없음)", locale: getAnalysisLocale(), providerId, mode: "chat", messages: contextMessages, providerSettings } }),
         });
-        if (!res.ok || !res.body) { appendToSession(sid, { role: "assistant", content: translate(getAnalysisLocale(), "fallback.chatRequestFailed") }); return; }
+        if (!res.ok || !res.body) { appendToSession(sid, { role: "assistant", content: translate(getAnalysisLocale(), "chat.replyFailed") }); return; }
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -634,7 +636,7 @@ export function useCodeAnalysis(shared: CodeAnalysisShared, initialMode: Analyze
         }
         appendToSession(sid, { role: "assistant", content: answer || translate(getAnalysisLocale(), "fallback.emptyResponse") });
       } catch {
-        appendToSession(sid, { role: "assistant", content: translate(getAnalysisLocale(), "fallback.chatError") });
+        appendToSession(sid, { role: "assistant", content: translate(getAnalysisLocale(), "chat.replyError") });
       } finally {
         setChatStreaming(null);
         setChatLoading(false);

@@ -5,7 +5,7 @@ import { IconMessageCircle, IconX } from "@tabler/icons-react";
 import { IconPlus, IconCheck } from "@tabler/icons-react";
 import type { ChatMessage } from "../../lib/agent";
 import { Markdown } from "@mustard/core";
-import { useT } from "@mustard/core";
+import { useT, relocalizeFailure } from "@mustard/core";
 import { useConfirm } from "@mustard/core";
 import { useToast } from "@mustard/core";
 import { parseCardSuggestions, stripStreamingCardBlock, type SuggestedCard } from "@mustard/core";
@@ -207,7 +207,7 @@ export default function ChatRoom({ messages, streaming, isLoading, disabled, mod
           // 어시스턴트 — nunopi-cards 블록은 본문에서 떼고, 칩으로 노출.
           // 이미 카드로 있는 용어도 칩은 띄우되 "이미 담김" 상태(회색+체크)로 표시(#511) —
           // 안 띄우면 유저가 잊고 다시 물었을 때 칩이 왜 없는지 헷갈린다. 클릭 시 안내만.
-          const { text, cards } = parseCardSuggestions(m.content);
+          const { text, cards } = parseCardSuggestions(relocalizeFailure(m.content, t));
           return (
             <div key={i} className="flex flex-col items-start gap-1.5">
               <div className="max-w-[85%] select-text rounded-2xl bg-zinc-100 px-3 py-2 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">

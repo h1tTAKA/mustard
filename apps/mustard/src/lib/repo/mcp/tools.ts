@@ -21,8 +21,8 @@ const byId = (g: RepoGraph) => new Map(g.nodes.map((n) => [n.id, n]));
 export const TOOLS: McpTool[] = [
   {
     name: "katchup_find_code",
-    description: "심볼 이름으로 정의 위치 찾기(file:line, 종류, 시그니처). '이 함수/클래스 어디 정의됨?'",
-    inputSchema: { type: "object", properties: { name: { type: "string", description: "심볼 이름(함수/클래스/타입)" } }, required: ["name"] },
+    description: "Find where a symbol is defined (file:line, kind, signature). 'Where is this function/class defined?'",
+    inputSchema: { type: "object", properties: { name: { type: "string", description: "Symbol name (function/class/type)" } }, required: ["name"] },
     handler: async (root, args) => {
       const q = str(args.name); if (!q) return { text: "name required", isError: true };
       const { graph } = await loadOrBuildGraph(root);
@@ -34,7 +34,7 @@ export const TOOLS: McpTool[] = [
   },
   {
     name: "katchup_trace_calls",
-    description: "호출 관계 추적. direction=callers(누가 이 심볼 부름)/callees(이 심볼이 뭘 부름)/both.",
+    description: "Trace call relationships. direction=callers (who calls this symbol) / callees (what this symbol calls) / both.",
     inputSchema: { type: "object", properties: { symbol: { type: "string" }, direction: { type: "string", enum: ["callers", "callees", "both"] } }, required: ["symbol"] },
     handler: async (root, args) => {
       const sym = str(args.symbol); if (!sym) return { text: "symbol required", isError: true };
@@ -54,7 +54,7 @@ export const TOOLS: McpTool[] = [
   },
   {
     name: "katchup_find_all",
-    description: "심볼/파일 이름의 모든 그래프 참조(imports/calls/contains/extends/implements/references/uses/instantiates) 나열. uses·instantiates = 게임 씬·프리팹 → 스크립트·프리팹.",
+    description: "List every graph reference (imports/calls/contains/extends/implements/references/uses/instantiates) of a symbol or file name. uses/instantiates = game scenes/prefabs to scripts/prefabs.",
     inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
     handler: async (root, args) => {
       const q = str(args.name); if (!q) return { text: "name required", isError: true };
@@ -67,8 +67,8 @@ export const TOOLS: McpTool[] = [
   },
   {
     name: "katchup_file_api",
-    description: "한 파일의 심볼 스켈레톤(함수/클래스/타입 + 줄 + 시그니처). 파일 열지 않고 API 파악.",
-    inputSchema: { type: "object", properties: { file: { type: "string", description: "레포 상대경로(끝부분만도 매칭)" } }, required: ["file"] },
+    description: "Symbol skeleton of one file (functions/classes/types + line + signature). Learn its API without opening the file.",
+    inputSchema: { type: "object", properties: { file: { type: "string", description: "Repo-relative path (a trailing part also matches)" } }, required: ["file"] },
     handler: async (root, args) => {
       const f = str(args.file); if (!f) return { text: "file required", isError: true };
       const { graph } = await loadOrBuildGraph(root);
@@ -80,7 +80,7 @@ export const TOOLS: McpTool[] = [
   },
   {
     name: "katchup_repo_map",
-    description: "레포 구조 요약(모듈 맵 + 모듈간 의존 + 핵심 허브 파일). 코드베이스 첫 파악용.",
+    description: "Repo structure summary (module map + cross-module dependencies + key hub files). Start here in a new codebase.",
     inputSchema: { type: "object", properties: {} },
     handler: async (root) => {
       const { graph } = await loadOrBuildGraph(root);
@@ -89,7 +89,7 @@ export const TOOLS: McpTool[] = [
   },
   {
     name: "katchup_search",
-    description: "그래프 기반 관련 코드 검색(PageRank, 임베딩 없음). 'how does X work / X 관련 코드' 자연어 쿼리.",
+    description: "Graph-based related-code search (PageRank, no embeddings). Natural-language queries like 'how does X work' or 'code related to X'.",
     inputSchema: { type: "object", properties: { query: { type: "string" }, limit: { type: "number" } }, required: ["query"] },
     handler: async (root, args) => {
       const q = str(args.query); if (!q) return { text: "query required", isError: true };
@@ -102,7 +102,7 @@ export const TOOLS: McpTool[] = [
   },
   {
     name: "katchup_check_freshness",
-    description: "코드그래프가 현재 소스와 최신인지 확인(파일 변경 시 다음 조회에서 재빌드됨).",
+    description: "Check whether the code graph is up to date with the source (it rebuilds on the next query after files change).",
     inputSchema: { type: "object", properties: {} },
     handler: async (root) => {
       const cur = currentFingerprint(root);

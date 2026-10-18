@@ -1,7 +1,7 @@
 "use client";
 
 import { useLocale } from "@mustard/core";
-import { useT } from "@mustard/core";
+import { useT, relocalizeCardSource } from "@mustard/core";
 import type { Card } from "@mustard/core";
 
 const SOURCE_LABEL: Record<Card["source"], string> = {
@@ -28,7 +28,7 @@ export default function CardInfoPanel({ card }: { card: Card }) {
       <div className="flex flex-col gap-0.5">
         <span className="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500">{t("mem.source")}</span>
         <span className="line-clamp-2 font-semibold text-zinc-700 dark:text-zinc-200">
-          {card.sourceTitle?.trim() || t("mem.sourceUnknown")}
+          {card.sourceTitle?.trim() ? relocalizeCardSource(card.sourceTitle.trim(), t) : t("mem.sourceUnknown")}
         </span>
       </div>
       {/* 분류 · 습득일 */}

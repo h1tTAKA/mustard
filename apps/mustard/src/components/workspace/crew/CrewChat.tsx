@@ -4,7 +4,7 @@
 // 입력: @에이전트 = 그 역할에게 새 카드(그록봇식), 메시지에 답글 = 그 카드로 전달. 2초 폴링(since 이후만).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconArrowBackUp, IconArrowUp, IconAt, IconLayoutKanban, IconSettings, IconUser, IconUsers, IconX } from "@tabler/icons-react";
-import { useT, useToast } from "@mustard/core";
+import { useT, useToast, relocalize, CREW_TEXT_KEYS } from "@mustard/core";
 import type { CrewMsg } from "@/lib/crew/crewChat";
 import type { CrewRun } from "@/lib/crew/crewRunner";
 import { PROVIDER_LABEL, RoleIcon, isActiveRun, roleDesc, roleName, useCrewRoles, useCrewRuns } from "./crewUi";
@@ -31,8 +31,12 @@ function Avatar({ from, known, size = 32 }: { from: string; known: Set<string>; 
   return <span style={s} className={`flex shrink-0 items-center justify-center rounded-full ${tint(from)}`}><RoleIcon role={known.has(from) ? from : "custom"} size={size * 0.5} /></span>;
 }
 
+const DECISION_KEYS = ["crewchat.decision.approve", "crewchat.decision.retry"];
+
 export default function CrewChat({ root }: { root: string }) {
   const t = useT();
+  // #1125 보드·시스템 메시지는 키로 지금 언어 번역(옛 메시지는 text를 틀과 맞춰 다시 번역), 사람이 친 말은 그대로(키 없는 옛 승인 버튼 문구만 — 고정 문장 통째 일치)
+  const msgText = (m: CrewMsg) => (m.i18n ? t(m.i18n.key, m.i18n.vars) + (m.i18n.suffix ?? "") : m.from === "human" ? (m.kind === "decision" ? relocalize(m.text, DECISION_KEYS, t) : m.text) : relocalize(m.text, CREW_TEXT_KEYS, t));
   const toast = useToast();
   const [roles, setRoles] = useCrewRoles();
   const [runs] = useCrewRuns(root, () => {});
@@ -178,17 +182,17 @@ export default function CrewChat({ root }: { root: string }) {
                 /* 보드 안내 — 가운데 알림 */
                 <div className="my-2 flex flex-col items-center">
                   <div className={`max-w-[88%] rounded-xl px-3 py-1.5 text-center text-[11.5px] leading-relaxed ${m.kind === "blocked" ? "bg-rose-500/10 text-rose-700 dark:text-rose-300" : "bg-amber-500/10 text-amber-800 dark:text-amber-200"}`}>
-                    <IconLayoutKanban size={11} className="mr-1 inline align-[-1px]" aria-hidden />{renderText(m.text)}
+                    <IconLayoutKanban size={11} className="mr-1 inline align-[-1px]" aria-hidden />{renderText(msgText(m))}
                   </div>
                   {cardChip}
                 </div>
               ) : isMe ? (
                 /* 나 — 오른쪽 겨자 말풍선 */
                 <div className={`flex flex-col items-end ${first ? "mt-2.5" : "mt-0.5"}`}>
-                  {parent && <div className="mb-0.5 max-w-[80%] truncate text-[10.5px] text-zinc-400"><IconArrowBackUp size={10} className="mr-0.5 inline" aria-hidden />{who(parent.from)}: {parent.text.slice(0, 60)}</div>}
+                  {parent && <div className="mb-0.5 max-w-[80%] truncate text-[10.5px] text-zinc-400"><IconArrowBackUp size={10} className="mr-0.5 inline" aria-hidden />{who(parent.from)}: {msgText(parent).slice(0, 60)}</div>}
                   <div className="flex max-w-[85%] items-end gap-1.5">
                     {last && <span className="shrink-0 pb-0.5 text-[9.5px] tabular-nums text-zinc-400">{time(m.ts)}</span>}
-                    <div className={`whitespace-pre-wrap break-words rounded-2xl bg-mustard-500 px-3 py-1.5 text-[12.5px] leading-relaxed text-brown-900 ${first ? "rounded-tr-md" : ""}`}>{renderText(m.text)}</div>
+                    <div className={`whitespace-pre-wrap break-words rounded-2xl bg-mustard-500 px-3 py-1.5 text-[12.5px] leading-relaxed text-brown-900 ${first ? "rounded-tr-md" : ""}`}>{renderText(msgText(m))}</div>
                   </div>
                   {cardChip}
                 </div>
@@ -205,7 +209,7 @@ export default function CrewChat({ root }: { root: string }) {
                     )}
                     <div className="flex items-end gap-1.5">
                       <div className={`whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-[12.5px] leading-relaxed ${first ? "rounded-tl-md" : ""} ${loud ? (m.kind === "blocked" ? "bg-rose-50 text-rose-900 ring-1 ring-rose-300/60 dark:bg-rose-500/10 dark:text-rose-100 dark:ring-rose-500/30" : "bg-amber-50 text-amber-900 ring-1 ring-amber-300/60 dark:bg-amber-500/10 dark:text-amber-100 dark:ring-amber-500/30") : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200/70 dark:bg-white/[0.07] dark:text-zinc-100 dark:ring-white/5"}`}>
-                        {renderText(m.text)}
+                        {renderText(msgText(m))}
                       </div>
                       <span className="flex shrink-0 flex-col items-start gap-0.5 pb-0.5">
                         {m.taskId && (

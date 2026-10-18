@@ -23,17 +23,17 @@ const DARK_MODE_SCRIPT = `(function(){try{var t=localStorage.getItem('nunopi:the
 export const metadata: Metadata = {
   title: "Nunopi",
   description:
-    "바이브코더를 위한 AI 코드 학습 도구. 코드를 붙여넣으면 줄별 설명, 토큰 사전, 개념 정리를 만들어준다.",
+    "AI code-learning tool for vibe coders. Paste code to get line-by-line explanations, a token dictionary and concept notes.",
   openGraph: {
     title: "Nunopi",
-    description: "바이브코더를 위한 AI 코드 학습 도구",
+    description: "AI code-learning tool for vibe coders",
     type: "website",
     locale: "ko_KR",
   },
   twitter: {
     card: "summary",
     title: "Nunopi",
-    description: "바이브코더를 위한 AI 코드 학습 도구",
+    description: "AI code-learning tool for vibe coders",
   },
 };
 

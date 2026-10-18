@@ -87,18 +87,18 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-1.5 border-b border-zinc-100 px-2 py-1 dark:border-zinc-800/60">
-        <button type="button" onClick={onBack} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+        <button type="button" onClick={onBack} className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
           <IconArrowLeft size={13} stroke={2} aria-hidden /> {t("github.back")}
         </button>
         <span className="ml-1 shrink-0 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">#{number}</span>
         {/* #1123 대화 | 변경 파일 — GitHub만(GitLab은 조회 전용) */}
         {host === "github" && (
-          <div className="ml-auto flex items-center gap-0.5 rounded-md bg-zinc-100 p-0.5 dark:bg-zinc-800/70">
+          <div className="ml-auto flex min-w-0 items-center gap-0.5 rounded-md bg-zinc-100 p-0.5 dark:bg-zinc-800/70">
             {(["conversation", "files"] as const).map((k) => (
               <button key={k} type="button" onClick={() => setTab(k)}
-                className={`rounded px-2 py-0.5 text-[11px] font-medium transition ${tab === k ? "bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
-                {k === "conversation" ? t("github.tabConversation") : t("github.tabFiles")}
-                {k === "files" && fileCount !== null && <span className="ml-1 tabular-nums text-zinc-400">{fileCount}</span>}
+                className={`flex min-w-0 items-center whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium transition ${tab === k ? "bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
+                <span className="truncate">{k === "conversation" ? t("github.tabConversation") : t("github.tabFiles")}</span>
+                {k === "files" && fileCount !== null && <span className="ml-1 shrink-0 tabular-nums text-zinc-400">{fileCount}</span>}
               </button>
             ))}
           </div>

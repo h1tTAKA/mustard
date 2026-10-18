@@ -3,7 +3,7 @@
 // 컨텍스트 = 항목 → 캐치업 이력 → 레포(지도 + 읽기 전용 도구, 서버가 workspaceRoot 검증). 카드칩은 nunopi 켜짐일 때만.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconMessageCircle, IconX, IconArrowUp, IconLoader2, IconPlus, IconCheck } from "@tabler/icons-react";
-import { useT, useLocale, useToast, useSetting, CUKEYS, CATCHUP_DEFAULTS, Markdown, parseCardSuggestions, stripStreamingCardBlock, stripCardBlock, removeSuggestedCard, createChatCard, bookmarkedTermExists, type SuggestedCard } from "@mustard/core";
+import { useT, useLocale, useToast, useSetting, CUKEYS, CATCHUP_DEFAULTS, Markdown, parseCardSuggestions, relocalizeFailure, stripStreamingCardBlock, stripCardBlock, removeSuggestedCard, createChatCard, bookmarkedTermExists, type SuggestedCard } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { isNunopiEnabled } from "@/lib/product";
 import { isCardWorthy } from "@/lib/cardWorthy";
@@ -111,7 +111,7 @@ export default function CatchupAskPanel({ root, item, providerId, providerSettin
         {!msgs.length && streaming == null && <p className="py-3 text-center text-[11px] text-zinc-400 dark:text-zinc-500">{t("learn.askEmpty")}</p>}
         {msgs.map((m, i) => {
           if (m.role === "user") return <div key={i} className="self-end max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-100 px-3 py-1.5 text-[12px] leading-relaxed text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100">{m.content}</div>;
-          const parsed = parseCardSuggestions(m.content);
+          const parsed = parseCardSuggestions(relocalizeFailure(m.content, t));
           const cards = cardsOn ? parsed.cards.filter((c) => isCardWorthy(c.term)) : [];
           return (
             <div key={i} className="flex max-w-full flex-col items-start gap-1.5 text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-200">
