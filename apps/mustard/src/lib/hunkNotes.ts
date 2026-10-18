@@ -11,18 +11,24 @@ export const HUNK_NOTES_EVENT = "nunopi:hunk-notes"; // detail = 저장 키 — 
 // #1093 실패 문구가 설명으로 저장된 옛 값 — 없는 것으로(다시 설명).
 import { isFailedNote } from "@/lib/failText";
 export { isFailedNote };
-export function loadNotes(store: string): Record<string, string> {
+// 저장된 그대로(별칭 없이) — 저장할 때 씀(별칭이 진짜 키로 굳지 않게, 리뷰).
+function rawNotes(store: string): Record<string, string> {
   try {
     const raw = localStorage.getItem(store); const all = raw ? (JSON.parse(raw) as Record<string, string>) : {};
-    const out = Object.fromEntries(Object.entries(all).filter(([, v]) => typeof v === "string" && !isFailedNote(v)));
-    // #1127 parseDiff 수정 전 키(끝 개행이 만든 빈 문맥 줄·"\ No newline" 줄 포함)도 새 키로 찾히게 별칭 — 이미 받은 설명을 다시 사지 않게
-    for (const [k, v] of Object.entries(out)) { const nk = legacyNoteKey(k); if (nk !== k && !(nk in out)) out[nk] = v; }
-    return out;
+    return Object.fromEntries(Object.entries(all).filter(([, v]) => typeof v === "string" && !isFailedNote(v)));
   } catch { return {}; }
+}
+export function loadNotes(store: string): Record<string, string> {
+  const out = rawNotes(store);
+  // #1127 parseDiff 수정 전 키(끝 개행이 만든 빈 문맥 줄·"\ No newline" 줄 포함)도 새 키로 찾히게 별칭 — 이미 받은 설명을 다시 사지 않게.
+  // ponytail: 진짜 빈 문맥 줄로 끝나는 새 키에도 별칭이 생김(메모리에서만, 진짜 키가 항상 우선) — 같은 파일에 끝 빈 줄만 다른 구간이 있을 때만 엇갈림.
+  // 옛 파서가 hunk 안 "----"·"-- x" 줄을 빼먹은 키는 못 맞춤 → 그 구간만 다시 설명(비용 한 번).
+  for (const [k, v] of Object.entries(out)) { const nk = legacyNoteKey(k); if (nk !== k && !(nk in out)) out[nk] = v; }
+  return out;
 }
 // 구간 하나 저장(읽고 합쳐 쓰기 — 화면과 자동 설명이 같은 키에 써도 서로 안 지움).
 export function saveNote(store: string, diffText: string, text: string): void {
-  try { localStorage.setItem(store, JSON.stringify({ ...loadNotes(store), [diffText]: text })); } catch { /* ignore */ }
+  try { localStorage.setItem(store, JSON.stringify({ ...rawNotes(store), [diffText]: text })); } catch { /* ignore */ }
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(HUNK_NOTES_EVENT, { detail: store }));
 }
 

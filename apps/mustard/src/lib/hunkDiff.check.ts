@@ -33,4 +33,5 @@ const eofDiff = ["@@ -1,2 +1,2 @@", " a", "-b", "\\ No newline at end of file", 
 const nowKey = groupHunks(parseDiff(eofDiff))[0].diffText;
 const oldKey = ["  a", "- b", "  \\ No newline at end of file", "+ c", "  \\ No newline at end of file", "  "].join("\n");
 assert.strictEqual(legacyNoteKey(oldKey), nowKey, "옛 노트 키 별칭");
+assert.strictEqual(legacyNoteKey("  a\n- b\n+ c\n  d"), "  a\n- b\n+ c\n  d", "끝까지 안 닿은 구간은 그대로");
 console.log("hunkDiff ok");
