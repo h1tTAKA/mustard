@@ -1,0 +1,18 @@
+// splitDiffByFile 점검 — node electron/github-bridge.test.cjs
+const assert = require("node:assert");
+const { splitDiffByFile } = require("./github-bridge.cjs");
+
+const raw = [
+  "diff --git a/src/a.ts b/src/a.ts", "index 1..2 100644", "--- a/src/a.ts", "+++ b/src/a.ts", "@@ -1 +1 @@", "-x", "+y",
+  "diff --git a/old.md b/new.md", "similarity index 90%", "rename from old.md", "rename to new.md", "--- a/old.md", "+++ b/new.md", "@@ -1 +1 @@", "-a", "+b",
+  "diff --git a/gone.txt b/gone.txt", "deleted file mode 100644", "--- a/gone.txt", "+++ /dev/null", "@@ -1 +0,0 @@", "-bye",
+  'diff --git "a/my file.ts" "b/my file.ts"', "new file mode 100644", "--- /dev/null", '+++ "b/my file.ts"', "@@ -0,0 +1 @@", "+hi",
+  "diff --git a/img.png b/img.png", "Binary files a/img.png and b/img.png differ",
+  "",
+].join("\n");
+const m = splitDiffByFile(raw);
+assert.deepStrictEqual(Object.keys(m), ["src/a.ts", "new.md", "gone.txt", "my file.ts", "img.png"], "경로: 일반·이름변경(새 이름)·삭제·공백 따옴표·바이너리");
+assert.ok(m["src/a.ts"].includes("+y") && !m["src/a.ts"].includes("new.md"), "파일별로 잘림");
+assert.ok(m["gone.txt"].includes("-bye"));
+assert.deepStrictEqual(splitDiffByFile(""), {});
+console.log("github-bridge.test ok");

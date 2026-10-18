@@ -46,6 +46,9 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     issueCreate: (cwd, opts) => ipcRenderer.invoke("github:issue-create", { cwd, ...opts }),  // #945 이슈 생성(opts: title/body?/labels?)
     prList: (cwd, state, limit) => ipcRenderer.invoke("github:pr-list", { cwd, state, limit }),  // #814
     prView: (cwd, number) => ipcRenderer.invoke("github:pr-view", { cwd, number }),
+    prFiles: (cwd, number) => ipcRenderer.invoke("github:pr-files", { cwd, number }),  // #1123 변경 파일 + 봤음
+    prFileDiff: (cwd, number, path) => ipcRenderer.invoke("github:pr-file-diff", { cwd, number, path }),
+    prFileViewed: (cwd, prId, path, viewed) => ipcRenderer.invoke("github:pr-file-viewed", { cwd, prId, path, viewed }),
     checks: (cwd) => ipcRenderer.invoke("github:checks", { cwd }),  // #812 현재 브랜치 CI
     checkAnnotations: (cwd, checkRunId) => ipcRenderer.invoke("github:check-annotations", { cwd, checkRunId }),  // #812
     jobSteps: (cwd, jobId) => ipcRenderer.invoke("github:job-steps", { cwd, jobId }),  // #812

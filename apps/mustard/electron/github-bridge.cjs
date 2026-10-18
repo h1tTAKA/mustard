@@ -47,4 +47,28 @@ async function authDiagnose({ gh, cwd, env }) {
   return { state: r.kind, detail: r.detail };
 }
 
-module.exports = { ghRun, ghJson, authDiagnose, classifyGhError };
+// PR diff(#1123) — `gh pr diff N` 전체를 파일별로 자름. 경로는 `+++ b/…`(삭제면 `--- a/…`)에서 — 이름에 공백 있어
+// `diff --git "a/x y" "b/x y"`처럼 따옴표로 감싸져도 +++/--- 줄 기준이라 안전. 반환 { [path]: 그 파일의 diff 텍스트 }.
+function unquote(p) {
+  const s = p.trim();
+  if (s.startsWith('"') && s.endsWith('"')) { try { return JSON.parse(s); } catch { return s.slice(1, -1); } }
+  return s;
+}
+function splitDiffByFile(raw) {
+  const out = {};
+  const parts = String(raw || "").split(/^(?=diff --git )/m).filter((x) => x.startsWith("diff --git "));
+  for (const part of parts) {
+    const plus = part.match(/^\+\+\+ (.+)$/m), minus = part.match(/^--- (.+)$/m);
+    let path = null;
+    if (plus && unquote(plus[1]) !== "/dev/null") path = unquote(plus[1]).replace(/^b\//, "");
+    else if (minus && unquote(minus[1]) !== "/dev/null") path = unquote(minus[1]).replace(/^a\//, "");
+    if (!path) { // 바이너리·모드만 바뀜 등 +++/--- 없음 → 헤더에서
+      const m = part.match(/^diff --git (?:"?a\/)(.+?)"? (?:"?b\/)(.+?)"?$/m);
+      if (m) path = m[2];
+    }
+    if (path) out[path] = part;
+  }
+  return out;
+}
+
+module.exports = { ghRun, ghJson, authDiagnose, classifyGhError, splitDiffByFile };

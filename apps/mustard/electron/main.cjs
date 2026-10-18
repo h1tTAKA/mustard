@@ -727,6 +727,50 @@ ipcMain.handle("github:merge", (_e, { cwd, number, method }) => {
   const flag = { merge: "--merge", squash: "--squash", rebase: "--rebase" }[method] || "--merge";
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "merge", String(n), flag, "--delete-branch"] });
 });
+// PR 리뷰 1(#1123) — 변경 파일(봤음 상태 포함)·파일별 diff·봤음 표시. GraphQL은 gh api가 {owner}/{repo}를 현재 레포로 치환.
+const PR_FILES_Q = "query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id files(first:100,after:$after){nodes{path additions deletions changeType viewerViewedState}pageInfo{hasNextPage endCursor}}}}}";
+ipcMain.handle("github:pr-files", async (_e, { cwd, number }) => {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
+  const files = []; let prId = null; let after = null;
+  for (let page = 0; page < 30; page++) { // 최대 3,000개
+    const args = ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", `number=${n}`, "-f", `query=${PR_FILES_Q}`];
+    if (after) args.push("-f", `after=${after}`);
+    const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args });
+    if (!r.ok) return r;
+    const pr = r.data?.data?.repository?.pullRequest;
+    if (!pr) return { ok: false, kind: "error", detail: "pull request not found" };
+    prId = pr.id;
+    for (const f of pr.files?.nodes ?? []) files.push({ path: f.path, additions: f.additions, deletions: f.deletions, changeType: f.changeType, viewed: f.viewerViewedState === "VIEWED" });
+    if (!pr.files?.pageInfo?.hasNextPage) break;
+    after = pr.files.pageInfo.endCursor;
+  }
+  return { ok: true, data: { prId, files } };
+});
+// 파일별 diff — gh pr diff는 PR 전체라, 같은 PR을 연달아 열 때 다시 받지 않게 짧게 캐시(30s).
+const prDiffCache = new Map(); // `${cwd}#${n}` → { at, files }
+ipcMain.handle("github:pr-file-diff", async (_e, { cwd, number, path }) => {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
+  if (typeof path !== "string" || !path) return { ok: false, kind: "error", detail: "path required" };
+  const key = `${cwd}#${n}`;
+  let hit = prDiffCache.get(key);
+  if (!hit || Date.now() - hit.at > 30_000) {
+    const r = await githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "diff", String(n), "--color", "never"], timeout: 30000 });
+    if (!r.ok) return r;
+    hit = { at: Date.now(), files: githubBridge.splitDiffByFile(r.stdout) };
+    prDiffCache.set(key, hit);
+    if (prDiffCache.size > 20) prDiffCache.delete(prDiffCache.keys().next().value);
+  }
+  return { ok: true, data: { diff: hit.files[path] ?? "" } };
+});
+// 봤음 표시 — GitHub에 저장(웹·다른 기기와 같은 상태).
+ipcMain.handle("github:pr-file-viewed", (_e, { cwd, prId, path, viewed }) => {
+  if (typeof prId !== "string" || !prId || typeof path !== "string" || !path) return { ok: false, kind: "error", detail: "invalid args" };
+  const m = viewed ? "markFileAsViewed" : "unmarkFileAsViewed";
+  const q = `mutation($id:ID!,$path:String!){${m}(input:{pullRequestId:$id,path:$path}){clientMutationId}}`;
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "graphql", "-f", `id=${prId}`, "-f", `path=${path}`, "-f", `query=${q}`] });
+});
 // PR 생성(#944) — 성공 시 stdout=생성된 PR URL. base/head 빈값이면 플래그 생략(gh 기본: 현재 브랜치/origin default).
 ipcMain.handle("github:pr-create", (_e, { cwd, base, head, title, body, draft }) => {
   if (!title || typeof title !== "string" || !title.trim()) return { ok: false, kind: "error", detail: "title required" };
