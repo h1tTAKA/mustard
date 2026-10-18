@@ -20,7 +20,8 @@ const vars = { n: 3, tool: "Bash", url: "https://x/1", err: "boom", role: "build
 const SAME: Record<string, string> = { "fallback.chatRequestFailed": "chat.replyFailed", "fallback.chatError": "chat.replyError" };
 for (const keys of [CREW_TEXT_KEYS, FAILURE_TEXT_KEYS]) for (const k of keys) for (const l of ["ko", "ja", "en"]) {
   const back = relocalize(translate(l, k, vars), keys, en);
-  const want = translate("en", k, vars); // 그 언어에서 chat.reply*와 문장이 같으면 그쪽으로 감(뜻 같음)
-  if (back !== want && !(SAME[k] && translate(l, k) === translate(l, SAME[k]))) assert.fail(`${k}/${l}: ${back} != ${want}`);
+  // 그 언어에서 chat.reply*와 문장이 같으면 그쪽 키로 감(뜻 같음)
+  const want = translate("en", SAME[k] && translate(l, k) === translate(l, SAME[k]) ? SAME[k] : k, vars);
+  assert.strictEqual(back, want, `${k}/${l}`);
 }
 console.log("relocalize ok", relocalize(koWs, CARD_SOURCE_KEYS, en));
