@@ -1,5 +1,7 @@
 // 에이전트 PR 리뷰 실행(#1127) — PR diff(gh, Electron) 모아 askAgent(앱에서 고른 프로바이더·구독)로 지적 받기.
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
+import { desktopNotify } from "@mustard/core";
+import { translate } from "@mustard/core/messages";
 import { askAgent } from "@/lib/hunkNotes";
 import { buildRetryPrompt, buildReviewPrompt, loadPrReview, numberDiff, parseFindings, prReviewKey, savePrReview, type Finding, type PrReview } from "@/lib/prReview";
 
@@ -20,7 +22,12 @@ export function runPrReview(root: string, pr: number, providerId: AgentProviderK
   const key = prReviewKey(root, pr);
   const cur = inflight.get(key);
   if (cur) return cur;
-  const p = runOnce(root, pr, providerId, settings, locale, onProgress).finally(() => inflight.delete(key));
+  // 끝나면 데스크톱 알림(다른 작업 중이어도) — 화면을 떠나도 울리게 실행 쪽에서. 누르면 그 레포로.
+  const done = (title: string, body: string) => void desktopNotify({ title, body, suppressWhileFocused: false, target: { repoPath: root } }).catch(() => {});
+  const p = runOnce(root, pr, providerId, settings, locale, onProgress)
+    .then((r) => { done(translate(locale, "prReview.notifyDone", { pr }), translate(locale, "prReview.notifyBody", { n: r.findings.filter((f) => f.status === "open").length })); return r; },
+      (e) => { done(translate(locale, "prReview.notifyFailed", { pr }), String((e as Error)?.message || e).slice(0, 200)); throw e; })
+    .finally(() => inflight.delete(key));
   inflight.set(key, p);
   return p;
 }
