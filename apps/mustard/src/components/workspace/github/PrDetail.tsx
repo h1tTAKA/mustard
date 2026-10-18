@@ -96,9 +96,9 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
           <div className="ml-auto flex min-w-0 items-center gap-0.5 rounded-md bg-zinc-100 p-0.5 dark:bg-zinc-800/70">
             {(["conversation", "files"] as const).map((k) => (
               <button key={k} type="button" onClick={() => setTab(k)}
-                className={`min-w-0 truncate whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium transition ${tab === k ? "bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
-                {k === "conversation" ? t("github.tabConversation") : t("github.tabFiles")}
-                {k === "files" && fileCount !== null && <span className="ml-1 tabular-nums text-zinc-400">{fileCount}</span>}
+                className={`flex min-w-0 items-center whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium transition ${tab === k ? "bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
+                <span className="truncate">{k === "conversation" ? t("github.tabConversation") : t("github.tabFiles")}</span>
+                {k === "files" && fileCount !== null && <span className="ml-1 shrink-0 tabular-nums text-zinc-400">{fileCount}</span>}
               </button>
             ))}
           </div>
