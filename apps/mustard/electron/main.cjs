@@ -779,6 +779,29 @@ ipcMain.handle("github:pr-file-viewed", (_e, { cwd, prId, path, viewed }) => {
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "graphql", "-f", `id=${prId}`, "-f", `path=${path}`, "-f", `query=${q}`] });
 });
 // PR 생성(#944) — 성공 시 stdout=생성된 PR URL. base/head 빈값이면 플래그 생략(gh 기본: 현재 브랜치/origin default).
+// PR 줄 리뷰 댓글(#1127) — 에이전트 지적을 채택하면 그 파일·줄(head 커밋 기준 새 파일 줄, RIGHT)에 리뷰 댓글로.
+// -f(raw)라 본문·경로의 "@"가 파일 읽기로 안 바뀜. no-shell 인자.
+ipcMain.handle("github:pr-line-comment", async (_e, { cwd, number, path, line, body }) => {
+  const n = Number(number), ln = Number(line);
+  if (!Number.isInteger(n) || n <= 0 || !Number.isInteger(ln) || ln <= 0) return { ok: false, kind: "error", detail: "invalid pr/line" };
+  if (typeof path !== "string" || !path || typeof body !== "string" || !body.trim()) return { ok: false, kind: "error", detail: "empty path/body" };
+  const head = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "headRefOid"] });
+  if (!head.ok) return head;
+  const sha = head.data?.headRefOid;
+  if (typeof sha !== "string" || !/^[0-9a-f]{40}$/.test(sha)) return { ok: false, kind: "error", detail: "no head commit" };
+  const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/pulls/${n}/comments`, "-f", `body=${body}`, "-f", `commit_id=${sha}`, "-f", `path=${path}`, "-F", `line=${ln}`, "-f", "side=RIGHT"] });
+  if (!r.ok) return r;
+  return { ok: true, data: { id: r.data?.id, url: r.data?.html_url } };
+});
+// PR 줄 리뷰 댓글 목록(#1127) — 대화 탭에 파일:줄과 함께. 코드가 바뀌어 위치가 사라진 댓글(line null)은 outdated.
+ipcMain.handle("github:pr-line-comments", async (_e, { cwd, number }) => {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
+  const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "--paginate", "--slurp", `repos/{owner}/{repo}/pulls/${n}/comments`] });
+  if (!r.ok) return r;
+  const all = Array.isArray(r.data) ? r.data.flat() : [];
+  return { ok: true, data: all.map((c) => ({ id: c.id, path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
+});
 ipcMain.handle("github:pr-create", (_e, { cwd, base, head, title, body, draft }) => {
   if (!title || typeof title !== "string" || !title.trim()) return { ok: false, kind: "error", detail: "title required" };
   const args = ["pr", "create", "--title", title.trim(), "--body", typeof body === "string" ? body : ""];

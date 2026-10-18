@@ -4,7 +4,7 @@ import { parseDiff } from "./hunkDiff.ts";
 
 export type Severity = "high" | "medium" | "low";
 export type FindingStatus = "open" | "adopted" | "discarded";
-export interface Finding { id: string; file: string; line: number; severity: Severity; title: string; body: string; status: FindingStatus }
+export interface Finding { id: string; file: string; line: number; severity: Severity; title: string; body: string; status: FindingStatus; url?: string } // adopted = GitHub에 올림(url)
 export interface PrReview { at: number; findings: Finding[]; skipped?: string[] }
 
 // diff에 새 파일 줄 번호를 붙임 — 에이전트가 줄을 정확히 집게. lines = 지적 가능한 줄(추가·문맥, GitHub 댓글도 diff 안 줄만 가능).
@@ -38,6 +38,12 @@ ${JSON.stringify({ file: f.file, line: f.line, severity: f.severity, title: f.ti
 Write ONE better comment about the same concern (or the most important real problem near it): more accurate, more specific, with a concrete fix. Use a line from the L column.
 Write title and body in ${LANG[locale] ?? "English"}.
 ${FORMAT} The array must contain exactly one item.`;
+}
+
+// GitHub에 올릴 댓글 본문 — 사람이 보고 누른 지적만. 에이전트 글의 이미지(추적 픽셀)는 빼고, 에이전트가 쓴 글임을 끝에 표시(리뷰: 프롬프트 주입 대비).
+export function findingCommentBody(f: Pick<Finding, "title" | "body">, sevLabel: string): string {
+  const body = f.body.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/<img\b[^>]*>/gi, "");
+  return `**[${sevLabel}] ${f.title}**\n\n${body}`.trim() + "\n\n<sub>🤖 Mustard agent review</sub>";
 }
 
 const SEV = new Set<Severity>(["high", "medium", "low"]);

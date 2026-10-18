@@ -2,12 +2,12 @@
 // PR 에이전트 리뷰 탭(#1127) — 에이전트가 PR diff를 읽고 지적(초안)을 만들면, 사람이 [댓글로 채택]·[다시 리뷰]·[버림].
 // 채택은 대기 목록까지(GitHub 게시는 줄 댓글 이슈). 에이전트는 GitHub에 직접 쓰지 않음. 캐치업·AI 설명과 별도 저장소.
 import { useEffect, useRef, useState } from "react";
-import { IconLoader2, IconRobot, IconRefresh, IconCheck, IconX, IconArrowBackUp, IconMessagePlus, IconFile } from "@tabler/icons-react";
+import { IconLoader2, IconRobot, IconRefresh, IconCheck, IconX, IconArrowBackUp, IconMessagePlus, IconFile, IconExternalLink } from "@tabler/icons-react";
 import { useT, useLocale, Markdown } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { relTime } from "@/lib/relTime";
 import { loadPrReview, prReviewKey, PR_REVIEW_EVENT, type Finding, type PrReview } from "@/lib/prReview";
-import { runPrReview, retryFinding, setFindingStatus, prReviewInflight } from "@/lib/prReviewRun";
+import { runPrReview, retryFinding, setFindingStatus, prReviewInflight, postFinding } from "@/lib/prReviewRun";
 
 const SEV_CLS: Record<Finding["severity"], string> = {
   high: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
@@ -59,6 +59,14 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
     catch { if (mounted.current) setErr(t("prReview.retryFailed")); }
     finally { if (mounted.current) setBusy((b) => { const n = new Set(b); n.delete(f.id); return n; }); }
   };
+  // 채택 = GitHub PR 그 줄에 리뷰 댓글로 올림(사람이 본문 보고 누른 것만). 올리는 동안 그 카드 잠금.
+  const adopt = async (f: Finding) => {
+    if (busy.has(f.id)) return;
+    setBusy((b) => new Set(b).add(f.id)); setErr(null);
+    try { const r = await postFinding(root, number, f, locale); if (r && mounted.current) setRev(r); }
+    catch (e) { if (mounted.current) setErr(t("prReview.postFailed", { msg: String((e as Error)?.message || e) })); }
+    finally { if (mounted.current) setBusy((b) => { const n = new Set(b); n.delete(f.id); return n; }); }
+  };
   const mark = (f: Finding, status: Finding["status"]) => { const r = setFindingStatus(root, number, f.id, status); if (r) setRev(r); else setErr(t("prReview.saveFailed")); };
 
   const findings = rev?.findings ?? [];
@@ -103,12 +111,13 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
       {adopted.length > 0 && (
         <section className="rounded-lg border border-mustard-500/30 bg-mustard-500/5 p-2">
           <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold text-mustard-700 dark:text-mustard-400"><IconMessagePlus size={13} stroke={2} aria-hidden />{t("prReview.pending", { n: adopted.length })}</div>
-          <p className="mb-1.5 text-[10px] text-zinc-500 dark:text-zinc-400">{t("prReview.pendingNote")}</p>
           {adopted.map((f) => (
             <div key={f.id} className="flex items-center gap-2 py-0.5">
               {loc(f)}
               <span className="min-w-0 flex-1 truncate text-[11.5px] text-zinc-700 dark:text-zinc-200">{f.title}</span>
-              <button type="button" onClick={() => mark(f, "open")} className={`${btn} shrink-0 text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-700/60`}><IconArrowBackUp size={11} aria-hidden />{t("prReview.unadopt")}</button>
+              {f.url
+                ? <a href={f.url} target="_blank" rel="noreferrer" className={`${btn} shrink-0 text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-700/60`}><IconExternalLink size={11} aria-hidden />{t("prReview.viewOnGithub")}</a>
+                : <button type="button" onClick={() => mark(f, "open")} className={`${btn} shrink-0 text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-700/60`}><IconArrowBackUp size={11} aria-hidden />{t("prReview.undo")}</button>}
             </div>
           ))}
         </section>
@@ -132,7 +141,7 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
                 <div className="mt-1 text-[12px] font-semibold text-zinc-800 dark:text-zinc-100">{f.title}</div>
                 {f.body && <div className="prose prose-sm mt-0.5 max-w-none text-[11.5px] leading-relaxed text-zinc-600 dark:prose-invert dark:text-zinc-300 prose-p:my-1"><Markdown>{f.body}</Markdown></div>}
                 <div className="mt-1.5 flex flex-wrap gap-1">
-                  <button type="button" onClick={() => mark(f, "adopted")} disabled={busy.has(f.id)} className={`${btn} bg-mustard-500/15 text-mustard-700 hover:bg-mustard-500/25 dark:text-mustard-400`}><IconCheck size={11} aria-hidden />{t("prReview.adopt")}</button>
+                  <button type="button" onClick={() => void adopt(f)} disabled={busy.has(f.id)} className={`${btn} bg-mustard-500/15 text-mustard-700 hover:bg-mustard-500/25 dark:text-mustard-400`}><IconCheck size={11} aria-hidden />{t("prReview.adopt")}</button>
                   <button type="button" onClick={() => void retry(f)} disabled={busy.has(f.id) || !!running} className={`${btn} text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
                     {busy.has(f.id) ? <IconLoader2 size={11} className="animate-spin" aria-hidden /> : <IconRefresh size={11} aria-hidden />}{t("prReview.retry")}
                   </button>

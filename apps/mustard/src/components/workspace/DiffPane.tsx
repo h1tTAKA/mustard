@@ -4,7 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { codeToTokens, type ThemedToken, type BundledLanguage } from "shiki";
 import { IconLoader2, IconAlertTriangle, IconGitCompare, IconSparkles, IconRefresh, IconBrandGithub, IconRobot, IconCheck, IconX } from "@tabler/icons-react";
 import { loadPrReview, prReviewKey, PR_REVIEW_EVENT, type Finding } from "@/lib/prReview";
-import { setFindingStatus } from "@/lib/prReviewRun";
+import { setFindingStatus, postFinding } from "@/lib/prReviewRun";
 import { useLocale, useT, useToast } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
@@ -28,6 +28,14 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   // #1127 PR diff — 에이전트 리뷰 지적(버린 것 제외)을 줄 옆 🤖로. 펼친 줄은 지적 내용 표시.
   const [findings, setFindings] = useState<Finding[]>(() => (pr ? loadPrReview(root, pr)?.findings ?? [] : []));
   const [openLines, setOpenLines] = useState<Set<number>>(new Set());
+  const [posting, setPosting] = useState<Set<string>>(new Set()); // GitHub에 올리는 중인 지적
+  const adoptHere = async (f: Finding) => {
+    if (!pr || posting.has(f.id)) return;
+    setPosting((s) => new Set(s).add(f.id));
+    try { await postFinding(root, pr, f, locale); } // 저장 이벤트로 findings 갱신
+    catch (e) { toast(t("prReview.postFailed", { msg: String((e as Error)?.message || e) }), "error"); }
+    finally { setPosting((s) => { const n = new Set(s); n.delete(f.id); return n; }); }
+  };
   useEffect(() => {
     if (!pr) return;
     const key = prReviewKey(root, pr);
@@ -192,14 +200,18 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
         const lineF = pr && l.newN != null ? byLine.get(l.newN) : undefined; // #1127 이 줄의 에이전트 지적
         const lineN = l.newN as number;
         const row = (
-          <div key={i} className={`flex w-max min-w-full ${bg}`}>
+          <div key={i} className={`relative flex w-max min-w-full ${bg} ${lineF ? "ring-1 ring-inset ring-mustard-500/70" : ""}`}>
+            {/* #1127 지적 있는 줄 — 옛 줄번호 칸 위에 눈에 띄는 배지(코드 정렬 그대로), 누르면 지적 펼침 */}
+            {lineF && (
+              <button type="button" title={lineF.map((f) => f.title).join("\n")} aria-label={`${t("github.tabAgentReview")}: ${lineF.map((f) => f.title).join(", ")}`} aria-expanded={openLines.has(lineN)} aria-controls={`prf-${lineN}`}
+                onClick={() => setOpenLines((s) => { const x = new Set(s); if (x.has(lineN)) x.delete(lineN); else x.add(lineN); return x; })}
+                className="absolute inset-y-px left-0.5 z-[1] flex w-8 items-center justify-center gap-0.5 rounded bg-mustard-500 font-sans text-[10px] font-bold text-brown-900 shadow-sm hover:bg-mustard-400">
+                <IconRobot size={13} stroke={2.2} aria-hidden />{lineF.length > 1 ? lineF.length : ""}
+              </button>
+            )}
             <span className="w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">{l.oldN ?? ""}</span>
             <span className="w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">{l.newN ?? ""}</span>
-            {lineF
-              ? <button type="button" title={lineF.map((f) => f.title).join("\n")} aria-label={`${t("github.tabAgentReview")}: ${lineF.map((f) => f.title).join(", ")}`} aria-expanded={openLines.has(lineN)} aria-controls={`prf-${lineN}`}
-                  onClick={() => setOpenLines((s) => { const x = new Set(s); if (x.has(lineN)) x.delete(lineN); else x.add(lineN); return x; })}
-                  className="flex w-4 shrink-0 select-none items-center justify-center text-mustard-600 hover:text-mustard-500 dark:text-mustard-400"><IconRobot size={11} stroke={2} aria-hidden /></button>
-              : <span className={`w-4 shrink-0 select-none text-center ${markCls}`}>{mark}</span>}
+            <span className={`w-4 shrink-0 select-none text-center ${markCls}`}>{mark}</span>
             <span className="whitespace-pre px-1">
               {tok ? tok.map((tk, j) => <span key={j} style={{ color: tk.color }}>{tk.content}</span>) : <span className="text-zinc-700 dark:text-zinc-200">{l.text}</span>}
             </span>
@@ -214,13 +226,13 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
                 <div key={f.id} style={{ width: paneW ? paneW - 20 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-mustard-500/30 bg-mustard-50/80 px-3 py-2 font-sans dark:bg-mustard-500/[0.07]">
                   <div className="flex items-center gap-1.5 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400">
                     <IconRobot size={11} stroke={2} aria-hidden />{t(`prReview.sev.${f.severity}`)}
-                    {f.status === "adopted" && <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400"><IconCheck size={10} aria-hidden />{t("prReview.adopted")}</span>}
+                    {f.status === "adopted" && (f.url ? <a href={f.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-emerald-600 hover:underline dark:text-emerald-400"><IconCheck size={10} aria-hidden />{t("prReview.adopted")}</a> : <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400"><IconCheck size={10} aria-hidden />{t("prReview.adopted")}</span>)}
                   </div>
                   <div className="mt-0.5 text-[12px] font-semibold text-zinc-800 dark:text-zinc-100">{f.title}</div>
                   {f.body && <div className="prose prose-sm max-w-none text-[11.5px] leading-relaxed text-zinc-700 dark:prose-invert dark:text-zinc-200 prose-p:my-1"><Markdown>{f.body}</Markdown></div>}
                   {f.status === "open" && (
                     <div className="mt-1 flex gap-1">
-                      <button type="button" onClick={() => { if (!setFindingStatus(root, pr!, f.id, "adopted")) toast(t("prReview.saveFailed"), "error"); }} className="inline-flex items-center gap-1 rounded bg-mustard-500/15 px-1.5 py-0.5 text-[10.5px] font-medium text-mustard-700 hover:bg-mustard-500/25 dark:text-mustard-400"><IconCheck size={11} aria-hidden />{t("prReview.adopt")}</button>
+                      <button type="button" disabled={posting.has(f.id)} onClick={() => void adoptHere(f)} className="inline-flex items-center gap-1 rounded bg-mustard-500/15 px-1.5 py-0.5 text-[10.5px] font-medium text-mustard-700 hover:bg-mustard-500/25 dark:text-mustard-400"><IconCheck size={11} aria-hidden />{t("prReview.adopt")}</button>
                       <button type="button" onClick={() => { if (!setFindingStatus(root, pr!, f.id, "discarded")) toast(t("prReview.saveFailed"), "error"); }} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"><IconX size={11} aria-hidden />{t("prReview.discard")}</button>
                     </div>
                   )}

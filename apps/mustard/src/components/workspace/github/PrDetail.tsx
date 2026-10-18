@@ -11,6 +11,7 @@ import MarkdownToolbar from "@/components/workspace/github/MarkdownToolbar";
 import CommentComposer from "@/components/workspace/github/CommentComposer";
 import CommentItem from "@/components/workspace/github/CommentItem";
 import PrAgentReview from "@/components/workspace/github/PrAgentReview";
+import PrReviewComments from "@/components/workspace/github/PrReviewComments";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import GhAvatar from "@/components/workspace/github/GhAvatar";
 import ReactionBar from "@/components/workspace/github/ReactionBar";
@@ -209,6 +210,8 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
                 ))}
               </div>
             )}
+            {/* #1127 줄 리뷰 댓글(에이전트 리뷰로 올린 것 포함) — 일반 댓글과 따로 */}
+            {host === "github" && <PrReviewComments root={root} number={number} reloadKey={reloadKey + cmtNonce} onOpenFile={onOpenFile} />}
             {/* 코멘트 작성(#820) — GitLab 조회 전용(#964)이라 숨김 */}
             {host === "github" && <CommentComposer root={root} kind="pr" number={number} onPosted={() => setCmtNonce((n) => n + 1)} />}
           </div>

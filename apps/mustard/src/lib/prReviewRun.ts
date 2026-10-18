@@ -3,7 +3,7 @@ import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { desktopNotify } from "@mustard/core";
 import { translate } from "@mustard/core/messages";
 import { askAgent } from "@/lib/hunkNotes";
-import { buildRetryPrompt, buildReviewPrompt, loadPrReview, numberDiff, parseFindings, prReviewKey, savePrReview, type Finding, type PrReview } from "@/lib/prReview";
+import { buildRetryPrompt, buildReviewPrompt, findingCommentBody, loadPrReview, numberDiff, parseFindings, prReviewKey, savePrReview, type Finding, type PrReview } from "@/lib/prReview";
 
 const MAX_CHARS = 60_000; // 에이전트에 보낼 diff 상한 — 넘는 파일은 건너뛰고 "생략"으로 표시
 const MAX_KEPT = 50;      // 다시 돌려도 남기는 채택 지적 상한
@@ -73,7 +73,18 @@ export async function retryFinding(root: string, pr: number, f: Finding, provide
   return save(root, pr, { ...cur, findings: cur.findings.map((x) => (x.id === f.id ? { ...next, id: f.id, status: old.status } : x)) });
 }
 
-// 채택·버림·되돌리기
+// 채택 = GitHub PR 그 파일·줄에 리뷰 댓글로 올림(#1127, 유저 요청). 올라가야 채택 상태로 저장(링크 포함). 실패면 throw(그대로 열림).
+export async function postFinding(root: string, pr: number, f: Finding, locale: string): Promise<PrReview | null> {
+  const post = window.nunopiDesktop?.github?.prLineComment;
+  if (!post) throw new Error("desktop only");
+  const r = await post(root, pr, f.file, f.line, findingCommentBody(f, translate(locale, `prReview.sev.${f.severity}`)));
+  if (!r.ok) throw new Error(r.detail || "post failed");
+  const cur = loadPrReview(root, pr);
+  if (!cur?.findings.some((x) => x.id === f.id)) return cur; // 그사이 목록이 바뀜 — 댓글은 이미 GitHub에 있음(대화 탭에 보임)
+  return save(root, pr, { ...cur, findings: cur.findings.map((x) => (x.id === f.id ? { ...x, status: "adopted", url: r.data?.url } : x)) });
+}
+
+// 버림·되돌리기
 export function setFindingStatus(root: string, pr: number, id: string, status: Finding["status"]): PrReview | null {
   const cur = loadPrReview(root, pr);
   if (!cur) return null;
