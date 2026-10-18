@@ -87,6 +87,9 @@ export type WorkspaceTabsHandle = {
 type WorkspaceTabsProps = { active?: boolean; providerId: AgentProviderKind; providerSettings: ProviderSettings; onExitWorkspace?: () => void; onOpenMemorize?: () => void; onOpenSettings?: () => void };
 const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(function WorkspaceTabs({ active = true, providerId, providerSettings, onExitWorkspace, onOpenMemorize, onOpenSettings }, ref) {
   const t = useT();
+  // #1120 오래 사는 폴링 effect·타이머는 첫 렌더의 t(언어 불러오기 전 ko)를 붙잡음 → 알림은 이 ref로 최신 언어를 읽음.
+  const tRef = useRef(t);
+  useEffect(() => { tRef.current = t; }, [t]); // tabsRef·activeKeyRef와 같은 방식(렌더 중 ref 쓰기 회피). 알림은 1.5s 뒤라 타이밍 안전
   const toast = useToast();
   const confirm = useConfirm();
   const [mounted, setMounted] = useState(false);
@@ -197,7 +200,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
               if (now - (lastNotifyAt.current[p] ?? 0) < 5000) return; // 레포별 5s 쿨다운(세션 여러 개 동시 완료 등)
               lastNotifyAt.current[p] = now;
               const name = p.split(/[\\/]/).filter(Boolean).pop() || p; // 레포 폴더명(win 백슬래시·posix 슬래시 둘 다)
-              const title = s.state === "done" ? `✅ ${t("notify.done")}` : `⏸ ${t("notify.waiting")}`;
+              const title = s.state === "done" ? `✅ ${tRef.current("notify.done")}` : `⏸ ${tRef.current("notify.waiting")}`;
               // 게이트는 여기서(watching) 처리 — IPC 포커스 억제 끔(배경 레포는 포커스여도 알림). target = 클릭 시 이동(#989).
               void desktopNotify({ title, body: name, suppressWhileFocused: false, target: { repoPath: p, sessionId: s.sessionId } });
             }, 1500);
