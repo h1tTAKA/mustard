@@ -23,7 +23,8 @@ function stateLabel(d: GhPrDetail, t: (k: string) => string): { text: string; cl
   return { text: d.state, cls: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" };
 }
 
-export default function PrDetail({ root, number, reloadKey, host = "github", onBack }: { root: string; number: number; reloadKey: number; host?: "github" | "gitlab" | "other"; onBack: () => void }) {
+// onOpenFile = 변경 파일 → 가운데 diff 탭(#1123, Files changed 탭에서 사용)
+export default function PrDetail({ root, number, reloadKey, host = "github", onBack, onOpenFile }: { root: string; number: number; reloadKey: number; host?: "github" | "gitlab" | "other"; onBack: () => void; onOpenFile?: (file: string) => void }) {
   const t = useT();
   const [load, setLoad] = useState<Load>({ loading: true });
   const mountedRef = useRef(true);

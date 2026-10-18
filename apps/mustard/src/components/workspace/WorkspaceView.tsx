@@ -2,7 +2,7 @@
 // 워크스페이스 모드(#647) — 누노피 안에서 화면전환 없이 에이전트 코딩+즉시 학습.
 // 골격(커밋1): 4존 셸 [파일트리 | 터미널 | 코드 | 챗]. 각 존은 후속 커밋서 채움(트리·코드·챗·pty터미널).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld, IconLayoutKanban, IconMessageChatbot } from "@tabler/icons-react";
+import { IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconGitPullRequest, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld, IconLayoutKanban, IconMessageChatbot } from "@tabler/icons-react";
 import { isNunopiEnabled } from "@/lib/product";
 import { NunopiGlyph } from "@/components/brand/ModeSwapToggle";
 import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, withModel } from "@mustard/core";
@@ -29,9 +29,9 @@ import { FlyCardProvider } from "@mustard/nunopi";
 import WorkspaceDockLayout, { defaultTree, pruneTree, leavesOf, isDockNode, appendPanel, removePanel, type DockNode, type PanelId } from "@/components/workspace/WorkspaceDockLayout";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 // 코드/diff 멀티탭 한 건(#714) — 파일 또는 diff(커밋 diff는 hash, 워킹트리 diff는 worktree).
-type CodeTab = { kind: "file"; file: string } | { kind: "diff"; hash?: string; file: string; worktree?: "staged" | "unstaged" | "untracked" };
+type CodeTab = { kind: "file"; file: string } | { kind: "diff"; hash?: string; file: string; worktree?: "staged" | "unstaged" | "untracked"; pr?: number }; // pr = PR 리뷰 diff(#1123)
 // 탭 식별 키(중복 열기 방지·활성 지정). file / diff(hash) / diff(워킹트리) 구분.
-const codeTabKey = (tb: CodeTab) => tb.kind === "file" ? `file:${tb.file}` : `diff:${tb.hash ?? "wt:" + (tb.worktree ?? "")}:${tb.file}`;
+const codeTabKey = (tb: CodeTab) => tb.kind === "file" ? `file:${tb.file}` : `diff:${tb.pr ? `pr${tb.pr}` : tb.hash ?? "wt:" + (tb.worktree ?? "")}:${tb.file}`;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 // git status 문자(index,work) → 파일 트리 도트 종류. 삭제(D)는 트리에 행이 없어 스킵(#687).
@@ -176,7 +176,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       /* eslint-disable react-hooks/set-state-in-effect -- path 변경 시 그 레포 상태 복원 */
       // 코드/diff 탭 복원(#714) — file은 경로, diff는 hash 또는 worktree 중 하나는 반드시 있어야 통과(둘 다 없는 깨진 탭 배제).
       let ctabs: CodeTab[] = [];
-      try { const ct = JSON.parse(localStorage.getItem(K("code-tabs")) || "null"); if (Array.isArray(ct)) ctabs = ct.filter((x): x is CodeTab => x && typeof x.file === "string" && (x.kind === "file" || (x.kind === "diff" && (typeof x.hash === "string" || typeof x.worktree === "string")))); } catch { /* ignore */ }
+      try { const ct = JSON.parse(localStorage.getItem(K("code-tabs")) || "null"); if (Array.isArray(ct)) ctabs = ct.filter((x): x is CodeTab => x && typeof x.file === "string" && (x.kind === "file" || (x.kind === "diff" && (typeof x.hash === "string" || typeof x.worktree === "string" || (Number.isInteger(x.pr) && x.pr > 0))))); } catch { /* ignore */ }
       setCodeTabs(ctabs);
       // 활성 키가 복원된 탭에 없으면 마지막 탭으로 폴백(빈 pane 방지).
       const ac = localStorage.getItem(K("active-code"));
@@ -589,10 +589,12 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
               <div key={key} ref={on ? scrollTabIntoView : undefined} onClick={() => activateCode(key)}
                 className={`group relative flex shrink-0 cursor-pointer items-center gap-1.5 border-r border-zinc-200 px-3 py-1.5 text-[12px] transition dark:border-zinc-800 ${on ? "bg-white text-zinc-800 dark:bg-[var(--s-pane)] dark:text-zinc-100" : "text-zinc-500 hover:bg-white/50 dark:text-zinc-400 dark:hover:bg-zinc-800/50"}`}>
                 {on && <span className="absolute inset-x-0 top-0 h-0.5 bg-mustard-500" aria-hidden />}
-                {tb.kind === "diff"
+                {tb.kind === "diff" && tb.pr
+                  ? <IconGitPullRequest size={13} stroke={2} className={`shrink-0 ${on ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400"}`} aria-hidden />
+                  : tb.kind === "diff"
                   ? <IconGitCommit size={13} stroke={2} className={`shrink-0 ${on ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400"}`} aria-hidden />
                   : <IconFileCode size={13} stroke={2} className={`shrink-0 ${on ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400"}`} aria-hidden />}
-                <span className="whitespace-nowrap">{name}{tb.kind === "diff" && <span className="ml-1 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">{tb.hash ? `@${tb.hash.slice(0, 7)}` : `· ${tb.worktree}`}</span>}</span>
+                <span className="whitespace-nowrap">{name}{tb.kind === "diff" && <span className="ml-1 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">{tb.pr ? `#${tb.pr}` : tb.hash ? `@${tb.hash.slice(0, 7)}` : `· ${tb.worktree}`}</span>}</span>
                 <button type="button" onClick={(e) => { e.stopPropagation(); closeCodeTab(key); }}
                   className={`ml-1 shrink-0 rounded p-0.5 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200 ${on ? "" : "opacity-0 group-hover:opacity-100"}`} aria-label={t("mem.close")}>
                   <IconX size={12} stroke={2.5} aria-hidden />
@@ -604,7 +606,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       </div>
       <div className="min-h-0 flex-1">
         {activeTab?.kind === "diff"
-          ? <DiffPane key={activeCode} root={path} hash={activeTab.hash} file={activeTab.file} worktree={activeTab.worktree} providerId={providerId} providerSettings={providerSettings} />
+          ? <DiffPane key={activeCode} root={path} hash={activeTab.hash} file={activeTab.file} worktree={activeTab.worktree} pr={activeTab.pr} providerId={providerId} providerSettings={providerSettings} />
           : activeTab?.kind === "file"
             ? <CodePane key={activeCode} root={path} file={activeTab.file} />
             : null}
@@ -819,7 +821,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
             <aside style={{ width: chatW }} className="flex shrink-0 flex-col border-l border-zinc-200 dark:border-zinc-800">
               {/* 우측 패널 모드(#811·#855) — 질문(Chat) ↔ GitHub ↔ 캐치업 배타 렌더. 토글은 상단 헤더. */}
               {rightMode === "github" ? (
-                <GithubPanel root={path} ciDot={ciDot} />
+                <GithubPanel root={path} ciDot={ciDot} onOpenPrDiff={(pr, file) => openCodeTab({ kind: "diff", pr, file })} />
               ) : rightMode === "crew" ? (
                 <CrewChat key={path} root={path} />
               ) : rightMode === "learn" ? (

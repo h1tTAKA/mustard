@@ -15,7 +15,8 @@ type AuthState = "ok" | "not-installed" | "not-authed" | "rate-limited" | "error
 type Probe = { loading: boolean; state?: AuthState; detail?: string };
 type OpenItem = { kind: "issue" | "pr"; number: number }; // 상세 열림 — 반반 분할(#824)이라 kind로 이슈/PR 구분
 
-export default function GithubPanel({ root, ciDot }: { root: string; ciDot?: CiDot }) {
+// onOpenPrDiff = PR 변경 파일 클릭 → 가운데 diff 탭(#1123)
+export default function GithubPanel({ root, ciDot, onOpenPrDiff }: { root: string; ciDot?: CiDot; onOpenPrDiff?: (pr: number, file: string) => void }) {
   const t = useT();
   const [probe, setProbe] = useState<Probe>({ loading: true });
   const [owner, setOwner] = useState<string | null>(null);
@@ -173,7 +174,7 @@ export default function GithubPanel({ root, ciDot }: { root: string; ciDot?: CiD
           <div className="min-h-0 flex-1">
             {open.kind === "issue"
               ? <IssueDetail key={`issue-${open.number}`} root={root} number={open.number} reloadKey={reload} host={host} onBack={() => setOpen(null)} />
-              : <PrDetail key={`pr-${open.number}`} root={root} number={open.number} reloadKey={reload} host={host} onBack={() => setOpen(null)} />}
+              : <PrDetail key={`pr-${open.number}`} root={root} number={open.number} onOpenFile={onOpenPrDiff ? (file: string) => onOpenPrDiff(open.number, file) : undefined} reloadKey={reload} host={host} onBack={() => setOpen(null)} />}
           </div>
         )
       ) : (
