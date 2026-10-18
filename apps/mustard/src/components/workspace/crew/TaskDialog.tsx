@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconArrowLeft, IconArrowRight, IconCheck, IconChevronDown, IconGitBranch, IconPlayerPlayFilled, IconPlayerStopFilled, IconPlus, IconShieldQuestion, IconTerminal2, IconTrash, IconX, IconExternalLink, IconGitPullRequest, IconLoader2 } from "@tabler/icons-react";
-import { useT } from "@mustard/core";
+import { useT, relocalize, CREW_TEXT_KEYS } from "@mustard/core";
 import { CREW_STATUSES, type CrewStatus, type CrewTask } from "@/lib/crew/crewTypes";
 import type { CrewRole } from "@/lib/crew/crewRoleDefaults";
 import type { CrewRun } from "@/lib/crew/crewRunner";
@@ -218,7 +218,7 @@ function RunPanel({ run, onRun, onStop, onPermission, onTakeover, dirty }: { run
           </div>
         </div>
       )}
-      {run?.error && !active && <p className="mt-1.5 text-[11.5px] text-rose-600 dark:text-rose-400">{run.error}</p>}
+      {run?.error && !active && <p className="mt-1.5 text-[11.5px] text-rose-600 dark:text-rose-400">{relocalize(run.error, CREW_TEXT_KEYS, t)}</p>}
       {run?.summary && !active && (
         <details className="mt-2">
           <summary className="cursor-pointer text-[11.5px] font-medium text-zinc-500 dark:text-zinc-400">{t("crew.summary")}</summary>
@@ -240,7 +240,7 @@ function GatePanel({ task, roles, branch, onGate, onPr }: { task: CrewTask; role
   return (
     <div className={`mx-5 mb-4 rounded-xl border p-3 ${tone}`}>
       <div className={`text-[12.5px] font-semibold ${isBlocked ? "text-rose-700 dark:text-rose-300" : "text-amber-800 dark:text-amber-300"}`}>{t(`crew.gate.${g.kind}`)}</div>
-      {g.text && <p className="nunopi-scroll mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-300">{g.text}</p>}
+      {g.text && <p className="nunopi-scroll mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-300">{relocalize(g.text, CREW_TEXT_KEYS, t)}</p>}
       {g.kind === "spec" && task.split?.length ? (
         // #1114 쪼개기 제안 — 승인하면 이대로 하위 카드(번호 순, "N 다음" = 그 카드가 끝나야 시작)
         <div className="mt-2.5">

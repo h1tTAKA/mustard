@@ -92,7 +92,7 @@ export async function hookDecision(runId: string, token: string, tool: string, i
   run.state = "needs-permission"; run.permission = { request: { tool_name: tool, tool_input: input }, at: Date.now() };
   moveCard(run.root, run.taskId, "needs-you");
   persist(run, true);
-  say(run.root, { from: run.role, provider: run.provider, kind: "permission", taskId: run.taskId, mentions: ["you"], text: tr("crewchat.permission", { tool: `${tool}${input.command ? `: ${String(input.command).slice(0, 200)}` : ""}` }) });
+  say(run.root, { from: run.role, provider: run.provider, kind: "permission", taskId: run.taskId, mentions: ["you"], ...tx("crewchat.permission", { tool: `${tool}${input.command ? `: ${String(input.command).slice(0, 200)}` : ""}` }) });
   const ok = await new Promise<boolean>((res) => {
     const timer = setTimeout(() => { // 10분 무응답 = 거절, 카드는 다시 실행 중으로(보안 리뷰)
       g.pending.delete(runId);
@@ -112,8 +112,8 @@ function reconcile(root: string) {
   let changed = false;
   for (const r of runs) {
     if (ACTIVE.includes(r.state) && !g.runs.has(r.id)) {
-      r.state = "failed"; r.error = "interrupted (app restarted)"; r.endedAt = Date.now(); changed = true;
-      block(root, r.taskId, r.stage ?? 0, "interrupted (app restarted)");
+      r.state = "failed"; r.error = tr("crew.reason.interrupted"); r.endedAt = Date.now(); changed = true;
+      block(root, r.taskId, r.stage ?? 0, tr("crew.reason.interrupted"));
     }
   }
   if (changed) writeRuns(root, runs);
@@ -157,6 +157,8 @@ function roleLabel(id: string): string {
   const r = getRole(id);
   return r && !r.builtin ? r.name : tr(`crew.role.${id}`);
 }
+// #1125 번역 문구 = text(서버 언어) + i18n 키(화면이 앱 언어로 다시 번역)
+const tx = (key: string, vars?: Record<string, string | number>) => ({ text: tr(key, vars), i18n: { key, ...(vars ? { vars } : {}) } });
 function say(root: string, m: Omit<CrewMsg, "id" | "ts">) { try { appendMsg(root, m); } catch { /* 채팅 기록 실패는 무시 */ } }
 // 캐치업 보고 — 실시간 해설 통로(SSE + 날짜별 저장)로 "역할(AI) · 카드: 한 말"
 function report(run: CrewRun, title: string, text: string) {
@@ -188,9 +190,9 @@ function finish(run: CrewRun, forced?: Handoff) {
     else if (said) say(run.root, { ...base, from: run.role, provider: run.provider, kind: h.status === "done" || h.status === "changes_requested" ? "handoff" : "blocked", text: nextRole && !said.includes(`@${nextRole}`) ? `${said}\n@${nextRole}` : said, ...(nextRole ? { mentions: [nextRole] } : {}) });
     const gate = r.patch.gate;
     if (gate && gate.kind !== "question") say(run.root, { ...base, from: "board", kind: gate.kind === "blocked" ? "blocked" : "gate", mentions: ["you"],
-      text: gate.kind === "merge" ? tr("crewchat.gate.merge", { branch: run.branch }) : gate.kind === "blocked" ? tr("crewchat.gate.blocked", { why: gate.text ?? "" }) : tr(`crewchat.gate.${gate.kind}`) });
+      ...(gate.kind === "merge" ? tx("crewchat.gate.merge", { branch: run.branch }) : gate.kind === "blocked" ? tx("crewchat.gate.blocked", { why: gate.text ?? "" }) : tx(`crewchat.gate.${gate.kind}`)) });
     if (said) report(run, task.title, h.status === "needs_input" ? (h.question || said) : said);
-  } catch (e) { block(run.root, run.taskId, run.stage ?? 0, `flow error: ${String((e as Error)?.message ?? e)}`); }
+  } catch (e) { block(run.root, run.taskId, run.stage ?? 0, tr("crew.reason.flowError", { err: String((e as Error)?.message ?? e) })); }
 }
 
 // #1102 오케스트레이터 tick — 알려진 레포의 Ready 카드를 동시 상한 안에서 자동 시작(Ready 칸 = 에이전트 대기열).
@@ -362,7 +364,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     });
     run.state = "running"; run.lastActivity = "started";
     persist(run, true);
-    say(root, { from: role.id, provider: role.provider, kind: "start", taskId, taskTitle: task.title, text: tr(note ? "crewchat.restart" : "crewchat.start", { card: task.title }) });
+    say(root, { from: role.id, provider: role.provider, kind: "start", taskId, taskTitle: task.title, ...tx(note ? "crewchat.restart" : "crewchat.start", { card: task.title }) });
   } catch (e) {
     run.state = "failed"; run.endedAt = Date.now(); run.error = oneLine(String((e as Error)?.message ?? e), 400);
     block(root, taskId, stage, run.error); // 시작 자체 실패(worktree·SNA)는 재시도 안 함 — 사람이 확인
@@ -376,10 +378,10 @@ const activeFor = (root: string, taskId: string) => [...g.runs.values()].find((r
 export async function stopRun(root: string, taskId: string): Promise<CrewRun> {
   const run = activeFor(root, taskId);
   if (!run) throw new Error("not running");
-  run.state = "stopped"; run.endedAt = Date.now(); run.error = "stopped by user"; run.permission = undefined;
+  run.state = "stopped"; run.endedAt = Date.now(); run.error = tr("crew.reason.stopped"); run.permission = undefined;
   g.pending.get(run.id)?.resolve(false); // 기다리던 훅은 거부로 풀기
   if (run.sessionId) await (await getSnaClient()).agent.kill(run.sessionId).catch(() => {});
-  block(root, taskId, run.stage ?? 0, "stopped by user");
+  block(root, taskId, run.stage ?? 0, tr("crew.reason.stopped"));
   persist(run, true);
   return run;
 }
@@ -407,7 +409,7 @@ export function decideCard(root: string, taskId: string, action: "approve" | "re
   if (action === "approve" && task.gate?.kind === "spec" && task.split?.length) return splitCard(root, task); // #1114 쪼개기 승인
   const board = patchTask(root, taskId, { ...r.patch, status: r.status });
   say(root, { from: "human", kind: "decision", taskId, taskTitle: task.title,
-    text: action === "approve" ? tr(task.gate?.kind === "blocked" ? "crewchat.decision.retry" : "crewchat.decision.approve") : text.trim(),
+    ...(action === "approve" ? tx(task.gate?.kind === "blocked" ? "crewchat.decision.retry" : "crewchat.decision.approve") : { text: text.trim() }),
     ...(task.gate && task.gate.kind !== "merge" ? { mentions: [(task.pipeline ?? [])[task.gate.stage] ?? ""].filter(Boolean) } : {}) });
   return board;
 }
@@ -478,7 +480,7 @@ async function createPrOnce(root: string, taskId: string): Promise<{ url: string
     .then((r) => r.stdout.trim()).catch((e) => { throw new Error(String((e as { stderr?: string }).stderr || (e as Error).message).trim().slice(0, 300) || "gh failed"); });
   const url = out.split("\n").map((l) => l.trim()).find((l) => /^https?:\/\//.test(l)) ?? out;
   patchTask(root, taskId, { pr: { url } });
-  say(root, { from: "board", kind: "gate", taskId, taskTitle: task.title, text: tr("crewchat.prCreated", { url }) });
+  say(root, { from: "board", kind: "gate", taskId, taskTitle: task.title, ...tx("crewchat.prCreated", { url }) });
   return { url };
 }
 
@@ -499,10 +501,10 @@ async function baseBranch(root: string): Promise<string> {
   if (head) return head.replace(/^origin\//, "");
   return sh("git", ["rev-parse", "--abbrev-ref", "HEAD"], root).catch(() => "main");
 }
-function triggerCard(root: string, t: CrewTrigger, title: string, body: string, chat: string) {
+function triggerCard(root: string, t: CrewTrigger, title: string, body: string, chat: { key: string; vars?: Record<string, string | number> }) {
   const b = applyOp(root, { op: "create", title: title.slice(0, 200), body: body.slice(0, 20_000), status: "ready", ...(t.pipeline[0] ? { role: t.pipeline[0] } : {}), ...(t.pipeline.length ? { pipeline: t.pipeline } : {}) });
   const card = b.tasks[b.tasks.length - 1];
-  say(root, { from: "board", kind: "gate", taskId: card.id, taskTitle: card.title, text: `${chat}${t.pipeline[0] ? ` @${t.pipeline[0]}` : ""}`, ...(t.pipeline[0] ? { mentions: [t.pipeline[0]] } : {}) });
+  say(root, { from: "board", kind: "gate", taskId: card.id, taskTitle: card.title, ...(() => { const suffix = t.pipeline[0] ? ` @${t.pipeline[0]}` : ""; const c = tx(chat.key, chat.vars); return { text: c.text + suffix, i18n: { ...c.i18n, ...(suffix ? { suffix } : {}) } }; })(), ...(t.pipeline[0] ? { mentions: [t.pipeline[0]] } : {}) });
 }
 export async function checkTriggers(root: string, now = Date.now()): Promise<void> {
   const list = readTriggers(root);
@@ -512,19 +514,19 @@ export async function checkTriggers(root: string, now = Date.now()): Promise<voi
     try {
       if (t.kind === "schedule") {
         if (!scheduleDue(t, now)) continue;
-        triggerCard(root, t, t.title ?? "Scheduled task", t.body ?? "", tr("crewtrig.scheduleChat"));
+        triggerCard(root, t, t.title ?? tr("crew.scheduledTask"), t.body ?? "", { key: "crewtrig.scheduleChat" });
         t.lastFired = now; delete t.lastError; changed = true;
         continue;
       }
       // CI 실패·이슈 — 새로 나타난 것만, 처음엔 지금 있는 것을 본 것으로만(켜자마자 폭주 방지), 한 번에 최대 2장
-      let items: { id: string; title: string; body: string; chat: string }[] = [];
+      let items: { id: string; title: string; body: string; chat: { key: string; vars?: Record<string, string | number> } }[] = [];
       if (t.kind === "ci-failed") {
         const branch = t.branch || (await baseBranch(root));
         const runs = JSON.parse(await sh("gh", ["run", "list", "--branch", branch, "--limit", "10", "--json", "databaseId,conclusion,name,displayTitle,url"], root) || "[]") as { databaseId: number; conclusion: string; name: string; displayTitle: string; url: string }[];
-        items = runs.filter((r) => r.conclusion === "failure").map((r) => ({ id: String(r.databaseId), title: tr("crewtrig.ciTitle", { name: r.name, branch }), body: `${r.displayTitle}\n${r.url}`, chat: tr("crewtrig.ciChat") }));
+        items = runs.filter((r) => r.conclusion === "failure").map((r) => ({ id: String(r.databaseId), title: tr("crewtrig.ciTitle", { name: r.name, branch }), body: `${r.displayTitle}\n${r.url}`, chat: { key: "crewtrig.ciChat" } }));
       } else if (t.kind === "issue-label" && t.label) {
         const issues = JSON.parse(await sh("gh", ["issue", "list", "--label", t.label, "--state", "open", "--limit", "30", "--json", "number,title,body,url"], root) || "[]") as { number: number; title: string; body: string; url: string }[];
-        items = issues.map((i) => ({ id: String(i.number), title: `#${i.number} ${i.title}`, body: `${i.body ?? ""}\n\n${i.url}`, chat: tr("crewtrig.issueChat", { label: t.label! }) }));
+        items = issues.map((i) => ({ id: String(i.number), title: `#${i.number} ${i.title}`, body: `${i.body ?? ""}\n\n${i.url}`, chat: { key: "crewtrig.issueChat", vars: { label: t.label! } } }));
       }
       if (!t.primed) { t.seen = [...new Set([...t.seen, ...items.map((x) => x.id)])].slice(-500); t.primed = true; delete t.lastError; changed = true; continue; }
       const fresh = freshIds(t.seen, items.map((x) => x.id)).slice(0, 2);
@@ -553,7 +555,7 @@ export async function checkTriggers(root: string, now = Date.now()): Promise<voi
 // ── #1114 하위 작업 ─────────────────────────────────────────────────
 // 쪼개기 승인 → 하위 카드(Ready, 부모 맥락·기획 요약 첨부, 의존 = 앞 번호 카드), 부모는 Review 칸에서 하위 기다림.
 function splitCard(root: string, parent: CrewTask) {
-  say(root, { from: "human", kind: "decision", taskId: parent.id, taskTitle: parent.title, text: tr("crewchat.decision.approve") });
+  say(root, { from: "human", kind: "decision", taskId: parent.id, taskTitle: parent.title, ...tx("crewchat.decision.approve") });
   const ids: string[] = [];
   const context = `${tr("crewsplit.parentContext", { title: parent.title })}\n${parent.body}${parent.gate?.text ? `\n\n${parent.gate.text}` : ""}`.slice(0, 6000);
   for (const s of parent.split ?? []) {
@@ -564,7 +566,7 @@ function splitCard(root: string, parent: CrewTask) {
     ids.push(child.id);
   }
   const board = patchTask(root, parent.id, { children: ids, split: undefined, gate: undefined, status: "review" });
-  say(root, { from: "board", kind: "gate", taskId: parent.id, taskTitle: parent.title, text: tr("crewsplit.created", { n: ids.length }) });
+  say(root, { from: "board", kind: "gate", taskId: parent.id, taskTitle: parent.title, ...tx("crewsplit.created", { n: ids.length }) });
   return board;
 }
 
@@ -575,6 +577,6 @@ function closeParents(root: string, tasks: CrewTask[]) {
     const { done, total } = childProgress(p, tasks);
     if (!total || done < total) continue;
     patchTask(root, p.id, { status: "done" });
-    say(root, { from: "board", kind: "gate", taskId: p.id, taskTitle: p.title, text: tr("crewsplit.parentDone", { n: total }) });
+    say(root, { from: "board", kind: "gate", taskId: p.id, taskTitle: p.title, ...tx("crewsplit.parentDone", { n: total }) });
   }
 }

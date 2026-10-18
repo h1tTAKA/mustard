@@ -1442,6 +1442,10 @@ const ko: Dict = {
   "github.viewedProgress": "{n}/{total} 봤음",
   "github.filesEmpty": "변경된 파일이 없어요.",
   "github.filesTruncated": "파일이 너무 많아 처음 {n}개만 보여요. 나머지는 GitHub에서 확인하세요.",
+  "crew.reason.interrupted": "중단됨(앱 재시작)",
+  "crew.reason.stopped": "사용자가 멈춤",
+  "crew.reason.flowError": "흐름 오류: {err}",
+  "crew.scheduledTask": "예약 작업",
 };
 
 const ja: Dict = {
@@ -2868,6 +2872,10 @@ const ja: Dict = {
   "github.viewedProgress": "{n}/{total} 確認済み",
   "github.filesEmpty": "変更されたファイルはありません。",
   "github.filesTruncated": "ファイルが多すぎるため最初の{n}件のみ表示しています。残りはGitHubで確認してください。",
+  "crew.reason.interrupted": "中断(アプリ再起動)",
+  "crew.reason.stopped": "ユーザーが停止",
+  "crew.reason.flowError": "フローエラー: {err}",
+  "crew.scheduledTask": "予約タスク",
 };
 
 const en: Dict = {
@@ -4294,6 +4302,10 @@ const en: Dict = {
   "github.viewedProgress": "{n} of {total} viewed",
   "github.filesEmpty": "No files changed.",
   "github.filesTruncated": "Too many files — showing the first {n}. See the rest on GitHub.",
+  "crew.reason.interrupted": "Interrupted (app restarted)",
+  "crew.reason.stopped": "Stopped by user",
+  "crew.reason.flowError": "Flow error: {err}",
+  "crew.scheduledTask": "Scheduled task",
 };
 
 export const MESSAGES: Record<Locale, Dict> = { ko, ja, en };
@@ -4321,6 +4333,8 @@ export function relocalize(text: string, keys: string[], t: (key: string, vars?:
 }
 // 저장된 카드 출처 문구 중 앱이 만든 것(워크스페이스·암기 챗)을 지금 언어로(#1125). 분석 제목 등은 그대로.
 export const CARD_SOURCE_KEYS = ["card.workspaceSource", "mem.chatSource"];
+// Crew 보드·시스템이 저장한 문구(채팅·관문 사유·실행 오류)의 키 — 옛 메시지(키 없이 text만)를 지금 언어로(#1125).
+export const CREW_TEXT_KEYS = Object.keys(MESSAGES.ko).filter((k) => /^(crewchat\.|crewsplit\.|crewtrig\.\w*Chat$|crew\.reason\.)/.test(k));
 // 질문 카드 출처 "폴더 / 세션 / 질문" — 기본 이름 조각만 지금 언어로(사용자가 지은 이름은 그대로).
 const ASK_PART_KEYS = ["ask.folderN", "ask.sessionN", "ask.thread"];
 export function relocalizeCardSource(text: string, t: (key: string, vars?: Record<string, string | number>) => string): string {

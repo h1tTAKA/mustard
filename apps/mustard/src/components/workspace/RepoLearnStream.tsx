@@ -16,7 +16,8 @@ import { isDocEdit } from "@/lib/mcpActivity";
 import { isNunopiEnabled } from "@/lib/product";
 import { mergeTerms, parseNarrationTerms, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
-import { useT, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
+import { useT, relocalize, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
+import { CREW_ROLES } from "@/lib/crew/crewTypes";
 import { useFlyCard, collectCards } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
@@ -101,6 +102,15 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   chat?: ReactNode; chatOpen?: boolean; onToggleChat?: () => void; // #1078 워크스페이스 질문을 캐치업 안에(헤더 버튼으로 전환)
 }) {
   const t = useT();
+  // #1125 저장된 항목 제목 중 앱이 만든 것(레포 구조·실시간·Crew 역할 이름)은 지금 언어로. 에이전트가 지은 제목은 그대로.
+  const targetLabel = (kind: string, target: string) => {
+    if (kind === "repo") return relocalize(target, ["stream.repoStructure"], t);
+    if (kind !== "narration") return target;
+    const whole = relocalize(target, ["stream.live", "stream.liveWork"], t);
+    if (whole !== target) return whole;
+    const m = /^(.+?)\(([^()]+)\) · ([\s\S]*)$/.exec(target); // Crew 보고 "역할(AI) · 카드"
+    return m ? `${relocalize(m[1], CREW_ROLES.map((r) => `crew.role.${r}`), t)}(${m[2]}) · ${m[3]}` : target;
+  };
   const { locale } = useLocale();
   // #994 기록은 서버 날짜별 저장소(~/.nunopi/stream)에서 — 마운트 시 최근 100개 로드(loaded 전엔 빈 안내 숨김).
   const [concepts, setConcepts] = useState<Concept[]>([]);
@@ -633,7 +643,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           {subject && <span className="mt-1 line-clamp-2 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{subject}</span>}
                         </>);
                       })() : (<>
-                      <span className="block break-all text-[12px] font-medium text-zinc-700 dark:text-zinc-100">{c.target}</span>
+                      <span className="block break-all text-[12px] font-medium text-zinc-700 dark:text-zinc-100">{targetLabel(c.kind, c.target)}</span>
                       <span className="block text-[10px] text-zinc-400 dark:text-zinc-500">{/* #1060 모든 카드 = 기록 날짜·시각 */}{c.kind === "narration" ? fmtDateTime(c.ts) : `${c.tool.replace(/^katchup_/, "")} · ${fmtDateTime(c.ts)}`}</span>
                       </>)}
                     </span>
