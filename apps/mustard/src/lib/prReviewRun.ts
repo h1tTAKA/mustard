@@ -54,11 +54,15 @@ async function runOnce(root: string, pr: number, providerId: AgentProviderKind, 
   if (!found) throw new Error(`unreadable: ${answer.slice(0, 120)}`); // 형식 안 지킨 답 — "문제 없음"으로 덮지 않음
   // 채택한 지적은 남김 — 단 지금 diff에 그 줄이 아직 있을 때만(코드가 바뀌어 사라진 줄은 버림)
   const kept = (loadPrReview(root, pr)?.findings ?? []).filter((x) => x.status === "adopted" && valid.get(x.file)?.has(x.line)).slice(0, MAX_KEPT);
-  return save(root, pr, { at: Date.now(), findings: [...kept, ...found], ...(skipped.length ? { skipped } : {}) });
+  return save(root, pr, { at: Date.now(), findings: [...kept, ...found], ...(skipped.length ? { skipped } : {}), ...(files.data.head ? { head: files.data.head } : {}) });
 }
 
 // 지적 하나만 다시 — 같은 자리를 새 지적으로 바꿈(마음에 들 때까지 반복). 못 받으면 throw(기존 지적 유지).
 export async function retryFinding(root: string, pr: number, f: Finding, providerId: AgentProviderKind, settings: ProviderSettings, locale: string): Promise<PrReview> {
+  // PR이 리뷰 뒤 push됐으면 줄 번호 기준이 달라짐 → 전체 리뷰를 다시(목록 조회가 diff 캐시도 비움)
+  const files = await window.nunopiDesktop?.github?.prFiles?.(root, pr);
+  const head0 = loadPrReview(root, pr)?.head;
+  if (files?.ok && head0 && files.data?.head && files.data.head !== head0) throw new Error("head changed");
   const d = await fileDiff(root, pr, f.file);
   if (d == null) throw new Error("diff");
   const { text, lines } = numberDiff(d);
@@ -74,14 +78,30 @@ export async function retryFinding(root: string, pr: number, f: Finding, provide
 }
 
 // 채택 = GitHub PR 그 파일·줄에 리뷰 댓글로 올림(#1127, 유저 요청). 올라가야 채택 상태로 저장(링크 포함). 실패면 throw(그대로 열림).
+// 같은 지적 두 번 올리기 방지(리뷰): 올리는 중(탭·diff 어디서 눌러도 하나) + 올렸는데 저장 못 한 것(다시 누르면 저장만 재시도).
+const posting = new Set<string>();
+const postedUrl = new Map<string, string>();
 export async function postFinding(root: string, pr: number, f: Finding, locale: string): Promise<PrReview | null> {
-  const post = window.nunopiDesktop?.github?.prLineComment;
-  if (!post) throw new Error("desktop only");
-  const r = await post(root, pr, f.file, f.line, findingCommentBody(f, translate(locale, `prReview.sev.${f.severity}`)));
-  if (!r.ok) throw new Error(r.detail || "post failed");
-  const cur = loadPrReview(root, pr);
-  if (!cur?.findings.some((x) => x.id === f.id)) return cur; // 그사이 목록이 바뀜 — 댓글은 이미 GitHub에 있음(대화 탭에 보임)
-  return save(root, pr, { ...cur, findings: cur.findings.map((x) => (x.id === f.id ? { ...x, status: "adopted", url: r.data?.url } : x)) });
+  const cur0 = loadPrReview(root, pr);
+  const cur0f = cur0?.findings.find((x) => x.id === f.id);
+  if (posting.has(f.id) || (cur0f && cur0f.status !== "open")) return cur0;
+  posting.add(f.id);
+  try {
+    let url = postedUrl.get(f.id);
+    if (url == null) {
+      const post = window.nunopiDesktop?.github?.prLineComment;
+      if (!post) throw new Error("desktop only");
+      const r = await post(root, pr, f.file, f.line, findingCommentBody(f, translate(locale, `prReview.sev.${f.severity}`)), cur0?.head);
+      if (!r.ok) throw new Error(r.detail || "post failed");
+      url = r.data?.url ?? "";
+      postedUrl.set(f.id, url);
+    }
+    const cur = loadPrReview(root, pr);
+    if (!cur?.findings.some((x) => x.id === f.id)) return cur; // 그사이 목록이 바뀜 — 댓글은 이미 GitHub에 있음(대화 탭에 보임)
+    const next = save(root, pr, { ...cur, findings: cur.findings.map((x) => (x.id === f.id ? { ...x, status: "adopted", ...(url ? { url } : {}) } : x)) });
+    postedUrl.delete(f.id);
+    return next;
+  } finally { posting.delete(f.id); }
 }
 
 // 버림·되돌리기

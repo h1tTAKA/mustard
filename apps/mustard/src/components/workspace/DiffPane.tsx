@@ -201,12 +201,12 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
         const lineN = l.newN as number;
         const row = (
           <div key={i} className={`relative flex w-max min-w-full ${bg} ${lineF ? "ring-1 ring-inset ring-mustard-500/70" : ""}`}>
-            {/* #1127 지적 있는 줄 — 옛 줄번호 칸 위에 눈에 띄는 배지(코드 정렬 그대로), 누르면 지적 펼침 */}
+            {/* #1127 지적 있는 줄 — 옛 줄번호 칸 왼쪽에 눈에 띄는 배지(오른쪽 정렬 번호는 3자리까지 안 가림, 코드 정렬 그대로), 누르면 지적 펼침 */}
             {lineF && (
               <button type="button" title={lineF.map((f) => f.title).join("\n")} aria-label={`${t("github.tabAgentReview")}: ${lineF.map((f) => f.title).join(", ")}`} aria-expanded={openLines.has(lineN)} aria-controls={`prf-${lineN}`}
                 onClick={() => setOpenLines((s) => { const x = new Set(s); if (x.has(lineN)) x.delete(lineN); else x.add(lineN); return x; })}
-                className="absolute inset-y-px left-0.5 z-[1] flex w-8 items-center justify-center gap-0.5 rounded bg-mustard-500 font-sans text-[10px] font-bold text-brown-900 shadow-sm hover:bg-mustard-400">
-                <IconRobot size={13} stroke={2.2} aria-hidden />{lineF.length > 1 ? lineF.length : ""}
+                className="absolute inset-y-px left-0.5 z-[1] flex w-[18px] items-center justify-center rounded bg-mustard-500 text-brown-900 shadow-sm hover:bg-mustard-400">
+                <IconRobot size={13} stroke={2.2} aria-hidden />
               </button>
             )}
             <span className="w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">{l.oldN ?? ""}</span>

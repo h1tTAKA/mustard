@@ -20,5 +20,7 @@ assert.strictEqual(parseFindings('Found [2 issues]: [{"file":"x.js","line":2,"ti
 assert.strictEqual(parseFindings('See:\n```diff\n- a\n+ b\n```\n```json\n[{"file":"x.js","line":2,"title":"t"}]\n```', valid, id)?.length, 1, "JSON 아닌 펜스 뒤의 JSON 블록");
 const cb = findingCommentBody({ title: "Leak", body: "see ![x](https://evil/p.png) and <img src=x> [link](https://a)" }, "높음");
 assert.ok(cb.startsWith("**[높음] Leak**") && !cb.includes("evil") && !cb.includes("<img") && cb.includes("[link](https://a)") && cb.endsWith("Mustard agent review</sub>"), cb);
+const cb2 = findingCommentBody({ title: "T", body: "a ![p][1] b ![q](https://e/x_(1).png) c\n[1]: https://evil/p.png" }, "Low");
+assert.ok(!cb2.includes("evil") && !cb2.includes("e/x_") && !cb2.includes("!["), cb2);
 assert.ok(buildReviewPrompt("ja").includes("Japanese"));
 console.log("prReview ok");

@@ -5,7 +5,7 @@ import { parseDiff } from "./hunkDiff.ts";
 export type Severity = "high" | "medium" | "low";
 export type FindingStatus = "open" | "adopted" | "discarded";
 export interface Finding { id: string; file: string; line: number; severity: Severity; title: string; body: string; status: FindingStatus; url?: string } // adopted = GitHub에 올림(url)
-export interface PrReview { at: number; findings: Finding[]; skipped?: string[] }
+export interface PrReview { at: number; findings: Finding[]; skipped?: string[]; head?: string } // head = 리뷰한 PR 커밋(줄 번호 기준)
 
 // diff에 새 파일 줄 번호를 붙임 — 에이전트가 줄을 정확히 집게. lines = 지적 가능한 줄(추가·문맥, GitHub 댓글도 diff 안 줄만 가능).
 export function numberDiff(diff: string): { text: string; lines: Set<number> } {
@@ -42,7 +42,11 @@ ${FORMAT} The array must contain exactly one item.`;
 
 // GitHub에 올릴 댓글 본문 — 사람이 보고 누른 지적만. 에이전트 글의 이미지(추적 픽셀)는 빼고, 에이전트가 쓴 글임을 끝에 표시(리뷰: 프롬프트 주입 대비).
 export function findingCommentBody(f: Pick<Finding, "title" | "body">, sevLabel: string): string {
-  const body = f.body.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/<img\b[^>]*>/gi, "");
+  const body = f.body
+    .replace(/!\[([^\]]*)\]\((?:[^()]|\([^)]*\))*\)/g, "$1") // 인라인 이미지(주소 안 괄호 포함)
+    .replace(/!\[([^\]]*)\]\[[^\]]*\]/g, "$1")              // 참조식 이미지 ![x][1]
+    .replace(/^ {0,3}\[[^\]]+\]:\s*\S+.*$/gm, "")             // 참조 정의 [1]: url
+    .replace(/<img\b[^>]*>/gi, "");
   return `**[${sevLabel}] ${f.title}**\n\n${body}`.trim() + "\n\n<sub>🤖 Mustard agent review</sub>";
 }
 

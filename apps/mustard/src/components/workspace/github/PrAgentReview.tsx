@@ -56,7 +56,7 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
     if (busy.has(f.id) || running) return; // 전체 리뷰 중엔 막음 — 끝나면 목록을 통째로 덮어써 다시 리뷰 결과가 사라짐
     setBusy((b) => new Set(b).add(f.id)); setErr(null);
     try { const r = await retryFinding(root, number, f, providerId, providerSettings, locale); if (mounted.current) setRev(r); }
-    catch { if (mounted.current) setErr(t("prReview.retryFailed")); }
+    catch (e) { if (mounted.current) setErr(t(String((e as Error)?.message) === "head changed" ? "prReview.headChanged" : "prReview.retryFailed")); }
     finally { if (mounted.current) setBusy((b) => { const n = new Set(b); n.delete(f.id); return n; }); }
   };
   // 채택 = GitHub PR 그 줄에 리뷰 댓글로 올림(사람이 본문 보고 누른 것만). 올리는 동안 그 카드 잠금.

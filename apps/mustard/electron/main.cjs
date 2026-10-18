@@ -730,13 +730,13 @@ ipcMain.handle("github:merge", (_e, { cwd, number, method }) => {
 // PR 리뷰 1(#1123) — 변경 파일(봤음 상태 포함)·파일별 diff·봤음 표시. GraphQL은 gh api가 {owner}/{repo}를 현재 레포로 치환.
 const prDiffCache = new Map(); // `${cwd}#${n}` → { at, files }
 const prDiffGen = new Map(); // `${cwd}#${n}` → 세대 — 목록 새로고침 중 늦게 끝난 옛 diff가 다시 들어오지 않게(재리뷰)
-const PR_FILES_Q = "query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id files(first:100,after:$after){nodes{path additions deletions changeType viewerViewedState}pageInfo{hasNextPage endCursor}}}}}";
+const PR_FILES_Q = "query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid files(first:100,after:$after){nodes{path additions deletions changeType viewerViewedState}pageInfo{hasNextPage endCursor}}}}}";
 ipcMain.handle("github:pr-files", async (_e, { cwd, number }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
   prDiffCache.delete(`${cwd}#${n}`); prDiffGen.set(`${cwd}#${n}`, (prDiffGen.get(`${cwd}#${n}`) ?? 0) + 1);
   if (prDiffGen.size > 50) prDiffGen.delete(prDiffGen.keys().next().value); // 상한(재리뷰) // 목록을 새로 불러오면 diff도 새로(push 직후 옛 diff 방지, 리뷰)
-  const files = []; let prId = null; let after = null; let truncated = false;
+  const files = []; let prId = null; let head = null; let after = null; let truncated = false;
   for (let page = 0; page < 30; page++) { // 최대 3,000개
     const args = ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", `number=${n}`, "-f", `query=${PR_FILES_Q}`];
     if (after) args.push("-f", `after=${after}`);
@@ -744,13 +744,13 @@ ipcMain.handle("github:pr-files", async (_e, { cwd, number }) => {
     if (!r.ok) return r;
     const pr = r.data?.data?.repository?.pullRequest;
     if (!pr) return { ok: false, kind: "error", detail: "pull request not found" };
-    prId = pr.id;
+    prId = pr.id; head = pr.headRefOid ?? head; // #1127 리뷰 시점 head — 줄 댓글을 그 커밋 기준으로
     for (const f of pr.files?.nodes ?? []) files.push({ path: f.path, additions: f.additions, deletions: f.deletions, changeType: f.changeType, viewed: f.viewerViewedState === "VIEWED" });
     if (!pr.files?.pageInfo?.hasNextPage) break;
     after = pr.files.pageInfo.endCursor;
     if (page === 29) truncated = true; // 상한 도달 — 화면에 안내(리뷰)
   }
-  return { ok: true, data: { prId, files, truncated } };
+  return { ok: true, data: { prId, head, files, truncated } };
 });
 // 파일별 diff — gh pr diff는 PR 전체라, 같은 PR을 연달아 열 때 다시 받지 않게 짧게 캐시(30s).
 ipcMain.handle("github:pr-file-diff", async (_e, { cwd, number, path }) => {
@@ -781,13 +781,17 @@ ipcMain.handle("github:pr-file-viewed", (_e, { cwd, prId, path, viewed }) => {
 // PR 생성(#944) — 성공 시 stdout=생성된 PR URL. base/head 빈값이면 플래그 생략(gh 기본: 현재 브랜치/origin default).
 // PR 줄 리뷰 댓글(#1127) — 에이전트 지적을 채택하면 그 파일·줄(head 커밋 기준 새 파일 줄, RIGHT)에 리뷰 댓글로.
 // -f(raw)라 본문·경로의 "@"가 파일 읽기로 안 바뀜. no-shell 인자.
-ipcMain.handle("github:pr-line-comment", async (_e, { cwd, number, path, line, body }) => {
+ipcMain.handle("github:pr-line-comment", async (_e, { cwd, number, path, line, body, commitId }) => {
   const n = Number(number), ln = Number(line);
   if (!Number.isInteger(n) || n <= 0 || !Number.isInteger(ln) || ln <= 0) return { ok: false, kind: "error", detail: "invalid pr/line" };
   if (typeof path !== "string" || !path || typeof body !== "string" || !body.trim()) return { ok: false, kind: "error", detail: "empty path/body" };
-  const head = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "headRefOid"] });
-  if (!head.ok) return head;
-  const sha = head.data?.headRefOid;
+  // 줄 번호는 리뷰 때 diff 기준 → 그때 head 커밋(commitId)에 담(그 뒤 push돼도 같은 코드 줄, GitHub가 지난 코드로 표시). 없으면(옛 저장분) 지금 head.
+  let sha = typeof commitId === "string" && /^[0-9a-f]{40}$/.test(commitId) ? commitId : null;
+  if (!sha) {
+    const head = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "headRefOid"] });
+    if (!head.ok) return head;
+    sha = head.data?.headRefOid;
+  }
   if (typeof sha !== "string" || !/^[0-9a-f]{40}$/.test(sha)) return { ok: false, kind: "error", detail: "no head commit" };
   const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/pulls/${n}/comments`, "-f", `body=${body}`, "-f", `commit_id=${sha}`, "-f", `path=${path}`, "-F", `line=${ln}`, "-f", "side=RIGHT"] });
   if (!r.ok) return r;
