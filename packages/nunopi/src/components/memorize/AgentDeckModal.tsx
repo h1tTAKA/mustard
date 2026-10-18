@@ -229,9 +229,8 @@ export default function AgentDeckModal({
       if (!d.checked) continue;
       const keys = d.cards.filter((c) => !d.excluded.has(c.key)).map((c) => c.key);
       if (keys.length === 0) continue;
-      const name = d.name || t("mem.agentDeckTitle");
-      addCustomDeck(name, keys, goal);
-      added.push(name);
+      addCustomDeck(d.name, keys, goal); // 이름 없으면 기본 이름 + 표시 → 언어 바뀌면 따라감(#1125)
+      added.push(d.name || t("deck.defaultName"));
     }
     if (added.length > 0) toast(t("mem.deckAddedToast").replace("{decks}", added.join(", ")));
     onCreated();

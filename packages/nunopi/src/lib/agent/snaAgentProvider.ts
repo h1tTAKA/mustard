@@ -384,7 +384,7 @@ function createSnaProvider(cfg: SnaProviderConfig): AgentProvider {
                   })()
                 : normalizeClaudeOutput(rawText, request, stubAvailability, prompt, usage, providerId);
       } catch (err) {
-        if (options?.signal?.aborted) throw err; // 취소는 route로 전파(499)
+        if (options?.signal?.aborted) throw new Error(translate(request.locale, "analyze.cancelled")); // 취소는 route로 전파(499) — 어느 호출처가 message를 보여도 요청 언어(#1125)
         const message = err instanceof Error ? err.message : "runtime run failed";
         const warn = [{ code: "PARSE_FAILED" as const, message }];
         if (isChatStream || isDedup || isQuiz) return chatModeResponse(providerId, translate(request.locale, "provider.runtimeFailed", { msg: message }), warn);
