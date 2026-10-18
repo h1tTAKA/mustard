@@ -5,7 +5,7 @@ import { codeToTokens, type ThemedToken, type BundledLanguage } from "shiki";
 import { IconLoader2, IconAlertTriangle, IconGitCompare, IconSparkles, IconRefresh, IconBrandGithub, IconRobot, IconCheck, IconX } from "@tabler/icons-react";
 import { loadPrReview, prReviewKey, PR_REVIEW_EVENT, type Finding } from "@/lib/prReview";
 import { setFindingStatus } from "@/lib/prReviewRun";
-import { useLocale, useT } from "@mustard/core";
+import { useLocale, useT, useToast } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { type DLine, parseDiff, groupHunks, type Hunk, noteStoreKey, loadNotes, saveNote, explainDiffText, HUNK_NOTES_EVENT } from "@/lib/hunkNotes";
@@ -21,6 +21,7 @@ const langOf = (file: string) => EXT_LANG[file.split(".").pop()?.toLowerCase() ?
 export default function DiffPane({ root, hash, file, worktree, pr, providerId, providerSettings }: { root: string; hash?: string; file: string; worktree?: "staged" | "unstaged" | "untracked"; pr?: number; providerId: AgentProviderKind; providerSettings: ProviderSettings }) {
   const t = useT();
   const { locale } = useLocale();
+  const toast = useToast();
   // 변경 구간별 에이전트 노트. key = diffText 해시(구간 내용 기반 안정 키 → 같은 diff 재오픈 시 매칭).
   const [notes, setNotes] = useState<Record<string, { status: "loading" | "done" | "error"; text?: string }>>({});
   const [lines, setLines] = useState<DLine[] | null>(null);
@@ -219,8 +220,8 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
                   {f.body && <div className="prose prose-sm max-w-none text-[11.5px] leading-relaxed text-zinc-700 dark:prose-invert dark:text-zinc-200 prose-p:my-1"><Markdown>{f.body}</Markdown></div>}
                   {f.status === "open" && (
                     <div className="mt-1 flex gap-1">
-                      <button type="button" onClick={() => setFindingStatus(root, pr!, f.id, "adopted")} className="inline-flex items-center gap-1 rounded bg-mustard-500/15 px-1.5 py-0.5 text-[10.5px] font-medium text-mustard-700 hover:bg-mustard-500/25 dark:text-mustard-400"><IconCheck size={11} aria-hidden />{t("prReview.adopt")}</button>
-                      <button type="button" onClick={() => setFindingStatus(root, pr!, f.id, "discarded")} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"><IconX size={11} aria-hidden />{t("prReview.discard")}</button>
+                      <button type="button" onClick={() => { if (!setFindingStatus(root, pr!, f.id, "adopted")) toast(t("prReview.saveFailed"), "error"); }} className="inline-flex items-center gap-1 rounded bg-mustard-500/15 px-1.5 py-0.5 text-[10.5px] font-medium text-mustard-700 hover:bg-mustard-500/25 dark:text-mustard-400"><IconCheck size={11} aria-hidden />{t("prReview.adopt")}</button>
+                      <button type="button" onClick={() => { if (!setFindingStatus(root, pr!, f.id, "discarded")) toast(t("prReview.saveFailed"), "error"); }} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"><IconX size={11} aria-hidden />{t("prReview.discard")}</button>
                     </div>
                   )}
                 </div>

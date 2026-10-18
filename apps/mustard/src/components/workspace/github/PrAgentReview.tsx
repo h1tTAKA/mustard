@@ -52,7 +52,7 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
     } finally { if (mounted.current) setRunning(null); }
   };
   const retry = async (f: Finding) => {
-    if (busy.has(f.id)) return;
+    if (busy.has(f.id) || running) return; // 전체 리뷰 중엔 막음 — 끝나면 목록을 통째로 덮어써 다시 리뷰 결과가 사라짐
     setBusy((b) => new Set(b).add(f.id)); setErr(null);
     try { const r = await retryFinding(root, number, f, providerId, providerSettings, locale); if (mounted.current) setRev(r); }
     catch { if (mounted.current) setErr(t("prReview.retryFailed")); }
@@ -126,7 +126,7 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
                 {f.body && <div className="prose prose-sm mt-0.5 max-w-none text-[11.5px] leading-relaxed text-zinc-600 dark:prose-invert dark:text-zinc-300 prose-p:my-1"><Markdown>{f.body}</Markdown></div>}
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   <button type="button" onClick={() => mark(f, "adopted")} disabled={busy.has(f.id)} className={`${btn} bg-mustard-500/15 text-mustard-700 hover:bg-mustard-500/25 dark:text-mustard-400`}><IconCheck size={11} aria-hidden />{t("prReview.adopt")}</button>
-                  <button type="button" onClick={() => void retry(f)} disabled={busy.has(f.id)} className={`${btn} text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
+                  <button type="button" onClick={() => void retry(f)} disabled={busy.has(f.id) || !!running} className={`${btn} text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>
                     {busy.has(f.id) ? <IconLoader2 size={11} className="animate-spin" aria-hidden /> : <IconRefresh size={11} aria-hidden />}{t("prReview.retry")}
                   </button>
                   <button type="button" onClick={() => mark(f, "discarded")} disabled={busy.has(f.id)} className={`${btn} text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300`}><IconX size={11} aria-hidden />{t("prReview.discard")}</button>

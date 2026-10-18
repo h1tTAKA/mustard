@@ -1,6 +1,6 @@
 // hunkDiff 점검 — node --experimental-strip-types src/lib/hunkDiff.check.ts
 import assert from "node:assert";
-import { diffMark, diffSections, DIFF_SEP, groupHunks, noteStoreKey, parseDiff } from "./hunkDiff.ts";
+import { diffMark, diffSections, DIFF_SEP, groupHunks, legacyNoteKey, noteStoreKey, parseDiff } from "./hunkDiff.ts";
 
 const diff = ["diff --git a/x.ts b/x.ts", "--- a/x.ts", "+++ b/x.ts", "@@ -1,12 +1,12 @@",
   " a", "-b", "+B", " c", " d", " e", " f", " g", " h", "-i", "+I", " j"].join("\n");
@@ -28,4 +28,9 @@ assert.deepStrictEqual(tricky.filter((l) => l.kind === "add").map((l) => [l.text
 assert.deepStrictEqual(tricky.filter((l) => l.kind === "del").map((l) => l.text), ["-- old comment", "tail"]);
 assert.ok(!tricky.some((l) => l.kind === "ctx" && l.text === ""), "끝 빈 줄 없음");
 assert.strictEqual(parseDiff("diff --git a/i.png b/i.png\nBinary files a/i.png and b/i.png differ\n").every((l) => l.kind === "meta"), true, "Binary는 meta");
+// 옛 키(수정 전 parseDiff: 끝 빈 줄·\ No newline이 문맥 줄로 들어감) → 지금 키
+const eofDiff = ["@@ -1,2 +1,2 @@", " a", "-b", "\\ No newline at end of file", "+c", "\\ No newline at end of file", ""].join("\n");
+const nowKey = groupHunks(parseDiff(eofDiff))[0].diffText;
+const oldKey = ["  a", "- b", "  \\ No newline at end of file", "+ c", "  \\ No newline at end of file", "  "].join("\n");
+assert.strictEqual(legacyNoteKey(oldKey), nowKey, "옛 노트 키 별칭");
 console.log("hunkDiff ok");

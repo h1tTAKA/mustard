@@ -4,6 +4,7 @@ import { parseCardSuggestions } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 
 export * from "./hunkDiff";
+import { legacyNoteKey } from "./hunkDiff";
 
 export const HUNK_NOTES_EVENT = "nunopi:hunk-notes"; // detail = 저장 키 — 열려 있는 DiffPane이 바로 다시 읽게
 
@@ -13,7 +14,10 @@ export { isFailedNote };
 export function loadNotes(store: string): Record<string, string> {
   try {
     const raw = localStorage.getItem(store); const all = raw ? (JSON.parse(raw) as Record<string, string>) : {};
-    return Object.fromEntries(Object.entries(all).filter(([, v]) => typeof v === "string" && !isFailedNote(v)));
+    const out = Object.fromEntries(Object.entries(all).filter(([, v]) => typeof v === "string" && !isFailedNote(v)));
+    // #1127 parseDiff 수정 전 키(끝 개행이 만든 빈 문맥 줄·"\ No newline" 줄 포함)도 새 키로 찾히게 별칭 — 이미 받은 설명을 다시 사지 않게
+    for (const [k, v] of Object.entries(out)) { const nk = legacyNoteKey(k); if (nk !== k && !(nk in out)) out[nk] = v; }
+    return out;
   } catch { return {}; }
 }
 // 구간 하나 저장(읽고 합쳐 쓰기 — 화면과 자동 설명이 같은 키에 써도 서로 안 지움).

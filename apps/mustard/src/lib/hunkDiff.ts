@@ -75,3 +75,6 @@ export function diffSections(expl: string): { from: number; to: number; text: st
   if (!marks.length || marks[0].index !== 0) return null;
   return marks.map((m, i) => ({ from: Number(m[1]), to: Number(m[2]), text: expl.slice(m.index! + m[0].length, i + 1 < marks.length ? marks[i + 1].index : undefined) }));
 }
+
+// #1127 parseDiff 수정 전 노트 키 → 지금 키(끝 개행이 만든 빈 문맥 줄 "  "·"\ No newline" 문맥 줄 제거). loadNotes가 별칭으로 씀.
+export const legacyNoteKey = (k: string) => k.split("\n").filter((l) => l !== "  \\ No newline at end of file").join("\n").replace(/\n  $/, "");
