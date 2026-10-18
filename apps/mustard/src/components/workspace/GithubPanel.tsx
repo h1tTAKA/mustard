@@ -78,7 +78,7 @@ export default function GithubPanel({ root, ciDot, onOpenPrDiff }: { root: strin
       if (mountedRef.current) setProbe({ loading: false, state: "error", detail: String((e as Error)?.message || e) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- t 제외: 로케일 전환 시 재진단 방지
-  }, [root]);
+  }, [root, t]); // t: 언어 바뀌면 안내 문구도(#1125)
 
   // 토큰 존재 여부 로드(#826) — 마운트 시 1회.
   useEffect(() => {

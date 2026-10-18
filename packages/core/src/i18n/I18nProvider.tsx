@@ -1,9 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 import { MESSAGES, type Locale } from "./messages";
 
 const STORAGE_KEY = "nunopi:locale";
+const CHANGE_EVENT = "nunopi:locale-change";
 
 type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -20,20 +21,34 @@ function interpolate(s: string, vars?: Record<string, string | number>): string 
   return s.replace(/\{(\w+)\}/g, (_, k) => (k in vars ? String(vars[k]) : `{${k}}`));
 }
 
-export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>("ko");
+// #1125 언어 = localStorage를 바깥 저장소로 구독(useSyncExternalStore).
+// 예전엔 useState("ko") 후 effect에서 읽어서, 자식 effect(부모보다 먼저 실행)·첫 렌더에서 만든 값이 영어 사용자도 ko로 만들어지고 저장됐음.
+// 클라 마운트(머스타드는 SPLASH 뒤 마운트)는 처음부터 저장 언어, SSR 하이드레이션(누노피 단독)은 서버 스냅샷 ko로 불일치 없이 맞춘 뒤 바로 갱신.
+// storage 이벤트 = 다른 창(분리 브라우저 창 등)에서 바꿔도 따라옴.
+function readLocale(): Locale {
+  try { const s = localStorage.getItem(STORAGE_KEY); if (s === "ko" || s === "ja" || s === "en") return s; } catch { /* 저장소 불가 */ }
+  return "ko";
+}
+function subscribeLocale(cb: () => void): () => void {
+  const onStorage = (e: StorageEvent) => { if (e.key === STORAGE_KEY) cb(); };
+  window.addEventListener("storage", onStorage);
+  window.addEventListener(CHANGE_EVENT, cb);
+  return () => { window.removeEventListener("storage", onStorage); window.removeEventListener(CHANGE_EVENT, cb); };
+}
 
+export function I18nProvider({ children }: { children: React.ReactNode }) {
+  const locale = useSyncExternalStore<Locale>(subscribeLocale, readLocale, () => "ko");
+
+  // 문서 언어 + 서버·Electron 언어(캐치업·Crew·GitHub 오류 문구 등)를 앱 언어로 — 워크스페이스를 안 열어도(#1125).
+  // 누노피 단독 앱엔 /api/locale이 없어 실패해도 무시.
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === "ko" || stored === "ja" || stored === "en") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLocaleState(stored);
-    }
-  }, []);
+    document.documentElement.lang = locale;
+    void fetch("/api/locale", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locale }) }).catch(() => {});
+  }, [locale]);
 
   const setLocale = useCallback((l: Locale) => {
-    setLocaleState(l);
     try { localStorage.setItem(STORAGE_KEY, l); } catch { /* ignore */ }
+    window.dispatchEvent(new Event(CHANGE_EVENT)); // 같은 창 구독자 갱신(storage 이벤트는 다른 창에만 옴)
   }, []);
 
   const t = useCallback<TFn>(
