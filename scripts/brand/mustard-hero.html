@@ -1,0 +1,95 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Mustard hero</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1200px;height:630px;overflow:hidden}
+body{font-family:-apple-system,"SF Pro Display","Helvetica Neue",Inter,sans-serif;color:#f4efe2;
+ background:radial-gradient(900px 520px at 22% 38%,rgba(212,160,23,.20),transparent 60%),
+ radial-gradient(700px 500px at 95% 110%,rgba(212,160,23,.10),transparent 60%),linear-gradient(160deg,#16161b 0%,#0b0b0d 70%);position:relative}
+.grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:40px 40px;mask-image:radial-gradient(800px 500px at 30% 45%,#000 30%,transparent 80%)}
+.left{position:absolute;left:64px;top:0;bottom:0;width:470px;display:flex;flex-direction:column;justify-content:center}
+.icon{width:112px;height:112px;filter:drop-shadow(0 18px 40px rgba(212,160,23,.28));margin-bottom:30px}
+h1{font-size:84px;font-weight:800;letter-spacing:-3px;line-height:1;background:linear-gradient(180deg,#ffe08a,#d4a017 70%,#b7860f);-webkit-background-clip:text;color:transparent}
+.tag{margin-top:16px;font-size:15px;font-weight:600;letter-spacing:4px;text-transform:uppercase;color:#d4a017}
+.tag b{color:#f4efe2;font-weight:700}
+p.sub{margin-top:22px;font-size:21px;line-height:1.5;color:#c9c3b4;font-weight:400}
+.chips{margin-top:26px;display:flex;gap:8px;flex-wrap:wrap}
+.chip{font-size:12.5px;padding:6px 11px;border-radius:999px;border:1px solid rgba(212,160,23,.35);color:#e8d9ad;background:rgba(212,160,23,.07)}
+/* window */
+.win{position:absolute;left:560px;top:84px;width:600px;height:462px;border-radius:14px;background:#121218;border:1px solid rgba(255,255,255,.09);
+ box-shadow:0 40px 90px rgba(0,0,0,.6),0 0 0 1px rgba(0,0,0,.4),0 0 80px rgba(212,160,23,.08);overflow:hidden;transform:perspective(1600px) rotateY(-6deg) rotateX(2deg);transform-origin:left center}
+.bar{height:34px;display:flex;align-items:center;gap:7px;padding:0 13px;background:#17171e;border-bottom:1px solid rgba(255,255,255,.06)}
+.dot{width:11px;height:11px;border-radius:50%}
+.tab{margin-left:14px;font-size:11.5px;color:#cfc8b6;background:#22222b;padding:5px 11px;border-radius:7px;display:flex;align-items:center;gap:6px}
+.tab i{width:7px;height:7px;border-radius:50%;background:#d4a017;display:inline-block}
+.tab.dim{background:transparent;color:#77727f;margin-left:2px}
+.body{display:flex;height:calc(100% - 34px)}
+.rail{width:40px;background:#101015;border-right:1px solid rgba(255,255,255,.05);display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:14px}
+.rail span{width:16px;height:16px;border-radius:4px;border:1.6px solid #5d5966}
+.rail span.on{border-color:#d4a017;background:rgba(212,160,23,.15)}
+.term{flex:1.05;padding:14px 16px;font-family:"SF Mono",Menlo,monospace;font-size:11.6px;line-height:1.75;color:#b9b3a6;border-right:1px solid rgba(255,255,255,.05)}
+.term .p{color:#d4a017}.term .ok{color:#8bd17c}.term .dim{color:#6e6977}.term .hl{color:#f4efe2}
+.cur{display:inline-block;width:7px;height:13px;background:#d4a017;vertical-align:-2px}
+.side{flex:1;display:flex;flex-direction:column}
+.pane{padding:12px 13px;border-bottom:1px solid rgba(255,255,255,.05)}
+.h{font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:#7c7786;margin-bottom:9px;display:flex;align-items:center;gap:6px}
+.h b{width:6px;height:6px;border-radius:50%;background:#d4a017}
+.cols{display:flex;gap:7px}
+.col{flex:1;display:flex;flex-direction:column;gap:6px}
+.col small{font-size:9.5px;color:#6e6977;margin-bottom:1px}
+.card{font-size:10px;line-height:1.35;color:#d9d3c4;background:#1b1b23;border:1px solid rgba(255,255,255,.07);border-radius:6px;padding:6px 7px}
+.card.run{border-color:rgba(212,160,23,.55);box-shadow:0 0 0 1px rgba(212,160,23,.15)}
+.card em{display:block;font-style:normal;font-size:9px;color:#9a93a3;margin-top:3px}
+.card.run em{color:#e8b93a}
+.chat{display:flex;flex-direction:column;gap:7px}
+.msg{display:flex;gap:7px;align-items:flex-start}
+.av{width:18px;height:18px;border-radius:6px;flex:none}
+.bub{font-size:10px;line-height:1.4;color:#d9d3c4;background:#1d1d26;border-radius:4px 9px 9px 9px;padding:5px 8px}
+.bub .m{color:#e8b93a}
+.git{padding:12px 13px;flex:1}
+svg.g{width:100%;height:70px}
+</style></head><body><div class="grid"></div>
+<div class="left">
+ <div class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 120 120"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f0c445"/><stop offset="1" stop-color="#c8960f"/></linearGradient><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c1c22"/><stop offset="1" stop-color="#0b0b0d"/></linearGradient><radialGradient id="gl" cx="0.5" cy="0.42" r="0.5"><stop offset="0" stop-color="#d4a017" stop-opacity="0.16"/><stop offset="1" stop-color="#d4a017" stop-opacity="0"/></radialGradient></defs><rect width="120" height="120" rx="27" fill="url(#bg)"/><rect width="120" height="120" rx="27" fill="url(#gl)"/><g transform="translate(-7.2 -14.5) scale(1.12)"><path d="M60 108 C60 92 56 82 60 70" fill="none" stroke="#b7860f" stroke-width="3" stroke-linecap="round"/><path d="M59 92 C67 90 73 84 75 76 C66 76 60 82 59 92 Z" fill="#b7860f"/><path d="M61 98 C53 96 47 90 45 82 C54 82 60 88 61 98 Z" fill="#b7860f"/><g transform="translate(60 34) scale(0.55)"><g fill="url(#g)"><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(0)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(90)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(180)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(270)"/></g><circle cx="0" cy="0" r="4.5" fill="#f0c445"/></g><g transform="translate(49 46) scale(0.5)"><g fill="url(#g)"><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(0)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(90)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(180)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(270)"/></g><circle cx="0" cy="0" r="4.5" fill="#f0c445"/></g><g transform="translate(71 46) scale(0.5)"><g fill="url(#g)"><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(0)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(90)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(180)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(270)"/></g><circle cx="0" cy="0" r="4.5" fill="#f0c445"/></g><g transform="translate(60 54) scale(0.6)"><g fill="url(#g)"><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(0)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(90)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(180)"/><path d="M0 9 C-7 3 -8 -9 0 -15 C8 -9 7 3 0 9 Z" transform="rotate(270)"/></g><circle cx="0" cy="0" r="4.5" fill="#f0c445"/></g></g></svg>
+</div>
+ <h1>Mustard</h1>
+ <div class="tag">The <b>must-have</b> ADE</div>
+ <p class="sub">Work alongside AI coding agents —<br>and understand what they build.</p>
+ <div class="chips"><span class="chip">Terminal-first</span><span class="chip">Git &amp; GitHub</span><span class="chip">Agent crews</span><span class="chip">Learn with nunopi</span></div>
+</div>
+<div class="win">
+ <div class="bar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span>
+  <span class="tab"><i></i>mustard</span><span class="tab dim">api-server</span><span class="tab dim">web</span></div>
+ <div class="body">
+  <div class="rail"><span class="on"></span><span></span><span></span><span></span><span></span></div>
+  <div class="term">
+   <div><span class="p">❯</span> <span class="hl">claude</span> <span class="dim">--continue</span></div>
+   <div class="dim">● Reading src/auth/session.ts</div>
+   <div class="dim">● Editing src/auth/refresh.ts <span class="ok">+24 −7</span></div>
+   <div>● Running <span class="hl">npm test</span></div>
+   <div class="ok">  ✓ 42 passed</div>
+   <div class="dim">● git commit -m "fix: token race"</div>
+   <div style="margin-top:8px;color:#d9d3c4">Token refresh now waits for the</div>
+   <div style="color:#d9d3c4">in-flight request instead of firing twice.</div>
+   <div style="margin-top:8px"><span class="p">❯</span> <span class="cur"></span></div>
+  </div>
+  <div class="side">
+   <div class="pane"><div class="h"><b></b>Crew</div>
+    <div class="cols">
+     <div class="col"><small>Ready</small><div class="card">Rate-limit API<em>scope-planner</em></div></div>
+     <div class="col"><small>Running</small><div class="card run">Login page<em>app-builder · Claude</em></div><div class="card">Session tests<em>test-engineer · Codex</em></div></div>
+     <div class="col"><small>Review</small><div class="card">Refresh fix<em>merge gate</em></div></div>
+    </div></div>
+   <div class="pane"><div class="h"><b></b>Team chat</div>
+    <div class="chat">
+     <div class="msg"><span class="av" style="background:#3b6fd4"></span><div class="bub">Spec is ready. <span class="m">@app-builder</span> over to you.</div></div>
+     <div class="msg"><span class="av" style="background:#d4a017"></span><div class="bub">Tests pass. <span class="m">@you</span> ready to merge.</div></div>
+    </div></div>
+   <div class="git"><div class="h"><b></b>Commits</div>
+    <svg class="g" viewBox="0 0 260 70"><path d="M14 4 V66" stroke="#d4a017" stroke-width="2.4"/><path d="M14 22 C14 32 40 30 40 40 V52 C40 60 14 58 14 64" stroke="#5aa0e8" stroke-width="2.4" fill="none"/>
+     <circle cx="14" cy="8" r="4.5" fill="#d4a017"/><circle cx="40" cy="40" r="4.5" fill="#5aa0e8"/><circle cx="14" cy="36" r="4.5" fill="#d4a017"/><circle cx="14" cy="62" r="4.5" fill="#d4a017"/>
+     <text x="60" y="11" fill="#d9d3c4" font-size="10" font-family="SF Mono,Menlo">fix: refresh token race</text><text x="60" y="39" fill="#9a93a3" font-size="10" font-family="SF Mono,Menlo">feat: crew triggers</text><text x="60" y="65" fill="#9a93a3" font-size="10" font-family="SF Mono,Menlo">docs: README</text></svg>
+   </div>
+  </div>
+ </div>
+</div>
+</body></html>
