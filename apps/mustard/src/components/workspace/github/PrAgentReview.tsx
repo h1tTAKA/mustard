@@ -23,6 +23,7 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
   const [busy, setBusy] = useState<Set<string>>(new Set()); // 다시 리뷰 중인 지적
   const [err, setErr] = useState<string | null>(null);
   const [showDiscarded, setShowDiscarded] = useState(false);
+  const [expanded, setExpanded] = useState(false); // 지적 목록 펼침 — 처음엔 접어서 파일 목록이 바로 보이게, 리뷰 끝나면 펼침
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   // 다른 PR 보다 돌아왔는데 이 PR 리뷰가 아직 진행 중이면 이어받아 "실행 중" 표시
@@ -31,7 +32,7 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
     if (!p) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 진행 중 리뷰 이어받기(마운트 시 1회)
     setRunning({ done: 0, total: 0 });
-    p.then((r) => { if (mounted.current) setRev(r); }, () => {}).finally(() => { if (mounted.current) setRunning(null); });
+    p.then((r) => { if (mounted.current) { setRev(r); setExpanded(true); } }, () => {}).finally(() => { if (mounted.current) setRunning(null); });
   }, [root, number]);
   // 다른 화면(파일 목록·가운데 diff)이나 다른 실행이 바꾸면 다시 읽음
   useEffect(() => {
@@ -46,7 +47,7 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
     setRunning({ done: 0, total: 0 }); setErr(null);
     try {
       const r = await runPrReview(root, number, providerId, providerSettings, locale, (done, total) => { if (mounted.current) setRunning({ done, total }); });
-      if (mounted.current) setRev(r);
+      if (mounted.current) { setRev(r); setExpanded(true); }
     } catch (e) {
       if (mounted.current) setErr(t("prReview.failed", { msg: String((e as Error)?.message || e) }));
     } finally { if (mounted.current) setRunning(null); }
@@ -76,20 +77,26 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
   const btn = "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] font-medium transition disabled:opacity-50";
 
   return (
-    <div className="flex flex-col gap-3 p-3">
-      {/* 실행 줄 */}
+    <div className="flex flex-col gap-2 border-b border-zinc-100 px-3 py-2 dark:border-zinc-800/60">
+      {/* 실행 줄 — 버튼 · 상태 · 지적 n개(펼치기) */}
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => void run()} disabled={!!running}
-          className="inline-flex items-center gap-1.5 rounded-md bg-mustard-500 px-2.5 py-1 text-[11.5px] font-semibold text-brown-900 transition hover:bg-mustard-400 disabled:opacity-60">
+        <button type="button" onClick={() => void run()} disabled={!!running} title={t("prReview.intro")}
+          className="inline-flex items-center gap-1.5 rounded-md bg-mustard-500 px-2 py-0.5 text-[11px] font-semibold text-brown-900 transition hover:bg-mustard-400 disabled:opacity-60">
           {running ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : rev ? <IconRefresh size={13} stroke={2} aria-hidden /> : <IconRobot size={13} stroke={2} aria-hidden />}
           {rev ? t("prReview.rerun") : t("prReview.run")}
         </button>
         {running ? (
           <span className="text-[11px] text-zinc-500 dark:text-zinc-400">{running.total && running.done < running.total ? t("prReview.collecting", { done: running.done, total: running.total }) : t("prReview.reviewing")}</span>
         ) : rev && <span className="text-[10.5px] text-zinc-400 dark:text-zinc-500">{t("prReview.lastRun", { when: relTime(new Date(rev.at).toISOString()) })}</span>}
+        {rev && (
+          <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}
+            className="ml-auto text-[10.5px] font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+            {expanded ? "▾" : "▸"} {t("prReview.summary", { open: open.length, adopted: adopted.length })}
+          </button>
+        )}
       </div>
-      {!rev && !running && <p className="text-[11.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">{t("prReview.intro")}</p>}
       {err && <p className="break-words text-[11px] text-rose-500">{err}</p>}
+      {expanded && <>
       {rev?.skipped?.length ? <p className="text-[10.5px] text-amber-600 dark:text-amber-500">{t("prReview.skipped", { n: rev.skipped.length })}</p> : null}
 
       {/* 대기 중 댓글(채택) */}
@@ -152,6 +159,7 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
           ))}
         </section>
       )}
+      </>}
     </div>
   );
 }

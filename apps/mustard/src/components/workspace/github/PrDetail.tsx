@@ -30,7 +30,7 @@ function stateLabel(d: GhPrDetail, t: (k: string) => string): { text: string; cl
 export default function PrDetail({ root, number, reloadKey, host = "github", onBack, onOpenFile, agent }: { root: string; number: number; reloadKey: number; host?: "github" | "gitlab" | "other"; onBack: () => void; onOpenFile?: (file: string) => void; agent?: { providerId: AgentProviderKind; providerSettings: ProviderSettings } }) {
   const t = useT();
   const [load, setLoad] = useState<Load>({ loading: true });
-  const [tab, setTab] = useState<"conversation" | "files" | "agent">("conversation"); // #1123 대화 | 변경 파일, #1127 에이전트 리뷰
+  const [tab, setTab] = useState<"conversation" | "files">("conversation"); // #1123 대화 | 변경 파일(#1127 에이전트 리뷰는 변경 파일 안 위쪽)
   const [fileCount, setFileCount] = useState<number | null>(null);
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
@@ -96,24 +96,20 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
         {/* #1123 대화 | 변경 파일 — GitHub만(GitLab은 조회 전용) */}
         {host === "github" && (
           <div className="ml-auto flex min-w-0 items-center gap-0.5 rounded-md bg-zinc-100 p-0.5 dark:bg-zinc-800/70">
-            {(agent ? (["conversation", "files", "agent"] as const) : (["conversation", "files"] as const)).map((k) => (
+            {(["conversation", "files"] as const).map((k) => (
               <button key={k} type="button" onClick={() => setTab(k)}
                 className={`flex min-w-0 items-center whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium transition ${tab === k ? "bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
-                <span className="truncate">{k === "conversation" ? t("github.tabConversation") : k === "files" ? t("github.tabFiles") : t("github.tabAgentReview")}</span>
+                <span className="truncate">{k === "conversation" ? t("github.tabConversation") : t("github.tabFiles")}</span>
                 {k === "files" && fileCount !== null && <span className="ml-1 shrink-0 tabular-nums text-zinc-400">{fileCount}</span>}
               </button>
             ))}
           </div>
         )}
       </div>
-      {/* #1127 에이전트 리뷰 — 탭을 옮겨도 실행이 이어지게 항상 마운트, 안 보일 때만 숨김 */}
-      {host === "github" && agent && (
-        <div className={`min-h-0 flex-1 overflow-auto ${tab === "agent" ? "" : "hidden"}`}>
-          <PrAgentReview key={`${root}:${number}`} root={root} number={number} providerId={agent.providerId} providerSettings={agent.providerSettings} onOpenFile={onOpenFile} />
-        </div>
-      )}
-      {host === "github" && tab === "agent" ? null : host === "github" && tab === "files" ? (
+      {host === "github" && tab === "files" ? (
         <div className="min-h-0 flex-1 overflow-auto">
+          {/* #1127 에이전트 리뷰 — 파일 목록 위 한 줄(펼치면 지적 목록). 탭 옮겨도 진행 중 리뷰는 다시 열 때 이어받음 */}
+          {agent && <PrAgentReview key={`${root}:${number}`} root={root} number={number} providerId={agent.providerId} providerSettings={agent.providerSettings} onOpenFile={onOpenFile} />}
           <PrFiles root={root} number={number} reloadKey={reloadKey} onOpenFile={onOpenFile} onCount={setFileCount} />
         </div>
       ) : (
