@@ -48,6 +48,9 @@ async function runOnce(root: string, pr: number, providerId: AgentProviderKind, 
     size += chunk.length; parts.push(chunk); valid.set(f.path, lines);
   }
   onProgress?.(done, files.data.files.length);
+  // diff 모으는 사이 push됐으면 head와 diff가 어긋남 → 다시 하게(리뷰)
+  const again = await window.nunopiDesktop?.github?.prFiles?.(root, pr);
+  if (again?.ok && files.data.head && again.data?.head && again.data.head !== files.data.head) throw new Error("head changed");
   const prompt = buildReviewPrompt(locale);
   const answer = parts.length ? await askAgent(`${prompt}\n\n${parts.join("\n")}`, prompt, providerId, settings, locale, "pr-review") : "[]";
   const found = parseFindings(answer, valid, newId);
@@ -62,7 +65,8 @@ export async function retryFinding(root: string, pr: number, f: Finding, provide
   // PR이 리뷰 뒤 push됐으면 줄 번호 기준이 달라짐 → 전체 리뷰를 다시(목록 조회가 diff 캐시도 비움)
   const files = await window.nunopiDesktop?.github?.prFiles?.(root, pr);
   const head0 = loadPrReview(root, pr)?.head;
-  if (files?.ok && head0 && files.data?.head && files.data.head !== head0) throw new Error("head changed");
+  if (!files?.ok) throw new Error(files?.detail || "pr files"); // 지금 head를 모르면 줄 기준을 못 맞춤 → 다시 리뷰 안 함
+  if (head0 && files.data?.head && files.data.head !== head0) throw new Error("head changed");
   const d = await fileDiff(root, pr, f.file);
   if (d == null) throw new Error("diff");
   const { text, lines } = numberDiff(d);
@@ -96,9 +100,12 @@ export async function postFinding(root: string, pr: number, f: Finding, locale: 
       url = r.data?.url ?? "";
       postedUrl.set(f.id, url);
     }
+    // 올라갔는데 저장 못 함(그사이 목록이 바뀜·저장 실패) — "못 올림"이 아니라 "올렸지만 목록엔 못 남김"으로 알림(대화 탭에 보임)
     const cur = loadPrReview(root, pr);
-    if (!cur?.findings.some((x) => x.id === f.id)) return cur; // 그사이 목록이 바뀜 — 댓글은 이미 GitHub에 있음(대화 탭에 보임)
-    const next = save(root, pr, { ...cur, findings: cur.findings.map((x) => (x.id === f.id ? { ...x, status: "adopted", ...(url ? { url } : {}) } : x)) });
+    if (!cur?.findings.some((x) => x.id === f.id)) { postedUrl.delete(f.id); throw new Error("posted-unsaved"); }
+    let next: PrReview;
+    try { next = save(root, pr, { ...cur, findings: cur.findings.map((x) => (x.id === f.id ? { ...x, status: "adopted", ...(url ? { url } : {}) } : x)) }); }
+    catch { throw new Error("posted-unsaved"); } // postedUrl 남김 → 다시 누르면 저장만 재시도
     postedUrl.delete(f.id);
     return next;
   } finally { posting.delete(f.id); }

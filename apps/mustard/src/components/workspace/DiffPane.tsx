@@ -33,7 +33,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
     if (!pr || posting.has(f.id)) return;
     setPosting((s) => new Set(s).add(f.id));
     try { await postFinding(root, pr, f, locale); } // 저장 이벤트로 findings 갱신
-    catch (e) { toast(t("prReview.postFailed", { msg: String((e as Error)?.message || e) }), "error"); }
+    catch (e) { const m = String((e as Error)?.message || e); toast(m === "posted-unsaved" ? t("prReview.postedUnsaved") : t("prReview.postFailed", { msg: m }), "error"); }
     finally { setPosting((s) => { const n = new Set(s); n.delete(f.id); return n; }); }
   };
   useEffect(() => {
@@ -205,8 +205,8 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
             {lineF && (
               <button type="button" title={lineF.map((f) => f.title).join("\n")} aria-label={`${t("github.tabAgentReview")}: ${lineF.map((f) => f.title).join(", ")}`} aria-expanded={openLines.has(lineN)} aria-controls={`prf-${lineN}`}
                 onClick={() => setOpenLines((s) => { const x = new Set(s); if (x.has(lineN)) x.delete(lineN); else x.add(lineN); return x; })}
-                className="absolute inset-y-px left-0.5 z-[1] flex w-[18px] items-center justify-center rounded bg-mustard-500 text-brown-900 shadow-sm hover:bg-mustard-400">
-                <IconRobot size={13} stroke={2.2} aria-hidden />
+                className="absolute inset-y-px left-0 z-[1] flex w-[14px] items-center justify-center rounded-r bg-mustard-500 text-brown-900 shadow-sm hover:bg-mustard-400">
+                <IconRobot size={12} stroke={2.2} aria-hidden />
               </button>
             )}
             <span className="w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">{l.oldN ?? ""}</span>

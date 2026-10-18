@@ -42,12 +42,9 @@ ${FORMAT} The array must contain exactly one item.`;
 
 // GitHub에 올릴 댓글 본문 — 사람이 보고 누른 지적만. 에이전트 글의 이미지(추적 픽셀)는 빼고, 에이전트가 쓴 글임을 끝에 표시(리뷰: 프롬프트 주입 대비).
 export function findingCommentBody(f: Pick<Finding, "title" | "body">, sevLabel: string): string {
-  const body = f.body
-    .replace(/!\[([^\]]*)\]\((?:[^()]|\([^)]*\))*\)/g, "$1") // 인라인 이미지(주소 안 괄호 포함)
-    .replace(/!\[([^\]]*)\]\[[^\]]*\]/g, "$1")              // 참조식 이미지 ![x][1]
-    .replace(/^ {0,3}\[[^\]]+\]:\s*\S+.*$/gm, "")             // 참조 정의 [1]: url
-    .replace(/<img\b[^>]*>/gi, "");
-  return `**[${sevLabel}] ${f.title}**\n\n${body}`.trim() + "\n\n<sub>🤖 Mustard agent review</sub>";
+  const text = `**[${sevLabel}] ${f.title}**\n\n${f.body}`.trim();
+  // 제목·본문 전체에서 이미지 여는 표시 "![" → "["(인라인·참조식·단축 이미지 전부 링크/글자로, 보통 링크는 그대로), <img> 제거(리뷰)
+  return text.replace(/!\[/g, "[").replace(/<img\b[^>]*>/gi, "") + "\n\n<sub>🤖 Mustard agent review</sub>";
 }
 
 const SEV = new Set<Severity>(["high", "medium", "low"]);

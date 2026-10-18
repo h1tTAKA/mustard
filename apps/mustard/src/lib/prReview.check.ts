@@ -19,8 +19,8 @@ assert.strictEqual(parseFindings('[{"file":"x.js","line":4,"title":"t","body":"b
 assert.strictEqual(parseFindings('Found [2 issues]: [{"file":"x.js","line":2,"title":"t"}]', valid, id)?.length, 1, "앞 설명의 괄호 건너뜀");
 assert.strictEqual(parseFindings('See:\n```diff\n- a\n+ b\n```\n```json\n[{"file":"x.js","line":2,"title":"t"}]\n```', valid, id)?.length, 1, "JSON 아닌 펜스 뒤의 JSON 블록");
 const cb = findingCommentBody({ title: "Leak", body: "see ![x](https://evil/p.png) and <img src=x> [link](https://a)" }, "높음");
-assert.ok(cb.startsWith("**[높음] Leak**") && !cb.includes("evil") && !cb.includes("<img") && cb.includes("[link](https://a)") && cb.endsWith("Mustard agent review</sub>"), cb);
-const cb2 = findingCommentBody({ title: "T", body: "a ![p][1] b ![q](https://e/x_(1).png) c\n[1]: https://evil/p.png" }, "Low");
-assert.ok(!cb2.includes("evil") && !cb2.includes("e/x_") && !cb2.includes("!["), cb2);
+assert.ok(cb.startsWith("**[높음] Leak**") && !cb.includes("![") && !cb.includes("<img") && cb.includes("[link](https://a)") && cb.endsWith("Mustard agent review</sub>"), cb);
+const cb2 = findingCommentBody({ title: "![t](https://evil/t.png)", body: "a ![p][1] b ![q](https://e/x_(1).png) ![s] [ok][2]\n> [p]: https://evil/p.png\n[2]: https://a" }, "Low");
+assert.ok(!cb2.includes("![") && cb2.includes("[2]: https://a"), cb2); // 이미지는 전부 링크로, 보통 참조 링크는 유지
 assert.ok(buildReviewPrompt("ja").includes("Japanese"));
 console.log("prReview ok");
