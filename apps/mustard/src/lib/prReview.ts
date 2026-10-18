@@ -44,7 +44,8 @@ ${FORMAT} The array must contain exactly one item.`;
 export function findingCommentBody(f: Pick<Finding, "title" | "body">, sevLabel: string): string {
   const text = `**[${sevLabel}] ${f.title}**\n\n${f.body}`.trim();
   // 제목·본문 전체에서 이미지 여는 표시 "![" → "["(인라인·참조식·단축 이미지 전부 링크/글자로, 보통 링크는 그대로), <img> 제거(리뷰)
-  return text.replace(/!\[/g, "[").replace(/<img\b[^>]*>/gi, "") + "\n\n<sub>🤖 Mustard agent review</sub>";
+  // "!![x](u)"처럼 겹친 느낌표도 한 번에(리뷰), GitHub가 그리는 <img>·<picture>·<source>도 제거
+  return text.replace(/!+\[/g, "[").replace(/<\/?(?:img|picture|source)\b[^>]*>/gi, "") + "\n\n<sub>🤖 Mustard agent review</sub>";
 }
 
 const SEV = new Set<Severity>(["high", "medium", "low"]);

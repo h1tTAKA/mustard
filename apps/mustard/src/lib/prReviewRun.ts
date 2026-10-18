@@ -50,7 +50,8 @@ async function runOnce(root: string, pr: number, providerId: AgentProviderKind, 
   onProgress?.(done, files.data.files.length);
   // diff 모으는 사이 push됐으면 head와 diff가 어긋남 → 다시 하게(리뷰)
   const again = await window.nunopiDesktop?.github?.prFiles?.(root, pr);
-  if (again?.ok && files.data.head && again.data?.head && again.data.head !== files.data.head) throw new Error("head changed");
+  if (!again?.ok) throw new Error(again?.detail || "pr files");
+  if (files.data.head && again.data?.head && again.data.head !== files.data.head) throw new Error("head changed");
   const prompt = buildReviewPrompt(locale);
   const answer = parts.length ? await askAgent(`${prompt}\n\n${parts.join("\n")}`, prompt, providerId, settings, locale, "pr-review") : "[]";
   const found = parseFindings(answer, valid, newId);
@@ -88,7 +89,7 @@ const postedUrl = new Map<string, string>();
 export async function postFinding(root: string, pr: number, f: Finding, locale: string): Promise<PrReview | null> {
   const cur0 = loadPrReview(root, pr);
   const cur0f = cur0?.findings.find((x) => x.id === f.id);
-  if (posting.has(f.id) || (cur0f && cur0f.status !== "open")) return cur0;
+  if (posting.has(f.id) || !cur0f || cur0f.status !== "open") return cur0; // 목록에 없거나 이미 처리된 지적은 안 올림
   posting.add(f.id);
   try {
     let url = postedUrl.get(f.id);
