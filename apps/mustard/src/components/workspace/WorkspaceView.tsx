@@ -821,7 +821,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
             <aside style={{ width: chatW }} className="flex shrink-0 flex-col border-l border-zinc-200 dark:border-zinc-800">
               {/* 우측 패널 모드(#811·#855) — 질문(Chat) ↔ GitHub ↔ 캐치업 배타 렌더. 토글은 상단 헤더. */}
               {rightMode === "github" ? (
-                <GithubPanel root={path} ciDot={ciDot} onOpenPrDiff={(pr, file) => openCodeTab({ kind: "diff", pr, file })} />
+                <GithubPanel root={path} ciDot={ciDot} onOpenPrDiff={(pr, file) => openCodeTab({ kind: "diff", pr, file })} agent={{ providerId, providerSettings }} />
               ) : rightMode === "crew" ? (
                 <CrewChat key={path} root={path} />
               ) : rightMode === "learn" ? (

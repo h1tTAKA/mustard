@@ -10,6 +10,8 @@ import ChecksView from "@/components/workspace/github/ChecksView";
 import MarkdownToolbar from "@/components/workspace/github/MarkdownToolbar";
 import CommentComposer from "@/components/workspace/github/CommentComposer";
 import CommentItem from "@/components/workspace/github/CommentItem";
+import PrAgentReview from "@/components/workspace/github/PrAgentReview";
+import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import GhAvatar from "@/components/workspace/github/GhAvatar";
 import ReactionBar from "@/components/workspace/github/ReactionBar";
 import PrFiles from "@/components/workspace/github/PrFiles";
@@ -25,10 +27,10 @@ function stateLabel(d: GhPrDetail, t: (k: string) => string): { text: string; cl
 }
 
 // onOpenFile = 변경 파일 → 가운데 diff 탭(#1123, Files changed 탭에서 사용)
-export default function PrDetail({ root, number, reloadKey, host = "github", onBack, onOpenFile }: { root: string; number: number; reloadKey: number; host?: "github" | "gitlab" | "other"; onBack: () => void; onOpenFile?: (file: string) => void }) {
+export default function PrDetail({ root, number, reloadKey, host = "github", onBack, onOpenFile, agent }: { root: string; number: number; reloadKey: number; host?: "github" | "gitlab" | "other"; onBack: () => void; onOpenFile?: (file: string) => void; agent?: { providerId: AgentProviderKind; providerSettings: ProviderSettings } }) {
   const t = useT();
   const [load, setLoad] = useState<Load>({ loading: true });
-  const [tab, setTab] = useState<"conversation" | "files">("conversation"); // #1123 대화 | 변경 파일
+  const [tab, setTab] = useState<"conversation" | "files" | "agent">("conversation"); // #1123 대화 | 변경 파일, #1127 에이전트 리뷰
   const [fileCount, setFileCount] = useState<number | null>(null);
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
@@ -94,17 +96,23 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
         {/* #1123 대화 | 변경 파일 — GitHub만(GitLab은 조회 전용) */}
         {host === "github" && (
           <div className="ml-auto flex min-w-0 items-center gap-0.5 rounded-md bg-zinc-100 p-0.5 dark:bg-zinc-800/70">
-            {(["conversation", "files"] as const).map((k) => (
+            {(agent ? (["conversation", "files", "agent"] as const) : (["conversation", "files"] as const)).map((k) => (
               <button key={k} type="button" onClick={() => setTab(k)}
                 className={`flex min-w-0 items-center whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium transition ${tab === k ? "bg-white text-zinc-800 shadow-sm dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
-                <span className="truncate">{k === "conversation" ? t("github.tabConversation") : t("github.tabFiles")}</span>
+                <span className="truncate">{k === "conversation" ? t("github.tabConversation") : k === "files" ? t("github.tabFiles") : t("github.tabAgentReview")}</span>
                 {k === "files" && fileCount !== null && <span className="ml-1 shrink-0 tabular-nums text-zinc-400">{fileCount}</span>}
               </button>
             ))}
           </div>
         )}
       </div>
-      {host === "github" && tab === "files" ? (
+      {/* #1127 에이전트 리뷰 — 탭을 옮겨도 실행이 이어지게 항상 마운트, 안 보일 때만 숨김 */}
+      {host === "github" && agent && (
+        <div className={`min-h-0 flex-1 overflow-auto ${tab === "agent" ? "" : "hidden"}`}>
+          <PrAgentReview key={`${root}:${number}`} root={root} number={number} providerId={agent.providerId} providerSettings={agent.providerSettings} onOpenFile={onOpenFile} />
+        </div>
+      )}
+      {host === "github" && tab === "agent" ? null : host === "github" && tab === "files" ? (
         <div className="min-h-0 flex-1 overflow-auto">
           <PrFiles root={root} number={number} reloadKey={reloadKey} onOpenFile={onOpenFile} onCount={setFileCount} />
         </div>
