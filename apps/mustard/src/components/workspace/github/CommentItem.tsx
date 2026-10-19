@@ -1,7 +1,7 @@
 "use client";
 // 코멘트 한 개(#820) — 표시 / 인라인 수정 / 삭제 확인. 자기 코멘트(viewerDidAuthor)만 수정·삭제 노출.
 // 성공 시 onChanged()로 부모 재조회. commentId는 url의 #issuecomment-<id>에서 파싱.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { IconLoader2, IconPencil, IconTrash } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import { Markdown } from "@mustard/core";
@@ -14,9 +14,9 @@ function parseCommentId(url: string | undefined): string | null {
   return m ? m[1] : null;
 }
 
-// reviewId(#1127) = PR 줄 리뷰 댓글 id — 수정·삭제 경로가 다름(pulls/comments), 리액션은 안 붙임.
-// display = 보여 줄 때만 바꿀 글(수정 초안·저장은 원문 그대로).
-export default function CommentItem({ root, comment, onChanged, reviewId, display }: { root: string; comment: GhComment; onChanged: () => void; reviewId?: number; display?: (body: string) => string }) {
+// reviewId(#1127) = PR 줄 리뷰 댓글 id — 수정·삭제·리액션 경로가 다름(pulls/comments).
+// display = 보여 줄 때만 바꿀 글(수정 초안·저장은 원문 그대로). actions = 머리줄 오른쪽에 늘 보이는 버튼(#1129 종이비행기).
+export default function CommentItem({ root, comment, onChanged, reviewId, display, actions }: { root: string; comment: GhComment; onChanged: () => void; reviewId?: number; display?: (body: string) => string; actions?: ReactNode }) {
   const t = useT();
   const id = reviewId ? String(reviewId) : parseCommentId(comment.url);
   const kind = reviewId ? "review" as const : "issue" as const;
@@ -32,7 +32,7 @@ export default function CommentItem({ root, comment, onChanged, reviewId, displa
 
   const react = async (content: string) => {
     if (!id) return;
-    const r = await gh()?.react?.(root, id, content);
+    const r = await gh()?.react?.(root, id, content, kind);
     if (!mountedRef.current) return;
     if (r?.ok) onChanged(); else setError(r?.detail || t("github.error"));
   };
@@ -61,10 +61,14 @@ export default function CommentItem({ root, comment, onChanged, reviewId, displa
         <GhAvatar login={comment.author?.login} size={16} />
         <span>{comment.author?.login}</span>
         {comment.createdAt && <span>· {relTime(comment.createdAt)}</span>}
-        {canEdit && mode === "view" && (
-          <span className="ml-auto flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
-            <button type="button" onClick={() => { setDraft(comment.body); setMode("edit"); }} className="rounded p-0.5 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-200" title={t("github.edit")} aria-label={t("github.edit")}><IconPencil size={12} stroke={2} aria-hidden /></button>
-            <button type="button" onClick={() => setMode("confirmDelete")} className="rounded p-0.5 hover:bg-rose-100 hover:text-rose-600 dark:hover:bg-rose-900/40 dark:hover:text-rose-400" title={t("github.delete")} aria-label={t("github.delete")}><IconTrash size={12} stroke={2} aria-hidden /></button>
+        {/* 보내기·수정·삭제 — 늘 보이고, 제목 줄 아이콘과 같은 모양(배경 없이 색만, 유저) */}
+        {mode === "view" && (actions || canEdit) && (
+          <span className="ml-auto flex items-center gap-1.5">
+            {actions}
+            {canEdit && (<>
+              <button type="button" onClick={() => { setDraft(comment.body); setMode("edit"); }} className="shrink-0 text-zinc-400 transition hover:text-zinc-600 dark:hover:text-zinc-200" title={t("github.edit")} aria-label={t("github.edit")}><IconPencil size={12} stroke={2} aria-hidden /></button>
+              <button type="button" onClick={() => setMode("confirmDelete")} className="shrink-0 text-zinc-400 transition hover:text-rose-500 dark:hover:text-rose-400" title={t("github.delete")} aria-label={t("github.delete")}><IconTrash size={12} stroke={2} aria-hidden /></button>
+            </>)}
           </span>
         )}
       </div>
@@ -86,7 +90,7 @@ export default function CommentItem({ root, comment, onChanged, reviewId, displa
       )}
 
       {/* 리액션(#820) — 공용 ReactionBar. */}
-      {mode !== "edit" && id && !reviewId && <div className="mt-1.5"><ReactionBar groups={comment.reactionGroups} onReact={(c) => void react(c)} /></div>}
+      {mode !== "edit" && id && <div className="mt-1.5"><ReactionBar groups={comment.reactionGroups} onReact={(c) => void react(c)} /></div>}
 
       {mode === "confirmDelete" && (
         <div className="mt-1.5 flex items-center gap-2 rounded-md bg-rose-50 px-2 py-1 text-[11px] text-rose-600 dark:bg-rose-900/20 dark:text-rose-400">

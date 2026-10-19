@@ -9,6 +9,7 @@ import MarkdownToolbar from "@/components/workspace/github/MarkdownToolbar";
 import { relTime } from "@/lib/relTime";
 import CommentComposer from "@/components/workspace/github/CommentComposer";
 import CommentItem from "@/components/workspace/github/CommentItem";
+import SendToAgent from "@/components/workspace/github/SendToAgent";
 import GhAvatar from "@/components/workspace/github/GhAvatar";
 import ReactionBar from "@/components/workspace/github/ReactionBar";
 
@@ -81,6 +82,7 @@ export default function IssueDetail({ root, number, reloadKey, host = "github", 
                   ? <input value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)} disabled={actBusy} autoFocus className="min-w-0 flex-1 rounded-md border border-zinc-200 bg-white px-2 py-1 text-[14px] font-semibold text-zinc-800 outline-none focus:border-mustard-500/60 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
                   : <h2 className="min-w-0 flex-1 text-[14px] font-semibold text-zinc-800 dark:text-zinc-100">{d.title}</h2>}
                 {!editingBody && host === "github" && <button type="button" onClick={() => { setTitleDraft(d.title || ""); setBodyDraft(d.body || ""); setEditingBody(true); }} title={t("github.editBody")} aria-label={t("github.editBody")} className="mt-0.5 shrink-0 text-zinc-400 transition hover:text-zinc-600 dark:hover:text-zinc-200"><IconPencil size={14} stroke={2} aria-hidden /></button>}
+                {host === "github" && <SendToAgent className="mt-0.5" root={root} size={14} item={{ kind: "issue", number, title: d.title || "", part: "body", url: d.url, author: d.author?.login, body: d.body || "" }} />}
                 {d.url && <a href={d.url} target="_blank" rel="noreferrer" title={t("github.openInBrowser")} aria-label={t("github.openInBrowser")} className="mt-0.5 shrink-0 text-zinc-400 transition hover:text-zinc-600 dark:hover:text-zinc-200"><IconExternalLink size={14} stroke={2} aria-hidden /></a>}
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500">
@@ -129,7 +131,7 @@ export default function IssueDetail({ root, number, reloadKey, host = "github", 
               <div className="mt-1 flex flex-col gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800/60">
                 <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{t("github.comments")} · {d.comments.length}</p>
                 {d.comments.map((c, i) => (
-                  <CommentItem key={c.url || i} root={root} comment={c} onChanged={() => setCmtNonce((n) => n + 1)} />
+                  <CommentItem key={c.url || i} root={root} comment={c} onChanged={() => setCmtNonce((n) => n + 1)} actions={host === "github" ? <SendToAgent root={root} item={{ kind: "issue", number, title: d.title || "", part: "comment", url: c.url, author: c.author?.login, body: c.body }} /> : undefined} />
                 ))}
               </div>
             )}

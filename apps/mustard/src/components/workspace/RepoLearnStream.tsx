@@ -374,7 +374,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       const m = /^(.*) @[0-9a-f]{4,40}$/i.exec(c.target); const cut = c.tool.indexOf(" · ");
       const md = formatSessionHandoff({ request: handoffText, subject: m ? m[1] : c.target, hash, agent: cut >= 0 ? c.tool.slice(0, cut) : c.tool, branch: cut >= 0 ? c.tool.slice(cut + 3) : "", summary: c.expl ?? "", messages: Array.isArray(j?.session?.messages) ? j.session.messages : [] });
       const r = await sendToAgent(root, md);
-      if (!r.ok) { toast(t("browser.pickNoAgent")); return; }
+      if (!r.ok) { toast(t(r.reason === "no-agent" ? "browser.pickNoAgent" : "github.sendFailed")); return; }
       setHandoffKey(null); setHandoffText("");
       requestTerminalFocus(root, r.id); // 보낸 터미널 탭으로
     } finally { setHandoffBusy(false); }

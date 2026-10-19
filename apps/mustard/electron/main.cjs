@@ -679,15 +679,19 @@ async function viewerLogin(cwd) {
   const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "user", "--jq", "{login: .login}"] });
   return r.ok ? (r.data?.login || null) : null;
 }
-ipcMain.handle("github:react", async (_e, { cwd, commentId, content }) => {
+// kind "review"(#1129) = 줄 리뷰 댓글 리액션(pulls/comments/{id}/reactions)
+ipcMain.handle("github:react", async (_e, { cwd, commentId, content, kind }) => {
   const id = Number(commentId);
   if (!Number.isInteger(id) || id <= 0) return { ok: false, kind: "error", detail: "invalid comment id" };
   if (!REACTION_CONTENT.has(content)) return { ok: false, kind: "error", detail: "invalid reaction" };
+  const base = `${commentPath(kind, id)}/reactions`;
   const login = await viewerLogin(cwd);
-  const list = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", `repos/{owner}/{repo}/issues/comments/${id}/reactions`] });
-  const mine = list.ok && Array.isArray(list.data) ? list.data.find((r) => r.content === content && r.user?.login === login) : null;
-  if (mine) return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "DELETE", `repos/{owner}/{repo}/issues/comments/${id}/reactions/${mine.id}`] });
-  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/issues/comments/${id}/reactions`, "-f", `content=${content}`] });
+  // 그 반응만 걸러 전 페이지(반응 30개 넘어도 내 것 찾게, #1129 리뷰)
+  const list = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "--paginate", "--slurp", `${base}?content=${encodeURIComponent(content)}&per_page=100`] });
+  if (!login || !list.ok || !Array.isArray(list.data)) return list.ok ? { ok: false, kind: "error", detail: "no viewer" } : list; // 내 것인지 모르면 추가로 넘어가지 않음(#1129 리뷰)
+  const mine = list.data.flat().find((r) => r.content === content && r.user?.login === login);
+  if (mine) return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "DELETE", `${base}/${mine.id}`] });
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", base, "-f", `content=${content}`] });
 });
 // 이슈·PR 본문 리액션 토글(#822) — issues/{n}/reactions(PR도 공통). 코멘트 토글과 동일 로직.
 ipcMain.handle("github:body-react", async (_e, { cwd, number, content }) => {
@@ -695,8 +699,9 @@ ipcMain.handle("github:body-react", async (_e, { cwd, number, content }) => {
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid number" };
   if (!REACTION_CONTENT.has(content)) return { ok: false, kind: "error", detail: "invalid reaction" };
   const login = await viewerLogin(cwd);
-  const list = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", `repos/{owner}/{repo}/issues/${n}/reactions`] });
-  const mine = list.ok && Array.isArray(list.data) ? list.data.find((r) => r.content === content && r.user?.login === login) : null;
+  const list = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "--paginate", "--slurp", `repos/{owner}/{repo}/issues/${n}/reactions?content=${encodeURIComponent(content)}&per_page=100`] });
+  if (!login || !list.ok || !Array.isArray(list.data)) return list.ok ? { ok: false, kind: "error", detail: "no viewer" } : list; // 내 것인지 모르면 추가로 넘어가지 않음(#1129 리뷰)
+  const mine = list.data.flat().find((r) => r.content === content && r.user?.login === login);
   if (mine) return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "DELETE", `repos/{owner}/{repo}/issues/${n}/reactions/${mine.id}`] });
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/issues/${n}/reactions`, "-f", `content=${content}`] });
 });
@@ -799,6 +804,20 @@ ipcMain.handle("github:pr-line-comment", async (_e, { cwd, number, path, line, b
   if (!r.ok) return r;
   return { ok: true, data: { id: r.data?.id, url: r.data?.html_url } };
 });
+const PR_THREADS_Q = "query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$after){nodes{id isResolved comments(first:1){nodes{databaseId}}}pageInfo{hasNextPage endCursor}}}}}";
+// 줄 리뷰 댓글에 답글(#1129) — 그 스레드 맨 위 댓글 id로.
+ipcMain.handle("github:pr-review-reply", (_e, { cwd, number, commentId, body }) => {
+  const n = Number(number), id = Number(commentId);
+  if (!Number.isInteger(n) || n <= 0 || !Number.isInteger(id) || id <= 0) return { ok: false, kind: "error", detail: "invalid pr/comment" };
+  if (typeof body !== "string" || !body.trim()) return { ok: false, kind: "error", detail: "empty body" };
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/pulls/${n}/comments/${id}/replies`, "-f", `body=${body}`] });
+});
+// 스레드 해결/되돌리기(#1129) — GraphQL resolveReviewThread / unresolveReviewThread.
+ipcMain.handle("github:pr-thread-resolve", (_e, { cwd, threadId, resolve }) => {
+  if (typeof threadId !== "string" || !/^[A-Za-z0-9_=-]{1,200}$/.test(threadId)) return { ok: false, kind: "error", detail: "invalid thread" };
+  const m = resolve ? "resolveReviewThread" : "unresolveReviewThread";
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "graphql", "-f", `query=mutation($id:ID!){${m}(input:{threadId:$id}){thread{id isResolved}}}`, "-f", `id=${threadId}`] });
+});
 // PR 리뷰 한 번에(#1127, 유저 요청) — 여러 지적을 GitHub 리뷰 1건(COMMENT)의 줄 댓글들로. JSON 본문은 임시 파일(--input, 0600)로 넘기고 바로 지움.
 ipcMain.handle("github:pr-review-submit", async (_e, { cwd, number, commitId, comments }) => {
   const n = Number(number);
@@ -825,7 +844,22 @@ ipcMain.handle("github:pr-line-comments", async (_e, { cwd, number }) => {
   if (!r.ok) return r;
   const all = Array.isArray(r.data) ? r.data.flat() : [];
   const me = await viewerLogin(cwd); // 내 댓글만 수정·삭제 버튼
-  return { ok: true, data: all.map((c) => ({ id: c.id, mine: !!me && c.user?.login === me, path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
+  // #1129 스레드 id·해결 여부 — REST엔 없어 GraphQL reviewThreads(첫 댓글 databaseId로 맞춤). 실패해도 댓글은 보임(Resolve 버튼만 없음)
+  const threads = new Map();
+  for (let page = 0, after = null; page < 10; page++) {
+    const args = ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", `number=${n}`, "-f", `query=${PR_THREADS_Q}`];
+    if (after) args.push("-f", `after=${after}`);
+    const t = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args });
+    const rt = t.ok ? t.data?.data?.repository?.pullRequest?.reviewThreads : null;
+    if (!rt) break;
+    for (const th of rt.nodes ?? []) { const first = th.comments?.nodes?.[0]?.databaseId; if (first) threads.set(first, { threadId: th.id, resolved: !!th.isResolved }); }
+    if (!rt.pageInfo?.hasNextPage) break;
+    after = rt.pageInfo.endCursor;
+  }
+  // REST 리액션 요약({"+1": n, …}) → 대화 댓글과 같은 reactionGroups 모양(ReactionBar 공용)
+  const RX = { "+1": "THUMBS_UP", "-1": "THUMBS_DOWN", laugh: "LAUGH", hooray: "HOORAY", confused: "CONFUSED", heart: "HEART", rocket: "ROCKET", eyes: "EYES" };
+  const groups = (rx) => Object.entries(RX).map(([k, e]) => ({ content: e, users: { totalCount: Number(rx?.[k]) || 0 } }));
+  return { ok: true, data: all.map((c) => ({ id: c.id, mine: !!me && c.user?.login === me, reactionGroups: groups(c.reactions), ...(threads.get(c.id) ?? {}), path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
 });
 ipcMain.handle("github:pr-create", (_e, { cwd, base, head, title, body, draft }) => {
   if (!title || typeof title !== "string" || !title.trim()) return { ok: false, kind: "error", detail: "title required" };
@@ -1351,13 +1385,13 @@ ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, text } = {})
     return (c === root || c.startsWith(root + "/")) && s.process !== undefined && !isShellProc(s.process) && agentForId(s.id, s.process, s.screen);
   });
   let ss;
-  try { ss = await live(); } catch { return { ok: false, reason: "no-agent" }; }
+  try { ss = await live(); } catch { return { ok: false, reason: "error" }; } // 데몬·목록 실패는 "터미널 없음"과 구분(#1129 리뷰)
   const target = ss.find((s) => s.id === preferId) ?? ss[0];
   if (!target) return { ok: false, reason: "no-agent" };
   const body = text.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, ""); // ESC 등 제거(붙여넣기 조기 종료 방지) — 렌더러도 하지만 신뢰 경계라 한 번 더
   termClient.input({ id: target.id, data: `\x1b[200~${body}\x1b[201~` });
   await new Promise((r) => setTimeout(r, 150)); // TUI가 붙여넣기를 다 받은 뒤 Enter
-  try { if (!(await live()).some((s) => s.id === target.id)) return { ok: false, reason: "no-agent" }; } catch { return { ok: false, reason: "no-agent" }; } // 그 사이 셸로 바뀌었으면 Enter 안 침
+  try { if (!(await live()).some((s) => s.id === target.id)) return { ok: false, reason: "no-agent" }; } catch { return { ok: false, reason: "error" }; } // 그 사이 셸로 바뀌었으면 Enter 안 침
   termClient.input({ id: target.id, data: "\r" });
   return { ok: true, id: target.id };
 });
