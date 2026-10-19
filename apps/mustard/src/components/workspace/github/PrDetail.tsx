@@ -13,7 +13,7 @@ import CommentItem from "@/components/workspace/github/CommentItem";
 import SendToAgent from "@/components/workspace/github/SendToAgent";
 import PrAgentReview from "@/components/workspace/github/PrAgentReview";
 import PrReviewComments from "@/components/workspace/github/PrReviewComments";
-import PrReviewSubmit from "@/components/workspace/github/PrReviewSubmit";
+import PrReviews from "@/components/workspace/github/PrReviews";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import GhAvatar from "@/components/workspace/github/GhAvatar";
 import ReactionBar from "@/components/workspace/github/ReactionBar";
@@ -216,9 +216,10 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
             {/* #1127 줄 리뷰 댓글(에이전트 리뷰로 올린 것 포함) — 일반 댓글과 따로 */}
             {host === "github" && <PrReviewComments root={root} number={number} prTitle={d.title || ""} reloadKey={reloadKey + cmtNonce} onOpenFile={onOpenFile} />}
             {/* 코멘트 작성(#820) — GitLab 조회 전용(#964)이라 숨김 */}
-            {host === "github" && <CommentComposer root={root} kind="pr" number={number} onPosted={() => setCmtNonce((n) => n + 1)} />}
-            {/* #1131 리뷰 기록 + 리뷰 제출(승인·변경 요청·코멘트) — 내 PR이면 코멘트만 */}
-            {host === "github" && <PrReviewSubmit root={root} number={number} reviews={d.reviews ?? []} mine={!!d.viewerLogin && d.viewerLogin === d.author?.login} onSubmitted={() => setCmtNonce((n) => n + 1)} />}
+            {/* #1131 리뷰 기록(작성자별 판정) */}
+            {host === "github" && <PrReviews reviews={d.reviews ?? []} />}
+            {/* 입력창 하나 — 남의 PR이면 Send 옆에 Approve·Request changes(#1131, 내 PR은 GitHub가 막아서 숨김) */}
+            {host === "github" && <CommentComposer root={root} kind="pr" number={number} review={!(d.viewerLogin && d.viewerLogin === d.author?.login)} onPosted={() => setCmtNonce((n) => n + 1)} />}
           </div>
         )}
       </div>
