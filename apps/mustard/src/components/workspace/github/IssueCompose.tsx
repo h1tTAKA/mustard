@@ -50,7 +50,7 @@ export default function IssueCompose({ root, onCreated, onCancel }: { root: stri
           className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
         <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("github.issueBody")} rows={6}
           className="w-full resize-y rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
-        <div className="divide-y divide-zinc-100 rounded-lg border border-zinc-200 px-2.5 dark:divide-zinc-800/60 dark:border-zinc-800">
+        <div>
           <MetaRow root={root} field="assignee" title={t("github.assignees")} empty={t("github.noAssignee")} {...assignees} />
           <MetaRow root={root} field="label" title={t("github.labels")} empty={t("github.noLabel")} {...labels} />
           <MetaRow root={root} field="milestone" title={t("github.milestone")} empty={t("github.noMilestone")} single {...milestone} />

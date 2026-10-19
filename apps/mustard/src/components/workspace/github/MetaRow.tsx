@@ -63,8 +63,8 @@ export default function MetaRow({ root, field, title, items, empty, exclude = []
   const dot = (color?: string) => color ? <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: `#${color}` }} aria-hidden /> : null;
 
   return (
-    <div className="flex flex-wrap items-center gap-1 py-1.5 text-[11px]">
-      <span className="w-[72px] shrink-0 text-[10.5px] font-medium text-zinc-400 dark:text-zinc-500">{title}</span>
+    <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px]">
+      <span className="text-zinc-400 dark:text-zinc-500">{title}:</span>
       {items.map((i) => (
         <span key={i.value} className={chip} style={i.color ? { backgroundColor: `#${i.color}22` } : undefined}>
           {dot(i.color)}{i.value}

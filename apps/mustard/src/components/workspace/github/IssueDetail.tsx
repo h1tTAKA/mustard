@@ -100,7 +100,7 @@ export default function IssueDetail({ root, number, reloadKey, host = "github", 
                 {host !== "github" && d.milestone?.title && <span>· {d.milestone.title}</span>}
               </div>
               {/* #1131 사이드바 항목(GitHub처럼) — 담당자·라벨·마일스톤 추가·빼기. GitLab은 조회만(옛 담당자 줄) */}
-              {host === "github" ? (<div className="mt-2 divide-y divide-zinc-100 rounded-lg border border-zinc-200 px-2.5 dark:divide-zinc-800/60 dark:border-zinc-800">
+              {host === "github" ? (<div className="mt-0.5 border-b border-zinc-100 pb-2.5 dark:border-zinc-800/60">
                 <MetaRow root={root} field="assignee" title={t("github.assignees")} empty={t("github.noAssignee")} items={(d.assignees ?? []).map((a) => ({ value: a.login }))} onChange={meta("assignee")} />
                 <MetaRow root={root} field="label" title={t("github.labels")} empty={t("github.noLabel")} items={(d.labels ?? []).map((l) => ({ value: l.name, color: l.color }))} onChange={meta("label")} />
                 <MetaRow root={root} field="milestone" title={t("github.milestone")} empty={t("github.noMilestone")} single items={d.milestone?.title ? [{ value: d.milestone.title }] : []} onChange={meta("milestone")} />
