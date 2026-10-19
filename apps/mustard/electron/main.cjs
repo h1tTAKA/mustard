@@ -641,25 +641,27 @@ ipcMain.handle("github:pr-view", async (_e, { cwd, number }) => {
 // 값은 "--add-x=값" 한 인자로(값이 "-"로 시작해도 플래그로 안 읽힘). 사람 = login 형식, 라벨·마일스톤 = 한 줄 100자 이하.
 const META_FIELDS = new Set(["reviewer", "assignee", "label", "milestone"]);
 const GH_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
-const metaValueOk = (field, v) => typeof v === "string" && (field === "reviewer" || field === "assignee" ? GH_LOGIN.test(v) : v.trim().length > 0 && v.length <= 100 && !/[\u0000-\u001f]/.test(v));
+// 라벨은 쉼표 금지 — gh가 "--add-label=a,b"를 두 라벨로 쪼갬(리뷰). 값은 앞뒤 공백 자른 뒤 검사·전달.
+const metaValueOk = (field, v) => typeof v === "string" && (field === "reviewer" || field === "assignee" ? GH_LOGIN.test(v) : v.length > 0 && v.length <= 100 && !/[\u0000-\u001f]/.test(v) && !(field === "label" && v.includes(",")));
+const metaClean = (field, xs) => (Array.isArray(xs) ? xs : []).map((v) => (typeof v === "string" ? v.trim() : v)).filter((v) => metaValueOk(field, v));
 ipcMain.handle("github:meta-candidates", async (_e, { cwd, field }) => {
   if (!META_FIELDS.has(field)) return { ok: false, kind: "error", detail: "invalid field" };
   if (field === "label") {
     const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["label", "list", "--json", "name,color", "--limit", "300"] });
-    return r.ok ? { ok: true, data: (Array.isArray(r.data) ? r.data : []).map((l) => ({ value: l.name, color: l.color })) } : r;
+    return r.ok ? { ok: true, data: (Array.isArray(r.data) ? r.data : []).filter((l) => metaValueOk("label", l?.name)).map((l) => ({ value: l.name, color: l.color })) } : r;
   }
   const path = field === "milestone" ? "repos/{owner}/{repo}/milestones?state=open&per_page=100" : "repos/{owner}/{repo}/assignees?per_page=100";
   const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "--paginate", "--slurp", path] });
   if (!r.ok) return r;
   const all = Array.isArray(r.data) ? r.data.flat() : [];
-  return { ok: true, data: all.map((x) => ({ value: field === "milestone" ? x?.title : x?.login })).filter((x) => typeof x.value === "string") };
+  const me = field === "reviewer" ? await viewerLogin(cwd).catch(() => null) : null; // 리뷰어 후보에서 나는 뺌(GitHub가 자기 리뷰 요청을 막음, 작성 폼에도 적용)
+  return { ok: true, data: all.map((x) => ({ value: field === "milestone" ? x?.title : x?.login })).filter((x) => typeof x.value === "string" && x.value !== me) };
 });
 ipcMain.handle("github:edit-meta", (_e, { cwd, kind, number, field, add, remove }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid number" };
   if (!META_FIELDS.has(field) || (field === "reviewer" && kind !== "pr")) return { ok: false, kind: "error", detail: "invalid field" };
-  const a = (Array.isArray(add) ? add : []).filter((v) => metaValueOk(field, v));
-  const d = (Array.isArray(remove) ? remove : []).filter((v) => metaValueOk(field, v));
+  const a = metaClean(field, add), d = metaClean(field, remove);
   if (!a.length && !d.length) return { ok: false, kind: "error", detail: "nothing to change" };
   const args = [kind === "pr" ? "pr" : "issue", "edit", String(n)];
   if (field === "milestone") args.push(...(a.length ? [`--milestone=${a[0]}`] : ["--remove-milestone"])); // 하나만(바꾸면 교체)
@@ -669,11 +671,10 @@ ipcMain.handle("github:edit-meta", (_e, { cwd, kind, number, field, add, remove 
 // 생성 폼에서 고른 사이드바 항목 → gh issue|pr create 인자(같은 검사)
 function metaCreateArgs({ reviewers, assignees, labels, milestone }) {
   const out = [];
-  const list = (field, xs) => (Array.isArray(xs) ? xs : []).filter((v) => metaValueOk(field, v));
-  for (const v of list("reviewer", reviewers)) out.push(`--reviewer=${v}`);
-  for (const v of list("assignee", assignees)) out.push(`--assignee=${v}`);
-  for (const v of list("label", labels)) out.push(`--label=${v}`);
-  if (metaValueOk("milestone", milestone)) out.push(`--milestone=${milestone}`);
+  for (const v of metaClean("reviewer", reviewers)) out.push(`--reviewer=${v}`);
+  for (const v of metaClean("assignee", assignees)) out.push(`--assignee=${v}`);
+  for (const v of metaClean("label", labels)) out.push(`--label=${v}`);
+  for (const v of metaClean("milestone", [milestone]).slice(0, 1)) out.push(`--milestone=${v}`);
   return out;
 }
 // PR 리뷰 판정 제출(#1131) — gh pr review(no-shell). 변경 요청·코멘트는 본문 필수(GitHub 규칙).
