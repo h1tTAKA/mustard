@@ -46,8 +46,8 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     issueCreate: (cwd, opts) => ipcRenderer.invoke("github:issue-create", { cwd, ...opts }),  // #945 이슈 생성(opts: title/body?/labels?)
     prList: (cwd, state, limit) => ipcRenderer.invoke("github:pr-list", { cwd, state, limit }),  // #814
     prView: (cwd, number) => ipcRenderer.invoke("github:pr-view", { cwd, number }),
-    prReviewerCandidates: (cwd) => ipcRenderer.invoke("github:pr-reviewer-candidates", { cwd }), // #1131 리뷰어
-    prReviewers: (cwd, number, add, remove) => ipcRenderer.invoke("github:pr-reviewers", { cwd, number, add, remove }),
+    metaCandidates: (cwd, field) => ipcRenderer.invoke("github:meta-candidates", { cwd, field }), // #1131 리뷰어·담당자·라벨·마일스톤
+    editMeta: (cwd, kind, number, field, add, remove) => ipcRenderer.invoke("github:edit-meta", { cwd, kind, number, field, add, remove }),
     prReviewEvent: (cwd, number, event, body) => ipcRenderer.invoke("github:pr-review-event", { cwd, number, event, body }), // #1131 승인·변경 요청·코멘트
     prFiles: (cwd, number) => ipcRenderer.invoke("github:pr-files", { cwd, number }),  // #1123 변경 파일 + 봤음
     prFileDiff: (cwd, number, path) => ipcRenderer.invoke("github:pr-file-diff", { cwd, number, path }),

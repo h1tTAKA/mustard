@@ -2,6 +2,7 @@
 // PR 생성 폼(#944) — title/body/base/head/draft. base·head 비우면 gh 기본(현재 브랜치→origin default).
 // 성공 시 stdout(PR URL)서 번호 파싱해 onCreated(number)로 상세 열기 트리거.
 import { useState } from "react";
+import MetaRow, { useMetaDraft } from "@/components/workspace/github/MetaRow";
 import { IconLoader2, IconX } from "@tabler/icons-react";
 import { useT, useToast, getSetting, GKEYS, GIT_DEFAULTS } from "@mustard/core";
 
@@ -15,6 +16,8 @@ export default function PrCompose({ root, onCreated, onCancel }: { root: string;
   const [head, setHead] = useState("");
   const [draft, setDraft] = useState(() => getSetting<boolean>(GKEYS.prDraftDefault, GIT_DEFAULTS.prDraftDefault));
   const [busy, setBusy] = useState(false);
+  // #1131 사이드바 항목 — 상세와 같은 줄로 골라 만들 때 한 번에
+  const reviewers = useMetaDraft(), assignees = useMetaDraft(), labels = useMetaDraft(), milestone = useMetaDraft();
 
   const submit = async () => {
     if (!title.trim() || busy) return;
@@ -22,7 +25,7 @@ export default function PrCompose({ root, onCreated, onCancel }: { root: string;
     if (!gh?.prCreate) { toast(t("github.desktopOnly"), "error"); return; }
     setBusy(true);
     try {
-      const r = await gh.prCreate(root, { title: title.trim(), body, base, head, draft });
+      const r = await gh.prCreate(root, { title: title.trim(), body, base, head, draft, reviewers: reviewers.values, assignees: assignees.values, labels: labels.values, milestone: milestone.values[0] });
       if (r.ok) {
         toast(t("github.prCreateSuccess"), "success");
         const m = /\/pull\/(\d+)/.exec(r.stdout || ""); // URL서 PR 번호
@@ -62,6 +65,12 @@ export default function PrCompose({ root, onCreated, onCancel }: { root: string;
           <input type="checkbox" checked={draft} onChange={(e) => setDraft(e.target.checked)} className="accent-mustard-500" />
           {t("github.prDraft")}
         </label>
+        <div>
+          <MetaRow root={root} field="reviewer" title={t("github.reviewers")} empty={t("github.noReviewer")} {...reviewers} />
+          <MetaRow root={root} field="assignee" title={t("github.assignees")} empty={t("github.noAssignee")} {...assignees} />
+          <MetaRow root={root} field="label" title={t("github.labels")} empty={t("github.noLabel")} {...labels} />
+          <MetaRow root={root} field="milestone" title={t("github.milestone")} empty={t("github.noMilestone")} single {...milestone} />
+        </div>
       </div>
       <div className="flex shrink-0 justify-end gap-2 border-t border-zinc-100 px-3 py-2 dark:border-zinc-800/60">
         <button type="button" onClick={onCancel}
