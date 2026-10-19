@@ -146,7 +146,7 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
                 {d.createdAt && <span>· {relTime(d.createdAt)}</span>}
               </div>
               {/* #1131 사이드바 항목(GitHub처럼) — 리뷰어·담당자·라벨·마일스톤 추가·빼기. GitLab은 조회만(옛 담당자 줄) */}
-              {host === "github" ? (<div className="mt-0.5">
+              {host === "github" ? (<div className="mt-2 divide-y divide-zinc-100 rounded-lg border border-zinc-200 px-2.5 dark:divide-zinc-800/60 dark:border-zinc-800">
                 <MetaRow root={root} field="reviewer" title={t("github.reviewers")} empty={t("github.noReviewer")} exclude={d.author?.login ? [d.author.login] : []}
                   items={(d.reviewRequests ?? []).map((r) => ({ value: r.login || r.name || r.slug || "", readonly: !r.login })).filter((x) => x.value)} onChange={meta("reviewer")} />
                 <MetaRow root={root} field="assignee" title={t("github.assignees")} empty={t("github.noAssignee")} items={(d.assignees ?? []).map((a) => ({ value: a.login }))} onChange={meta("assignee")} />

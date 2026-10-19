@@ -65,7 +65,7 @@ export default function PrCompose({ root, onCreated, onCancel }: { root: string;
           <input type="checkbox" checked={draft} onChange={(e) => setDraft(e.target.checked)} className="accent-mustard-500" />
           {t("github.prDraft")}
         </label>
-        <div>
+        <div className="divide-y divide-zinc-100 rounded-lg border border-zinc-200 px-2.5 dark:divide-zinc-800/60 dark:border-zinc-800">
           <MetaRow root={root} field="reviewer" title={t("github.reviewers")} empty={t("github.noReviewer")} {...reviewers} />
           <MetaRow root={root} field="assignee" title={t("github.assignees")} empty={t("github.noAssignee")} {...assignees} />
           <MetaRow root={root} field="label" title={t("github.labels")} empty={t("github.noLabel")} {...labels} />
