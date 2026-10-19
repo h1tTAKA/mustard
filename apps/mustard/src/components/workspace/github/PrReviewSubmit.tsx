@@ -7,6 +7,7 @@ import { useT, Markdown } from "@mustard/core";
 import GhAvatar from "@/components/workspace/github/GhAvatar";
 import MarkdownToolbar from "@/components/workspace/github/MarkdownToolbar";
 import { relTime } from "@/lib/relTime";
+import { latestReviews } from "@/lib/reviewVerdict";
 
 type Ev = "comment" | "approve" | "request-changes";
 const STATE: Record<string, { key: string; Icon: typeof IconMessage; cls: string }> = {
@@ -14,18 +15,6 @@ const STATE: Record<string, { key: string; Icon: typeof IconMessage; cls: string
   CHANGES_REQUESTED: { key: "github.reviewChangesRequested", Icon: IconCircleX, cls: "text-rose-600 dark:text-rose-400" },
   COMMENTED: { key: "github.reviewCommented", Icon: IconMessage, cls: "text-zinc-500 dark:text-zinc-400" },
 };
-
-// 작성자별 최신 판정 — 본문 없는 COMMENTED(줄 댓글 묶음)는 판정이 아니라서 뺌
-export function latestReviews(reviews: GhReview[]): GhReview[] {
-  const by = new Map<string, GhReview>();
-  for (const r of reviews) {
-    if (!STATE[r.state] || (r.state === "COMMENTED" && !r.body?.trim())) continue;
-    const k = r.author?.login ?? "";
-    const prev = by.get(k);
-    if (!prev || (r.submittedAt ?? "") >= (prev.submittedAt ?? "")) by.set(k, r);
-  }
-  return [...by.values()].sort((a, b) => (a.submittedAt ?? "").localeCompare(b.submittedAt ?? ""));
-}
 
 export default function PrReviewSubmit({ root, number, reviews, mine, onSubmitted }: { root: string; number: number; reviews: GhReview[]; mine: boolean; onSubmitted: () => void }) {
   const t = useT();

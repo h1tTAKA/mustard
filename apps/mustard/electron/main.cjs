@@ -642,7 +642,7 @@ const REVIEW_EVENTS = { approve: "--approve", "request-changes": "--request-chan
 ipcMain.handle("github:pr-review-event", (_e, { cwd, number, event, body }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
-  const flag = REVIEW_EVENTS[event];
+  const flag = typeof event === "string" && Object.hasOwn(REVIEW_EVENTS, event) ? REVIEW_EVENTS[event] : null; // 내장 속성(constructor 등) 걸러냄(리뷰)
   if (!flag) return { ok: false, kind: "error", detail: "invalid event" };
   const text = typeof body === "string" ? body.trim() : "";
   if (event !== "approve" && !text) return { ok: false, kind: "error", detail: "empty body" };
