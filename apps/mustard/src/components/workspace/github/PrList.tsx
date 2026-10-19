@@ -98,7 +98,9 @@ export default function PrList({ root, reloadKey, host = "github", onOpen }: { r
         {load.loading && !load.rows?.length ? (
           <div className="flex items-center gap-2 p-4 text-[12px] text-zinc-400 dark:text-zinc-500"><IconLoader2 size={14} className="animate-spin" aria-hidden /> …</div>
         ) : load.error && !load.rows?.length ? (
-          <div className="flex items-start gap-2 p-4 text-[12px] text-zinc-500 dark:text-zinc-400"><IconAlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-500" aria-hidden /><span className="break-words">{load.error}</span></div>
+          <div className="flex items-start gap-2 p-4 text-[12px] text-zinc-500 dark:text-zinc-400"><IconAlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-500" aria-hidden /><span className="min-w-0 break-words">{load.error}
+            {/* #1131 일시 실패(앱 막 켰을 때 등)는 다시 부르면 대개 됨 — 안내 + 누르면 다시 조회 */}
+            <button type="button" onClick={() => setLocalReload((x) => x + 1)} className="mt-1 block text-[11px] text-mustard-700 underline-offset-2 hover:underline dark:text-mustard-400">{t("github.retryHint")}</button></span></div>
         ) : !load.rows?.length ? (
           <p className="p-4 text-[12px] text-zinc-400 dark:text-zinc-500">{t("github.empty")}</p>
         ) : (
