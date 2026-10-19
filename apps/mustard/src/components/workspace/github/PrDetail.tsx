@@ -14,6 +14,7 @@ import SendToAgent from "@/components/workspace/github/SendToAgent";
 import PrAgentReview from "@/components/workspace/github/PrAgentReview";
 import PrReviewComments from "@/components/workspace/github/PrReviewComments";
 import PrReviews from "@/components/workspace/github/PrReviews";
+import PrReviewers from "@/components/workspace/github/PrReviewers";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import GhAvatar from "@/components/workspace/github/GhAvatar";
 import ReactionBar from "@/components/workspace/github/ReactionBar";
@@ -144,6 +145,8 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
                   ? d.assignees.map((a) => <span key={a.login} className="rounded-full bg-zinc-100 px-1.5 py-px text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{a.login}</span>)
                   : <span className="text-zinc-400 dark:text-zinc-500">{t("github.noAssignee")}</span>}
               </div>
+              {/* #1131 리뷰어 지정 — 담당자 줄과 같은 모양 */}
+              {host === "github" && <PrReviewers root={root} number={number} author={d.author?.login} requested={d.reviewRequests ?? []} onChanged={() => setCmtNonce((n) => n + 1)} />}
             </div>
             {/* CI 체크(#814, 서브3 재사용) */}
             {d.statusCheckRollup?.length > 0 && (

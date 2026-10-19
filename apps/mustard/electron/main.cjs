@@ -632,10 +632,25 @@ ipcMain.handle("github:pr-view", async (_e, { cwd, number }) => {
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
   // #1131 reviews(판정 기록) + 내 로그인(내 PR이면 승인·변경 요청 숨김) — 로그인은 실패해도 상세는 보임
   const [r, me] = await Promise.all([
-    githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "number,title,state,isDraft,author,createdAt,assignees,body,comments,statusCheckRollup,mergeStateStatus,url,reactionGroups,reviews"] }),
+    githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "number,title,state,isDraft,author,createdAt,assignees,body,comments,statusCheckRollup,mergeStateStatus,url,reactionGroups,reviews,reviewRequests"] }),
     viewerLogin(cwd).catch(() => null),
   ]);
   return r.ok && r.data ? { ok: true, data: { ...r.data, viewerLogin: me } } : r;
+});
+// 리뷰어 지정(#1131) — 후보 = 이 레포에 배정 가능한 사람(assignees), 추가·제거 = gh pr edit --add/--remove-reviewer(no-shell, login 형식 검사).
+ipcMain.handle("github:pr-reviewer-candidates", async (_e, { cwd }) => {
+  const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "--paginate", "--slurp", "repos/{owner}/{repo}/assignees?per_page=100"] });
+  if (!r.ok) return r;
+  return { ok: true, data: (Array.isArray(r.data) ? r.data.flat() : []).map((u) => u?.login).filter((l) => typeof l === "string") };
+});
+const GH_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+ipcMain.handle("github:pr-reviewers", (_e, { cwd, number, add, remove }) => {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
+  const a = (Array.isArray(add) ? add : []).filter((l) => typeof l === "string" && GH_LOGIN.test(l));
+  const d = (Array.isArray(remove) ? remove : []).filter((l) => typeof l === "string" && GH_LOGIN.test(l));
+  if (!a.length && !d.length) return { ok: false, kind: "error", detail: "no reviewers" };
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "edit", String(n), ...(a.length ? ["--add-reviewer", a.join(",")] : []), ...(d.length ? ["--remove-reviewer", d.join(",")] : [])] });
 });
 // PR 리뷰 판정 제출(#1131) — gh pr review(no-shell). 변경 요청·코멘트는 본문 필수(GitHub 규칙).
 const REVIEW_EVENTS = { approve: "--approve", "request-changes": "--request-changes", comment: "--comment" };

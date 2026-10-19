@@ -11,7 +11,7 @@ interface GhIssueDetail extends GhIssue { assignees: GhActor[]; milestone: GhMil
 interface GhCheckRaw { __typename?: string; name?: string; context?: string; status?: string; conclusion?: string; state?: string; detailsUrl?: string; targetUrl?: string; workflowName?: string; startedAt?: string; completedAt?: string; description?: string }
 interface GhPr { number: number; title: string; state: string; isDraft: boolean; author: GhActor; createdAt: string; updatedAt: string; statusCheckRollup: GhCheckRaw[] }
 interface GhReview { author: GhActor; state: string; body: string; submittedAt: string } // state = APPROVED | CHANGES_REQUESTED | COMMENTED | DISMISSED | PENDING
-interface GhPrDetail extends GhPr { assignees: GhActor[]; body: string; comments: GhComment[]; mergeStateStatus: string; url: string; reactionGroups?: GhReactionGroup[]; reviews?: GhReview[]; viewerLogin?: string | null }
+interface GhPrDetail extends GhPr { assignees: GhActor[]; body: string; comments: GhComment[]; mergeStateStatus: string; url: string; reactionGroups?: GhReactionGroup[]; reviews?: GhReview[]; reviewRequests?: { login?: string; name?: string; slug?: string }[]; viewerLogin?: string | null }
 // 현재 브랜치 CI(#812) — PR 있으면 checks, 없으면 { noPr:true }.
 interface GhChecks { number?: number; title?: string; state?: string; statusCheckRollup?: GhCheckRaw[]; url?: string; headRefName?: string; noPr?: boolean }
 interface GhAnnotation { path?: string; start_line?: number; annotation_level?: string; message?: string; title?: string }
@@ -63,6 +63,8 @@ interface NunopiDesktopApi {
     issueCreate(cwd: string, opts: { title: string; body?: string; labels?: string }): Promise<{ ok: boolean; stdout?: string; kind?: string; detail?: string }>;  // #945 성공 시 stdout=이슈 URL
     prList(cwd: string, state?: "open" | "closed" | "all", limit?: number): Promise<GhResult<GhPr[]>>;  // #814
     prView(cwd: string, number: number): Promise<GhResult<GhPrDetail>>;
+    prReviewerCandidates?(cwd: string): Promise<{ ok: boolean; data?: string[]; kind?: string; detail?: string }>;
+    prReviewers?(cwd: string, number: number, add: string[], remove: string[]): Promise<{ ok: boolean; kind?: string; detail?: string }>;
     prReviewEvent?(cwd: string, number: number, event: "approve" | "request-changes" | "comment", body: string): Promise<{ ok: boolean; kind?: string; detail?: string }>;
     checks(cwd: string): Promise<GhResult<GhChecks>>;  // #812
     checkAnnotations(cwd: string, checkRunId: string): Promise<GhResult<GhAnnotation[]>>;  // #812
