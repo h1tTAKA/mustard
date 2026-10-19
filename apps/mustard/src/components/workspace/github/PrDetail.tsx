@@ -13,6 +13,7 @@ import CommentItem from "@/components/workspace/github/CommentItem";
 import SendToAgent from "@/components/workspace/github/SendToAgent";
 import PrAgentReview from "@/components/workspace/github/PrAgentReview";
 import PrReviewComments from "@/components/workspace/github/PrReviewComments";
+import PrReviewSubmit from "@/components/workspace/github/PrReviewSubmit";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import GhAvatar from "@/components/workspace/github/GhAvatar";
 import ReactionBar from "@/components/workspace/github/ReactionBar";
@@ -216,6 +217,8 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
             {host === "github" && <PrReviewComments root={root} number={number} prTitle={d.title || ""} reloadKey={reloadKey + cmtNonce} onOpenFile={onOpenFile} />}
             {/* 코멘트 작성(#820) — GitLab 조회 전용(#964)이라 숨김 */}
             {host === "github" && <CommentComposer root={root} kind="pr" number={number} onPosted={() => setCmtNonce((n) => n + 1)} />}
+            {/* #1131 리뷰 기록 + 리뷰 제출(승인·변경 요청·코멘트) — 내 PR이면 코멘트만 */}
+            {host === "github" && <PrReviewSubmit root={root} number={number} reviews={d.reviews ?? []} mine={!!d.viewerLogin && d.viewerLogin === d.author?.login} onSubmitted={() => setCmtNonce((n) => n + 1)} />}
           </div>
         )}
       </div>
