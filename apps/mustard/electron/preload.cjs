@@ -51,6 +51,8 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     prFileViewed: (cwd, prId, path, viewed) => ipcRenderer.invoke("github:pr-file-viewed", { cwd, prId, path, viewed }),
     prLineComment: (cwd, number, path, line, body, commitId) => ipcRenderer.invoke("github:pr-line-comment", { cwd, number, path, line, body, commitId }), // #1127
     prLineComments: (cwd, number) => ipcRenderer.invoke("github:pr-line-comments", { cwd, number }),
+    prReviewReply: (cwd, number, commentId, body) => ipcRenderer.invoke("github:pr-review-reply", { cwd, number, commentId, body }), // #1129
+    prThreadResolve: (cwd, threadId, resolve) => ipcRenderer.invoke("github:pr-thread-resolve", { cwd, threadId, resolve }),
     prReviewSubmit: (cwd, number, commitId, comments) => ipcRenderer.invoke("github:pr-review-submit", { cwd, number, commitId, comments }), // #1127 여러 지적 한 번에
     checks: (cwd) => ipcRenderer.invoke("github:checks", { cwd }),  // #812 현재 브랜치 CI
     checkAnnotations: (cwd, checkRunId) => ipcRenderer.invoke("github:check-annotations", { cwd, checkRunId }),  // #812

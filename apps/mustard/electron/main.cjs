@@ -799,6 +799,20 @@ ipcMain.handle("github:pr-line-comment", async (_e, { cwd, number, path, line, b
   if (!r.ok) return r;
   return { ok: true, data: { id: r.data?.id, url: r.data?.html_url } };
 });
+const PR_THREADS_Q = "query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$after){nodes{id isResolved comments(first:1){nodes{databaseId}}}pageInfo{hasNextPage endCursor}}}}}";
+// 줄 리뷰 댓글에 답글(#1129) — 그 스레드 맨 위 댓글 id로.
+ipcMain.handle("github:pr-review-reply", (_e, { cwd, number, commentId, body }) => {
+  const n = Number(number), id = Number(commentId);
+  if (!Number.isInteger(n) || n <= 0 || !Number.isInteger(id) || id <= 0) return { ok: false, kind: "error", detail: "invalid pr/comment" };
+  if (typeof body !== "string" || !body.trim()) return { ok: false, kind: "error", detail: "empty body" };
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/pulls/${n}/comments/${id}/replies`, "-f", `body=${body}`] });
+});
+// 스레드 해결/되돌리기(#1129) — GraphQL resolveReviewThread / unresolveReviewThread.
+ipcMain.handle("github:pr-thread-resolve", (_e, { cwd, threadId, resolve }) => {
+  if (typeof threadId !== "string" || !/^[A-Za-z0-9_=-]{1,200}$/.test(threadId)) return { ok: false, kind: "error", detail: "invalid thread" };
+  const m = resolve ? "resolveReviewThread" : "unresolveReviewThread";
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "graphql", "-f", `query=mutation($id:ID!){${m}(input:{threadId:$id}){thread{id isResolved}}}`, "-f", `id=${threadId}`] });
+});
 // PR 리뷰 한 번에(#1127, 유저 요청) — 여러 지적을 GitHub 리뷰 1건(COMMENT)의 줄 댓글들로. JSON 본문은 임시 파일(--input, 0600)로 넘기고 바로 지움.
 ipcMain.handle("github:pr-review-submit", async (_e, { cwd, number, commitId, comments }) => {
   const n = Number(number);
@@ -825,7 +839,19 @@ ipcMain.handle("github:pr-line-comments", async (_e, { cwd, number }) => {
   if (!r.ok) return r;
   const all = Array.isArray(r.data) ? r.data.flat() : [];
   const me = await viewerLogin(cwd); // 내 댓글만 수정·삭제 버튼
-  return { ok: true, data: all.map((c) => ({ id: c.id, mine: !!me && c.user?.login === me, path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
+  // #1129 스레드 id·해결 여부 — REST엔 없어 GraphQL reviewThreads(첫 댓글 databaseId로 맞춤). 실패해도 댓글은 보임(Resolve 버튼만 없음)
+  const threads = new Map();
+  for (let page = 0, after = null; page < 10; page++) {
+    const args = ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", `number=${n}`, "-f", `query=${PR_THREADS_Q}`];
+    if (after) args.push("-f", `after=${after}`);
+    const t = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args });
+    const rt = t.ok ? t.data?.data?.repository?.pullRequest?.reviewThreads : null;
+    if (!rt) break;
+    for (const th of rt.nodes ?? []) { const first = th.comments?.nodes?.[0]?.databaseId; if (first) threads.set(first, { threadId: th.id, resolved: !!th.isResolved }); }
+    if (!rt.pageInfo?.hasNextPage) break;
+    after = rt.pageInfo.endCursor;
+  }
+  return { ok: true, data: all.map((c) => ({ id: c.id, mine: !!me && c.user?.login === me, ...(threads.get(c.id) ?? {}), path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
 });
 ipcMain.handle("github:pr-create", (_e, { cwd, base, head, title, body, draft }) => {
   if (!title || typeof title !== "string" || !title.trim()) return { ok: false, kind: "error", detail: "title required" };
