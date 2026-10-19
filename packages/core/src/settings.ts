@@ -91,6 +91,8 @@ export const GKEYS = {
   autoFetch: "git.autoFetch",
   branchPrefix: "git.branchPrefix",
   autoExplainCommits: "git.autoExplainCommits", // #1054 커밋 diff 변경 구간 자동 설명
+  // #1127 PR 에이전트 리뷰 AI·모델 — "" = 워크스페이스 기본 AI / 그 AI 기본 모델
+  prReviewProvider: "git.prReviewProvider", prReviewModel: "git.prReviewModel",
 } as const;
 
 // 캐치업(#1049) — 명령어 해설 카드·용어집 켜고 끄기.

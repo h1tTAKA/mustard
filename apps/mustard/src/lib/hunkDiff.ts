@@ -11,12 +11,17 @@ const MAX_DIFF = 4000; // diffText 상한(토큰 방어)
 export function parseDiff(diff: string): DLine[] {
   const out: DLine[] = [];
   let oldN = 0, newN = 0;
-  for (const raw of diff.split("\n")) {
+  let inHunk = false; // 파일 머리(diff/index/---/+++/모드/Binary…)는 첫 @@ 전까지만 — 안쪽 "-- x"·"++x" 줄을 머리로 오인하지 않게(#1127 리뷰)
+  const raws = diff.split("\n");
+  if (raws.length && raws[raws.length - 1] === "") raws.pop(); // 끝 개행이 만든 빈 줄(가짜 문맥 줄) 제거
+  for (const raw of raws) {
+    if (raw.startsWith("diff ")) inHunk = false;
     if (raw.startsWith("@@")) {
+      inHunk = true;
       const m = /@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(raw);
       if (m) { oldN = Number(m[1]); newN = Number(m[2]); }
       out.push({ kind: "hunk", oldN: null, newN: null, text: raw, ctxLabel: (m?.[3] ?? "").trim() });
-    } else if (/^(\+\+\+|---|diff |index |new file|deleted file|similarity|rename )/.test(raw)) {
+    } else if (!inHunk || raw.startsWith("\\")) { // 머리 줄 + "\ No newline at end of file"(줄 번호 안 셈)
       out.push({ kind: "meta", oldN: null, newN: null, text: raw });
     } else if (raw.startsWith("+")) {
       out.push({ kind: "add", oldN: null, newN: newN++, text: raw.slice(1) });
@@ -69,4 +74,13 @@ export function diffSections(expl: string): { from: number; to: number; text: st
   const marks = [...expl.matchAll(re)];
   if (!marks.length || marks[0].index !== 0) return null;
   return marks.map((m, i) => ({ from: Number(m[1]), to: Number(m[2]), text: expl.slice(m.index! + m[0].length, i + 1 < marks.length ? marks[i + 1].index : undefined) }));
+}
+
+// #1127 parseDiff 수정 전 노트 키 → 지금 키(끝 개행이 만든 빈 문맥 줄 "  "·"\ No newline" 문맥 줄 제거). loadNotes가 별칭으로 씀.
+export const legacyNoteKey = (k: string) => k.split("\n").filter((l) => l !== "  \\ No newline at end of file").join("\n").replace(/\n  $/, "");
+// 저장된 노트(원본)에 옛 키 별칭을 더한 새 객체 — 원본은 안 바꿈(저장은 원본에만, 별칭이 굳지 않게), 진짜 키가 항상 우선.
+export function withLegacyAliases(raw: Record<string, string>): Record<string, string> {
+  const out = { ...raw };
+  for (const [k, v] of Object.entries(raw)) { const nk = legacyNoteKey(k); if (nk !== k && !(nk in out)) out[nk] = v; }
+  return out;
 }

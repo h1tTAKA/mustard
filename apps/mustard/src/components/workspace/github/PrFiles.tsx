@@ -2,8 +2,9 @@
 // PR 변경 파일(#1123) — VS Code GitHub PR 확장의 "Files changed"처럼: 폴더별 파일·변경 종류·+/−·봤음 체크(GitHub에 저장).
 // 파일 클릭 → 가운데 diff 탭(onOpenFile). 봤음은 낙관적으로 바로 반영하고 실패하면 되돌림.
 import { useEffect, useRef, useState } from "react";
-import { IconLoader2, IconAlertTriangle, IconFolder } from "@tabler/icons-react";
+import { IconLoader2, IconAlertTriangle, IconFolder, IconRobot } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
+import { loadPrReview, prReviewKey, PR_REVIEW_EVENT, type Finding } from "@/lib/prReview";
 
 type PrFile = { path: string; additions: number; deletions: number; changeType: string; viewed: boolean };
 type Load = { loading: boolean; prId?: string; files?: PrFile[]; truncated?: boolean; error?: string };
@@ -27,6 +28,14 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
   const [busy, setBusy] = useState<Set<string>>(new Set()); // 봤음 저장 중인 파일
   const [err, setErr] = useState<string | null>(null);
   const reqIdRef = useRef(0);
+  // #1127 에이전트 리뷰 — 파일별 남은(열린) 지적 수 배지
+  const [findings, setFindings] = useState<Finding[]>(() => loadPrReview(root, number)?.findings ?? []);
+  useEffect(() => {
+    const key = prReviewKey(root, number);
+    const on = (e: Event) => { if ((e as CustomEvent<string>).detail === key) setFindings(loadPrReview(root, number)?.findings ?? []); };
+    window.addEventListener(PR_REVIEW_EVENT, on);
+    return () => window.removeEventListener(PR_REVIEW_EVENT, on);
+  }, [root, number]);
   const onCountRef = useRef(onCount);
   useEffect(() => { onCountRef.current = onCount; }, [onCount]);
 
@@ -61,6 +70,8 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
   if (!files.length) return <p className="p-4 text-[12px] italic text-zinc-400 dark:text-zinc-500">{t("github.filesEmpty")}</p>;
 
   const viewed = files.filter((f) => f.viewed).length;
+  const openCount = new Map<string, number>();
+  for (const f of findings) if (f.status === "open") openCount.set(f.file, (openCount.get(f.file) ?? 0) + 1);
   // 폴더별 묶음(경로 순) — 같은 폴더 파일을 한 덩어리로.
   const groups: { dir: string; items: PrFile[] }[] = [];
   for (const f of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
@@ -97,6 +108,7 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
                     className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-default">
                     <span className={`w-3 shrink-0 text-center font-mono text-[10px] font-bold ${c.cls}`}>{c.ch}</span>
                     <span className={`truncate text-[12px] text-zinc-700 dark:text-zinc-200 ${f.viewed ? "line-through decoration-zinc-400/60" : ""}`}>{baseOf(f.path)}</span>
+                    {openCount.get(f.path) ? <span title={t("github.tabAgentReview")} className="inline-flex shrink-0 items-center gap-0.5 rounded bg-mustard-500/15 px-1 text-[9.5px] font-semibold tabular-nums text-mustard-700 dark:text-mustard-400"><IconRobot size={10} stroke={2} aria-hidden />{openCount.get(f.path)}</span> : null}
                     <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums">
                       {f.additions > 0 && <span className="text-emerald-600 dark:text-emerald-400">+{f.additions}</span>}
                       {f.deletions > 0 && <span className="ml-1 text-rose-500 dark:text-rose-400">−{f.deletions}</span>}

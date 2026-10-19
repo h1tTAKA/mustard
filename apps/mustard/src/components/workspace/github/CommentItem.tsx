@@ -14,9 +14,12 @@ function parseCommentId(url: string | undefined): string | null {
   return m ? m[1] : null;
 }
 
-export default function CommentItem({ root, comment, onChanged }: { root: string; comment: GhComment; onChanged: () => void }) {
+// reviewId(#1127) = PR 줄 리뷰 댓글 id — 수정·삭제 경로가 다름(pulls/comments), 리액션은 안 붙임.
+// display = 보여 줄 때만 바꿀 글(수정 초안·저장은 원문 그대로).
+export default function CommentItem({ root, comment, onChanged, reviewId, display }: { root: string; comment: GhComment; onChanged: () => void; reviewId?: number; display?: (body: string) => string }) {
   const t = useT();
-  const id = parseCommentId(comment.url);
+  const id = reviewId ? String(reviewId) : parseCommentId(comment.url);
+  const kind = reviewId ? "review" as const : "issue" as const;
   const canEdit = !!comment.viewerDidAuthor && !!id;
   const [mode, setMode] = useState<"view" | "edit" | "confirmDelete">("view");
   const [draft, setDraft] = useState(comment.body);
@@ -38,7 +41,7 @@ export default function CommentItem({ root, comment, onChanged }: { root: string
     const body = draft.trim();
     if (!body || !id || busy) return;
     setBusy(true); setError(null);
-    const r = await gh()?.editComment?.(root, id, body);
+    const r = await gh()?.editComment?.(root, id, body, kind);
     if (!mountedRef.current) return;
     setBusy(false);
     if (r?.ok) { setMode("view"); onChanged(); } else setError(r?.detail || t("github.error"));
@@ -46,7 +49,7 @@ export default function CommentItem({ root, comment, onChanged }: { root: string
   const doDelete = async () => {
     if (!id || busy) return;
     setBusy(true); setError(null);
-    const r = await gh()?.deleteComment?.(root, id);
+    const r = await gh()?.deleteComment?.(root, id, kind);
     if (!mountedRef.current) return;
     setBusy(false);
     if (r?.ok) onChanged(); else { setError(r?.detail || t("github.error")); setMode("view"); }
@@ -79,11 +82,11 @@ export default function CommentItem({ root, comment, onChanged }: { root: string
           </div>
         </div>
       ) : (
-        <Markdown className="text-[12px] text-zinc-700 dark:text-zinc-200">{comment.body}</Markdown>
+        <Markdown className="text-[12px] text-zinc-700 dark:text-zinc-200">{display ? display(comment.body) : comment.body}</Markdown>
       )}
 
       {/* 리액션(#820) — 공용 ReactionBar. */}
-      {mode !== "edit" && id && <div className="mt-1.5"><ReactionBar groups={comment.reactionGroups} onReact={(c) => void react(c)} /></div>}
+      {mode !== "edit" && id && !reviewId && <div className="mt-1.5"><ReactionBar groups={comment.reactionGroups} onReact={(c) => void react(c)} /></div>}
 
       {mode === "confirmDelete" && (
         <div className="mt-1.5 flex items-center gap-2 rounded-md bg-rose-50 px-2 py-1 text-[11px] text-rose-600 dark:bg-rose-900/20 dark:text-rose-400">

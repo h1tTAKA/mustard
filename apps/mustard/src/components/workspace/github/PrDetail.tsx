@@ -10,6 +10,9 @@ import ChecksView from "@/components/workspace/github/ChecksView";
 import MarkdownToolbar from "@/components/workspace/github/MarkdownToolbar";
 import CommentComposer from "@/components/workspace/github/CommentComposer";
 import CommentItem from "@/components/workspace/github/CommentItem";
+import PrAgentReview from "@/components/workspace/github/PrAgentReview";
+import PrReviewComments from "@/components/workspace/github/PrReviewComments";
+import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import GhAvatar from "@/components/workspace/github/GhAvatar";
 import ReactionBar from "@/components/workspace/github/ReactionBar";
 import PrFiles from "@/components/workspace/github/PrFiles";
@@ -25,10 +28,10 @@ function stateLabel(d: GhPrDetail, t: (k: string) => string): { text: string; cl
 }
 
 // onOpenFile = 변경 파일 → 가운데 diff 탭(#1123, Files changed 탭에서 사용)
-export default function PrDetail({ root, number, reloadKey, host = "github", onBack, onOpenFile }: { root: string; number: number; reloadKey: number; host?: "github" | "gitlab" | "other"; onBack: () => void; onOpenFile?: (file: string) => void }) {
+export default function PrDetail({ root, number, reloadKey, host = "github", onBack, onOpenFile, agent }: { root: string; number: number; reloadKey: number; host?: "github" | "gitlab" | "other"; onBack: () => void; onOpenFile?: (file: string) => void; agent?: { providerId: AgentProviderKind; providerSettings: ProviderSettings } }) {
   const t = useT();
   const [load, setLoad] = useState<Load>({ loading: true });
-  const [tab, setTab] = useState<"conversation" | "files">("conversation"); // #1123 대화 | 변경 파일
+  const [tab, setTab] = useState<"conversation" | "files">("conversation"); // #1123 대화 | 변경 파일(#1127 에이전트 리뷰는 변경 파일 안 위쪽)
   const [fileCount, setFileCount] = useState<number | null>(null);
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
@@ -106,6 +109,8 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
       </div>
       {host === "github" && tab === "files" ? (
         <div className="min-h-0 flex-1 overflow-auto">
+          {/* #1127 에이전트 리뷰 — 파일 목록 위 한 줄(펼치면 지적 목록). 탭 옮겨도 진행 중 리뷰는 다시 열 때 이어받음 */}
+          {agent && <PrAgentReview key={`${root}:${number}`} root={root} number={number} providerId={agent.providerId} providerSettings={agent.providerSettings} onOpenFile={onOpenFile} />}
           <PrFiles root={root} number={number} reloadKey={reloadKey} onOpenFile={onOpenFile} onCount={setFileCount} />
         </div>
       ) : (
@@ -205,6 +210,8 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
                 ))}
               </div>
             )}
+            {/* #1127 줄 리뷰 댓글(에이전트 리뷰로 올린 것 포함) — 일반 댓글과 따로 */}
+            {host === "github" && <PrReviewComments root={root} number={number} reloadKey={reloadKey + cmtNonce} onOpenFile={onOpenFile} />}
             {/* 코멘트 작성(#820) — GitLab 조회 전용(#964)이라 숨김 */}
             {host === "github" && <CommentComposer root={root} kind="pr" number={number} onPosted={() => setCmtNonce((n) => n + 1)} />}
           </div>

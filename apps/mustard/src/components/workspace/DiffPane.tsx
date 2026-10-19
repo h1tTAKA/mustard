@@ -2,8 +2,10 @@
 // 워크스페이스 diff 뷰(#649) — 커밋+파일의 git diff. shiki 신택스 하이라이팅 + 빨강(−)/초록(+) 배경.
 import { Fragment, useEffect, useRef, useState } from "react";
 import { codeToTokens, type ThemedToken, type BundledLanguage } from "shiki";
-import { IconLoader2, IconAlertTriangle, IconGitCompare, IconSparkles, IconRefresh, IconBrandGithub } from "@tabler/icons-react";
-import { useLocale, useT } from "@mustard/core";
+import { IconLoader2, IconAlertTriangle, IconGitCompare, IconSparkles, IconRefresh, IconBrandGithub, IconRobot, IconCheck, IconX } from "@tabler/icons-react";
+import { loadPrReview, prReviewKey, PR_REVIEW_EVENT, type Finding } from "@/lib/prReview";
+import { setFindingStatus, postFinding } from "@/lib/prReviewRun";
+import { useLocale, useT, useToast } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { type DLine, parseDiff, groupHunks, type Hunk, noteStoreKey, loadNotes, saveNote, explainDiffText, HUNK_NOTES_EVENT } from "@/lib/hunkNotes";
@@ -19,9 +21,28 @@ const langOf = (file: string) => EXT_LANG[file.split(".").pop()?.toLowerCase() ?
 export default function DiffPane({ root, hash, file, worktree, pr, providerId, providerSettings }: { root: string; hash?: string; file: string; worktree?: "staged" | "unstaged" | "untracked"; pr?: number; providerId: AgentProviderKind; providerSettings: ProviderSettings }) {
   const t = useT();
   const { locale } = useLocale();
+  const toast = useToast();
   // 변경 구간별 에이전트 노트. key = diffText 해시(구간 내용 기반 안정 키 → 같은 diff 재오픈 시 매칭).
   const [notes, setNotes] = useState<Record<string, { status: "loading" | "done" | "error"; text?: string }>>({});
   const [lines, setLines] = useState<DLine[] | null>(null);
+  // #1127 PR diff — 에이전트 리뷰 지적(버린 것 제외)을 줄 옆 🤖로. 펼친 줄은 지적 내용 표시.
+  const [findings, setFindings] = useState<Finding[]>(() => (pr ? loadPrReview(root, pr)?.findings ?? [] : []));
+  const [openLines, setOpenLines] = useState<Set<number>>(new Set());
+  const [posting, setPosting] = useState<Set<string>>(new Set()); // GitHub에 올리는 중인 지적
+  const adoptHere = async (f: Finding) => {
+    if (!pr || posting.has(f.id)) return;
+    setPosting((s) => new Set(s).add(f.id));
+    try { await postFinding(root, pr, f, locale); } // 저장 이벤트로 findings 갱신
+    catch (e) { const m = String((e as Error)?.message || e); toast(m === "posted-unsaved" ? t("prReview.postedUnsaved") : m === "gone" ? t("prReview.gone") : t("prReview.postFailed", { msg: m }), "error"); }
+    finally { setPosting((s) => { const n = new Set(s); n.delete(f.id); return n; }); }
+  };
+  useEffect(() => {
+    if (!pr) return;
+    const key = prReviewKey(root, pr);
+    const on = (e: Event) => { if ((e as CustomEvent<string>).detail === key) setFindings(loadPrReview(root, pr)?.findings ?? []); };
+    window.addEventListener(PR_REVIEW_EVENT, on);
+    return () => window.removeEventListener(PR_REVIEW_EVENT, on);
+  }, [root, pr]);
   const [tokens, setTokens] = useState<ThemedToken[][]>([]); // 코드줄(add/del/ctx) 순서별 하이라이트 토큰
   const [status, setStatus] = useState<"loading" | "ok" | "error" | "empty">("loading");
   const [isDark, setIsDark] = useState(false);
@@ -143,6 +164,8 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   if (status === "error" || !lines) return <div className="flex h-full items-center justify-center gap-1.5 text-[12px] text-amber-600 dark:text-amber-500"><IconAlertTriangle size={14} stroke={2} aria-hidden /> {t("diff.loadFailed")}</div>;
 
   let codeIdx = 0; // add/del/ctx 진행 인덱스 → tokens 매칭
+  const byLine = new Map<number, Finding[]>();
+  for (const f of findings) if (f.file === file && f.status !== "discarded") byLine.set(f.line, [...(byLine.get(f.line) ?? []), f]);
   // 오버뷰 룰러용: 연속 "같은 종류(추가/삭제)" 줄을 한 블록으로. 수정(삭제+추가)은 빨강 블록·초록 블록 따로 →
   // 삭제도 빨강으로 보임. (줄마다 틱 찍으면 새파일서 바코드 벽이라 병합.)
   const total = Math.max(1, lines.length);
@@ -174,8 +197,18 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
         const markCls = l.kind === "add" ? "text-emerald-600 dark:text-emerald-500" : l.kind === "del" ? "text-rose-600 dark:text-rose-500" : "text-transparent";
         const startH = pr ? undefined : hunkStart.get(i); // PR diff는 AI 설명 없음 // 구간 시작 → 위에 설명 버튼
         const endH = pr ? undefined : hunkEnd.get(i); // 구간 끝 → 아래에 노트(PR diff는 없음)
+        const lineF = pr && l.newN != null ? byLine.get(l.newN) : undefined; // #1127 이 줄의 에이전트 지적
+        const lineN = l.newN as number;
         const row = (
-          <div key={i} className={`flex w-max min-w-full ${bg}`}>
+          <div key={i} className={`relative flex w-max min-w-full ${bg} ${lineF ? "ring-1 ring-inset ring-mustard-500/70" : ""}`}>
+            {/* #1127 지적 있는 줄 — 옛 줄번호 칸 왼쪽에 눈에 띄는 배지(오른쪽 정렬 번호는 3자리까지 안 가림, 코드 정렬 그대로), 누르면 지적 펼침 */}
+            {lineF && (
+              <button type="button" title={lineF.map((f) => f.title).join("\n")} aria-label={`${t("github.tabAgentReview")}: ${lineF.map((f) => f.title).join(", ")}`} aria-expanded={openLines.has(lineN)} aria-controls={`prf-${lineN}`}
+                onClick={() => setOpenLines((s) => { const x = new Set(s); if (x.has(lineN)) x.delete(lineN); else x.add(lineN); return x; })}
+                className="absolute inset-y-px left-0 z-[1] flex w-[14px] items-center justify-center rounded-r bg-mustard-500 text-brown-900 shadow-sm hover:bg-mustard-400">
+                <IconRobot size={12} stroke={2.2} aria-hidden />
+              </button>
+            )}
             <span className="w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">{l.oldN ?? ""}</span>
             <span className="w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">{l.newN ?? ""}</span>
             <span className={`w-4 shrink-0 select-none text-center ${markCls}`}>{mark}</span>
@@ -184,6 +217,30 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
             </span>
           </div>
         );
+        if (lineF) {
+          const opened = openLines.has(l.newN as number);
+          return (
+            <Fragment key={`f-${i}`}>
+              {row}
+              {opened && <div id={`prf-${lineN}`}>{lineF.map((f) => (
+                <div key={f.id} style={{ width: paneW ? paneW - 20 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-mustard-500/30 bg-mustard-50/80 px-3 py-2 font-sans dark:bg-mustard-500/[0.07]">
+                  <div className="flex items-center gap-1.5 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400">
+                    <IconRobot size={11} stroke={2} aria-hidden />{t(`prReview.sev.${f.severity}`)}
+                    {f.status === "adopted" && (f.url ? <a href={f.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-emerald-600 hover:underline dark:text-emerald-400"><IconCheck size={10} aria-hidden />{t("prReview.adopted")}</a> : <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400"><IconCheck size={10} aria-hidden />{t("prReview.adopted")}</span>)}
+                  </div>
+                  <div className="mt-0.5 text-[12px] font-semibold text-zinc-800 dark:text-zinc-100">{f.title}</div>
+                  {f.body && <div className="prose prose-sm max-w-none text-[11.5px] leading-relaxed text-zinc-700 dark:prose-invert dark:text-zinc-200 prose-p:my-1"><Markdown>{f.body}</Markdown></div>}
+                  {f.status === "open" && (
+                    <div className="mt-1 flex gap-1">
+                      <button type="button" disabled={posting.has(f.id)} onClick={() => void adoptHere(f)} className="inline-flex items-center gap-1 rounded bg-mustard-500/15 px-1.5 py-0.5 text-[10.5px] font-medium text-mustard-700 hover:bg-mustard-500/25 dark:text-mustard-400"><IconCheck size={11} aria-hidden />{t("prReview.adopt")}</button>
+                      <button type="button" onClick={() => { if (!setFindingStatus(root, pr!, f.id, "discarded")) toast(t("prReview.saveFailed"), "error"); }} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"><IconX size={11} aria-hidden />{t("prReview.discard")}</button>
+                    </div>
+                  )}
+                </div>
+              ))}</div>}
+            </Fragment>
+          );
+        }
         if (!startH && !endH) return row;
         const startNote = startH ? notes[hunkKey(startH)] : undefined;
         const endNote = endH ? notes[hunkKey(endH)] : undefined;

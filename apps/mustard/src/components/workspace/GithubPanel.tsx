@@ -10,6 +10,7 @@ import IssueDetail from "@/components/workspace/github/IssueDetail";
 import PrList from "@/components/workspace/github/PrList";
 import PrDetail from "@/components/workspace/github/PrDetail";
 import type { CiDot } from "@/components/workspace/github/useBranchCi";
+import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 
 type AuthState = "ok" | "not-installed" | "not-authed" | "rate-limited" | "error";
 type Probe = { loading: boolean; state?: AuthState; detail?: string };
@@ -19,7 +20,7 @@ type OpenItem = { kind: "issue" | "pr"; number: number }; // 상세 열림 — �
 // 진단 안내 중 앱이 낸 문구는 표시 때 번역(언어 바뀌어도 재진단 없이 따라옴, #1125) — gh/glab detail은 원문 그대로.
 const DESKTOP_ONLY = "\u0000desktopOnly";
 
-export default function GithubPanel({ root, ciDot, onOpenPrDiff }: { root: string; ciDot?: CiDot; onOpenPrDiff?: (pr: number, file: string) => void }) {
+export default function GithubPanel({ root, ciDot, onOpenPrDiff, agent }: { root: string; ciDot?: CiDot; onOpenPrDiff?: (pr: number, file: string) => void; agent?: { providerId: AgentProviderKind; providerSettings: ProviderSettings } }) {
   const t = useT();
   const [probe, setProbe] = useState<Probe>({ loading: true });
   const [owner, setOwner] = useState<string | null>(null);
@@ -176,7 +177,7 @@ export default function GithubPanel({ root, ciDot, onOpenPrDiff }: { root: strin
           <div className="min-h-0 flex-1">
             {open.kind === "issue"
               ? <IssueDetail key={`issue-${open.number}`} root={root} number={open.number} reloadKey={reload} host={host} onBack={() => setOpen(null)} />
-              : <PrDetail key={`pr-${open.number}`} root={root} number={open.number} onOpenFile={onOpenPrDiff ? (file: string) => onOpenPrDiff(open.number, file) : undefined} reloadKey={reload} host={host} onBack={() => setOpen(null)} />}
+              : <PrDetail key={`pr-${open.number}`} root={root} number={open.number} onOpenFile={onOpenPrDiff ? (file: string) => onOpenPrDiff(open.number, file) : undefined} reloadKey={reload} host={host} agent={agent} onBack={() => setOpen(null)} />}
           </div>
         )
       ) : (

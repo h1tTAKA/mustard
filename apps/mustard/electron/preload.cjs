@@ -49,12 +49,15 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     prFiles: (cwd, number) => ipcRenderer.invoke("github:pr-files", { cwd, number }),  // #1123 변경 파일 + 봤음
     prFileDiff: (cwd, number, path) => ipcRenderer.invoke("github:pr-file-diff", { cwd, number, path }),
     prFileViewed: (cwd, prId, path, viewed) => ipcRenderer.invoke("github:pr-file-viewed", { cwd, prId, path, viewed }),
+    prLineComment: (cwd, number, path, line, body, commitId) => ipcRenderer.invoke("github:pr-line-comment", { cwd, number, path, line, body, commitId }), // #1127
+    prLineComments: (cwd, number) => ipcRenderer.invoke("github:pr-line-comments", { cwd, number }),
+    prReviewSubmit: (cwd, number, commitId, comments) => ipcRenderer.invoke("github:pr-review-submit", { cwd, number, commitId, comments }), // #1127 여러 지적 한 번에
     checks: (cwd) => ipcRenderer.invoke("github:checks", { cwd }),  // #812 현재 브랜치 CI
     checkAnnotations: (cwd, checkRunId) => ipcRenderer.invoke("github:check-annotations", { cwd, checkRunId }),  // #812
     jobSteps: (cwd, jobId) => ipcRenderer.invoke("github:job-steps", { cwd, jobId }),  // #812
     addComment: (cwd, kind, number, body) => ipcRenderer.invoke("github:add-comment", { cwd, kind, number, body }),  // #820
-    editComment: (cwd, commentId, body) => ipcRenderer.invoke("github:edit-comment", { cwd, commentId, body }),  // #820
-    deleteComment: (cwd, commentId) => ipcRenderer.invoke("github:delete-comment", { cwd, commentId }),
+    editComment: (cwd, commentId, body, kind) => ipcRenderer.invoke("github:edit-comment", { cwd, commentId, body, kind }),  // #820
+    deleteComment: (cwd, commentId, kind) => ipcRenderer.invoke("github:delete-comment", { cwd, commentId, kind }),
     react: (cwd, commentId, content) => ipcRenderer.invoke("github:react", { cwd, commentId, content }),  // #820 리액션 토글
     bodyReact: (cwd, number, content) => ipcRenderer.invoke("github:body-react", { cwd, number, content }),  // #822 본문 리액션
     editItem: (cwd, kind, number, title, body) => ipcRenderer.invoke("github:edit-item", { cwd, kind, number, title, body }),  // #822 제목·본문

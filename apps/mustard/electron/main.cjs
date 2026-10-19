@@ -659,16 +659,18 @@ ipcMain.handle("github:add-comment", (_e, { cwd, kind, number, body }) => {
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: [sub, "comment", String(n), "--body", body] }); // no-shell, body는 인자(개행·특수문자 안전)
 });
 // 코멘트 수정/삭제(#820) — issue·PR 대화 코멘트는 공통 issues/comments 엔드포인트. commentId=url의 issuecomment id.
-ipcMain.handle("github:edit-comment", (_e, { cwd, commentId, body }) => {
+// kind "review"(#1127) = PR 줄 리뷰 댓글(pulls/comments), 그 외 = 대화 댓글(issues/comments).
+const commentPath = (kind, id) => `repos/{owner}/{repo}/${kind === "review" ? "pulls" : "issues"}/comments/${id}`;
+ipcMain.handle("github:edit-comment", (_e, { cwd, commentId, body, kind }) => {
   const id = Number(commentId);
   if (!Number.isInteger(id) || id <= 0) return { ok: false, kind: "error", detail: "invalid comment id" };
   if (typeof body !== "string" || !body.trim()) return { ok: false, kind: "error", detail: "empty body" };
-  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "PATCH", `repos/{owner}/{repo}/issues/comments/${id}`, "-f", `body=${body}`] });
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "PATCH", commentPath(kind, id), "-f", `body=${body}`] });
 });
-ipcMain.handle("github:delete-comment", (_e, { cwd, commentId }) => {
+ipcMain.handle("github:delete-comment", (_e, { cwd, commentId, kind }) => {
   const id = Number(commentId);
   if (!Number.isInteger(id) || id <= 0) return { ok: false, kind: "error", detail: "invalid comment id" };
-  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "DELETE", `repos/{owner}/{repo}/issues/comments/${id}`] });
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "DELETE", commentPath(kind, id)] });
 });
 // 코멘트 리액션 토글(#820) — 이미 내가 단 리액션이면 삭제, 아니면 추가. content=REST명(+1,-1,laugh…).
 const REACTION_CONTENT = new Set(["+1", "-1", "laugh", "hooray", "confused", "heart", "rocket", "eyes"]);
@@ -730,13 +732,13 @@ ipcMain.handle("github:merge", (_e, { cwd, number, method }) => {
 // PR 리뷰 1(#1123) — 변경 파일(봤음 상태 포함)·파일별 diff·봤음 표시. GraphQL은 gh api가 {owner}/{repo}를 현재 레포로 치환.
 const prDiffCache = new Map(); // `${cwd}#${n}` → { at, files }
 const prDiffGen = new Map(); // `${cwd}#${n}` → 세대 — 목록 새로고침 중 늦게 끝난 옛 diff가 다시 들어오지 않게(재리뷰)
-const PR_FILES_Q = "query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id files(first:100,after:$after){nodes{path additions deletions changeType viewerViewedState}pageInfo{hasNextPage endCursor}}}}}";
+const PR_FILES_Q = "query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid files(first:100,after:$after){nodes{path additions deletions changeType viewerViewedState}pageInfo{hasNextPage endCursor}}}}}";
 ipcMain.handle("github:pr-files", async (_e, { cwd, number }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
   prDiffCache.delete(`${cwd}#${n}`); prDiffGen.set(`${cwd}#${n}`, (prDiffGen.get(`${cwd}#${n}`) ?? 0) + 1);
   if (prDiffGen.size > 50) prDiffGen.delete(prDiffGen.keys().next().value); // 상한(재리뷰) // 목록을 새로 불러오면 diff도 새로(push 직후 옛 diff 방지, 리뷰)
-  const files = []; let prId = null; let after = null; let truncated = false;
+  const files = []; let prId = null; let head = null; let after = null; let truncated = false;
   for (let page = 0; page < 30; page++) { // 최대 3,000개
     const args = ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", `number=${n}`, "-f", `query=${PR_FILES_Q}`];
     if (after) args.push("-f", `after=${after}`);
@@ -744,13 +746,13 @@ ipcMain.handle("github:pr-files", async (_e, { cwd, number }) => {
     if (!r.ok) return r;
     const pr = r.data?.data?.repository?.pullRequest;
     if (!pr) return { ok: false, kind: "error", detail: "pull request not found" };
-    prId = pr.id;
+    prId = pr.id; head = pr.headRefOid ?? head; // #1127 리뷰 시점 head — 줄 댓글을 그 커밋 기준으로
     for (const f of pr.files?.nodes ?? []) files.push({ path: f.path, additions: f.additions, deletions: f.deletions, changeType: f.changeType, viewed: f.viewerViewedState === "VIEWED" });
     if (!pr.files?.pageInfo?.hasNextPage) break;
     after = pr.files.pageInfo.endCursor;
     if (page === 29) truncated = true; // 상한 도달 — 화면에 안내(리뷰)
   }
-  return { ok: true, data: { prId, files, truncated } };
+  return { ok: true, data: { prId, head, files, truncated } };
 });
 // 파일별 diff — gh pr diff는 PR 전체라, 같은 PR을 연달아 열 때 다시 받지 않게 짧게 캐시(30s).
 ipcMain.handle("github:pr-file-diff", async (_e, { cwd, number, path }) => {
@@ -779,6 +781,52 @@ ipcMain.handle("github:pr-file-viewed", (_e, { cwd, prId, path, viewed }) => {
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "graphql", "-f", `id=${prId}`, "-f", `path=${path}`, "-f", `query=${q}`] });
 });
 // PR 생성(#944) — 성공 시 stdout=생성된 PR URL. base/head 빈값이면 플래그 생략(gh 기본: 현재 브랜치/origin default).
+// PR 줄 리뷰 댓글(#1127) — 에이전트 지적을 채택하면 그 파일·줄(head 커밋 기준 새 파일 줄, RIGHT)에 리뷰 댓글로.
+// -f(raw)라 본문·경로의 "@"가 파일 읽기로 안 바뀜. no-shell 인자.
+ipcMain.handle("github:pr-line-comment", async (_e, { cwd, number, path, line, body, commitId }) => {
+  const n = Number(number), ln = Number(line);
+  if (!Number.isInteger(n) || n <= 0 || !Number.isInteger(ln) || ln <= 0) return { ok: false, kind: "error", detail: "invalid pr/line" };
+  if (typeof path !== "string" || !path || typeof body !== "string" || !body.trim()) return { ok: false, kind: "error", detail: "empty path/body" };
+  // 줄 번호는 리뷰 때 diff 기준 → 그때 head 커밋(commitId)에 담(그 뒤 push돼도 같은 코드 줄, GitHub가 지난 코드로 표시). 없으면(옛 저장분) 지금 head.
+  let sha = typeof commitId === "string" && /^[0-9a-f]{40}$/.test(commitId) ? commitId : null;
+  if (!sha) {
+    const head = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "headRefOid"] });
+    if (!head.ok) return head;
+    sha = head.data?.headRefOid;
+  }
+  if (typeof sha !== "string" || !/^[0-9a-f]{40}$/.test(sha)) return { ok: false, kind: "error", detail: "no head commit" };
+  const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/pulls/${n}/comments`, "-f", `body=${body}`, "-f", `commit_id=${sha}`, "-f", `path=${path}`, "-F", `line=${ln}`, "-f", "side=RIGHT"] });
+  if (!r.ok) return r;
+  return { ok: true, data: { id: r.data?.id, url: r.data?.html_url } };
+});
+// PR 리뷰 한 번에(#1127, 유저 요청) — 여러 지적을 GitHub 리뷰 1건(COMMENT)의 줄 댓글들로. JSON 본문은 임시 파일(--input, 0600)로 넘기고 바로 지움.
+ipcMain.handle("github:pr-review-submit", async (_e, { cwd, number, commitId, comments }) => {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
+  if (typeof commitId !== "string" || !/^[0-9a-f]{40}$/.test(commitId)) return { ok: false, kind: "error", detail: "no head commit" };
+  // 하나라도 잘못되면 전체 거절(일부만 빠진 채 '다 올림'으로 보이지 않게, 리뷰)
+  const list = Array.isArray(comments) ? comments : [];
+  if (!list.length || list.length > 100 || !list.every((c) => c && typeof c.path === "string" && c.path && Number.isInteger(c.line) && c.line > 0 && typeof c.body === "string" && c.body.trim())) return { ok: false, kind: "error", detail: "invalid comments" };
+  // 나만 쓰는 새 임시 폴더(mkdtemp, 이름 예측·충돌 없음) 안에 쓰고 폴더째 지움
+  const dir = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "mustard-review-"));
+  const file = require("node:path").join(dir, "review.json");
+  try {
+    writeFileSync(file, JSON.stringify({ commit_id: commitId, event: "COMMENT", comments: list.map((c) => ({ path: c.path, line: c.line, side: "RIGHT", body: c.body })) }), { mode: 0o600, flag: "wx" });
+    const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/pulls/${n}/reviews`, "--input", file] });
+    if (!r.ok) return r;
+    return { ok: true, data: { id: r.data?.id, url: r.data?.html_url } };
+  } finally { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } }
+});
+// PR 줄 리뷰 댓글 목록(#1127) — 대화 탭에 파일:줄과 함께. 코드가 바뀌어 위치가 사라진 댓글(line null)은 outdated.
+ipcMain.handle("github:pr-line-comments", async (_e, { cwd, number }) => {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
+  const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "--paginate", "--slurp", `repos/{owner}/{repo}/pulls/${n}/comments`] });
+  if (!r.ok) return r;
+  const all = Array.isArray(r.data) ? r.data.flat() : [];
+  const me = await viewerLogin(cwd); // 내 댓글만 수정·삭제 버튼
+  return { ok: true, data: all.map((c) => ({ id: c.id, mine: !!me && c.user?.login === me, path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
+});
 ipcMain.handle("github:pr-create", (_e, { cwd, base, head, title, body, draft }) => {
   if (!title || typeof title !== "string" || !title.trim()) return { ok: false, kind: "error", detail: "title required" };
   const args = ["pr", "create", "--title", title.trim(), "--body", typeof body === "string" ? body : ""];
