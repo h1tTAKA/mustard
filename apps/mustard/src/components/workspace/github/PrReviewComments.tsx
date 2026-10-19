@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { IconFile, IconLoader2, IconCircleCheck, IconCornerDownRight } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import CommentItem from "@/components/workspace/github/CommentItem";
+import SendToAgent from "@/components/workspace/github/SendToAgent";
 import { prReviewKey, PR_REVIEW_EVENT } from "@/lib/prReview";
 
 // 옛 에이전트 꼬리표(<sub>🤖 Mustard agent review</sub>)만 기울임으로 보이게 — 다른 <sub>·원문은 그대로
@@ -13,7 +14,7 @@ const legacyFooter = (b: string) => b.replace("<sub>🤖 Mustard agent review</s
 
 type LineComment = { id: number; mine: boolean; threadId?: string; resolved?: boolean; path: string; line: number | null; outdated: boolean; body: string; author: string; createdAt: string; url: string; inReplyTo: number | null };
 
-export default function PrReviewComments({ root, number, reloadKey, onOpenFile }: { root: string; number: number; reloadKey: number; onOpenFile?: (file: string) => void }) {
+export default function PrReviewComments({ root, number, prTitle = "", reloadKey, onOpenFile }: { root: string; number: number; prTitle?: string; reloadKey: number; onOpenFile?: (file: string) => void }) {
   const t = useT();
   const [list, setList] = useState<LineComment[]>([]);
   const [tick, setTick] = useState(0);
@@ -37,12 +38,12 @@ export default function PrReviewComments({ root, number, reloadKey, onOpenFile }
   return (
     <div className="mt-4 space-y-2">
       <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{t("github.reviewComments")} · {list.length}</p>
-      {tops.map((c) => <Thread key={c.id} root={root} number={number} top={c} replies={replies(c.id)} onOpenFile={onOpenFile} onChanged={reload} />)}
+      {tops.map((c) => <Thread key={c.id} root={root} number={number} prTitle={prTitle} top={c} replies={replies(c.id)} onOpenFile={onOpenFile} onChanged={reload} />)}
     </div>
   );
 }
 
-function Thread({ root, number, top, replies, onOpenFile, onChanged }: { root: string; number: number; top: LineComment; replies: LineComment[]; onOpenFile?: (file: string) => void; onChanged: () => void }) {
+function Thread({ root, number, prTitle, top, replies, onOpenFile, onChanged }: { root: string; number: number; prTitle: string; top: LineComment; replies: LineComment[]; onOpenFile?: (file: string) => void; onChanged: () => void }) {
   const t = useT();
   const [open, setOpen] = useState(!top.resolved); // 해결된 스레드는 접어서 시작
   const [replying, setReplying] = useState(false);
@@ -73,6 +74,7 @@ function Thread({ root, number, top, replies, onOpenFile, onChanged }: { root: s
   const item = (c: LineComment, reply = false) => (
     <div key={c.id} className={reply ? "ml-5 mt-1.5 border-l-2 border-zinc-200 pl-2 dark:border-zinc-700" : ""}>
       <CommentItem root={root} reviewId={c.id} onChanged={onChanged} display={legacyFooter}
+        actions={<SendToAgent root={root} item={{ kind: "pr", number, title: prTitle, part: "review", url: c.url, author: c.author, file: c.path, line: c.line, body: c.body }} />}
         comment={{ author: { login: c.author }, body: c.body, createdAt: c.createdAt, url: c.url, viewerDidAuthor: c.mine }} />
     </div>
   );
