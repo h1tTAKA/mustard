@@ -2,13 +2,12 @@
 // PR 줄 리뷰 댓글(#1127) — 대화 탭에. 일반 댓글(gh pr view comments)엔 안 나오는 파일·줄 댓글(에이전트 리뷰로 올린 것 포함).
 // 파일:줄 누르면 가운데 PR diff. 답글(inReplyTo)은 원댓글 밑에 들여서.
 import { useEffect, useState } from "react";
-import { IconExternalLink, IconFile } from "@tabler/icons-react";
-import { useT, Markdown } from "@mustard/core";
-import { relTime } from "@/lib/relTime";
-import GhAvatar from "@/components/workspace/github/GhAvatar";
+import { IconFile } from "@tabler/icons-react";
+import { useT } from "@mustard/core";
+import CommentItem from "@/components/workspace/github/CommentItem";
 import { prReviewKey, PR_REVIEW_EVENT } from "@/lib/prReview";
 
-type LineComment = { id: number; path: string; line: number | null; outdated: boolean; body: string; author: string; createdAt: string; url: string; inReplyTo: number | null };
+type LineComment = { id: number; mine: boolean; path: string; line: number | null; outdated: boolean; body: string; author: string; createdAt: string; url: string; inReplyTo: number | null };
 
 export default function PrReviewComments({ root, number, reloadKey, onOpenFile }: { root: string; number: number; reloadKey: number; onOpenFile?: (file: string) => void }) {
   const t = useT();
@@ -30,15 +29,11 @@ export default function PrReviewComments({ root, number, reloadKey, onOpenFile }
   if (!list.length) return null;
   const tops = list.filter((c) => c.inReplyTo == null);
   const replies = (id: number) => list.filter((c) => c.inReplyTo === id);
+  // 한 개 = 공용 CommentItem(내 댓글만 수정·삭제, 리뷰 댓글 경로). 옛 <sub> 꼬리표는 기울임으로 보이게.
   const item = (c: LineComment, reply = false) => (
     <div key={c.id} className={reply ? "ml-5 mt-1.5 border-l-2 border-zinc-200 pl-2 dark:border-zinc-700" : ""}>
-      <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-        <GhAvatar login={c.author} />
-        <span className="font-medium text-zinc-700 dark:text-zinc-200">{c.author}</span>
-        <span>· {relTime(c.createdAt)}</span>
-        <a href={c.url} target="_blank" rel="noreferrer" className="ml-auto text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" aria-label="GitHub"><IconExternalLink size={12} aria-hidden /></a>
-      </div>
-      <div className="prose prose-sm mt-0.5 max-w-none text-[12px] leading-relaxed text-zinc-700 dark:prose-invert dark:text-zinc-200 prose-p:my-1"><Markdown>{c.body}</Markdown></div>
+      <CommentItem root={root} reviewId={c.id} onChanged={() => setTick((n) => n + 1)}
+        comment={{ author: { login: c.author }, body: c.body.replace(/<sub>([\s\S]*?)<\/sub>/g, "_$1_"), createdAt: c.createdAt, url: c.url, viewerDidAuthor: c.mine }} />
     </div>
   );
   return (

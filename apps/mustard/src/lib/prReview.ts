@@ -51,7 +51,7 @@ export function findingCommentBody(f: Pick<Finding, "title" | "body">, sevLabel:
     prev = out;
     out = out.replace(/!+\[/g, "[").replace(/<\/?(?:img|picture|source|video|audio|svg|object|embed|iframe|image|style)\b[^>]*>/gi, "");
   }
-  return out + "\n\n<sub>🤖 Mustard agent review</sub>";
+  return out + "\n\n_🤖 Mustard agent review_"; // HTML(<sub>) 대신 마크다운 — GitHub·Mustard 둘 다 같은 모양(유저)
 }
 
 const SEV = new Set<Severity>(["high", "medium", "low"]);

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld, IconLayoutKanban, IconMessageChatbot } from "@tabler/icons-react";
 import { isNunopiEnabled } from "@/lib/product";
 import { NunopiGlyph } from "@/components/brand/ModeSwapToggle";
-import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, withModel } from "@mustard/core";
+import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, GKEYS, withModel } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
 import FileTree from "@/components/workspace/FileTree";
 import CodePane from "@/components/workspace/CodePane";
@@ -100,6 +100,12 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const chatCards = useSetting<boolean>(CUKEYS.chatCards, CATCHUP_DEFAULTS.chatCards);
   const chatPid = (chatProvider || providerId) as AgentProviderKind;
   const chatPs = useMemo(() => withModel(providerSettings, chatPid, chatModel), [providerSettings, chatPid, chatModel]);
+  // #1127 PR 에이전트 리뷰 AI·모델(설정 > 연동 > GitHub)
+  const prReviewProvider = useSetting<string>(GKEYS.prReviewProvider, "");
+  const prReviewModel = useSetting<string>(GKEYS.prReviewModel, "");
+  const prPid = (prReviewProvider || providerId) as AgentProviderKind;
+  const prPs = useMemo(() => withModel(providerSettings, prPid, prReviewModel), [providerSettings, prPid, prReviewModel]);
+  const prAgent = useMemo(() => ({ providerId: prPid, providerSettings: prPs }), [prPid, prPs]);
   const { locale } = useLocale(); // #1091 실시간 해설·용어도 앱 언어로(서버가 localStorage 못 읽음)
   useEffect(() => {
     void fetch("/api/repo/learn/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ narration: catchupOn && explainAnalyze, provider: explainProvider || providerId, model: explainModel, locale }) })
@@ -821,7 +827,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
             <aside style={{ width: chatW }} className="flex shrink-0 flex-col border-l border-zinc-200 dark:border-zinc-800">
               {/* 우측 패널 모드(#811·#855) — 질문(Chat) ↔ GitHub ↔ 캐치업 배타 렌더. 토글은 상단 헤더. */}
               {rightMode === "github" ? (
-                <GithubPanel root={path} ciDot={ciDot} onOpenPrDiff={(pr, file) => openCodeTab({ kind: "diff", pr, file })} agent={{ providerId, providerSettings }} />
+                <GithubPanel root={path} ciDot={ciDot} onOpenPrDiff={(pr, file) => openCodeTab({ kind: "diff", pr, file })} agent={prAgent} />
               ) : rightMode === "crew" ? (
                 <CrewChat key={path} root={path} />
               ) : rightMode === "learn" ? (

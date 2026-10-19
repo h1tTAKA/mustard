@@ -659,16 +659,18 @@ ipcMain.handle("github:add-comment", (_e, { cwd, kind, number, body }) => {
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: [sub, "comment", String(n), "--body", body] }); // no-shell, body는 인자(개행·특수문자 안전)
 });
 // 코멘트 수정/삭제(#820) — issue·PR 대화 코멘트는 공통 issues/comments 엔드포인트. commentId=url의 issuecomment id.
-ipcMain.handle("github:edit-comment", (_e, { cwd, commentId, body }) => {
+// kind "review"(#1127) = PR 줄 리뷰 댓글(pulls/comments), 그 외 = 대화 댓글(issues/comments).
+const commentPath = (kind, id) => `repos/{owner}/{repo}/${kind === "review" ? "pulls" : "issues"}/comments/${id}`;
+ipcMain.handle("github:edit-comment", (_e, { cwd, commentId, body, kind }) => {
   const id = Number(commentId);
   if (!Number.isInteger(id) || id <= 0) return { ok: false, kind: "error", detail: "invalid comment id" };
   if (typeof body !== "string" || !body.trim()) return { ok: false, kind: "error", detail: "empty body" };
-  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "PATCH", `repos/{owner}/{repo}/issues/comments/${id}`, "-f", `body=${body}`] });
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "PATCH", commentPath(kind, id), "-f", `body=${body}`] });
 });
-ipcMain.handle("github:delete-comment", (_e, { cwd, commentId }) => {
+ipcMain.handle("github:delete-comment", (_e, { cwd, commentId, kind }) => {
   const id = Number(commentId);
   if (!Number.isInteger(id) || id <= 0) return { ok: false, kind: "error", detail: "invalid comment id" };
-  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "DELETE", `repos/{owner}/{repo}/issues/comments/${id}`] });
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "DELETE", commentPath(kind, id)] });
 });
 // 코멘트 리액션 토글(#820) — 이미 내가 단 리액션이면 삭제, 아니면 추가. content=REST명(+1,-1,laugh…).
 const REACTION_CONTENT = new Set(["+1", "-1", "laugh", "hooray", "confused", "heart", "rocket", "eyes"]);
@@ -797,6 +799,21 @@ ipcMain.handle("github:pr-line-comment", async (_e, { cwd, number, path, line, b
   if (!r.ok) return r;
   return { ok: true, data: { id: r.data?.id, url: r.data?.html_url } };
 });
+// PR 리뷰 한 번에(#1127, 유저 요청) — 여러 지적을 GitHub 리뷰 1건(COMMENT)의 줄 댓글들로. JSON 본문은 임시 파일(--input, 0600)로 넘기고 바로 지움.
+ipcMain.handle("github:pr-review-submit", async (_e, { cwd, number, commitId, comments }) => {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
+  if (typeof commitId !== "string" || !/^[0-9a-f]{40}$/.test(commitId)) return { ok: false, kind: "error", detail: "no head commit" };
+  const list = Array.isArray(comments) ? comments.filter((c) => c && typeof c.path === "string" && c.path && Number.isInteger(c.line) && c.line > 0 && typeof c.body === "string" && c.body.trim()) : [];
+  if (!list.length || list.length > 100) return { ok: false, kind: "error", detail: "invalid comments" };
+  const file = require("node:path").join(require("node:os").tmpdir(), `mustard-review-${process.pid}-${Date.now()}.json`);
+  try {
+    writeFileSync(file, JSON.stringify({ commit_id: commitId, event: "COMMENT", comments: list.map((c) => ({ path: c.path, line: c.line, side: "RIGHT", body: c.body })) }), { mode: 0o600 });
+    const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/pulls/${n}/reviews`, "--input", file] });
+    if (!r.ok) return r;
+    return { ok: true, data: { id: r.data?.id, url: r.data?.html_url } };
+  } finally { try { rmSync(file, { force: true }); } catch { /* ignore */ } }
+});
 // PR 줄 리뷰 댓글 목록(#1127) — 대화 탭에 파일:줄과 함께. 코드가 바뀌어 위치가 사라진 댓글(line null)은 outdated.
 ipcMain.handle("github:pr-line-comments", async (_e, { cwd, number }) => {
   const n = Number(number);
@@ -804,7 +821,8 @@ ipcMain.handle("github:pr-line-comments", async (_e, { cwd, number }) => {
   const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "--paginate", "--slurp", `repos/{owner}/{repo}/pulls/${n}/comments`] });
   if (!r.ok) return r;
   const all = Array.isArray(r.data) ? r.data.flat() : [];
-  return { ok: true, data: all.map((c) => ({ id: c.id, path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
+  const me = await viewerLogin(cwd); // 내 댓글만 수정·삭제 버튼
+  return { ok: true, data: all.map((c) => ({ id: c.id, mine: !!me && c.user?.login === me, path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
 });
 ipcMain.handle("github:pr-create", (_e, { cwd, base, head, title, body, draft }) => {
   if (!title || typeof title !== "string" || !title.trim()) return { ok: false, kind: "error", detail: "title required" };

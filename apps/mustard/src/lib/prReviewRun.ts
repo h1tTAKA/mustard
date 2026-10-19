@@ -113,6 +113,26 @@ export async function postFinding(root: string, pr: number, f: Finding, locale: 
   } finally { posting.delete(f.id); }
 }
 
+// 남은 지적 전부를 GitHub 리뷰 1건으로 한 번에(#1127, 유저 요청). 리뷰한 커밋 기준 — 모르면(옛 저장분) 다시 리뷰 필요.
+export async function postAllFindings(root: string, pr: number, locale: string): Promise<PrReview> {
+  const cur = loadPrReview(root, pr);
+  const todo = (cur?.findings ?? []).filter((x) => x.status === "open" && !posting.has(x.id));
+  if (!cur || !todo.length) throw new Error("gone");
+  if (!cur.head) throw new Error("head changed");
+  const submit = window.nunopiDesktop?.github?.prReviewSubmit;
+  if (!submit) throw new Error("desktop only");
+  for (const x of todo) posting.add(x.id);
+  try {
+    const r = await submit(root, pr, cur.head, todo.map((x) => ({ path: x.file, line: x.line, body: findingCommentBody(x, translate(locale, `prReview.sev.${x.severity}`)) })));
+    if (!r.ok) throw new Error(r.detail || "post failed");
+    const ids = new Set(todo.map((x) => x.id));
+    const now = loadPrReview(root, pr);
+    if (!now) throw new Error("posted-unsaved");
+    try { return save(root, pr, { ...now, findings: now.findings.map((x) => (ids.has(x.id) ? { ...x, status: "adopted", ...(r.data?.url ? { url: r.data.url } : {}) } : x)) }); }
+    catch { throw new Error("posted-unsaved"); }
+  } finally { for (const x of todo) posting.delete(x.id); }
+}
+
 // 버림·되돌리기
 export function setFindingStatus(root: string, pr: number, id: string, status: Finding["status"]): PrReview | null {
   const cur = loadPrReview(root, pr);

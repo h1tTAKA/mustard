@@ -211,11 +211,39 @@ export default function SettingsDrawer({
     diff: [CUKEYS.diffProvider, useSetting<string>(CUKEYS.diffProvider, ""), CUKEYS.diffModel, useSetting<string>(CUKEYS.diffModel, "")],
     session: [CUKEYS.sessionsProvider, useSetting<string>(CUKEYS.sessionsProvider, ""), CUKEYS.sessionsModel, useSetting<string>(CUKEYS.sessionsModel, "")],
     chat: [CUKEYS.chatProvider, useSetting<string>(CUKEYS.chatProvider, ""), CUKEYS.chatModel, useSetting<string>(CUKEYS.chatModel, "")], // #1081 질문 화면
+    prReview: [GKEYS.prReviewProvider, useSetting<string>(GKEYS.prReviewProvider, ""), GKEYS.prReviewModel, useSetting<string>(GKEYS.prReviewModel, "")], // #1127 PR 에이전트 리뷰(연동 > GitHub에서 고름)
+  };
+  // AI·모델 고르기 한 줄(캐치업 카테고리·PR 에이전트 리뷰 공용) — "" = 워크스페이스 기본 AI / 그 AI 기본 모델
+  const aiPick = (label: string, pKey: string, pVal: string, mKey: string, mVal: string, disabled: boolean) => {
+    const eff = (pVal || resolveModeProvider(modeProviders, "default")) as AgentProviderKind; const list = modelLists[eff]; const listed = typeof list === "object" ? list : undefined;
+    return (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    <div className="relative w-52">
+                      <select value={pVal} onChange={(e) => { setSetting(pKey, e.target.value); setSetting(mKey, ""); }} disabled={disabled}
+                        aria-label={`${label} ${t("settings.catchupProvider")}`}
+                        className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 pr-8 text-xs text-zinc-900 outline-none transition focus:border-zinc-400 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-500">
+                        <option value="">{t("settings.catchupProviderDefault")}</option>
+                        {PROVIDER_CATALOG.map((p) => (<option key={p.id} value={p.id}>{t(`provider.${p.id}`)}</option>))}
+                      </select>
+                      <IconChevronDown size={14} stroke={2} aria-hidden className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
+                    </div>
+                    {/* 모델 — "" = 그 AI 기본 모델. 목록은 /api/agent/models(학습모듈 모델 선택과 같은 캐시) */}
+                    <div className="relative w-52">
+                      <select value={mVal} onChange={(e) => setSetting(mKey, e.target.value)} disabled={disabled || !listed}
+                        aria-label={`${label} ${t("settings.catchupModel")}`}
+                        className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 pr-8 text-xs text-zinc-900 outline-none transition focus:border-zinc-400 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-500">
+                        <option value="">{list === "loading" ? "…" : t("settings.catchupModelDefault", { name: listed?.models.find((x) => x.id === listed.defaultModel)?.label ?? listed?.defaultModel ?? "" })}</option>
+                        {listed?.models.map((m) => (<option key={m.id} value={m.id}>{m.label}{m.latest ? ` (${t("settings.modelLatest")})` : ""}</option>))}
+                      </select>
+                      <IconChevronDown size={14} stroke={2} aria-hidden className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
+                    </div>
+                  </div>
+    );
   };
   // 캐치업 카테고리 모델 목록(#1062) — 캐치업 섹션 열 때 쓰이는 프로바이더만 같은 캐시로 조회.
   const cuProviders = [...new Set(Object.values(cuProv).map(([, v]) => (v || resolveModeProvider(modeProviders, "default")) as AgentProviderKind))].sort().join(",");
   useEffect(() => {
-    if (activeSection !== "set-catchup") return;
+    if (activeSection !== "set-catchup" && activeSection !== "set-integrations") return;
     for (const p of cuProviders.split(",") as AgentProviderKind[]) {
       if (modelLists[p]) continue;
       setModelLists((prev) => ({ ...prev, [p]: "loading" }));
@@ -947,29 +975,7 @@ export default function SettingsDrawer({
                   <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{row.label}</span>
                   <p className="text-xs text-zinc-400 dark:text-zinc-500">{row.desc}</p>
                   {/* 카테고리별 AI(#1062) — 용어는 해설·명령어 응답에서 모아서 따로 없음 */}
-                  {cuProv[row.id] && (() => { const [pKey, pVal, mKey, mVal] = cuProv[row.id]; const eff = (pVal || resolveModeProvider(modeProviders, "default")) as AgentProviderKind; const list = modelLists[eff]; const listed = typeof list === "object" ? list : undefined; return (
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    <div className="relative w-52">
-                      <select value={pVal} onChange={(e) => { setSetting(pKey, e.target.value); setSetting(mKey, ""); }} disabled={!cuOn}
-                        aria-label={`${row.label} ${t("settings.catchupProvider")}`}
-                        className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 pr-8 text-xs text-zinc-900 outline-none transition focus:border-zinc-400 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-500">
-                        <option value="">{t("settings.catchupProviderDefault")}</option>
-                        {PROVIDER_CATALOG.map((p) => (<option key={p.id} value={p.id}>{t(`provider.${p.id}`)}</option>))}
-                      </select>
-                      <IconChevronDown size={14} stroke={2} aria-hidden className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
-                    </div>
-                    {/* 모델 — "" = 그 AI 기본 모델. 목록은 /api/agent/models(학습모듈 모델 선택과 같은 캐시) */}
-                    <div className="relative w-52">
-                      <select value={mVal} onChange={(e) => setSetting(mKey, e.target.value)} disabled={!cuOn || !listed}
-                        aria-label={`${row.label} ${t("settings.catchupModel")}`}
-                        className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 pr-8 text-xs text-zinc-900 outline-none transition focus:border-zinc-400 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-500">
-                        <option value="">{list === "loading" ? "…" : t("settings.catchupModelDefault", { name: listed?.models.find((x) => x.id === listed.defaultModel)?.label ?? listed?.defaultModel ?? "" })}</option>
-                        {listed?.models.map((m) => (<option key={m.id} value={m.id}>{m.label}{m.latest ? ` (${t("settings.modelLatest")})` : ""}</option>))}
-                      </select>
-                      <IconChevronDown size={14} stroke={2} aria-hidden className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
-                    </div>
-                  </div>
-                  ); })()}
+                  {cuProv[row.id] && (() => { const [pKey, pVal, mKey, mVal] = cuProv[row.id]; return aiPick(row.label, pKey, pVal, mKey, mVal, !cuOn); })()}
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   {(row.toggles ?? [["show", t("settings.catchupShow"), row.show!], ["analyze", t("settings.catchupAnalyze"), row.analyze!]]).map(([k, cap, [key, stored]]) => { const on = cuOn && stored; return (
@@ -1029,6 +1035,12 @@ export default function SettingsDrawer({
                       className="shrink-0 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] text-zinc-500 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">{t("settings.clear")}</button>
                   ) : null}
                 </div>
+              </div>
+              {/* #1127 PR 에이전트 리뷰 AI·모델(Files changed의 에이전트 리뷰) */}
+              <div className="border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.prReviewAi")}</span>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.prReviewAiDesc")}</p>
+                {aiPick(t("settings.prReviewAi"), ...cuProv.prReview, false)}
               </div>
             </div>
             {/* GitLab 카드(#960) — glab CLI 감지 */}

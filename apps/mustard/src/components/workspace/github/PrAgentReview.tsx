@@ -7,7 +7,7 @@ import { useT, useLocale, Markdown } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { relTime } from "@/lib/relTime";
 import { loadPrReview, prReviewKey, PR_REVIEW_EVENT, type Finding, type PrReview } from "@/lib/prReview";
-import { runPrReview, retryFinding, setFindingStatus, prReviewInflight, postFinding } from "@/lib/prReviewRun";
+import { runPrReview, retryFinding, setFindingStatus, prReviewInflight, postFinding, postAllFindings } from "@/lib/prReviewRun";
 
 const SEV_CLS: Record<Finding["severity"], string> = {
   high: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
@@ -67,6 +67,15 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
     catch (e) { const m = String((e as Error)?.message || e); if (mounted.current) setErr(m === "posted-unsaved" ? t("prReview.postedUnsaved") : m === "gone" ? t("prReview.gone") : t("prReview.postFailed", { msg: m })); }
     finally { if (mounted.current) setBusy((b) => { const n = new Set(b); n.delete(f.id); return n; }); }
   };
+  // 남은 지적 전부를 GitHub 리뷰 1건으로(유저 요청)
+  const [postingAll, setPostingAll] = useState(false);
+  const adoptAll = async () => {
+    if (postingAll) return;
+    setPostingAll(true); setErr(null);
+    try { const r = await postAllFindings(root, number, locale); if (mounted.current) setRev(r); }
+    catch (e) { const m = String((e as Error)?.message || e); if (mounted.current) setErr(m === "posted-unsaved" ? t("prReview.postedUnsaved") : m === "head changed" ? t("prReview.headChanged") : t("prReview.postFailed", { msg: m })); }
+    finally { if (mounted.current) setPostingAll(false); }
+  };
   const mark = (f: Finding, status: Finding["status"]) => { const r = setFindingStatus(root, number, f.id, status); if (r) setRev(r); else setErr(t("prReview.saveFailed")); };
 
   const findings = rev?.findings ?? [];
@@ -123,7 +132,13 @@ export default function PrAgentReview({ root, number, providerId, providerSettin
         </section>
       )}
 
-      {/* 지적 목록 */}
+      {/* 지적 목록 — 남은 게 2개 이상이면 한 번에 올리기 */}
+      {open.length > 1 && (
+        <button type="button" onClick={() => void adoptAll()} disabled={postingAll || busy.size > 0}
+          className="inline-flex items-center gap-1.5 self-start rounded-md border border-mustard-500/40 bg-mustard-500/10 px-2 py-0.5 text-[11px] font-semibold text-mustard-700 transition hover:bg-mustard-500/20 disabled:opacity-60 dark:text-mustard-400">
+          {postingAll ? <IconLoader2 size={12} className="animate-spin" aria-hidden /> : <IconMessagePlus size={12} stroke={2} aria-hidden />}{t("prReview.adoptAll", { n: open.length })}
+        </button>
+      )}
       {rev && !running && open.length === 0 && adopted.length === 0 && <p className="text-[11.5px] italic text-zinc-400 dark:text-zinc-500">{t("prReview.none")}</p>}
       {groups.map((g) => (
         <section key={g.file}>

@@ -66,8 +66,8 @@ interface NunopiDesktopApi {
     checkAnnotations(cwd: string, checkRunId: string): Promise<GhResult<GhAnnotation[]>>;  // #812
     jobSteps(cwd: string, jobId: string): Promise<GhResult<{ steps?: GhJobStep[] }>>;  // #812
     addComment(cwd: string, kind: "issue" | "pr", number: number, body: string): Promise<{ ok: boolean; stdout?: string; kind?: string; detail?: string }>;  // #820
-    editComment(cwd: string, commentId: string, body: string): Promise<{ ok: boolean; stdout?: string; kind?: string; detail?: string }>;
-    deleteComment(cwd: string, commentId: string): Promise<{ ok: boolean; stdout?: string; kind?: string; detail?: string }>;
+    editComment(cwd: string, commentId: string, body: string, kind?: "issue" | "review"): Promise<{ ok: boolean; stdout?: string; kind?: string; detail?: string }>;
+    deleteComment(cwd: string, commentId: string, kind?: "issue" | "review"): Promise<{ ok: boolean; stdout?: string; kind?: string; detail?: string }>;
     react(cwd: string, commentId: string, content: string): Promise<{ ok: boolean; stdout?: string; kind?: string; detail?: string }>;  // content=+1|-1|laugh|hooray|confused|heart|rocket|eyes
     bodyReact(cwd: string, number: number, content: string): Promise<{ ok: boolean; kind?: string; detail?: string }>;  // #822 이슈/PR 본문 리액션
     editItem(cwd: string, kind: "issue" | "pr", number: number, title: string, body: string): Promise<{ ok: boolean; kind?: string; detail?: string }>;  // #822 제목·본문(빈 값은 미반영)
@@ -77,7 +77,8 @@ interface NunopiDesktopApi {
     prFileDiff?(cwd: string, number: number, path: string): Promise<{ ok: boolean; data?: { diff: string; missing?: boolean }; kind?: string; detail?: string }>;
     prFileViewed?(cwd: string, prId: string, path: string, viewed: boolean): Promise<{ ok: boolean; kind?: string; detail?: string }>;
     prLineComment?(cwd: string, number: number, path: string, line: number, body: string, commitId?: string): Promise<{ ok: boolean; data?: { id?: number; url?: string }; kind?: string; detail?: string }>;
-    prLineComments?(cwd: string, number: number): Promise<{ ok: boolean; data?: { id: number; path: string; line: number | null; outdated: boolean; body: string; author: string; createdAt: string; url: string; inReplyTo: number | null }[]; kind?: string; detail?: string }>;
+    prReviewSubmit?(cwd: string, number: number, commitId: string, comments: { path: string; line: number; body: string }[]): Promise<{ ok: boolean; data?: { id?: number; url?: string }; kind?: string; detail?: string }>;
+    prLineComments?(cwd: string, number: number): Promise<{ ok: boolean; data?: { id: number; mine: boolean; path: string; line: number | null; outdated: boolean; body: string; author: string; createdAt: string; url: string; inReplyTo: number | null }[]; kind?: string; detail?: string }>;
     merge(cwd: string, number: number, method: "merge" | "squash" | "rebase"): Promise<{ ok: boolean; kind?: string; detail?: string }>;  // #822 PR 머지(--delete-branch)
     prCreate(cwd: string, opts: { base?: string; head?: string; title: string; body?: string; draft?: boolean }): Promise<{ ok: boolean; stdout?: string; kind?: string; detail?: string }>;  // #944 성공 시 stdout=PR URL
     setToken(token: string): Promise<{ ok: boolean; detail?: string }>;  // #826 PAT 폴백 저장(safeStorage 암호화)
