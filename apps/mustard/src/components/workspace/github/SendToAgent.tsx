@@ -34,7 +34,7 @@ export default function SendToAgent({ root, item, size = 12 }: { root: string; i
       if (!r.ok) { toast(r.reason === "no-agent" ? t("browser.pickNoAgent") : t("github.sendFailed"), "error"); return; } // 진짜 오류를 "터미널 없음"으로 감추지 않게
       requestTerminalFocus(root, r.id); // 보낸 터미널 탭으로
       toast(t("github.sentToAgent"), "success"); done();
-    } finally { setBusy(null); }
+    } catch { toast(t("github.sendFailed"), "error"); } finally { setBusy(null); }
   };
   const toCrew = async (role: string) => {
     if (busy) return;

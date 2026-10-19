@@ -1377,13 +1377,13 @@ ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, text } = {})
     return (c === root || c.startsWith(root + "/")) && s.process !== undefined && !isShellProc(s.process) && agentForId(s.id, s.process, s.screen);
   });
   let ss;
-  try { ss = await live(); } catch { return { ok: false, reason: "no-agent" }; }
+  try { ss = await live(); } catch { return { ok: false, reason: "error" }; } // 데몬·목록 실패는 "터미널 없음"과 구분(#1129 리뷰)
   const target = ss.find((s) => s.id === preferId) ?? ss[0];
   if (!target) return { ok: false, reason: "no-agent" };
   const body = text.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, ""); // ESC 등 제거(붙여넣기 조기 종료 방지) — 렌더러도 하지만 신뢰 경계라 한 번 더
   termClient.input({ id: target.id, data: `\x1b[200~${body}\x1b[201~` });
   await new Promise((r) => setTimeout(r, 150)); // TUI가 붙여넣기를 다 받은 뒤 Enter
-  try { if (!(await live()).some((s) => s.id === target.id)) return { ok: false, reason: "no-agent" }; } catch { return { ok: false, reason: "no-agent" }; } // 그 사이 셸로 바뀌었으면 Enter 안 침
+  try { if (!(await live()).some((s) => s.id === target.id)) return { ok: false, reason: "no-agent" }; } catch { return { ok: false, reason: "error" }; } // 그 사이 셸로 바뀌었으면 Enter 안 침
   termClient.input({ id: target.id, data: "\r" });
   return { ok: true, id: target.id };
 });
