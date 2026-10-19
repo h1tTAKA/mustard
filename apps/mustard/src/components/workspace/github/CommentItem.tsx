@@ -61,11 +61,14 @@ export default function CommentItem({ root, comment, onChanged, reviewId, displa
         <GhAvatar login={comment.author?.login} size={16} />
         <span>{comment.author?.login}</span>
         {comment.createdAt && <span>· {relTime(comment.createdAt)}</span>}
-        {actions && mode === "view" && <span className="ml-auto flex items-center">{actions}</span>}
-        {canEdit && mode === "view" && (
-          <span className={`${actions && mode === "view" ? "" : "ml-auto "}flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100`}>
-            <button type="button" onClick={() => { setDraft(comment.body); setMode("edit"); }} className="rounded p-0.5 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-200" title={t("github.edit")} aria-label={t("github.edit")}><IconPencil size={12} stroke={2} aria-hidden /></button>
-            <button type="button" onClick={() => setMode("confirmDelete")} className="rounded p-0.5 hover:bg-rose-100 hover:text-rose-600 dark:hover:bg-rose-900/40 dark:hover:text-rose-400" title={t("github.delete")} aria-label={t("github.delete")}><IconTrash size={12} stroke={2} aria-hidden /></button>
+        {/* 보내기·수정·삭제 — 늘 보이고, 제목 줄 아이콘과 같은 모양(배경 없이 색만, 유저) */}
+        {mode === "view" && (actions || canEdit) && (
+          <span className="ml-auto flex items-center gap-1.5">
+            {actions}
+            {canEdit && (<>
+              <button type="button" onClick={() => { setDraft(comment.body); setMode("edit"); }} className="shrink-0 text-zinc-400 transition hover:text-zinc-600 dark:hover:text-zinc-200" title={t("github.edit")} aria-label={t("github.edit")}><IconPencil size={12} stroke={2} aria-hidden /></button>
+              <button type="button" onClick={() => setMode("confirmDelete")} className="shrink-0 text-zinc-400 transition hover:text-rose-500 dark:hover:text-rose-400" title={t("github.delete")} aria-label={t("github.delete")}><IconTrash size={12} stroke={2} aria-hidden /></button>
+            </>)}
           </span>
         )}
       </div>
