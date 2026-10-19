@@ -60,7 +60,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     addComment: (cwd, kind, number, body) => ipcRenderer.invoke("github:add-comment", { cwd, kind, number, body }),  // #820
     editComment: (cwd, commentId, body, kind) => ipcRenderer.invoke("github:edit-comment", { cwd, commentId, body, kind }),  // #820
     deleteComment: (cwd, commentId, kind) => ipcRenderer.invoke("github:delete-comment", { cwd, commentId, kind }),
-    react: (cwd, commentId, content) => ipcRenderer.invoke("github:react", { cwd, commentId, content }),  // #820 리액션 토글
+    react: (cwd, commentId, content, kind) => ipcRenderer.invoke("github:react", { cwd, commentId, content, kind }),  // #820 리액션 토글
     bodyReact: (cwd, number, content) => ipcRenderer.invoke("github:body-react", { cwd, number, content }),  // #822 본문 리액션
     editItem: (cwd, kind, number, title, body) => ipcRenderer.invoke("github:edit-item", { cwd, kind, number, title, body }),  // #822 제목·본문
     setState: (cwd, kind, number, action) => ipcRenderer.invoke("github:set-state", { cwd, kind, number, action }),

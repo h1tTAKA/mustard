@@ -14,7 +14,7 @@ function parseCommentId(url: string | undefined): string | null {
   return m ? m[1] : null;
 }
 
-// reviewId(#1127) = PR 줄 리뷰 댓글 id — 수정·삭제 경로가 다름(pulls/comments), 리액션은 안 붙임.
+// reviewId(#1127) = PR 줄 리뷰 댓글 id — 수정·삭제·리액션 경로가 다름(pulls/comments).
 // display = 보여 줄 때만 바꿀 글(수정 초안·저장은 원문 그대로). actions = 머리줄 오른쪽에 늘 보이는 버튼(#1129 종이비행기).
 export default function CommentItem({ root, comment, onChanged, reviewId, display, actions }: { root: string; comment: GhComment; onChanged: () => void; reviewId?: number; display?: (body: string) => string; actions?: ReactNode }) {
   const t = useT();
@@ -32,7 +32,7 @@ export default function CommentItem({ root, comment, onChanged, reviewId, displa
 
   const react = async (content: string) => {
     if (!id) return;
-    const r = await gh()?.react?.(root, id, content);
+    const r = await gh()?.react?.(root, id, content, kind);
     if (!mountedRef.current) return;
     if (r?.ok) onChanged(); else setError(r?.detail || t("github.error"));
   };
@@ -90,7 +90,7 @@ export default function CommentItem({ root, comment, onChanged, reviewId, displa
       )}
 
       {/* 리액션(#820) — 공용 ReactionBar. */}
-      {mode !== "edit" && id && !reviewId && <div className="mt-1.5"><ReactionBar groups={comment.reactionGroups} onReact={(c) => void react(c)} /></div>}
+      {mode !== "edit" && id && <div className="mt-1.5"><ReactionBar groups={comment.reactionGroups} onReact={(c) => void react(c)} /></div>}
 
       {mode === "confirmDelete" && (
         <div className="mt-1.5 flex items-center gap-2 rounded-md bg-rose-50 px-2 py-1 text-[11px] text-rose-600 dark:bg-rose-900/20 dark:text-rose-400">

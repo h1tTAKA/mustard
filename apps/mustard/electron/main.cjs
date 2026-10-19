@@ -679,15 +679,17 @@ async function viewerLogin(cwd) {
   const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "user", "--jq", "{login: .login}"] });
   return r.ok ? (r.data?.login || null) : null;
 }
-ipcMain.handle("github:react", async (_e, { cwd, commentId, content }) => {
+// kind "review"(#1129) = 줄 리뷰 댓글 리액션(pulls/comments/{id}/reactions)
+ipcMain.handle("github:react", async (_e, { cwd, commentId, content, kind }) => {
   const id = Number(commentId);
   if (!Number.isInteger(id) || id <= 0) return { ok: false, kind: "error", detail: "invalid comment id" };
   if (!REACTION_CONTENT.has(content)) return { ok: false, kind: "error", detail: "invalid reaction" };
+  const base = `${commentPath(kind, id)}/reactions`;
   const login = await viewerLogin(cwd);
-  const list = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", `repos/{owner}/{repo}/issues/comments/${id}/reactions`] });
+  const list = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", base] });
   const mine = list.ok && Array.isArray(list.data) ? list.data.find((r) => r.content === content && r.user?.login === login) : null;
-  if (mine) return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "DELETE", `repos/{owner}/{repo}/issues/comments/${id}/reactions/${mine.id}`] });
-  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/issues/comments/${id}/reactions`, "-f", `content=${content}`] });
+  if (mine) return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "DELETE", `${base}/${mine.id}`] });
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", base, "-f", `content=${content}`] });
 });
 // 이슈·PR 본문 리액션 토글(#822) — issues/{n}/reactions(PR도 공통). 코멘트 토글과 동일 로직.
 ipcMain.handle("github:body-react", async (_e, { cwd, number, content }) => {
@@ -851,7 +853,10 @@ ipcMain.handle("github:pr-line-comments", async (_e, { cwd, number }) => {
     if (!rt.pageInfo?.hasNextPage) break;
     after = rt.pageInfo.endCursor;
   }
-  return { ok: true, data: all.map((c) => ({ id: c.id, mine: !!me && c.user?.login === me, ...(threads.get(c.id) ?? {}), path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
+  // REST 리액션 요약({"+1": n, …}) → 대화 댓글과 같은 reactionGroups 모양(ReactionBar 공용)
+  const RX = { "+1": "THUMBS_UP", "-1": "THUMBS_DOWN", laugh: "LAUGH", hooray: "HOORAY", confused: "CONFUSED", heart: "HEART", rocket: "ROCKET", eyes: "EYES" };
+  const groups = (rx) => Object.entries(RX).map(([k, e]) => ({ content: e, users: { totalCount: Number(rx?.[k]) || 0 } }));
+  return { ok: true, data: all.map((c) => ({ id: c.id, mine: !!me && c.user?.login === me, reactionGroups: groups(c.reactions), ...(threads.get(c.id) ?? {}), path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
 });
 ipcMain.handle("github:pr-create", (_e, { cwd, base, head, title, body, draft }) => {
   if (!title || typeof title !== "string" || !title.trim()) return { ok: false, kind: "error", detail: "title required" };

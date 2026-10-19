@@ -12,7 +12,7 @@ import { prReviewKey, PR_REVIEW_EVENT } from "@/lib/prReview";
 // 옛 에이전트 꼬리표(<sub>🤖 Mustard agent review</sub>)만 기울임으로 보이게 — 다른 <sub>·원문은 그대로
 const legacyFooter = (b: string) => b.replace("<sub>🤖 Mustard agent review</sub>", "_🤖 Mustard agent review_");
 
-type LineComment = { id: number; mine: boolean; threadId?: string; resolved?: boolean; path: string; line: number | null; outdated: boolean; body: string; author: string; createdAt: string; url: string; inReplyTo: number | null };
+type LineComment = { id: number; mine: boolean; reactionGroups?: GhReactionGroup[]; threadId?: string; resolved?: boolean; path: string; line: number | null; outdated: boolean; body: string; author: string; createdAt: string; url: string; inReplyTo: number | null };
 
 export default function PrReviewComments({ root, number, prTitle = "", reloadKey, onOpenFile }: { root: string; number: number; prTitle?: string; reloadKey: number; onOpenFile?: (file: string) => void }) {
   const t = useT();
@@ -75,7 +75,7 @@ function Thread({ root, number, prTitle, top, replies, onOpenFile, onChanged }: 
     <div key={c.id} className={reply ? "ml-5 mt-1.5 border-l-2 border-zinc-200 pl-2 dark:border-zinc-700" : ""}>
       <CommentItem root={root} reviewId={c.id} onChanged={onChanged} display={legacyFooter}
         actions={<SendToAgent root={root} item={{ kind: "pr", number, title: prTitle, part: "review", url: c.url, author: c.author, file: c.path, line: c.line, body: c.body }} />}
-        comment={{ author: { login: c.author }, body: c.body, createdAt: c.createdAt, url: c.url, viewerDidAuthor: c.mine }} />
+        comment={{ author: { login: c.author }, body: c.body, createdAt: c.createdAt, url: c.url, viewerDidAuthor: c.mine, reactionGroups: c.reactionGroups }} />
     </div>
   );
   const btn = "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium transition disabled:opacity-50";
@@ -98,7 +98,7 @@ function Thread({ root, number, prTitle, top, replies, onOpenFile, onChanged }: 
         {item(top)}
         {replies.map((r) => item(r, true))}
         {replying ? (
-          <div className="ml-5 mt-2 flex flex-col gap-1">
+          <div className="mt-2 flex flex-col gap-1">
             <textarea value={draft} onChange={(e) => setDraft(e.target.value)} disabled={busy === "reply"} rows={3} autoFocus placeholder={t("github.replyPlaceholder")}
               onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void sendReply(); } }}
               className="w-full resize-y rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[12px] text-zinc-700 outline-none focus:border-mustard-500/60 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200" />
