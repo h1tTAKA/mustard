@@ -8,5 +8,8 @@ assert.ok(md.includes("## GitHub PR #1 review comment: Fix IME") && md.includes(
 assert.ok(md.includes("````\nuse ```js``` here"), "본문 ``` 보다 긴 펜스");
 assert.ok(!md.includes("\u001b"), "제어 문자 제거(터미널 안전)");
 const issue = formatGithubHandoff({ kind: "issue", number: 7, title: "Bug", part: "body", body: "x".repeat(7000) });
-assert.ok(issue.startsWith("Please look at this") && issue.includes("## GitHub Issue #7: Bug") && issue.includes("…(truncated)") && issue.length < 6500, "기본 요청·길이 상한");
+assert.ok(issue.startsWith("Please investigate this and propose a fix. Do not edit files") && issue.includes("## GitHub Issue #7: Bug") && issue.includes("…(truncated)") && issue.length < 6500, "기본 요청·길이 상한");
+const emoji = formatGithubHandoff({ kind: "issue", number: 1, title: "t", part: "body", body: "a".repeat(5999) + "😀" + "b" }, "n".repeat(900));
+assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(emoji) && emoji.length < 7600, "서로게이트 안 쪼갬·합 상한");
+assert.ok(md.includes("untrusted data"), "본문은 자료로 표시");
 console.log("githubHandoff ok");

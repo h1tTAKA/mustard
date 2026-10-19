@@ -15,7 +15,6 @@ export default function SendToAgent({ root, item, size = 12 }: { root: string; i
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState<string | null>(null); // "term" | 역할 id
-  const [roles] = useCrewRoles();
   const box = useRef<HTMLDivElement>(null);
   // 밖을 누르거나 Esc면 닫기
   useEffect(() => {
@@ -32,7 +31,7 @@ export default function SendToAgent({ root, item, size = 12 }: { root: string; i
     setBusy("term");
     try {
       const r = await sendToAgent(root, formatGithubHandoff(item, note));
-      if (!r.ok) { toast(t("browser.pickNoAgent"), "error"); return; }
+      if (!r.ok) { toast(r.reason === "no-agent" ? t("browser.pickNoAgent") : t("github.sendFailed"), "error"); return; } // 진짜 오류를 "터미널 없음"으로 감추지 않게
       requestTerminalFocus(root, r.id); // 보낸 터미널 탭으로
       toast(t("github.sentToAgent"), "success"); done();
     } finally { setBusy(null); }
@@ -41,7 +40,7 @@ export default function SendToAgent({ root, item, size = 12 }: { root: string; i
     if (busy) return;
     setBusy(role);
     try {
-      const text = `@${role} ${formatGithubHandoff(item, note)}`.slice(0, 8000); // Crew 메시지 상한
+      const text = `@${role} ${formatGithubHandoff(item, note)}`; // 덧붙인 말·제목·본문을 각각 잘라 8000자 안쪽(펜스 안 잘림)
       const j = await (await fetch("/api/crew/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, text }) })).json().catch(() => null);
       if (!j?.ok) { toast(t("crewchat.sendFailed"), "error"); return; }
       toast(j.created ? t("crewchat.created") : t("github.sentToCrew"), "success"); done();
@@ -63,19 +62,28 @@ export default function SendToAgent({ root, item, size = 12 }: { root: string; i
           <button type="button" onClick={() => void toTerminal()} disabled={!!busy} className={row}>
             {busy === "term" ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconTerminal2 size={13} stroke={2} aria-hidden />}{t("github.sendTerminal")}
           </button>
-          {roles.length > 0 && (<>
-            <p className="mb-0.5 mt-1.5 px-2 text-[10px] font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Crew</p>
-            <div className="max-h-48 overflow-y-auto">
-              {roles.map((r) => (
-                <button key={r.id} type="button" onClick={() => void toCrew(r.id)} disabled={!!busy} className={row}>
-                  {busy === r.id ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <RoleIcon role={r.id} size={13} />}
-                  <span className="truncate">{roleName(t, roles, r.id)}</span><span className="ml-auto shrink-0 font-mono text-[10px] text-zinc-400">@{r.id}</span>
-                </button>
-              ))}
-            </div>
-          </>)}
+          <CrewTargets busy={busy} onPick={(id) => void toCrew(id)} />
         </div>
       )}
     </div>
   );
+}
+
+// Crew 역할 목록 — 팝오버를 열었을 때만 불러옴(댓글마다 버튼이 있어 미리 부르면 요청이 댓글 수만큼, 리뷰)
+function CrewTargets({ busy, onPick }: { busy: string | null; onPick: (role: string) => void }) {
+  const t = useT();
+  const [roles] = useCrewRoles();
+  if (!roles.length) return null;
+  const row = "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[11.5px] text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-800";
+  return (<>
+    <p className="mb-0.5 mt-1.5 px-2 text-[10px] font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Crew</p>
+    <div className="max-h-48 overflow-y-auto">
+      {roles.map((r) => (
+        <button key={r.id} type="button" onClick={() => onPick(r.id)} disabled={!!busy} className={row}>
+          {busy === r.id ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <RoleIcon role={r.id} size={13} />}
+          <span className="truncate">{roleName(t, roles, r.id)}</span><span className="ml-auto shrink-0 font-mono text-[10px] text-zinc-400">@{r.id}</span>
+        </button>
+      ))}
+    </div>
+  </>);
 }
