@@ -686,8 +686,9 @@ ipcMain.handle("github:react", async (_e, { cwd, commentId, content, kind }) => 
   if (!REACTION_CONTENT.has(content)) return { ok: false, kind: "error", detail: "invalid reaction" };
   const base = `${commentPath(kind, id)}/reactions`;
   const login = await viewerLogin(cwd);
-  const list = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", base] });
-  const mine = list.ok && Array.isArray(list.data) ? list.data.find((r) => r.content === content && r.user?.login === login) : null;
+  // 그 반응만 걸러 전 페이지(반응 30개 넘어도 내 것 찾게, #1129 리뷰)
+  const list = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "--paginate", "--slurp", `${base}?content=${encodeURIComponent(content)}&per_page=100`] });
+  const mine = list.ok && Array.isArray(list.data) ? list.data.flat().find((r) => r.content === content && r.user?.login === login) : null;
   if (mine) return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "DELETE", `${base}/${mine.id}`] });
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", base, "-f", `content=${content}`] });
 });
@@ -697,8 +698,8 @@ ipcMain.handle("github:body-react", async (_e, { cwd, number, content }) => {
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid number" };
   if (!REACTION_CONTENT.has(content)) return { ok: false, kind: "error", detail: "invalid reaction" };
   const login = await viewerLogin(cwd);
-  const list = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", `repos/{owner}/{repo}/issues/${n}/reactions`] });
-  const mine = list.ok && Array.isArray(list.data) ? list.data.find((r) => r.content === content && r.user?.login === login) : null;
+  const list = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "--paginate", "--slurp", `repos/{owner}/{repo}/issues/${n}/reactions?content=${encodeURIComponent(content)}&per_page=100`] });
+  const mine = list.ok && Array.isArray(list.data) ? list.data.flat().find((r) => r.content === content && r.user?.login === login) : null;
   if (mine) return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "DELETE", `repos/{owner}/{repo}/issues/${n}/reactions/${mine.id}`] });
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/issues/${n}/reactions`, "-f", `content=${content}`] });
 });

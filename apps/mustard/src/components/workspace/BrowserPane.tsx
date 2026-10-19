@@ -55,7 +55,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<{ el: PickedElement; shot?: string; pos: { left: number; top: number } } | null>(null);
   const [comment, setComment] = useState("");
-  const [sendState, setSendState] = useState<"idle" | "sending" | "no-agent">("idle");
+  const [sendState, setSendState] = useState<"idle" | "sending" | "no-agent" | "error">("idle");
   const pickGen = useRef(0); // 선택 회차 — 페이지 이동 뒤 늦게 끝난 옛 선택이 상태를 덮지 않게
   const editingRef = useRef(false); // 주소창 입력 중엔 페이지 이동으로 덮어쓰지 않음
   useEffect(() => { editingRef.current = editing; }, [editing]);
@@ -183,7 +183,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
     if (!picked || !comment.trim() || sendState === "sending") return;
     setSendState("sending");
     const r = await sendToAgent(repo, formatPickFeedback(picked.el, comment, picked.shot));
-    if (!r.ok) { setSendState("no-agent"); return; }
+    if (!r.ok) { setSendState(r.reason === "no-agent" ? "no-agent" : "error"); return; } // 데몬 실패를 "터미널 없음"으로 감추지 않게(#1129)
     setPicked(null); setSendState("idle");
     requestTerminalFocus(repo, r.id); // 보낸 터미널 탭으로 — 에이전트가 받는 걸 보이게
   };
@@ -241,12 +241,12 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
                 : picked.el.sources[0]
                   ? `${picked.el.sources[0].file.split("/").pop()}:${picked.el.sources[0].line} · ${picked.el.tag}`
                   : `${picked.el.react[0] ? `${picked.el.react[0]} · ` : ""}${picked.el.tag}${picked.el.text ? ` "${picked.el.text.slice(0, 40)}"` : ""}`}</div>
-              <textarea autoFocus value={comment} onChange={(e) => { setComment(e.target.value); if (sendState === "no-agent") setSendState("idle"); }}
+              <textarea autoFocus value={comment} onChange={(e) => { setComment(e.target.value); if (sendState === "no-agent" || sendState === "error") setSendState("idle"); }}
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); } else if (e.key === "Escape") setPicked(null); }}
                 placeholder={t("browser.pickPlaceholder")} rows={3}
                 className="w-full resize-none rounded-md border border-zinc-200 bg-white px-2 py-1 text-[12px] text-zinc-800 outline-none focus:border-mustard-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
               <div className="mt-1.5 flex items-center gap-1.5">
-                {sendState === "no-agent" && <span className="min-w-0 flex-1 truncate text-[10px] text-rose-500">{t("browser.pickNoAgent")}</span>}
+                {(sendState === "no-agent" || sendState === "error") && <span className="min-w-0 flex-1 truncate text-[10px] text-rose-500">{t(sendState === "error" ? "github.sendFailed" : "browser.pickNoAgent")}</span>}
                 <span className="flex-1" />
                 <button type="button" onClick={() => setPicked(null)} className="rounded-md px-2 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t("browser.pickCancel")}</button>
                 <button type="button" disabled={!comment.trim() || sendState === "sending"} onClick={() => void send()}
