@@ -627,10 +627,26 @@ ipcMain.handle("github:pr-list", (_e, { cwd, state, limit }) => {
   const lim = Math.min(Math.max(Number(limit) || 50, 1), 1000);
   return githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "list", "--json", "number,title,state,isDraft,author,createdAt,updatedAt,statusCheckRollup", "--state", st, "--limit", String(lim)] });
 });
-ipcMain.handle("github:pr-view", (_e, { cwd, number }) => {
+ipcMain.handle("github:pr-view", async (_e, { cwd, number }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
-  return githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "number,title,state,isDraft,author,createdAt,assignees,body,comments,statusCheckRollup,mergeStateStatus,url,reactionGroups"] });
+  // #1131 reviews(판정 기록) + 내 로그인(내 PR이면 승인·변경 요청 숨김) — 로그인은 실패해도 상세는 보임
+  const [r, me] = await Promise.all([
+    githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "number,title,state,isDraft,author,createdAt,assignees,body,comments,statusCheckRollup,mergeStateStatus,url,reactionGroups,reviews"] }),
+    viewerLogin(cwd).catch(() => null),
+  ]);
+  return r.ok && r.data ? { ok: true, data: { ...r.data, viewerLogin: me } } : r;
+});
+// PR 리뷰 판정 제출(#1131) — gh pr review(no-shell). 변경 요청·코멘트는 본문 필수(GitHub 규칙).
+const REVIEW_EVENTS = { approve: "--approve", "request-changes": "--request-changes", comment: "--comment" };
+ipcMain.handle("github:pr-review-event", (_e, { cwd, number, event, body }) => {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
+  const flag = REVIEW_EVENTS[event];
+  if (!flag) return { ok: false, kind: "error", detail: "invalid event" };
+  const text = typeof body === "string" ? body.trim() : "";
+  if (event !== "approve" && !text) return { ok: false, kind: "error", detail: "empty body" };
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "review", String(n), flag, ...(text ? ["--body", text] : [])] });
 });
 // 현재 브랜치 CI(#812) — gh pr view(번호 없이 = 현재 브랜치 PR)로 statusCheckRollup. PR 없으면 {noPr:true}.
 ipcMain.handle("github:checks", async (_e, { cwd }) => {
