@@ -804,15 +804,18 @@ ipcMain.handle("github:pr-review-submit", async (_e, { cwd, number, commitId, co
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
   if (typeof commitId !== "string" || !/^[0-9a-f]{40}$/.test(commitId)) return { ok: false, kind: "error", detail: "no head commit" };
-  const list = Array.isArray(comments) ? comments.filter((c) => c && typeof c.path === "string" && c.path && Number.isInteger(c.line) && c.line > 0 && typeof c.body === "string" && c.body.trim()) : [];
-  if (!list.length || list.length > 100) return { ok: false, kind: "error", detail: "invalid comments" };
-  const file = require("node:path").join(require("node:os").tmpdir(), `mustard-review-${process.pid}-${Date.now()}.json`);
+  // 하나라도 잘못되면 전체 거절(일부만 빠진 채 '다 올림'으로 보이지 않게, 리뷰)
+  const list = Array.isArray(comments) ? comments : [];
+  if (!list.length || list.length > 100 || !list.every((c) => c && typeof c.path === "string" && c.path && Number.isInteger(c.line) && c.line > 0 && typeof c.body === "string" && c.body.trim())) return { ok: false, kind: "error", detail: "invalid comments" };
+  // 나만 쓰는 새 임시 폴더(mkdtemp, 이름 예측·충돌 없음) 안에 쓰고 폴더째 지움
+  const dir = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "mustard-review-"));
+  const file = require("node:path").join(dir, "review.json");
   try {
-    writeFileSync(file, JSON.stringify({ commit_id: commitId, event: "COMMENT", comments: list.map((c) => ({ path: c.path, line: c.line, side: "RIGHT", body: c.body })) }), { mode: 0o600 });
+    writeFileSync(file, JSON.stringify({ commit_id: commitId, event: "COMMENT", comments: list.map((c) => ({ path: c.path, line: c.line, side: "RIGHT", body: c.body })) }), { mode: 0o600, flag: "wx" });
     const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/pulls/${n}/reviews`, "--input", file] });
     if (!r.ok) return r;
     return { ok: true, data: { id: r.data?.id, url: r.data?.html_url } };
-  } finally { try { rmSync(file, { force: true }); } catch { /* ignore */ } }
+  } finally { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } }
 });
 // PR 줄 리뷰 댓글 목록(#1127) — 대화 탭에 파일:줄과 함께. 코드가 바뀌어 위치가 사라진 댓글(line null)은 outdated.
 ipcMain.handle("github:pr-line-comments", async (_e, { cwd, number }) => {

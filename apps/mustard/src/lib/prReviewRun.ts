@@ -116,20 +116,27 @@ export async function postFinding(root: string, pr: number, f: Finding, locale: 
 // 남은 지적 전부를 GitHub 리뷰 1건으로 한 번에(#1127, 유저 요청). 리뷰한 커밋 기준 — 모르면(옛 저장분) 다시 리뷰 필요.
 export async function postAllFindings(root: string, pr: number, locale: string): Promise<PrReview> {
   const cur = loadPrReview(root, pr);
-  const todo = (cur?.findings ?? []).filter((x) => x.status === "open" && !posting.has(x.id));
+  const todo = (cur?.findings ?? []).filter((x) => x.status === "open" && !posting.has(x.id)).slice(0, 100); // GitHub 리뷰 1건 상한
   if (!cur || !todo.length) throw new Error("gone");
   if (!cur.head) throw new Error("head changed");
   const submit = window.nunopiDesktop?.github?.prReviewSubmit;
   if (!submit) throw new Error("desktop only");
   for (const x of todo) posting.add(x.id);
   try {
-    const r = await submit(root, pr, cur.head, todo.map((x) => ({ path: x.file, line: x.line, body: findingCommentBody(x, translate(locale, `prReview.sev.${x.severity}`)) })));
-    if (!r.ok) throw new Error(r.detail || "post failed");
-    const ids = new Set(todo.map((x) => x.id));
+    // 이미 올렸는데 저장 못 한 것(postedUrl)은 다시 안 올림(리뷰: 다시 누르면 GitHub에 두 번 달리던 것) — 나머지만 제출
+    const fresh = todo.filter((x) => !postedUrl.has(x.id));
+    if (fresh.length) {
+      const r = await submit(root, pr, cur.head, fresh.map((x) => ({ path: x.file, line: x.line, body: findingCommentBody(x, translate(locale, `prReview.sev.${x.severity}`)) })));
+      if (!r.ok) throw new Error(r.detail || "post failed");
+      for (const x of fresh) postedUrl.set(x.id, r.data?.url ?? "");
+    }
     const now = loadPrReview(root, pr);
     if (!now) throw new Error("posted-unsaved");
-    try { return save(root, pr, { ...now, findings: now.findings.map((x) => (ids.has(x.id) ? { ...x, status: "adopted", ...(r.data?.url ? { url: r.data.url } : {}) } : x)) }); }
+    let next: PrReview;
+    try { next = save(root, pr, { ...now, findings: now.findings.map((x) => { const u = postedUrl.get(x.id); return u != null && todo.some((y) => y.id === x.id) ? { ...x, status: "adopted", ...(u ? { url: u } : {}) } : x; }) }); }
     catch { throw new Error("posted-unsaved"); }
+    for (const x of todo) postedUrl.delete(x.id);
+    return next;
   } finally { for (const x of todo) posting.delete(x.id); }
 }
 

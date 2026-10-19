@@ -15,7 +15,8 @@ function parseCommentId(url: string | undefined): string | null {
 }
 
 // reviewId(#1127) = PR 줄 리뷰 댓글 id — 수정·삭제 경로가 다름(pulls/comments), 리액션은 안 붙임.
-export default function CommentItem({ root, comment, onChanged, reviewId }: { root: string; comment: GhComment; onChanged: () => void; reviewId?: number }) {
+// display = 보여 줄 때만 바꿀 글(수정 초안·저장은 원문 그대로).
+export default function CommentItem({ root, comment, onChanged, reviewId, display }: { root: string; comment: GhComment; onChanged: () => void; reviewId?: number; display?: (body: string) => string }) {
   const t = useT();
   const id = reviewId ? String(reviewId) : parseCommentId(comment.url);
   const kind = reviewId ? "review" as const : "issue" as const;
@@ -81,7 +82,7 @@ export default function CommentItem({ root, comment, onChanged, reviewId }: { ro
           </div>
         </div>
       ) : (
-        <Markdown className="text-[12px] text-zinc-700 dark:text-zinc-200">{comment.body}</Markdown>
+        <Markdown className="text-[12px] text-zinc-700 dark:text-zinc-200">{display ? display(comment.body) : comment.body}</Markdown>
       )}
 
       {/* 리액션(#820) — 공용 ReactionBar. */}

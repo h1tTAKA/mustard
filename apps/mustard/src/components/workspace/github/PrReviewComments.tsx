@@ -7,6 +7,9 @@ import { useT } from "@mustard/core";
 import CommentItem from "@/components/workspace/github/CommentItem";
 import { prReviewKey, PR_REVIEW_EVENT } from "@/lib/prReview";
 
+// 옛 에이전트 꼬리표(<sub>🤖 Mustard agent review</sub>)만 기울임으로 보이게 — 다른 <sub>·원문은 그대로
+const legacyFooter = (b: string) => b.replace("<sub>🤖 Mustard agent review</sub>", "_🤖 Mustard agent review_");
+
 type LineComment = { id: number; mine: boolean; path: string; line: number | null; outdated: boolean; body: string; author: string; createdAt: string; url: string; inReplyTo: number | null };
 
 export default function PrReviewComments({ root, number, reloadKey, onOpenFile }: { root: string; number: number; reloadKey: number; onOpenFile?: (file: string) => void }) {
@@ -32,8 +35,8 @@ export default function PrReviewComments({ root, number, reloadKey, onOpenFile }
   // 한 개 = 공용 CommentItem(내 댓글만 수정·삭제, 리뷰 댓글 경로). 옛 <sub> 꼬리표는 기울임으로 보이게.
   const item = (c: LineComment, reply = false) => (
     <div key={c.id} className={reply ? "ml-5 mt-1.5 border-l-2 border-zinc-200 pl-2 dark:border-zinc-700" : ""}>
-      <CommentItem root={root} reviewId={c.id} onChanged={() => setTick((n) => n + 1)}
-        comment={{ author: { login: c.author }, body: c.body.replace(/<sub>([\s\S]*?)<\/sub>/g, "_$1_"), createdAt: c.createdAt, url: c.url, viewerDidAuthor: c.mine }} />
+      <CommentItem root={root} reviewId={c.id} onChanged={() => setTick((n) => n + 1)} display={legacyFooter}
+        comment={{ author: { login: c.author }, body: c.body, createdAt: c.createdAt, url: c.url, viewerDidAuthor: c.mine }} />
     </div>
   );
   return (
