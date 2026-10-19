@@ -18,12 +18,13 @@ export default function PrReviewers({ root, number, author, requested, onChanged
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    void window.nunopiDesktop?.github?.prReviewerCandidates?.(root).then((r) => { if (alive) setCands(r.ok && r.data ? r.data : []); }).catch(() => { if (alive) setCands([]); });
+    // 조회 실패는 "지정할 사람 없음"이 아니라 오류로(리뷰)
+    void window.nunopiDesktop?.github?.prReviewerCandidates?.(root).then((r) => { if (!alive) return; if (r.ok && r.data) setCands(r.data); else { setCands([]); setErr(r.detail || t("github.error")); } }).catch((e) => { if (alive) { setCands([]); setErr(String((e as Error)?.message || e)); } });
     const down = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     window.addEventListener("mousedown", down); window.addEventListener("keydown", key);
     return () => { alive = false; window.removeEventListener("mousedown", down); window.removeEventListener("keydown", key); };
-  }, [open, root]);
+  }, [open, root, t]);
 
   const users = requested.map((r) => r.login).filter((l): l is string => !!l);
   const teams = requested.filter((r) => !r.login).map((r) => r.name || r.slug || "").filter(Boolean);
@@ -53,7 +54,7 @@ export default function PrReviewers({ root, number, author, requested, onChanged
       {teams.map((n) => <span key={n} className={chip}>{n}</span>)}
       {!users.length && !teams.length && <span className="text-zinc-400 dark:text-zinc-500">{t("github.noReviewer")}</span>}
       <div ref={box} className="relative inline-flex">
-        <button type="button" onClick={() => setOpen((v) => !v)} title={t("github.addReviewer")} aria-label={t("github.addReviewer")} aria-expanded={open}
+        <button type="button" onClick={() => { setErr(null); setCands(null); setOpen((v) => !v); }} title={t("github.addReviewer")} aria-label={t("github.addReviewer")} aria-expanded={open}
           className="shrink-0 text-zinc-400 transition hover:text-zinc-600 dark:hover:text-zinc-200">
           <IconPlus size={12} stroke={2} aria-hidden />
         </button>
@@ -61,7 +62,7 @@ export default function PrReviewers({ root, number, author, requested, onChanged
           <div className="absolute left-0 top-full z-30 mt-1 w-48 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
             {cands === null ? (
               <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-zinc-400"><IconLoader2 size={12} className="animate-spin" aria-hidden />…</div>
-            ) : pick.length ? (
+            ) : err ? null : pick.length ? (
               <div className="max-h-56 overflow-y-auto">
                 {pick.map((l) => (
                   <button key={l} type="button" onClick={() => void change([l], [], l)} disabled={!!busy}

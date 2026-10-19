@@ -28,7 +28,7 @@ export default function CommentComposer({ root, kind, number, onPosted, review =
   };
   const send = async () => {
     const body = text.trim();
-    if (!body || sending) return;
+    if (!body || sending || busyEv) return; // 리뷰 제출 중엔 ⌘Enter로도 안 보냄(리뷰)
     const gh = window.nunopiDesktop?.github;
     if (!gh?.addComment) { setError(t("github.desktopOnly")); return; }
     setSending(true); setError(null);
