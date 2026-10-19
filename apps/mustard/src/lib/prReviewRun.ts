@@ -63,6 +63,7 @@ async function runOnce(root: string, pr: number, providerId: AgentProviderKind, 
 
 // 지적 하나만 다시 — 같은 자리를 새 지적으로 바꿈(마음에 들 때까지 반복). 못 받으면 throw(기존 지적 유지).
 export async function retryFinding(root: string, pr: number, f: Finding, providerId: AgentProviderKind, settings: ProviderSettings, locale: string): Promise<PrReview> {
+  if (postedUrl.has(f.id)) throw new Error("posted-unsaved"); // 이미 GitHub에 올라감(저장만 실패) — 내용 바꾸면 GitHub 글과 어긋남(리뷰)
   // PR이 리뷰 뒤 push됐으면 줄 번호 기준이 달라짐 → 전체 리뷰를 다시(목록 조회가 diff 캐시도 비움)
   const files = await window.nunopiDesktop?.github?.prFiles?.(root, pr);
   const head0 = loadPrReview(root, pr)?.head;
