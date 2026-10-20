@@ -1,6 +1,7 @@
 // GitHub gh CLI 브릿지 결과·엔티티(#813~). ghJson 반환 형태.
 type GhResult<T> = { ok: true; data: T } | { ok: false; kind: string; detail?: string };
 interface GhLabel { name: string; color: string }
+type GhMetaField = "reviewer" | "assignee" | "label" | "milestone"; // #1131 사이드바 항목
 interface GhActor { login: string; name?: string }
 interface GhIssue { number: number; title: string; state: string; labels: GhLabel[]; author: GhActor; createdAt: string; updatedAt: string }
 interface GhReactionGroup { content: string; users: { totalCount: number } } // content=ENUM(THUMBS_UP…)
@@ -10,7 +11,8 @@ interface GhIssueDetail extends GhIssue { assignees: GhActor[]; milestone: GhMil
 // PR(#814). statusCheckRollup 항목은 CheckRun|StatusContext 혼재 — 필드 옵셔널로 흡수(정규화는 렌더러 checks.ts).
 interface GhCheckRaw { __typename?: string; name?: string; context?: string; status?: string; conclusion?: string; state?: string; detailsUrl?: string; targetUrl?: string; workflowName?: string; startedAt?: string; completedAt?: string; description?: string }
 interface GhPr { number: number; title: string; state: string; isDraft: boolean; author: GhActor; createdAt: string; updatedAt: string; statusCheckRollup: GhCheckRaw[] }
-interface GhPrDetail extends GhPr { assignees: GhActor[]; body: string; comments: GhComment[]; mergeStateStatus: string; url: string; reactionGroups?: GhReactionGroup[] }
+interface GhReview { author: GhActor; state: string; body: string; submittedAt: string } // state = APPROVED | CHANGES_REQUESTED | COMMENTED | DISMISSED | PENDING
+interface GhPrDetail extends GhPr { assignees: GhActor[]; body: string; comments: GhComment[]; mergeStateStatus: string; url: string; reactionGroups?: GhReactionGroup[]; reviews?: GhReview[]; reviewRequests?: { login?: string; name?: string; slug?: string }[]; viewerLogin?: string | null; labels?: GhLabel[]; milestone?: GhMilestone | null }
 // 현재 브랜치 CI(#812) — PR 있으면 checks, 없으면 { noPr:true }.
 interface GhChecks { number?: number; title?: string; state?: string; statusCheckRollup?: GhCheckRaw[]; url?: string; headRefName?: string; noPr?: boolean }
 interface GhAnnotation { path?: string; start_line?: number; annotation_level?: string; message?: string; title?: string }
@@ -59,9 +61,12 @@ interface NunopiDesktopApi {
     // 이슈 목록·상세(#813). 성공 { ok:true, data } | 실패 { ok:false, kind, detail }.
     issueList(cwd: string, state?: "open" | "closed" | "all", limit?: number): Promise<GhResult<GhIssue[]>>;
     issueView(cwd: string, number: number): Promise<GhResult<GhIssueDetail>>;
-    issueCreate(cwd: string, opts: { title: string; body?: string; labels?: string }): Promise<{ ok: boolean; stdout?: string; kind?: string; detail?: string }>;  // #945 성공 시 stdout=이슈 URL
+    issueCreate(cwd: string, opts: { title: string; body?: string; labels?: string | string[]; assignees?: string[]; milestone?: string }): Promise<{ ok: boolean; stdout?: string; kind?: string; detail?: string }>;  // #945 성공 시 stdout=이슈 URL
     prList(cwd: string, state?: "open" | "closed" | "all", limit?: number): Promise<GhResult<GhPr[]>>;  // #814
     prView(cwd: string, number: number): Promise<GhResult<GhPrDetail>>;
+    metaCandidates?(cwd: string, field: GhMetaField): Promise<{ ok: boolean; data?: { value: string; color?: string }[]; kind?: string; detail?: string }>;
+    editMeta?(cwd: string, kind: "issue" | "pr", number: number, field: GhMetaField, add: string[], remove: string[]): Promise<{ ok: boolean; kind?: string; detail?: string }>;
+    prReviewEvent?(cwd: string, number: number, event: "approve" | "request-changes" | "comment", body: string): Promise<{ ok: boolean; kind?: string; detail?: string }>;
     checks(cwd: string): Promise<GhResult<GhChecks>>;  // #812
     checkAnnotations(cwd: string, checkRunId: string): Promise<GhResult<GhAnnotation[]>>;  // #812
     jobSteps(cwd: string, jobId: string): Promise<GhResult<{ steps?: GhJobStep[] }>>;  // #812
@@ -82,7 +87,7 @@ interface NunopiDesktopApi {
     prReviewSubmit?(cwd: string, number: number, commitId: string, comments: { path: string; line: number; body: string }[]): Promise<{ ok: boolean; data?: { id?: number; url?: string }; kind?: string; detail?: string }>;
     prLineComments?(cwd: string, number: number): Promise<{ ok: boolean; data?: { id: number; mine: boolean; reactionGroups?: GhReactionGroup[]; threadId?: string; resolved?: boolean; path: string; line: number | null; outdated: boolean; body: string; author: string; createdAt: string; url: string; inReplyTo: number | null }[]; kind?: string; detail?: string }>;
     merge(cwd: string, number: number, method: "merge" | "squash" | "rebase"): Promise<{ ok: boolean; kind?: string; detail?: string }>;  // #822 PR 머지(--delete-branch)
-    prCreate(cwd: string, opts: { base?: string; head?: string; title: string; body?: string; draft?: boolean }): Promise<{ ok: boolean; stdout?: string; kind?: string; detail?: string }>;  // #944 성공 시 stdout=PR URL
+    prCreate(cwd: string, opts: { base?: string; head?: string; title: string; body?: string; draft?: boolean; reviewers?: string[]; assignees?: string[]; labels?: string[]; milestone?: string }): Promise<{ ok: boolean; stdout?: string; kind?: string; detail?: string }>;  // #944 성공 시 stdout=PR URL
     setToken(token: string): Promise<{ ok: boolean; detail?: string }>;  // #826 PAT 폴백 저장(safeStorage 암호화)
     tokenStatus(): Promise<{ hasToken: boolean }>;  // #826 토큰 존재 여부(값 비노출)
     clearToken(): Promise<{ ok: boolean }>;  // #826 토큰 삭제

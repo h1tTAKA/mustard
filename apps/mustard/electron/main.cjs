@@ -613,12 +613,12 @@ ipcMain.handle("github:issue-view", (_e, { cwd, number }) => {
   return githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["issue", "view", String(n), "--json", "number,title,state,labels,author,assignees,milestone,body,comments,createdAt,url,reactionGroups"] });
 });
 // 이슈 생성(#945) — 성공 시 stdout=생성된 이슈 URL. labels=쉼표 구분 → 각 --label.
-ipcMain.handle("github:issue-create", (_e, { cwd, title, body, labels }) => {
+ipcMain.handle("github:issue-create", (_e, { cwd, title, body, labels, assignees, milestone }) => {
   if (!title || typeof title !== "string" || !title.trim()) return { ok: false, kind: "error", detail: "title required" };
   const args = ["issue", "create", "--title", title.trim(), "--body", typeof body === "string" ? body : ""];
-  if (typeof labels === "string" && labels.trim()) {
-    for (const l of labels.split(",").map((x) => x.trim()).filter(Boolean)) args.push("--label", l);
-  }
+  // labels: 배열(#1131 사이드바 고르기) 또는 옛 쉼표 문자열
+  const ls = Array.isArray(labels) ? labels : typeof labels === "string" ? labels.split(",").map((x) => x.trim()).filter(Boolean) : [];
+  args.push(...metaCreateArgs({ labels: ls, assignees, milestone }));
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args });
 });
 // PR 목록·상세(#814) — gh pr list/view --json. statusCheckRollup=CI 체크(서브3 재사용).
@@ -627,10 +627,66 @@ ipcMain.handle("github:pr-list", (_e, { cwd, state, limit }) => {
   const lim = Math.min(Math.max(Number(limit) || 50, 1), 1000);
   return githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "list", "--json", "number,title,state,isDraft,author,createdAt,updatedAt,statusCheckRollup", "--state", st, "--limit", String(lim)] });
 });
-ipcMain.handle("github:pr-view", (_e, { cwd, number }) => {
+ipcMain.handle("github:pr-view", async (_e, { cwd, number }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
-  return githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "number,title,state,isDraft,author,createdAt,assignees,body,comments,statusCheckRollup,mergeStateStatus,url,reactionGroups"] });
+  // #1131 reviews(판정 기록) + 내 로그인(내 PR이면 승인·변경 요청 숨김) — 로그인은 실패해도 상세는 보임
+  const [r, me] = await Promise.all([
+    githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "number,title,state,isDraft,author,createdAt,assignees,body,comments,statusCheckRollup,mergeStateStatus,url,reactionGroups,reviews,reviewRequests,labels,milestone"] }),
+    viewerLogin(cwd).catch(() => null),
+  ]);
+  return r.ok && r.data ? { ok: true, data: { ...r.data, viewerLogin: me } } : r;
+});
+// 이슈·PR 사이드바 항목(#1131, GitHub처럼) — 리뷰어·담당자·라벨·마일스톤. 후보 조회 + 추가·제거(gh issue|pr edit, no-shell).
+// 값은 "--add-x=값" 한 인자로(값이 "-"로 시작해도 플래그로 안 읽힘). 사람 = login 형식, 라벨·마일스톤 = 한 줄 100자 이하.
+const META_FIELDS = new Set(["reviewer", "assignee", "label", "milestone"]);
+const GH_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+// 라벨은 쉼표 금지 — gh가 "--add-label=a,b"를 두 라벨로 쪼갬(리뷰). 값은 앞뒤 공백 자른 뒤 검사·전달.
+const metaValueOk = (field, v) => typeof v === "string" && (field === "reviewer" || field === "assignee" ? GH_LOGIN.test(v) : v.length > 0 && v.length <= 100 && !/[\u0000-\u001f]/.test(v) && !(field === "label" && v.includes(",")));
+const metaClean = (field, xs) => (Array.isArray(xs) ? xs : []).map((v) => (typeof v === "string" ? v.trim() : v)).filter((v) => metaValueOk(field, v));
+ipcMain.handle("github:meta-candidates", async (_e, { cwd, field }) => {
+  if (!META_FIELDS.has(field)) return { ok: false, kind: "error", detail: "invalid field" };
+  if (field === "label") {
+    const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["label", "list", "--json", "name,color", "--limit", "300"] });
+    return r.ok ? { ok: true, data: (Array.isArray(r.data) ? r.data : []).filter((l) => metaValueOk("label", l?.name)).map((l) => ({ value: l.name, color: l.color })) } : r;
+  }
+  const path = field === "milestone" ? "repos/{owner}/{repo}/milestones?state=open&per_page=100" : "repos/{owner}/{repo}/assignees?per_page=100";
+  const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "--paginate", "--slurp", path] });
+  if (!r.ok) return r;
+  const all = Array.isArray(r.data) ? r.data.flat() : [];
+  const me = field === "reviewer" ? await viewerLogin(cwd).catch(() => null) : null; // 리뷰어 후보에서 나는 뺌(GitHub가 자기 리뷰 요청을 막음, 작성 폼에도 적용)
+  return { ok: true, data: all.map((x) => ({ value: field === "milestone" ? x?.title : x?.login })).filter((x) => typeof x.value === "string" && x.value !== me) };
+});
+ipcMain.handle("github:edit-meta", (_e, { cwd, kind, number, field, add, remove }) => {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid number" };
+  if (!META_FIELDS.has(field) || (field === "reviewer" && kind !== "pr")) return { ok: false, kind: "error", detail: "invalid field" };
+  const a = metaClean(field, add), d = metaClean(field, remove);
+  if (!a.length && !d.length) return { ok: false, kind: "error", detail: "nothing to change" };
+  const args = [kind === "pr" ? "pr" : "issue", "edit", String(n)];
+  if (field === "milestone") args.push(...(a.length ? [`--milestone=${a[0]}`] : ["--remove-milestone"])); // 하나만(바꾸면 교체)
+  else args.push(...a.map((v) => `--add-${field}=${v}`), ...d.map((v) => `--remove-${field}=${v}`));
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args });
+});
+// 생성 폼에서 고른 사이드바 항목 → gh issue|pr create 인자(같은 검사)
+function metaCreateArgs({ reviewers, assignees, labels, milestone }) {
+  const out = [];
+  for (const v of metaClean("reviewer", reviewers)) out.push(`--reviewer=${v}`);
+  for (const v of metaClean("assignee", assignees)) out.push(`--assignee=${v}`);
+  for (const v of metaClean("label", labels)) out.push(`--label=${v}`);
+  for (const v of metaClean("milestone", [milestone]).slice(0, 1)) out.push(`--milestone=${v}`);
+  return out;
+}
+// PR 리뷰 판정 제출(#1131) — gh pr review(no-shell). 변경 요청·코멘트는 본문 필수(GitHub 규칙).
+const REVIEW_EVENTS = { approve: "--approve", "request-changes": "--request-changes", comment: "--comment" };
+ipcMain.handle("github:pr-review-event", (_e, { cwd, number, event, body }) => {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
+  const flag = typeof event === "string" && Object.hasOwn(REVIEW_EVENTS, event) ? REVIEW_EVENTS[event] : null; // 내장 속성(constructor 등) 걸러냄(리뷰)
+  if (!flag) return { ok: false, kind: "error", detail: "invalid event" };
+  const text = typeof body === "string" ? body.trim() : "";
+  if (event !== "approve" && !text) return { ok: false, kind: "error", detail: "empty body" };
+  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "review", String(n), flag, ...(text ? ["--body", text] : [])] });
 });
 // 현재 브랜치 CI(#812) — gh pr view(번호 없이 = 현재 브랜치 PR)로 statusCheckRollup. PR 없으면 {noPr:true}.
 ipcMain.handle("github:checks", async (_e, { cwd }) => {
@@ -861,12 +917,13 @@ ipcMain.handle("github:pr-line-comments", async (_e, { cwd, number }) => {
   const groups = (rx) => Object.entries(RX).map(([k, e]) => ({ content: e, users: { totalCount: Number(rx?.[k]) || 0 } }));
   return { ok: true, data: all.map((c) => ({ id: c.id, mine: !!me && c.user?.login === me, reactionGroups: groups(c.reactions), ...(threads.get(c.id) ?? {}), path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
 });
-ipcMain.handle("github:pr-create", (_e, { cwd, base, head, title, body, draft }) => {
+ipcMain.handle("github:pr-create", (_e, { cwd, base, head, title, body, draft, reviewers, assignees, labels, milestone }) => {
   if (!title || typeof title !== "string" || !title.trim()) return { ok: false, kind: "error", detail: "title required" };
   const args = ["pr", "create", "--title", title.trim(), "--body", typeof body === "string" ? body : ""];
   if (base && typeof base === "string" && base.trim()) args.push("--base", base.trim());
   if (head && typeof head === "string" && head.trim()) args.push("--head", head.trim());
   if (draft) args.push("--draft");
+  args.push(...metaCreateArgs({ reviewers, assignees, labels, milestone })); // #1131 사이드바 항목
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args });
 });
 ipcMain.handle("app:relaunch", () => { app.relaunch(); app.quit(); });

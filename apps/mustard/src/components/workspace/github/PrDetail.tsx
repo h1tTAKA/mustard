@@ -13,6 +13,8 @@ import CommentItem from "@/components/workspace/github/CommentItem";
 import SendToAgent from "@/components/workspace/github/SendToAgent";
 import PrAgentReview from "@/components/workspace/github/PrAgentReview";
 import PrReviewComments from "@/components/workspace/github/PrReviewComments";
+import PrReviews from "@/components/workspace/github/PrReviews";
+import MetaRow from "@/components/workspace/github/MetaRow";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import GhAvatar from "@/components/workspace/github/GhAvatar";
 import ReactionBar from "@/components/workspace/github/ReactionBar";
@@ -38,6 +40,12 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const reqIdRef = useRef(0);
   const [cmtNonce, setCmtNonce] = useState(0); // 코멘트 작성 후 상세 재조회(#820)
+  // #1131 사이드바 항목 바꾸기 — gh pr edit 후 상세 다시 읽기
+  const meta = (field: GhMetaField) => async (add: string[], remove: string[]) => {
+    const r = await window.nunopiDesktop?.github?.editMeta?.(root, "pr", number, field, add, remove);
+    if (r?.ok) setCmtNonce((n) => n + 1);
+    return r ?? { ok: false };
+  };
   const [editingBody, setEditingBody] = useState(false); // 제목·본문 편집(#822)
   const [titleDraft, setTitleDraft] = useState("");
   const [bodyDraft, setBodyDraft] = useState("");
@@ -137,12 +145,21 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
                 <span>{d.author?.login}</span>
                 {d.createdAt && <span>· {relTime(d.createdAt)}</span>}
               </div>
+              {/* #1131 사이드바 항목(GitHub처럼) — 리뷰어·담당자·라벨·마일스톤 추가·빼기. GitLab은 조회만(옛 담당자 줄) */}
+              {host === "github" ? (<div className="mt-0.5 border-b border-zinc-100 pb-2.5 dark:border-zinc-800/60">
+                <MetaRow root={root} field="reviewer" title={t("github.reviewers")} empty={t("github.noReviewer")} exclude={d.author?.login ? [d.author.login] : []}
+                  items={(d.reviewRequests ?? []).map((r) => ({ value: r.login || r.name || r.slug || "", readonly: !r.login })).filter((x) => x.value)} onChange={meta("reviewer")} />
+                <MetaRow root={root} field="assignee" title={t("github.assignees")} empty={t("github.noAssignee")} items={(d.assignees ?? []).map((a) => ({ value: a.login }))} onChange={meta("assignee")} />
+                <MetaRow root={root} field="label" title={t("github.labels")} empty={t("github.noLabel")} items={(d.labels ?? []).map((l) => ({ value: l.name, color: l.color }))} onChange={meta("label")} />
+                <MetaRow root={root} field="milestone" title={t("github.milestone")} empty={t("github.noMilestone")} single items={d.milestone?.title ? [{ value: d.milestone.title }] : []} onChange={meta("milestone")} />
+              </div>) : (
               <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px]">
                 <span className="text-zinc-400 dark:text-zinc-500">{t("github.assignees")}:</span>
                 {d.assignees?.length
                   ? d.assignees.map((a) => <span key={a.login} className="rounded-full bg-zinc-100 px-1.5 py-px text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{a.login}</span>)
                   : <span className="text-zinc-400 dark:text-zinc-500">{t("github.noAssignee")}</span>}
               </div>
+              )}
             </div>
             {/* CI 체크(#814, 서브3 재사용) */}
             {d.statusCheckRollup?.length > 0 && (
@@ -215,7 +232,10 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
             {/* #1127 줄 리뷰 댓글(에이전트 리뷰로 올린 것 포함) — 일반 댓글과 따로 */}
             {host === "github" && <PrReviewComments root={root} number={number} prTitle={d.title || ""} reloadKey={reloadKey + cmtNonce} onOpenFile={onOpenFile} />}
             {/* 코멘트 작성(#820) — GitLab 조회 전용(#964)이라 숨김 */}
-            {host === "github" && <CommentComposer root={root} kind="pr" number={number} onPosted={() => setCmtNonce((n) => n + 1)} />}
+            {/* #1131 리뷰 기록(작성자별 판정) */}
+            {host === "github" && <PrReviews reviews={d.reviews ?? []} />}
+            {/* 입력창 하나 — 남의 PR이면 Send 옆에 Approve·Request changes(#1131, 내 PR은 GitHub가 막아서 숨김) */}
+            {host === "github" && <CommentComposer root={root} kind="pr" number={number} review={!!d.viewerLogin && d.viewerLogin !== d.author?.login} onPosted={() => setCmtNonce((n) => n + 1)} />}
           </div>
         )}
       </div>
