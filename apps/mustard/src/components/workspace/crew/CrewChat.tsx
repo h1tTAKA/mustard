@@ -187,12 +187,12 @@ export default function CrewChat({ root }: { root: string }) {
                   {cardChip}
                 </div>
               ) : isMe ? (
-                /* 나 — 오른쪽 겨자 말풍선 */
+                /* 나 — 오른쪽 옅은 겨자 말풍선(진한 겨자는 글자가 안 읽힘, #1135 유저) */
                 <div className={`flex flex-col items-end ${first ? "mt-2.5" : "mt-0.5"}`}>
                   {parent && <div className="mb-0.5 max-w-[80%] truncate text-[10.5px] text-zinc-400"><IconArrowBackUp size={10} className="mr-0.5 inline" aria-hidden />{who(parent.from)}: {msgText(parent).slice(0, 60)}</div>}
                   <div className="flex max-w-[85%] items-end gap-1.5">
                     {last && <span className="shrink-0 pb-0.5 text-[9.5px] tabular-nums text-zinc-400">{time(m.ts)}</span>}
-                    <div className={`whitespace-pre-wrap break-words rounded-2xl bg-mustard-500 px-3 py-1.5 text-[12.5px] leading-relaxed text-brown-900 ${first ? "rounded-tr-md" : ""}`}>{renderText(msgText(m))}</div>
+                    <div className={`whitespace-pre-wrap break-words rounded-2xl bg-mustard-500/12 px-3 py-1.5 text-[12.5px] leading-relaxed text-zinc-800 ring-1 ring-inset ring-mustard-500/35 dark:bg-mustard-400/12 dark:text-zinc-100 dark:ring-mustard-400/30 ${first ? "rounded-tr-md" : ""}`}>{renderText(msgText(m))}</div>
                   </div>
                   {cardChip}
                 </div>

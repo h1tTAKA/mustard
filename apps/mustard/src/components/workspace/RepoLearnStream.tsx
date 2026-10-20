@@ -2,7 +2,7 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { IconX, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit } from "@tabler/icons-react";
+import { IconX, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
@@ -18,6 +18,7 @@ import { mergeTerms, parseNarrationTerms, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
+import { openCrewTask } from "@/components/workspace/crew/CrewChat";
 import { useFlyCard, collectCards } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
@@ -151,7 +152,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     toast(ok ? t("card.added", { term: x.term }) : t("card.exists"));
   }, [root, t, toast]);
   // #1049 카테고리 필터 — 해설(실시간 해설·파일/심볼 설명) / 명령어 / 용어. 꺼진 카테고리는 칩도 숨김.
-  const [filterSel, setFilter] = useState<"all" | "explain" | "commands" | "diff" | "session" | "terms">("all");
+  const [filterSel, setFilter] = useState<"all" | "explain" | "commands" | "diff" | "session" | "terms" | "crew">("all");
   // #1049 검색 — 서버가 전체 날짜에서 제목·설명을 찾음(입력 멈춘 뒤 250ms). 용어집은 화면에서 거름.
   const [q, setQ] = useState("");
   const [searchOpen, setSearchOpen] = useState(false); // #1088 돋보기 버튼 → 입력칸
@@ -168,7 +169,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     }, 250);
     return () => { alive = false; clearTimeout(tm); };
   }, [query, root]);
-  const filter = (filterSel === "explain" && !explainShow) || (filterSel === "commands" && !showCommands) || (filterSel === "diff" && !diffShow) || (filterSel === "session" && !sessionsShow) || (filterSel === "terms" && !showTerms) ? "all" : filterSel;
+  // #1135 Crew 작업(역할 보고·crew/* 브랜치 diff·세션)이 하나라도 있을 때만 Crew 칩
+  const hasCrew = concepts.some((c) => c.tool.startsWith("crew|") || ((c.kind === "diff" || c.kind === "session") && /(^|· )crew\//.test(c.tool)));
+  const filter = (filterSel === "explain" && !explainShow) || (filterSel === "commands" && !showCommands) || (filterSel === "diff" && !diffShow) || (filterSel === "session" && !sessionsShow) || (filterSel === "terms" && !showTerms) || (filterSel === "crew" && !hasCrew) ? "all" : filterSel;
 
   const seenRef = useRef(new Set<string>());                          // 이미 설명한 개념(dedup) — 서버 로드 시 채움
   const queueRef = useRef<string[]>([]);
@@ -353,6 +356,18 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     if (c.kind === "session") return { hash: c.key.slice("session|".length, "session|".length + 7), agent: cut >= 0 ? c.tool.slice(0, cut) : c.tool, branch: cut >= 0 ? c.tool.slice(cut + 3) : "" };
     return null;
   };
+  // #1135 Crew 작업 카드 → 그 Crew 카드 id. 역할 보고 = tool "crew|<id>", diff·세션 = crew/<id8> 브랜치(보드가 앞 8자로 찾음).
+  const crewTask = (c: { kind: string; key: string; tool: string }) => {
+    if (c.kind === "narration") return c.tool.startsWith("crew|") ? c.tool.slice(5) : null;
+    const b = cardMeta(c)?.branch ?? ""; const m = /^crew\/([0-9a-z]{1,8})(?:-|$)/.exec(b);
+    return m ? m[1] : null;
+  };
+  const crewChip = (id: string) => (
+    <span role="button" tabIndex={0} title={t("learn.openCrewCard")} aria-label={t("learn.openCrewCard")}
+      onClick={(e) => { e.stopPropagation(); openCrewTask(root, id); }}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); openCrewTask(root, id); } }}
+      className="inline-flex cursor-pointer items-center gap-0.5 rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 transition hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"><IconLayoutKanban size={10} stroke={2} className="shrink-0" aria-hidden />Crew</span>
+  );
   const tagMatch = (c: { kind: string; key: string; tool: string }) => { if (!tag) return true; const m = cardMeta(c); return !!m && (tag.type === "hash" ? m.hash === tag.value.slice(0, 7) : m[tag.type] === tag.value); };
   // 칩을 버튼처럼(카드 헤더 버튼 안이라 span + 전파 막기)
   const chipProps = (t2: Tag) => ({ role: "button" as const, tabIndex: 0, title: t("learn.chipFilter"),
@@ -360,7 +375,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggleTag(t2); } } });
   const chipOn = (t2: Tag) => (tag && tag.type === t2.type && tag.value === t2.value ? " ring-1 ring-mustard-500/70" : "");
   const shown = (query ? (found ?? []) : viewDay ? (dayItems ?? []) : concepts).filter((c) => (isCommand(c) ? showCommands : c.kind === "diff" ? diffShow : c.kind === "session" ? sessionsShow : explainShow) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)) // #1062 표시 끔 = 분석된 것도 숨김, 문서 편집 카드는 항상 숨김(#1049)
-    && (filter === "all" || (filter === "commands" ? isCommand(c) : filter === "diff" ? c.kind === "diff" : filter === "session" ? c.kind === "session" : filter === "explain" && !isCommand(c) && c.kind !== "diff" && c.kind !== "session"))).filter(tagMatch);
+    && (filter === "all" || (filter === "crew" ? !!crewTask(c) : filter === "commands" ? isCommand(c) : filter === "diff" ? c.kind === "diff" : filter === "session" ? c.kind === "session" : filter === "explain" && !isCommand(c) && c.kind !== "diff" && c.kind !== "session"))).filter(tagMatch);
   // #1064 세션 → 에이전트로 넘기기(인앱 브라우저 피드백과 같은 경로). 카드 하나에 요청 입력창.
   const [handoffKey, setHandoffKey] = useState<string | null>(null);
   const [handoffText, setHandoffText] = useState("");
@@ -509,7 +524,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       <div className={chatOpen ? "hidden" : "contents"}>
       {/* #1049 카테고리 필터 칩 */}
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
-        {([["all", t("learn.filterAll")], ...(explainShow ? [["explain", t("learn.filterExplain")]] : []), ...(showCommands ? [["commands", t("learn.filterCommands")]] : []), ...(diffShow ? [["diff", t("learn.filterDiff")]] : []), ...(sessionsShow ? [["session", t("learn.filterSessions")]] : []), ...(showTerms ? [["terms", t("learn.filterTerms")]] : [])] as [typeof filterSel, string][]).map(([id, label]) => (
+        {([["all", t("learn.filterAll")], ...(explainShow ? [["explain", t("learn.filterExplain")]] : []), ...(showCommands ? [["commands", t("learn.filterCommands")]] : []), ...(diffShow ? [["diff", t("learn.filterDiff")]] : []), ...(sessionsShow ? [["session", t("learn.filterSessions")]] : []), ...(showTerms ? [["terms", t("learn.filterTerms")]] : []), ...(hasCrew ? [["crew", t("learn.filterCrew")]] : [])] as [typeof filterSel, string][]).map(([id, label]) => (
           <button key={id} type="button" onClick={() => setFilter(id)} aria-pressed={filter === id}
             className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition ${filter === id ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
             {label}
@@ -622,6 +637,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                             {agent && <span {...chipProps({ type: "agent", value: agent })} className={`cursor-pointer rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 transition hover:bg-blue-500/20 dark:text-blue-300${chipOn({ type: "agent", value: agent })}`}>{agent}</span>}
                             {branch && <span {...chipProps({ type: "branch", value: branch })} className={`inline-flex max-w-full cursor-pointer items-center gap-0.5 truncate rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 transition hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700${chipOn({ type: "branch", value: branch })}`}><IconGitBranch size={10} stroke={2} className="shrink-0" aria-hidden /><span className="truncate">{branch}</span></span>}
                             {hash && <span {...chipProps({ type: "hash", value: hash })} className={`cursor-pointer rounded-md bg-mustard-500/10 px-1.5 py-0.5 font-mono text-[10px] text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400${chipOn({ type: "hash", value: hash })}`}>{hash}</span>}
+                            {(() => { const id = crewTask(c); return id ? crewChip(id) : null; })()}
                             <span className="text-[10px] text-zinc-400 dark:text-zinc-500">{fmtDateTime(c.ts)}</span>
                           </span>
                         </>);
@@ -638,13 +654,15 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           <span className="mt-1 flex flex-wrap items-center gap-1">
                             {branch && <span {...chipProps({ type: "branch", value: branch })} className={`inline-flex max-w-full cursor-pointer items-center gap-0.5 truncate rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 transition hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700${chipOn({ type: "branch", value: branch })}`}><IconGitBranch size={10} stroke={2} className="shrink-0" aria-hidden /><span className="truncate">{branch}</span></span>}
                             {hash && <span {...chipProps({ type: "hash", value: hash })} className={`cursor-pointer rounded-md bg-mustard-500/10 px-1.5 py-0.5 font-mono text-[10px] text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400${chipOn({ type: "hash", value: hash })}`}>{hash}</span>}
+                            {(() => { const id = crewTask(c); return id ? crewChip(id) : null; })()}
                             <span className="text-[10px] text-zinc-400 dark:text-zinc-500">{fmtDateTime(c.ts)}</span>
                           </span>
                           {subject && <span className="mt-1 line-clamp-2 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{subject}</span>}
                         </>);
                       })() : (<>
                       <span className="block break-all text-[12px] font-medium text-zinc-700 dark:text-zinc-100">{targetLabel(c.kind, c.target)}</span>
-                      <span className="block text-[10px] text-zinc-400 dark:text-zinc-500">{/* #1060 모든 카드 = 기록 날짜·시각 */}{c.kind === "narration" ? fmtDateTime(c.ts) : `${c.tool.replace(/^katchup_/, "")} · ${fmtDateTime(c.ts)}`}</span>
+                      {(() => { const id = crewTask(c); return id ? <span className="mt-1 flex flex-wrap items-center gap-1">{crewChip(id)}<span className="text-[10px] text-zinc-400 dark:text-zinc-500">{fmtDateTime(c.ts)}</span></span> : null; })()
+                        ?? <span className="block text-[10px] text-zinc-400 dark:text-zinc-500">{/* #1060 모든 카드 = 기록 날짜·시각 */}{c.kind === "narration" ? fmtDateTime(c.ts) : `${c.tool.replace(/^katchup_/, "")} · ${fmtDateTime(c.ts)}`}</span>}
                       </>)}
                     </span>
                     {c.status === "loading" && <IconLoader2 size={12} stroke={2} className="mt-0.5 shrink-0 animate-spin text-zinc-400" aria-hidden />}
