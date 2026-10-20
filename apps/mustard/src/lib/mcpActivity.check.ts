@@ -50,6 +50,7 @@ emitNarration("/repo/N", "테스트 실행", "vitest 돌림", 23); // 제목 다
 un3();
 assert.deepEqual(nar, ["코드 편집|App.tsx의 상태 관리를 useReducer로 바꾸는 중", "테스트 실행|vitest 돌림"], "narration 방출 + 빈 note·연속 동일 제목 스킵");
 assert.ok(recent("/repo/N", 5).some((e) => e.kind === "narration" && e.note), "narration 링버퍼 조회");
+assert.ok(emitNarration("/repo/C", "역할 · 카드", "1회차", 24, "crew|t1") && emitNarration("/repo/C", "역할 · 카드", "2회차", 25, "crew|t1"), "#1135 Crew 보고(tool 있음)는 같은 제목 연달아도 방출");
 
 // #1049 문서 편집은 카드 안 띄움, 코드·명령은 그대로
 {

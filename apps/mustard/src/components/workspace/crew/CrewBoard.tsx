@@ -79,7 +79,9 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
   }, [root, load]);
   useEffect(() => {
     if (!want || !board) return;
-    const task = board.tasks.find((x) => x.id === want);
+    // #1135 캐치업 Crew diff·세션 카드는 브랜치의 앞 8자(crew/<id8>)만 앎 → 짧으면 앞부분으로 찾음
+    const pre = want.length <= 8 ? board.tasks.filter((x) => x.id.replace(/[^a-z0-9]/gi, "").toLowerCase().startsWith(want)) : [];
+    const task = board.tasks.find((x) => x.id === want) ?? (pre.length === 1 ? pre[0] : undefined); // 여러 개면 엉뚱한 카드 대신 안 엶(리뷰)
     setWant(null); pendingOpen.v = null; // eslint-disable-line react-hooks/set-state-in-effect -- 한 번 쓰고 비움
     if (task) setDialog({ mode: "edit", task });
   }, [want, board]);

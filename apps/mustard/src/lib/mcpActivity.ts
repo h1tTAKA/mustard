@@ -74,14 +74,15 @@ export function emitEdit(root: string, tool: string, target: string, isError: bo
 // 실시간 내레이션 방출(#870) — main이 관찰한 터미널 델타를 서버가 analyze해 만든 설명을 학습스트림으로.
 // note(설명 텍스트)를 실어 클라가 재분석 없이 바로 렌더. title=짧은 행동 요약("코드 편집"/"명령 실행" 등).
 // 방출 여부 반환(#994) — 호출부(observe 라우트)가 방출된 것만 날짜별 저장. 이 모듈은 fs 의존 없이 유지(check 스크립트 안전).
-export function emitNarration(root: string, title: string, note: string, now: number): { target: string; note: string } | null {
+// #1135 tool = 출처 표시(Crew 보고는 "crew|<카드 id>" — 캐치업이 어느 Crew 카드인지 앎). 주면 제목 중복 스킵 안 함(같은 역할·카드가 연달아 보고해도 둘 다).
+export function emitNarration(root: string, title: string, note: string, now: number, tool?: string): { target: string; note: string } | null {
   const n = (note ?? "").trim();
   if (!n) return null;
   const r = normPath(root);
   const t = (title || translate(actLocale(), "stream.live")).trim();
-  if (lastNarr.get(r) === t) return null; // 연속 동일 제목 = 중복(같은 활동 재내레이션) → 스킵
-  lastNarr.set(r, t);
-  pushEvent({ root: r, tool: "narration", kind: "narration", target: t, isError: false, ts: now, note: n });
+  if (!tool && lastNarr.get(r) === t) return null; // 연속 동일 제목 = 중복(같은 활동 재내레이션) → 스킵
+  if (!tool) lastNarr.set(r, t);
+  pushEvent({ root: r, tool: tool || "narration", kind: "narration", target: t, isError: false, ts: now, note: n });
   return { target: t, note: n };
 }
 

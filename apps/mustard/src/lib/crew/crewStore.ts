@@ -69,7 +69,8 @@ export function sanitizeTask(x: unknown): CrewTask | null {
   };
 }
 
-export function readBoard(root: string): CrewBoard {
+// repair=false — 읽기만(깨진 파일을 옆으로 치우지 않음, 캐치업 세션 찾기처럼 보드와 무관한 경로용 #1135)
+export function readBoard(root: string, repair = true): CrewBoard {
   const file = boardFile(root);
   if (!existsSync(file)) return { version: 1, tasks: [] };
   try {
@@ -77,7 +78,7 @@ export function readBoard(root: string): CrewBoard {
     const tasks = Array.isArray(j.tasks) ? j.tasks.map(sanitizeTask).filter((t): t is CrewTask => !!t) : [];
     return { version: 1, tasks };
   } catch {
-    try { renameSync(file, `${file}.broken-${Date.now()}`); } catch { /* 백업 실패해도 빈 보드로 */ } // 깨진 파일은 남겨 두고(복구용) 빈 보드
+    if (repair) try { renameSync(file, `${file}.broken-${Date.now()}`); } catch { /* 백업 실패해도 빈 보드로 */ } // 깨진 파일은 남겨 두고(복구용) 빈 보드
     return { version: 1, tasks: [] };
   }
 }
