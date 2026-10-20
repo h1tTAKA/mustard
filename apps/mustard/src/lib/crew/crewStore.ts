@@ -74,9 +74,9 @@ export function readBoard(root: string, repair = true): CrewBoard {
   const file = boardFile(root);
   if (!existsSync(file)) return { version: 1, tasks: [] };
   try {
-    const j = JSON.parse(readFileSync(file, "utf8")) as { tasks?: unknown; auto?: unknown };
+    const j = JSON.parse(readFileSync(file, "utf8")) as { tasks?: unknown };
     const tasks = Array.isArray(j.tasks) ? j.tasks.map(sanitizeTask).filter((t): t is CrewTask => !!t) : [];
-    return { version: 1, tasks, ...(j.auto === true ? { auto: true } : {}) };
+    return { version: 1, tasks };
   } catch {
     if (repair) try { renameSync(file, `${file}.broken-${Date.now()}`); } catch { /* 백업 실패해도 빈 보드로 */ } // 깨진 파일은 남겨 두고(복구용) 빈 보드
     return { version: 1, tasks: [] };
@@ -135,8 +135,6 @@ export function applyOp(root: string, op: CrewOp, now = Date.now()): CrewBoard {
     const t = find(op.id);
     board.tasks = tasks.filter((x) => x.id !== t.id);
     renumber(board.tasks, t.status);
-  } else if (op.op === "auto") { // #1137 레포의 '전부 알아서' 켜고 끄기
-    if (op.on === true) board.auto = true; else delete board.auto;
   } else {
     throw new Error("unknown op");
   }

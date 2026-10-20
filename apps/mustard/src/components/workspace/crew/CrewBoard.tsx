@@ -3,7 +3,7 @@
 // 이번 단계: 칸 7개 + 수동 카드(만들기·편집·삭제·드래그) + 담당 역할 지정. 에이전트 실행·커스텀 역할은 에픽 2번부터.
 // 보드는 서버 파일(~/.nunopi/crew)이 기준 — 화면은 연산만 보내고 돌아온 보드로 갱신(창 여러 개여도 덮어쓰기 없음).
 import { useCallback, useEffect, useState } from "react";
-import { IconBolt, IconClockPause, IconCornerDownRight, IconGitPullRequest, IconSubtask, IconLayoutKanban, IconPlus, IconShieldQuestion, IconUsers, IconX, IconShieldCheck } from "@tabler/icons-react";
+import { IconBolt, IconClockPause, IconCornerDownRight, IconGitPullRequest, IconSubtask, IconLayoutKanban, IconPlus, IconShieldQuestion, IconUsers, IconX } from "@tabler/icons-react";
 import { useConfirm, useT, useToast } from "@mustard/core";
 import { CREW_STATUSES, type CrewBoard as Board, type CrewOp, type CrewStatus, type CrewTask } from "@/lib/crew/crewTypes";
 import { relTime } from "@/lib/relTime";
@@ -111,11 +111,6 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
         <button type="button" onClick={() => setTrigOpen(true)} title={t("crewtrig.title")}
           className="flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
           <IconBolt size={13} stroke={2} aria-hidden />{t("crewtrig.button")}
-        </button>
-        {/* #1137 '전부 알아서' — 켜면 권한 묻기 없이 자동 허락(push·머지·sudo는 계속 차단). 레포별(보드에 저장) */}
-        <button type="button" onClick={() => void apply({ op: "auto", on: !board?.auto })} title={t(board?.auto ? "crew.autoOnTitle" : "crew.autoOffTitle")} aria-pressed={!!board?.auto}
-          className={`flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-medium transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${board?.auto ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
-          <IconShieldCheck size={13} stroke={2} aria-hidden />{t("crew.auto")}
         </button>
         <button type="button" onClick={() => setRolesOpen(true)} title={t("crew.rolesTitle")}
           className="flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">

@@ -65,15 +65,4 @@ f = fb.tasks[0];
 assert.deepStrictEqual([f.gate, f.status, f.stage], [undefined, "ready", 1], "지우기");
 assert.strictEqual(readBoard(r4).tasks[0].pipeline?.length, 2, "파일에 남음");
 
-// #1137 '전부 알아서' — 보드에 저장, 카드 바꿔도 유지, 끄면 지움
-const ra = "/tmp/crew-auto-check";
-applyOp(ra, { op: "create", title: "t" });
-assert.strictEqual(readBoard(ra).auto, undefined, "기본 꺼짐");
-applyOp(ra, { op: "auto", on: true });
-assert.strictEqual(readBoard(ra).auto, true, "켜짐 저장");
-applyOp(ra, { op: "update", id: readBoard(ra).tasks[0].id, title: "t2" });
-assert.strictEqual(readBoard(ra).auto, true, "다른 연산 뒤에도 유지");
-applyOp(ra, { op: "auto", on: false });
-assert.strictEqual(readBoard(ra).auto, undefined, "끄면 지움");
-
 console.log("crewStore.check ok");
