@@ -32,7 +32,8 @@ export default function MetaRow({ root, field, title, items, empty, exclude = []
   const [cands, setCands] = useState<{ value: string; color?: string }[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const box = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null); // 줄(목록 위치 기준)
+  const pop = useRef<HTMLDivElement>(null), btn = useRef<HTMLButtonElement>(null); // 바깥 클릭 판정은 목록·[+]만(리뷰)
   const mounted = useRef(true);
   const onCandidatesRef = useRef(onCandidates);
   useEffect(() => { onCandidatesRef.current = onCandidates; }, [onCandidates]);
@@ -44,7 +45,7 @@ export default function MetaRow({ root, field, title, items, empty, exclude = []
     void window.nunopiDesktop?.github?.metaCandidates?.(root, field)
       .then((r) => { if (!alive) return; if (r.ok && r.data) { setCands(r.data); onCandidatesRef.current?.(r.data); } else { setCands([]); setErr(r.detail || t("github.error")); } })
       .catch((e) => { if (alive) { setCands([]); setErr(String((e as Error)?.message || e)); } });
-    const down = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const down = (e: MouseEvent) => { const n = e.target as Node; if (!pop.current?.contains(n) && !btn.current?.contains(n)) setOpen(false); };
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     window.addEventListener("mousedown", down); window.addEventListener("keydown", key);
     return () => { alive = false; window.removeEventListener("mousedown", down); window.removeEventListener("keydown", key); };
@@ -70,7 +71,7 @@ export default function MetaRow({ root, field, title, items, empty, exclude = []
       {items.map((i) => (
         <span key={i.value} className={chip} style={i.color ? { backgroundColor: `#${i.color}22` } : undefined}>
           {dot(i.color)}{i.value}
-          {!i.readonly && (
+          {!i.readonly && !(field === "label" && i.value.includes(",")) && ( // 쉼표 든 라벨은 gh로 못 뺌(쉼표로 쪼갬) — × 숨김
             <button type="button" onClick={() => void change([], [i.value], i.value)} disabled={!!busy} title={t("github.removeItem")} aria-label={`${t("github.removeItem")} ${i.value}`}
               className="text-zinc-400 transition hover:text-zinc-600 disabled:opacity-50 dark:hover:text-zinc-200">
               {busy === i.value ? <IconLoader2 size={10} className="animate-spin" aria-hidden /> : <IconX size={10} stroke={2} aria-hidden />}
@@ -80,12 +81,12 @@ export default function MetaRow({ root, field, title, items, empty, exclude = []
       ))}
       {!items.length && <span className="text-zinc-400 dark:text-zinc-500">{empty}</span>}
       <div className="inline-flex">
-        <button type="button" onClick={() => { setErr(null); setCands(null); setOpen((v) => !v); }} title={t("github.addTo", { name: title })} aria-label={t("github.addTo", { name: title })} aria-expanded={open}
+        <button ref={btn} type="button" onClick={() => { setErr(null); setCands(null); setOpen((v) => !v); }} title={t("github.addTo", { name: title })} aria-label={t("github.addTo", { name: title })} aria-expanded={open}
           className="shrink-0 text-zinc-400 transition hover:text-zinc-600 dark:hover:text-zinc-200">
           <IconPlus size={12} stroke={2} aria-hidden />
         </button>
         {open && (
-          <div className="absolute inset-x-0 top-full z-30 mt-1 max-w-72 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          <div ref={pop} className="absolute inset-x-0 top-full z-30 mt-1 max-w-72 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
             <p className="mb-1 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">{t("github.addTo", { name: title })}</p>
             {cands === null ? (
               <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-zinc-400"><IconLoader2 size={12} className="animate-spin" aria-hidden />…</div>
