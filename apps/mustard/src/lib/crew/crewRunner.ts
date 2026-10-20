@@ -526,7 +526,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       { signal: ac.signal }),
       // 90초 — 신호만으론 CLI가 조용히 멈추면 안 끊김(스트림 이벤트마다 확인) → 타이머와 경주해 자리를 비움(재리뷰)
       new Promise<never>((_, rej) => { timer = setTimeout(() => { ac.abort(); rej(new Error("timeout")); }, 90_000); })]).finally(() => clearTimeout(timer));
-    // chat 모드는 끝에 학습 카드 블록(```nunopi-cards …```)을 붙임 — 대화방 답엔 필요 없음(앱 확인)
+    // chat 모드는 학습 카드 블록(```nunopi-cards …```)을 붙임 — 대화방 답엔 필요 없음, 어디 있든 전부 뺌(안 닫힌 건 끝까지)(앱 확인)
     const text = (res?.summary ?? "").replace(/```nunopi-cards[\s\S]*?(```|$)/g, "").trim();
     if (!text || isFailedNote(text)) throw new Error(text || "empty");
     say(root, { from: role.id, provider: role.provider, kind: "answer", text: text.slice(0, 2000), replyTo: human.id, ...(t ? { taskId: t.id, taskTitle: t.title } : {}) });
