@@ -1,7 +1,7 @@
 // Crew 팀 채팅(#1104) — GET ?root=&since= 메시지 / POST {root, text, replyTo?} 사람 메시지(@역할 새 카드·카드 답글).
 import { isAbsolute } from "node:path";
 import { readMsgs } from "@/lib/crew/crewChat";
-import { postHuman, registerRoot } from "@/lib/crew/crewRunner";
+import { answeringRoles, postHuman, registerRoot } from "@/lib/crew/crewRunner";
 import { crossSite } from "@/lib/crew/crewPolicy";
 
 export const runtime = "nodejs";
@@ -11,7 +11,7 @@ export async function GET(request: Request): Promise<Response> {
   const root = sp.get("root") ?? "";
   if (!isAbsolute(root)) return Response.json({ ok: false, error: "absolute root required" }, { status: 400 });
   registerRoot(root, new URL(request.url).origin); // 채팅만 열어 둬도 Ready 카드가 돌게
-  try { return Response.json({ ok: true, msgs: readMsgs(root, Number(sp.get("since")) || 0) }); }
+  try { return Response.json({ ok: true, msgs: readMsgs(root, Number(sp.get("since")) || 0), answering: answeringRoles(root) }); } // #1139 답 쓰는 중인 역할
   catch (e) { return Response.json({ ok: false, error: String((e as Error)?.message ?? e) }, { status: 500 }); }
 }
 
