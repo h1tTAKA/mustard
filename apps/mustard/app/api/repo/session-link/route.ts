@@ -5,6 +5,7 @@ import { findCommitSession } from "@/lib/agentSessions";
 import { readSession, writeSession } from "@/lib/catchupStore";
 import { crewDirForBranch } from "@/lib/crew/crewWorktree";
 import { readMsgs } from "@/lib/crew/crewChat";
+import { readBoard } from "@/lib/crew/crewStore";
 
 export const runtime = "nodejs";
 const HASH_RE = /^[0-9a-f]{7,64}$/i;
@@ -29,6 +30,9 @@ export async function POST(req: Request): Promise<Response> {
         const text = m.text.slice(0, Math.min(1500, room)); if (!text) continue; // 빈 글은 건너뜀(그 앞 글까지 버리지 않게, 재리뷰)
         talk.unshift({ from: m.from, kind: m.kind, to: m.mentions ?? [], text, ts: m.ts }); room -= text.length;
       }
+      // 사람이 처음 내린 지시 = 카드(제목·본문·맡긴 역할). 대화방에서 만든 카드도 그 글엔 카드 id가 없고, 보드에서 만든 카드는 글 자체가 없음
+      const pre = (() => { try { return readBoard(root).tasks.filter((t) => t.id.replace(/[^a-z0-9]/gi, "").toLowerCase().startsWith(crew.id8)); } catch { return []; } })();
+      if (pre.length === 1) { const t = pre[0]; talk.unshift({ from: "human", kind: "task", to: t.pipeline?.length ? t.pipeline : t.role ? [t.role] : [], text: [t.title, t.body].filter(Boolean).join("\n").slice(0, 1500), ts: t.createdAt }); }
     }
     const s = found ? { ...found, ...(talk.length ? { crew: talk } : {}) } : talk.length ? { agent: "crew", sessionId: "", messages: [], crew: talk, closed: true } : null;
     if (!s) return Response.json({ ok: true, session: null });
