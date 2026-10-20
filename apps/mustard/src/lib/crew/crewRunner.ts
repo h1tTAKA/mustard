@@ -164,8 +164,9 @@ function say(root: string, m: Omit<CrewMsg, "id" | "ts">) { try { appendMsg(root
 function report(run: CrewRun, title: string, text: string) {
   try {
     const ts = Date.now(), head = `${roleLabel(run.role)}(${PROVIDER[run.provider] ?? run.provider}) · ${title}`.slice(0, 120);
-    const sent = emitNarration(run.root, head, text, ts);
-    if (sent) appendItems(run.root, [{ key: `narration|${ts}|${sent.target}`, kind: "narration", target: sent.target, tool: "narration", ts, expl: sent.note }]);
+    const tool = `crew|${run.taskId}`; // #1135 어느 Crew 카드인지(캐치업 Crew 필터·카드 열기)
+    const sent = emitNarration(run.root, head, text, ts, tool);
+    if (sent) appendItems(run.root, [{ key: `narration|${ts}|${sent.target}`, kind: "narration", target: sent.target, tool, ts, expl: sent.note }]);
   } catch { /* 보고 실패는 무시 */ }
 }
 
