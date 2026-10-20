@@ -837,7 +837,7 @@ ipcMain.handle("github:pr-file-diff", async (_e, { cwd, number, path }) => {
 // 봤음 표시 — GitHub에 저장(웹·다른 기기와 같은 상태).
 // PR 파일 전체 diff(#1133, VS Code 확장처럼) — merge base와 head의 원문을 받아 로컬 git diff -U100000(기존 diff 탭과 같은 모양).
 // 줄 번호는 head 기준이라 지적·줄 댓글 위치 그대로. 바이너리·1MB 넘음·실패면 { fallback: true } → 화면은 기존 바뀐 구간 diff.
-const FULL_MAX = 1_000_000;
+const FULL_MAX = 1_000_000, FULL_LINES = 20_000;
 const prCompareCache = new Map(); // `${cwd}#${n}` → { head, at, mb, files: Map(path → { status, prev }) } — head 바뀌면 새로
 async function prCompare(cwd, n) {
   const key = `${cwd}#${n}`;
@@ -873,12 +873,14 @@ ipcMain.handle("github:pr-file-full-diff", async (_e, { cwd, number, path }) => 
     const newText = f.status === "removed" ? "" : await ghRaw(cwd, path, cmp.head);
     if (oldText == null || newText == null) return fallback;
     if (oldText.length > FULL_MAX || newText.length > FULL_MAX || oldText.includes("\0") || newText.includes("\0")) return fallback; // 큰 파일·바이너리
+    // UTF-8 아닌 글(Shift_JIS 등)은 깨진 글자(U+FFFD)로 보임 → 구간 diff로. 줄이 너무 많으면 화면 하이라이트가 버거움(리뷰)
+    if (oldText.includes("\uFFFD") || newText.includes("\uFFFD") || Math.max(oldText.split("\n").length, newText.split("\n").length) > FULL_LINES) return fallback;
     const dir = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "mustard-prdiff-"));
     try {
       const a = require("node:path").join(dir, "a"), b = require("node:path").join(dir, "b");
       writeFileSync(a, oldText, { mode: 0o600, flag: "wx" }); writeFileSync(b, newText, { mode: 0o600, flag: "wx" });
       let diff = "";
-      try { diff = (await execFileP("git", ["diff", "--no-index", "--no-color", "-U100000", "--", a, b], { encoding: "utf8", timeout: 15000, maxBuffer: 20_000_000 })).stdout; }
+      try { diff = (await execFileP("git", ["diff", "--no-index", "--no-color", "--no-ext-diff", "--no-textconv", "-U100000", "--", a, b], { encoding: "utf8", timeout: 15000, maxBuffer: 20_000_000 })).stdout; }
       catch (e) { if (e && e.code === 1) diff = e.stdout || ""; else return fallback; } // --no-index는 차이 있으면 exit 1
       const at = diff.indexOf("\n@@");
       if (at < 0) return fallback; // 차이 없음 등
