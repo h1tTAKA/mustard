@@ -274,7 +274,10 @@ async function wire() {
   // #1137 Codex·OpenCode(SNA 승인 흐름)도 Claude 훅과 같은 정책 — 허락·차단은 바로 답하고, 묻기만 사람에게(대화방에도 알림).
   sna.agent.onPermissionRequest(({ session, request, createdAt }) => {
     const id = g.bySession.get(session); const run = id ? g.runs.get(id) : undefined;
-    if (!run || !ACTIVE.includes(run.state)) return;
+    if (!run) return;
+    if (!ACTIVE.includes(run.state)) { void sna.agent.respondPermission(session, false).catch(() => {}); return; } // 끝난 실행 — 거절(매달려 있지 않게)
+    // 사람 답을 기다리는 요청이 이미 있음 — SNA 응답엔 요청 id가 없어, 지금 자동으로 답하면 사람이 볼 그 요청에 답이 가버림(리뷰). 사람 답이 먼저.
+    if (run.state === "needs-permission") return;
     const req = (request ?? {}) as Record<string, unknown>;
     const { tool, input } = fromAgentRequest(req);
     const d = decide(tool, input, run.worktree, readBoard(run.root, false).auto === true);
@@ -404,10 +407,16 @@ export async function respondPermission(root: string, taskId: string, approved: 
   const run = activeFor(root, taskId);
   if (!run || run.state !== "needs-permission") throw new Error("no pending permission");
   const hook = g.pending.get(run.id);
+  if (!hook && !run.sessionId) throw new Error("no pending permission");
+  // #1137 상태를 먼저(동기) 바꿈 — 기다리는 동안 두 번째 클릭이 같은 세션에 또 답하지 않게(리뷰). SNA 실패면 되돌림.
+  const prev = run.permission;
+  run.state = "running"; run.permission = undefined;
   if (hook) hook.resolve(approved); // Claude — Mustard 훅이 기다리는 중
-  else if (run.sessionId) await (await getSnaClient()).agent.respondPermission(run.sessionId, approved); // Codex·OpenCode — SNA 승인
-  else throw new Error("no pending permission");
-  run.state = "running"; run.permission = undefined; run.lastActivity = approved ? "permission approved" : "permission denied";
+  else {
+    try { await (await getSnaClient()).agent.respondPermission(run.sessionId!, approved); } // Codex·OpenCode — SNA 승인
+    catch (e) { run.state = "needs-permission"; run.permission = prev; throw e; }
+  }
+  run.lastActivity = approved ? "permission approved" : "permission denied";
   moveCard(root, taskId, "running");
   persist(run, true);
   return run;
