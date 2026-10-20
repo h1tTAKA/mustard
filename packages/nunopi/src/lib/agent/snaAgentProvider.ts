@@ -63,6 +63,9 @@ const DEDUP_SYSTEM_PROMPT =
 // #1127 PR 리뷰 — 튜터 프롬프트("JSON 금지")와 부딪히지 않게 리뷰어 전용. 형식은 사용자 메시지(클라가 완성)를 따름.
 const REVIEW_SYSTEM_PROMPT =
   "You are a meticulous senior code reviewer. Follow the output format in the user message exactly. Output ONLY the requested JSON array — no prose before or after, no markdown headings.";
+// #1139 Crew 대화방 — 팀원으로 짧게. 형식(JSON 등)은 사용자 메시지 지시를 그대로(챗 튜터 프롬프트는 JSON 금지라 회의 판단이 안 됨, 리뷰).
+const CREW_SYSTEM_PROMPT =
+  "You are a teammate agent on a software team board, talking in the team chat. Follow the output format the user message asks for exactly (if it asks for JSON, output only that JSON object). Be brief and concrete. No learning cards, no headings.";
 const QUIZ_SYSTEM_PROMPT =
   "You create and grade active-recall quizzes. Follow the MODE (GENERATE or GRADE) and output language stated in the user message. Output ONLY the requested ```json fenced block and nothing else — no prose, no explanation, no other code blocks.";
 
@@ -207,7 +210,21 @@ async function runViaSnaOnce(
     } else if (type === "complete") {
       usage = mapUsage(ev.data);
     } else if (type === "error") {
-      throw new Error(String(ev.message ?? "runtime error"));
+      // ev.message가 객체로 오는 경우(Codex 인증 오류 등) — "[object Object]" 대신 안의 글자를 꺼냄(#1139 앱 확인). 글자·숫자는 예전 그대로.
+      const m = ev.message as unknown;
+      if (m === undefined || m === null || typeof m !== "object") throw new Error(String(m ?? "runtime error"));
+      const pick = (x: unknown, depth = 0): string => {
+        if (x === undefined || x === null) return "";
+        if (typeof x !== "object") return String(x);
+        if (depth > 3) return "";
+        try { // getter·Proxy가 던져도 원래 오류를 가리지 않게
+          const o = x as Record<string, unknown>;
+          const inner = pick(o.message, depth + 1) || pick((o.error as Record<string, unknown> | undefined)?.message, depth + 1);
+          return inner || JSON.stringify(x).slice(0, 500); // 순환·BigInt면 catch로
+        } catch { return ""; }
+      };
+      const d = ev.data as Record<string, unknown> | undefined;
+      throw new Error((pick(m) || pick(d?.error) || pick(d) || "runtime error").slice(0, 500));
     }
   }
 
@@ -222,7 +239,7 @@ function unavailableResponse(
   providerId: AgentProviderKind,
 ): AgentAnalyzeResponse {
   const warn = [{ code: "PARTIAL_PARSE" as const, message }];
-  if (request.mode === "chat" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz" || request.mode === "pr-review") return chatModeResponse(providerId, message, warn);
+  if (request.mode === "chat" || request.mode === "dedup-cards" || request.mode === "deck-agent" || request.mode === "quiz" || request.mode === "pr-review" || request.mode === "crew") return chatModeResponse(providerId, message, warn);
   if (request.mode === "explain-concept") return conceptModeResponse(providerId, [], warn);
   if (request.mode === "explain-token") return tokenModeResponse(providerId, [], warn);
   if (request.mode === "text") return textModeResponse(providerId, message, warn);
@@ -282,6 +299,7 @@ function createSnaProvider(cfg: SnaProviderConfig): AgentProvider {
       // Ask 아웃풋 퀴즈 — dedup과 동형(블록만 출력, 저추론, 스트림/thinking 없음). 클라가 code에 컨텍스트 완성.
       const isQuiz = request.mode === "quiz";
       const isReview = request.mode === "pr-review"; // #1127 프롬프트=code 그대로, 리뷰어 시스템, 깊은 추론 허용
+      const isCrew = request.mode === "crew"; // #1139 프롬프트=code 그대로, 팀원 시스템, 저추론
       const isChatLike = isChat || isCardExplain;
       // 답변을 자유텍스트로 흘리고(summary) 스트리밍/추론을 보여주는 그룹(챗류 + 덱에이전트).
       const isChatStream = isChatLike || isDeckAgent;
@@ -294,7 +312,7 @@ function createSnaProvider(cfg: SnaProviderConfig): AgentProvider {
         return unavailableResponse(request, message, providerId);
       }
 
-      const prompt = isDedup || isQuiz || isReview
+      const prompt = isDedup || isQuiz || isReview || isCrew
         ? request.code // 클라가 규칙+목록(또는 퀴즈 컨텍스트)을 이미 완성해 보냄.
         : isDeckAgent
         ? buildDeckAgentPrompt(request)
@@ -319,7 +337,7 @@ function createSnaProvider(cfg: SnaProviderConfig): AgentProvider {
       };
 
       if (mockText) {
-        return isChatStream || isDedup || isQuiz || isReview
+        return isChatStream || isDedup || isQuiz || isReview || isCrew
           ? normalizeChatOutput(mockText, providerId)
           : isExplainConcept
             ? normalizeExplainConceptOutput(mockText, providerId, request)
@@ -362,7 +380,7 @@ function createSnaProvider(cfg: SnaProviderConfig): AgentProvider {
           runtime: cfg.runtime,
           // 챗은 언어별 튜터 시스템프롬프트 + thinking 살림(effort 미강제). 분석은 JSON 지시 + low.
           // 중복묶기는 블록만 내라는 경량 시스템프롬프트 + low(아래 effort).
-          systemPrompt: isDedup ? DEDUP_SYSTEM_PROMPT : isQuiz ? QUIZ_SYSTEM_PROMPT : isReview ? REVIEW_SYSTEM_PROMPT : isDeckAgent ? deckAgentSystemPrompt(request.locale) : isChatLike ? chatSystemPrompt(request.locale) : CODE_SYSTEM_PROMPT,
+          systemPrompt: isDedup ? DEDUP_SYSTEM_PROMPT : isQuiz ? QUIZ_SYSTEM_PROMPT : isReview ? REVIEW_SYSTEM_PROMPT : isCrew ? CREW_SYSTEM_PROMPT : isDeckAgent ? deckAgentSystemPrompt(request.locale) : isChatLike ? chatSystemPrompt(request.locale) : CODE_SYSTEM_PROMPT,
           signal: options?.signal,
           onProgress: streamOnProgress,
           // 추론 표시는 챗류·덱에이전트에서만 — 분석/청크는 partial 파싱 경로라 미전달.
@@ -375,7 +393,7 @@ function createSnaProvider(cfg: SnaProviderConfig): AgentProvider {
           workspace: isChat ? options?.workspace : undefined, // #998 캐치업 질문(chat)만 읽기 전용 도구
         });
 
-        return isChatStream || isDedup || isQuiz || isReview
+        return isChatStream || isDedup || isQuiz || isReview || isCrew
           ? normalizeChatOutput(rawText, providerId)
           : isExplainConcept
             ? normalizeExplainConceptOutput(rawText, providerId, request)
@@ -391,7 +409,7 @@ function createSnaProvider(cfg: SnaProviderConfig): AgentProvider {
         if (options?.signal?.aborted) throw new Error(translate(request.locale, "analyze.cancelled")); // 취소는 route로 전파(499) — 어느 호출처가 message를 보여도 요청 언어(#1125)
         const message = err instanceof Error ? err.message : "runtime run failed";
         const warn = [{ code: "PARSE_FAILED" as const, message }];
-        if (isChatStream || isDedup || isQuiz || isReview) return chatModeResponse(providerId, translate(request.locale, "provider.runtimeFailed", { msg: message }), warn);
+        if (isChatStream || isDedup || isQuiz || isReview || isCrew) return chatModeResponse(providerId, translate(request.locale, "provider.runtimeFailed", { msg: message }), warn);
         if (isExplainConcept) return conceptModeResponse(providerId, [], warn);
         if (isExplainToken) return tokenModeResponse(providerId, [], warn);
         if (isText) return textModeResponse(providerId, translate(request.locale, "provider.runtimeFailed", { msg: message }), warn);

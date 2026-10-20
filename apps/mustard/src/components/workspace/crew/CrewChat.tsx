@@ -4,7 +4,7 @@
 // 입력: @에이전트 = 그 역할에게 새 카드(그록봇식), 메시지에 답글 = 그 카드로 전달. 2초 폴링(since 이후만).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconArrowBackUp, IconArrowUp, IconAt, IconLayoutKanban, IconSettings, IconUser, IconUsers, IconX } from "@tabler/icons-react";
-import { useT, useToast, relocalize, CREW_TEXT_KEYS } from "@mustard/core";
+import { Markdown, useT, useToast, relocalize, CREW_TEXT_KEYS } from "@mustard/core";
 import type { CrewMsg } from "@/lib/crew/crewChat";
 import type { CrewRun } from "@/lib/crew/crewRunner";
 import { PROVIDER_LABEL, RoleIcon, isActiveRun, roleDesc, roleName, useCrewRoles, useCrewRuns } from "./crewUi";
@@ -52,8 +52,10 @@ export default function CrewChat({ root }: { root: string }) {
   const stick = useRef(true); // 맨 아래 보는 중이면 새 메시지에 따라 내려감
   const channel = basename(root);
 
+  const [answering, setAnswering] = useState<string[]>([]); // #1139 @ 없는 글에 답 쓰는 중인 역할
   const load = useCallback(() => {
     fetch(`/api/crew/chat?root=${encodeURIComponent(root)}&since=${lastTs.current}`).then((r) => r.json()).then((j) => {
+      if (j?.ok) setAnswering((prev) => { const next = Array.isArray(j.answering) ? (j.answering as string[]) : []; return prev.join() === next.join() ? prev : next; });
       if (!j?.ok || !j.msgs.length) return;
       lastTs.current = j.msgs[j.msgs.length - 1].ts;
       setMsgs((prev) => { const seen = new Set(prev.map((m) => m.id)); const add = (j.msgs as CrewMsg[]).filter((m) => !seen.has(m.id)); return add.length ? [...prev, ...add].slice(-600) : prev; });
@@ -68,9 +70,9 @@ export default function CrewChat({ root }: { root: string }) {
   // 멤버 상태 — 그 역할의 진행 중 실행(권한 대기면 내 확인 필요)
   const status = useCallback((roleId: string): { kind: "working" | "waiting" | "idle"; card?: string } => {
     const r = [...runs.values()].find((x: CrewRun) => x.role === roleId && isActiveRun(x));
-    if (!r) return { kind: "idle" };
+    if (!r) return answering.includes(roleId) ? { kind: "working", card: t("crewchat.typing") } : { kind: "idle" };
     return { kind: r.state === "needs-permission" ? "waiting" : "working", card: titles.get(r.taskId) ?? "" };
-  }, [runs, titles]);
+  }, [runs, titles, answering, t]);
   // #1137 권한 알림 → 그 카드가 지금 권한 대기이고 그 카드의 마지막 권한 글이면 허락·거절 버튼(보드 카드 창까지 안 가도 되게)
   const lastPerm = useMemo(() => { const m = new Map<string, string>(); for (const x of msgs) if (x.kind === "permission" && x.taskId) m.set(x.taskId, x.id); return m; }, [msgs]);
   const [permBusy, setPermBusy] = useState(false);
@@ -115,6 +117,21 @@ export default function CrewChat({ root }: { root: string }) {
   };
 
   // 본문의 @역할을 칩으로
+  // #1139 에이전트 말은 마크다운으로(`코드`·**굵게**·목록). 코드 밖 글자만 손봄(리뷰): @역할 → 이름 칩(링크 꼴 + CSS),
+  // 한 줄 바꿈 → 줄 바꿈 유지(마크다운은 합쳐 버림). 학습 카드 블록(```nunopi-cards```)은 옛 답에 저장돼 있어도 숨김.
+  // 링크는 앱 창이 넘어가지 않게 — http(s)·mailto만 새 창(= 기본 브라우저), 그 밖(앱 내부 스킴·상대 주소)은 아무 일 없음.
+  const mdEsc = (x: string) => x.replace(/[\\*_`[\]~|&]/g, "\\$&");
+  const renderMd = (s: string) => (
+    <Markdown className="crew-md text-[12.5px] leading-relaxed" onLink={(href) => { const m = /^#@([a-z0-9-]+)$/.exec(href); if (m) { if (m[1] !== "you") pick(m[1]); } else if (/^(https?:|mailto:)/i.test(href)) window.open(href, "_blank", "noopener"); return true; }}>
+      {s.replace(/```nunopi-cards[\s\S]*?(```|$)/g, "").trim().split(/((?<=^|\n)[ \t]*```[\s\S]*?(?:```|$)|(?<=^|\n)[ \t]*~~~[\s\S]*?(?:~~~|$)|`[^`\n]+`)/).map((seg, i) => (i % 2 ? seg : seg
+        .replace(/(?<![\w.*_/])@([a-z0-9][a-z0-9-]{0,39})/gi, (m0, id: string) => {
+          const k = id.toLowerCase();
+          // 링크 꼴 [@이름](#@역할) — globals.css .crew-md가 예전 칩 색(하늘·나는 호박)으로, 누르면 그 역할 @부르기(유저)
+          return k === "you" ? `[@${mdEsc(t("crewchat.you.name"))}](#@you)` : known.has(k) ? `[@${mdEsc(roleName(t, roles, k))}](#@${k})` : m0;
+        })
+        .replace(/(?<!\n)\n(?!\n)/g, "  \n"))).join("")}
+    </Markdown>
+  );
   const renderText = (s: string) => s.split(/(@[a-z0-9][a-z0-9-]{0,39})/gi).map((part, i) => {
     const id = part.startsWith("@") ? part.slice(1).toLowerCase() : "";
     if (id === "you") return <span key={i} className="rounded bg-amber-500/15 px-1 font-medium text-amber-700 dark:text-amber-300">@{t("crewchat.you.name")}</span>;
@@ -217,11 +234,12 @@ export default function CrewChat({ root }: { root: string }) {
                       <div className="mb-0.5 flex items-baseline gap-1.5 px-0.5">
                         <span className="text-[11.5px] font-medium text-zinc-700 dark:text-zinc-200">{who(m.from)}</span>
                         {m.provider && <span className="text-[10px] text-zinc-400 dark:text-zinc-500">{PROVIDER_LABEL[m.provider] ?? m.provider}</span>}
+                        {m.kind === "meeting" && <span className="text-[10px] text-zinc-400 dark:text-zinc-500">· {t("crewchat.meeting")}</span>}{/* #1139 팀 회의 발언 */}
                       </div>
                     )}
                     <div className="flex items-end gap-1.5">
-                      <div className={`whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-[12.5px] leading-relaxed ${first ? "rounded-tl-md" : ""} ${loud ? (m.kind === "blocked" ? "bg-rose-50 text-rose-900 ring-1 ring-rose-300/60 dark:bg-rose-500/10 dark:text-rose-100 dark:ring-rose-500/30" : "bg-amber-50 text-amber-900 ring-1 ring-amber-300/60 dark:bg-amber-500/10 dark:text-amber-100 dark:ring-amber-500/30") : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200/70 dark:bg-white/[0.07] dark:text-zinc-100 dark:ring-white/5"}`}>
-                        {renderText(msgText(m))}
+                      <div className={`min-w-0 break-words rounded-2xl px-3 py-1.5 text-[12.5px] leading-relaxed ${first ? "rounded-tl-md" : ""} ${loud ? (m.kind === "blocked" ? "bg-rose-50 text-rose-900 ring-1 ring-rose-300/60 dark:bg-rose-500/10 dark:text-rose-100 dark:ring-rose-500/30" : "bg-amber-50 text-amber-900 ring-1 ring-amber-300/60 dark:bg-amber-500/10 dark:text-amber-100 dark:ring-amber-500/30") : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200/70 dark:bg-white/[0.07] dark:text-zinc-100 dark:ring-white/5"}`}>
+                        {renderMd(msgText(m))}
                       </div>
                       <span className="flex shrink-0 flex-col items-start gap-0.5 pb-0.5">
                         {m.taskId && (
@@ -246,6 +264,12 @@ export default function CrewChat({ root }: { root: string }) {
             </div>
           );
         })}
+        {answering.map((id) => ( /* #1139 답 쓰는 중 — 에이전트 말풍선 자리에 */
+          <div key={`typing-${id}`} className="mt-2.5 flex items-center gap-2">
+            <div className="w-8 shrink-0"><Avatar from={id} known={known} /></div>
+            <span className="text-[11.5px] text-zinc-400 dark:text-zinc-500">{t("crewchat.typingBy", { role: roleName(t, roles, id) })}</span>
+          </div>
+        ))}
       </div>
 
       {/* 입력 — 둥근 입력칸 + @ + 보내기 */}
