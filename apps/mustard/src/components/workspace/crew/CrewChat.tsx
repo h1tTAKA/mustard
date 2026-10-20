@@ -119,16 +119,16 @@ export default function CrewChat({ root }: { root: string }) {
   // 본문의 @역할을 칩으로
   // #1139 에이전트 말은 마크다운으로(`코드`·**굵게**·목록). 코드 밖 글자만 손봄(리뷰): @역할 → 굵은 이름(마크다운 안에선 칩을 못 씀),
   // 한 줄 바꿈 → 줄 바꿈 유지(마크다운은 합쳐 버림). 학습 카드 블록(```nunopi-cards```)은 옛 답에 저장돼 있어도 숨김.
-  // 링크는 앱 창이 넘어가지 않게 새 창(= 기본 브라우저)으로.
-  const mdEsc = (x: string) => x.replace(/[\\*_`[\]]/g, "\\$&");
+  // 링크는 앱 창이 넘어가지 않게 — http(s)·mailto만 새 창(= 기본 브라우저), 그 밖(앱 내부 스킴·상대 주소)은 아무 일 없음.
+  const mdEsc = (x: string) => x.replace(/[\\*_`[\]~|&]/g, "\\$&");
   const renderMd = (s: string) => (
-    <Markdown className="text-[12.5px] leading-relaxed" onLink={(href) => { window.open(href, "_blank", "noopener"); return true; }}>
-      {s.replace(/```nunopi-cards[\s\S]*?(```|$)/g, "").trim().split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/).map((seg, i) => (i % 2 ? seg : seg
-        .replace(/(?<![\w.])@([a-z0-9][a-z0-9-]{0,39})/gi, (m0, id: string) => {
+    <Markdown className="text-[12.5px] leading-relaxed" onLink={(href) => { if (/^(https?:|mailto:)/i.test(href)) window.open(href, "_blank", "noopener"); return true; }}>
+      {s.replace(/```nunopi-cards[\s\S]*?(```|$)/g, "").trim().split(/(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`)/).map((seg, i) => (i % 2 ? seg : seg
+        .replace(/(?<![\w.*_/])@([a-z0-9][a-z0-9-]{0,39})/gi, (m0, id: string) => {
           const k = id.toLowerCase();
           return k === "you" ? `**@${mdEsc(t("crewchat.you.name"))}**` : known.has(k) ? `**@${mdEsc(roleName(t, roles, k))}**` : m0;
         })
-        .replace(/([^\n])\n(?!\n)/g, "$1  \n"))).join("")}
+        .replace(/(?<!\n)\n(?!\n)/g, "  \n"))).join("")}
     </Markdown>
   );
   const renderText = (s: string) => s.split(/(@[a-z0-9][a-z0-9-]{0,39})/gi).map((part, i) => {

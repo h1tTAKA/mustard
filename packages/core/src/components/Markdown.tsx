@@ -21,12 +21,13 @@ const fixCjkEmphasis = (s: string) =>
 // 들쭉날쭉해도 색이 입혀진다. (미등록 언어 태그는 rehype-highlight v7이 에러 없이 스킵 — 기본 동작.)
 // 스타일은 globals.css의 .nunopi-md로 스코프한다(표/코드/목록/제목/링크 등).
 // onLink(선택, #1081): 링크 클릭을 앱이 먼저 처리(true 반환 = 처리함, 기본 이동 막음). catchup: 같은 앱 내부 스킴은 지우지 않음.
+// 빈 href(javascript: 등이 걸러져 ""가 된 것)는 이동 막음 — 같은 문서로 이동 = 화면 새로고침(#1139 리뷰).
 const keepAppLinks = (url: string) => (/^catchup:/i.test(url) ? url : defaultUrlTransform(url));
 export default function Markdown({ children, className, onLink }: { children: string; className?: string; onLink?: (href: string) => boolean }) {
   return (
     <div className={className ? `nunopi-md ${className}` : "nunopi-md"}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { detect: true }]]} urlTransform={keepAppLinks}
-        components={onLink ? { a: ({ href, children: c, ...rest }) => <a {...rest} href={href} onClick={(e) => { if (href && onLink(href)) e.preventDefault(); }}>{c}</a> } : undefined}>
+        components={onLink ? { a: ({ href, children: c, ...rest }) => <a {...rest} href={href} onClick={(e) => { if (!href || onLink(href)) e.preventDefault(); }}>{c}</a> } : undefined}>
         {fixCjkEmphasis(children)}
       </ReactMarkdown>
     </div>
