@@ -490,6 +490,25 @@ const AGENT_ID: Record<string, string> = { codex: "codex-agent", opencode: "open
 const MODERATOR = "scope-planner";
 const clip = (x: string | undefined, n: number) => (x ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 
+// 실패 이유를 사람 말로(앱 확인: Codex 한 번 묻기는 SNA 복사본 로그인을 써서 "refresh token was already used"로 실패)
+function failReason(e: unknown): string {
+  const m = String((e as Error)?.message ?? e);
+  return /refresh token|unauthori[sz]ed|sign in|log ?in|authenticat/i.test(m) ? tr("crewchat.why.login")
+    : /rate.?limit|usage limit|quota|429|too many/i.test(m) ? tr("crewchat.why.limit")
+    : /timeout|timed out|abort/i.test(m) ? tr("crewchat.why.timeout")
+    : clip(m, 120) || tr("crewchat.why.other");
+}
+// 역할에게 묻되, Claude가 아닌 AI가 실패하면 Claude로 한 번 더(대화방에 이유와 함께 알림). 그래도 실패면 throw(이유 담김).
+async function askOrFallback(root: string, role: CrewRole, prompt: string, replyTo: string): Promise<string> {
+  try { return await ask(role, prompt); }
+  catch (e) {
+    const why = failReason(e);
+    if (role.provider === "claude-code") throw new Error(why);
+    say(root, { from: "board", kind: "blocked", replyTo, ...tx("crewchat.fallback", { role: roleLabel(role.id), ai: PROVIDER[role.provider] ?? role.provider, why }) });
+    try { return await ask({ ...role, provider: "claude-code", model: "" }, prompt); } catch (e2) { throw new Error(failReason(e2)); }
+  }
+}
+
 // 역할 하나에게 한 번 묻기 — 역할의 AI·모델, 90초(신호만으론 조용히 멈춘 CLI가 안 끊김 → 타이머와 경주, 재리뷰). 실패면 throw.
 async function ask(role: CrewRole, prompt: string): Promise<string> {
   const provider = ANALYZE[role.provider] ?? snaClaudeProvider;
@@ -531,9 +550,10 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
   const queue = (g.answerNext ??= new Map());
   if ([...(g.answering ?? [])].some((k) => k.startsWith(`${root}\n`))) { queue.set(root, { human, roleId, taskId, everyone }); return; }
   const first = getRole(everyone ? MODERATOR : roleId) ?? getRole(MODERATOR);
-  if (!first) { say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.answerFailed", { role: roleId }) }); return; }
+  if (!first) { say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.answerFailed", { role: roleId, why: tr("crewchat.why.other") }) }); return; }
   let who = first, meeting = false;
   speaking(root, first.id);
+  const askR = (r: CrewRole, prompt: string) => askOrFallback(root, r, prompt, human.id);
   try {
     const lang = LANG[narrationLocale()] ?? "English";
     const facts = factsFor(root, human, taskId);
@@ -541,7 +561,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     const card = t ? { taskId: t.id, taskTitle: t.title } : {};
     const request = clip(human.text, 2000);
     // ① 첫 답 + 질문/일 요청 판단
-    const opener = readAnswer(await ask(first, [`You are "${roleLabel(first.id)}" (${first.id}), an agent on a software team board in Mustard.`,
+    const opener = readAnswer(await askR(first, [`You are "${roleLabel(first.id)}" (${first.id}), an agent on a software team board in Mustard.`,
       everyone ? `The human wrote to the whole team (@all):` : `The human wrote in the team chat without @mentioning anyone:`, `> ${request}`, "",
       `Facts (use ONLY these; do not invent progress):`, ...facts, "",
       `Decide the intent: "work" if the human asks the team to build, change, fix or plan something new; otherwise "question" (status, explanation, opinion).`,
@@ -557,7 +577,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       // @all 질문 — 나머지 역할이 차례로(앞 답을 보며) 한두 문장
       for (const r of listRoles().filter((x) => x.id !== first.id).slice(0, 8)) { // 역할을 늘려도 호출 상한(리뷰)
         who = r; speaking(root, r.id);
-        const text = await ask(r, [`You are "${roleLabel(r.id)}" (${r.id}) on a software team board. The human asked the whole team:`, `> ${request}`, "",
+        const text = await askR(r, [`You are "${roleLabel(r.id)}" (${r.id}) on a software team board. The human asked the whole team:`, `> ${request}`, "",
           `Facts:`, ...facts, "", `Teammates so far:`, ...transcript, "",
           `Add your own view from your role in 1-2 short sentences, in ${lang}. Don't repeat others. Plain text.`].join("\n"));
         say(root, { from: r.id, provider: r.provider, kind: "answer", text: text.slice(0, 1500), replyTo: human.id, ...card });
@@ -571,31 +591,38 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     let members = listRoles().map((r) => r.id).filter((id) => id !== mod.id).slice(0, 8); // @all 전원(상한 8, 리뷰)
     if (!everyone) {
       who = mod; speaking(root, mod.id);
-      const kick = readJson(await ask(mod, [`You moderate a short team meeting on a software board. Request from the human:`, `> ${request}`, "",
+      const kick = readJson(await askR(mod, [`You moderate a short team meeting on a software board. Request from the human:`, `> ${request}`, "",
         `Team:`, teamList(), "", `Pick 2-5 roles that should weigh in (not you). Answer ONLY with JSON: {"participants":["role-id",...]}`].join("\n")));
       members = pickParticipants(kick?.participants, known, mod.id);
     }
     for (const id of members) {
       const r = getRole(id); if (!r) continue;
       who = r; speaking(root, r.id);
-      const text = await ask(r, [`You are "${roleLabel(r.id)}" (${r.id}) in a short team meeting. The human asked the team:`, `> ${request}`, "",
-        `Board facts:`, ...facts, "", `Meeting so far:`, ...transcript, "",
-        `In 1-3 short sentences, in ${lang}: what you would do for this, any risk, and a question for a teammate (@role-id) if needed. Plain text, don't repeat others.`].join("\n"));
+      // 참여자 하나가 실패해도(Claude로도) 건너뛰고 회의는 계속 — 카드는 만듦(유저: 멈추면 이유 알림)
+      let text: string;
+      try {
+        text = await askR(r, [`You are "${roleLabel(r.id)}" (${r.id}) in a short team meeting. The human asked the team:`, `> ${request}`, "",
+          `Board facts:`, ...facts, "", `Meeting so far:`, ...transcript, "",
+          `In 1-3 short sentences, in ${lang}: what you would do for this, any risk, and a question for a teammate (@role-id) if needed. Plain text, don't repeat others.`].join("\n"));
+      } catch (e) {
+        say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.skipped", { role: roleLabel(r.id), why: String((e as Error)?.message ?? e) }) });
+        continue;
+      }
       say(root, { from: r.id, provider: r.provider, kind: "meeting", text: text.slice(0, 1500), replyTo: human.id });
       transcript.push(`${r.id}: ${clip(text, 500)}`);
     }
     // ③ 마무리 → 카드(Ready = 바로 실행)
     who = mod; speaking(root, mod.id);
-    const wrap = readJson(await ask(mod, [`You moderate the meeting. Request:`, `> ${request}`, "", `Meeting:`, ...transcript, "", `Team role ids: ${[...known].join(", ")}`, "",
+    const wrap = readJson(await askR(mod, [`You moderate the meeting. Request:`, `> ${request}`, "", `Meeting:`, ...transcript, "", `Team role ids: ${[...known].join(", ")}`, "",
       `Wrap up. Answer ONLY with JSON: {"reply":"1-3 sentences in ${lang}: decisions and who does what","title":"short card title","body":"card description in ${lang} with acceptance criteria","pipeline":["role-id in working order"]}`].join("\n")));
     const plan = planFromWrapUp(wrap, human.text, known);
     const b = applyOp(root, { op: "create", title: plan.title, body: plan.body, status: "ready", ...(plan.pipeline.length ? { role: plan.pipeline[0], pipeline: plan.pipeline } : {}) });
     const made = b.tasks[b.tasks.length - 1];
     const summary = typeof wrap?.reply === "string" && wrap.reply.trim() ? wrap.reply.trim() : plan.title;
     say(root, { from: mod.id, provider: mod.provider, kind: "meeting", text: summary.slice(0, 2000), replyTo: human.id, taskId: made.id, taskTitle: made.title, ...(plan.pipeline[0] ? { mentions: [plan.pipeline[0]] } : {}) });
-  } catch {
-    // 회의 중에 끊기면 카드 없이 멈췄다고(리뷰: 발언만 남고 끝난 것처럼 보임)
-    say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx(meeting ? "crewchat.meetingStopped" : "crewchat.answerFailed", { role: roleLabel(who.id) }) });
+  } catch (e) {
+    // 회의 중에 끊기면 카드 없이 멈췄다고(리뷰: 발언만 남고 끝난 것처럼 보임) + 이유(로그인·한도·시간 초과, 유저)
+    say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx(meeting ? "crewchat.meetingStopped" : "crewchat.answerFailed", { role: roleLabel(who.id), why: String((e as Error)?.message ?? e).slice(0, 160) }) });
   } finally {
     speaking(root);
     const nx = queue.get(root);

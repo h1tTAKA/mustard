@@ -1362,8 +1362,14 @@ const ko: Dict = {
   "crewchat.start": "「{card}」 맡을게요.",
   "crewchat.restart": "말씀하신 내용 반영해서 「{card}」 다시 할게요.",
   "crewchat.permission": "`{tool}` 실행해도 될까요?",
-  "crewchat.answerFailed": "{role}이(가) 답을 만들지 못했어요. @역할로 다시 불러 보세요",
-  "crewchat.meetingStopped": "{role} 차례에서 회의가 멈춰서 카드를 만들지 못했어요. 다시 말하거나 @역할로 불러 보세요",
+  "crewchat.answerFailed": "{role}이(가) 답을 만들지 못했어요({why}). @역할로 다시 불러 보세요",
+  "crewchat.meetingStopped": "{role} 차례에서 회의가 멈춰서 카드를 만들지 못했어요({why}). 다시 말하거나 @역할로 불러 보세요",
+  "crewchat.fallback": "{role}의 {ai}가 답하지 못해서({why}) Claude로 대신 답할게요",
+  "crewchat.skipped": "{role}은(는) 이번 회의에서 빠졌어요({why})",
+  "crewchat.why.login": "로그인이 만료됨 — 터미널에서 다시 로그인 필요",
+  "crewchat.why.limit": "사용량 한도에 걸림",
+  "crewchat.why.timeout": "응답 시간 초과",
+  "crewchat.why.other": "알 수 없는 오류",
   "crewchat.gate.spec": "범위(spec) 확인하고 승인해 주세요.",
   "crewchat.gate.schema": "데이터 구조 변경이 있어요. 승인해 주세요.",
   "crewchat.gate.merge": "다 끝났어요. 브랜치 {branch} 머지 여부를 정해 주세요.",
@@ -2870,8 +2876,14 @@ const ja: Dict = {
   "crewchat.start": "「{card}」を担当します。",
   "crewchat.restart": "いただいた内容を反映して「{card}」をやり直します。",
   "crewchat.permission": "`{tool}` を実行してもいいですか?",
-  "crewchat.answerFailed": "{role}が返事を作れませんでした。@役割でもう一度呼んでください",
-  "crewchat.meetingStopped": "{role}の番で会議が止まり、カードを作れませんでした。もう一度話すか@役割で呼んでください",
+  "crewchat.answerFailed": "{role}が返事を作れませんでした({why})。@役割でもう一度呼んでください",
+  "crewchat.meetingStopped": "{role}の番で会議が止まり、カードを作れませんでした({why})。もう一度話すか@役割で呼んでください",
+  "crewchat.fallback": "{role}の{ai}が答えられなかったため({why})、Claudeで代わりに答えます",
+  "crewchat.skipped": "{role}は今回の会議から外れました({why})",
+  "crewchat.why.login": "ログイン切れ — ターミナルで再ログインが必要",
+  "crewchat.why.limit": "利用上限に到達",
+  "crewchat.why.timeout": "応答がタイムアウト",
+  "crewchat.why.other": "不明なエラー",
   "crewchat.gate.spec": "スコープ(spec)を確認して承認してください。",
   "crewchat.gate.schema": "データ構造の変更があります。承認してください。",
   "crewchat.gate.merge": "完了しました。ブランチ {branch} をマージするか決めてください。",
@@ -4378,8 +4390,14 @@ const en: Dict = {
   "crewchat.start": "Taking “{card}”.",
   "crewchat.restart": "Redoing “{card}” with your note.",
   "crewchat.permission": "May I run `{tool}`?",
-  "crewchat.answerFailed": "{role} couldn't write a reply. Try again with an @mention",
-  "crewchat.meetingStopped": "The meeting stopped at {role} before a card was made. Try again or @mention a role",
+  "crewchat.answerFailed": "{role} couldn't write a reply ({why}). Try again with an @mention",
+  "crewchat.meetingStopped": "The meeting stopped at {role} before a card was made ({why}). Try again or @mention a role",
+  "crewchat.fallback": "{role}'s {ai} couldn't answer ({why}) — Claude answers instead",
+  "crewchat.skipped": "{role} sat out this meeting ({why})",
+  "crewchat.why.login": "login expired — sign in again in a terminal",
+  "crewchat.why.limit": "usage limit reached",
+  "crewchat.why.timeout": "timed out",
+  "crewchat.why.other": "unknown error",
   "crewchat.gate.spec": "Please review and approve the spec.",
   "crewchat.gate.schema": "There's a schema change. Please approve.",
   "crewchat.gate.merge": "All done. Decide whether to merge branch {branch}.",
@@ -4581,7 +4599,7 @@ export function relocalize(text: string, keys: string[], t: (key: string, vars?:
 export const CARD_SOURCE_KEYS = ["card.workspaceSource", "mem.chatSource"];
 // Crew 보드·시스템이 저장한 문구(채팅·관문 사유·실행 오류)의 키 — 옛 메시지(키 없이 text만)를 지금 언어로(#1125).
 // 저장되는 키만(화면 버튼·라벨 키를 넣으면 넓은 틀이 사람 말을 번역해 버림 — 리뷰).
-export const CREW_TEXT_KEYS = ["crewchat.permission", "crewchat.answerFailed", "crewchat.meetingStopped", "crewchat.gate.merge", "crewchat.gate.blocked", "crewchat.gate.schema", "crewchat.gate.spec", "crewchat.start", "crewchat.restart", "crewchat.decision.approve", "crewchat.decision.retry", "crewchat.prCreated", "crewsplit.created", "crewsplit.parentDone", "crewtrig.ciChat", "crewtrig.issueChat", "crewtrig.scheduleChat", "crew.reason.interrupted", "crew.reason.stopped", "crew.reason.flowError"];
+export const CREW_TEXT_KEYS = ["crewchat.permission", "crewchat.answerFailed", "crewchat.meetingStopped", "crewchat.fallback", "crewchat.skipped", "crewchat.gate.merge", "crewchat.gate.blocked", "crewchat.gate.schema", "crewchat.gate.spec", "crewchat.start", "crewchat.restart", "crewchat.decision.approve", "crewchat.decision.retry", "crewchat.prCreated", "crewsplit.created", "crewsplit.parentDone", "crewtrig.ciChat", "crewtrig.issueChat", "crewtrig.scheduleChat", "crew.reason.interrupted", "crew.reason.stopped", "crew.reason.flowError"];
 // 답변·분석 실패 문구(#1125, ko가 같은 chat.reply*가 먼저 — 옛 fallback.chat* 저장분도 같은 뜻으로) — 실패 순간의 언어로 저장되므로(채팅 기록·분석 요약·경고·캐치업 설명) 보여 줄 때 지금 언어로.
 export const FAILURE_TEXT_KEYS = ["fallback.emptyResponse", "fallback.error", "fallback.requestFailed", "fallback.summaryFailed", "chat.replyFailed", "chat.replyError", "fallback.chatRequestFailed", "fallback.chatError", "analyze.cancelled", "provider.runtimeFailed", "provider.runtimeConnectFailed", "provider.httpError", "provider.connectFailed", "analyze.partialParse", "explain.conceptParseFailed", "explain.tokenParseFailed", "text.parseFailed", "text.summaryFailed"];
 // ponytail: 실패 문구는 짧음 — 긴 정상 답변은 비교 안 하고 통과(런타임 오류 원문이 이보다 길면 원문 그대로)
