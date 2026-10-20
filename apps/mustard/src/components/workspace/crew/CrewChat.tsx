@@ -4,7 +4,7 @@
 // 입력: @에이전트 = 그 역할에게 새 카드(그록봇식), 메시지에 답글 = 그 카드로 전달. 2초 폴링(since 이후만).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconArrowBackUp, IconArrowUp, IconAt, IconLayoutKanban, IconSettings, IconUser, IconUsers, IconX } from "@tabler/icons-react";
-import { useT, useToast, relocalize, CREW_TEXT_KEYS } from "@mustard/core";
+import { Markdown, useT, useToast, relocalize, CREW_TEXT_KEYS } from "@mustard/core";
 import type { CrewMsg } from "@/lib/crew/crewChat";
 import type { CrewRun } from "@/lib/crew/crewRunner";
 import { PROVIDER_LABEL, RoleIcon, isActiveRun, roleDesc, roleName, useCrewRoles, useCrewRuns } from "./crewUi";
@@ -117,6 +117,14 @@ export default function CrewChat({ root }: { root: string }) {
   };
 
   // 본문의 @역할을 칩으로
+  // #1139 에이전트 말은 마크다운으로(`코드`·**굵게**·목록). @역할은 굵은 이름으로 바꿔 넣음(마크다운 안에선 칩을 못 씀).
+  // 학습 카드 블록(```nunopi-cards```)은 대화방에 필요 없음 — 옛 답에 저장돼 있어도 숨김.
+  const renderMd = (s: string) => (
+    <Markdown className="text-[12.5px] leading-relaxed">{s.replace(/```nunopi-cards[\s\S]*?(```|$)/g, "").trim().replace(/@([a-z0-9][a-z0-9-]{0,39})/gi, (m0, id: string) => {
+      const k = id.toLowerCase();
+      return k === "you" ? `**@${t("crewchat.you.name")}**` : known.has(k) ? `**@${roleName(t, roles, k)}**` : m0;
+    })}</Markdown>
+  );
   const renderText = (s: string) => s.split(/(@[a-z0-9][a-z0-9-]{0,39})/gi).map((part, i) => {
     const id = part.startsWith("@") ? part.slice(1).toLowerCase() : "";
     if (id === "you") return <span key={i} className="rounded bg-amber-500/15 px-1 font-medium text-amber-700 dark:text-amber-300">@{t("crewchat.you.name")}</span>;
@@ -222,8 +230,8 @@ export default function CrewChat({ root }: { root: string }) {
                       </div>
                     )}
                     <div className="flex items-end gap-1.5">
-                      <div className={`whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-[12.5px] leading-relaxed ${first ? "rounded-tl-md" : ""} ${loud ? (m.kind === "blocked" ? "bg-rose-50 text-rose-900 ring-1 ring-rose-300/60 dark:bg-rose-500/10 dark:text-rose-100 dark:ring-rose-500/30" : "bg-amber-50 text-amber-900 ring-1 ring-amber-300/60 dark:bg-amber-500/10 dark:text-amber-100 dark:ring-amber-500/30") : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200/70 dark:bg-white/[0.07] dark:text-zinc-100 dark:ring-white/5"}`}>
-                        {renderText(msgText(m))}
+                      <div className={`min-w-0 break-words rounded-2xl px-3 py-1.5 text-[12.5px] leading-relaxed ${first ? "rounded-tl-md" : ""} ${loud ? (m.kind === "blocked" ? "bg-rose-50 text-rose-900 ring-1 ring-rose-300/60 dark:bg-rose-500/10 dark:text-rose-100 dark:ring-rose-500/30" : "bg-amber-50 text-amber-900 ring-1 ring-amber-300/60 dark:bg-amber-500/10 dark:text-amber-100 dark:ring-amber-500/30") : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200/70 dark:bg-white/[0.07] dark:text-zinc-100 dark:ring-white/5"}`}>
+                        {renderMd(msgText(m))}
                       </div>
                       <span className="flex shrink-0 flex-col items-start gap-0.5 pb-0.5">
                         {m.taskId && (
