@@ -5,7 +5,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
-export type ChatKind = "start" | "handoff" | "question" | "permission" | "gate" | "blocked" | "human" | "decision" | "answer"; // answer = @ 없는 사람 글에 역할이 답(#1139)
+export type ChatKind = "start" | "handoff" | "question" | "permission" | "gate" | "blocked" | "human" | "decision" | "answer" | "meeting"; // answer = @ 없는 사람 글에 역할이 답, meeting = 팀 회의 발언(#1139)
 export interface CrewMsg {
   id: string; ts: number;
   from: string;            // 역할 id | "human" | "board"
@@ -23,7 +23,7 @@ const normPath = (p: string) => p.replace(/\/+$/, "");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 32);
 const baseDir = () => process.env.MUSTARD_CREW_DIR || join(homedir(), ".nunopi", "crew");
 export const chatFile = (root: string) => join(baseDir(), sha(normPath(root)), "chat.jsonl");
-const KINDS = new Set<ChatKind>(["start", "handoff", "question", "permission", "gate", "blocked", "human", "decision", "answer"]);
+const KINDS = new Set<ChatKind>(["start", "handoff", "question", "permission", "gate", "blocked", "human", "decision", "answer", "meeting"]);
 
 export function appendMsg(root: string, m: Omit<CrewMsg, "id" | "ts"> & { ts?: number }): CrewMsg {
   const msg: CrewMsg = { id: randomUUID(), ts: m.ts ?? Date.now(), ...m, text: String(m.text ?? "").slice(0, 8000) };
