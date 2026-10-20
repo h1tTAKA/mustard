@@ -217,12 +217,14 @@ async function runViaSnaOnce(
         if (x === undefined || x === null) return "";
         if (typeof x !== "object") return String(x);
         if (depth > 3) return "";
-        const o = x as Record<string, unknown>;
-        const inner = pick(o.message, depth + 1) || pick((o.error as Record<string, unknown> | undefined)?.message, depth + 1);
-        if (inner) return inner;
-        try { return JSON.stringify(x).slice(0, 500); } catch { return ""; } // 순환·BigInt — 버림
+        try { // getter·Proxy가 던져도 원래 오류를 가리지 않게
+          const o = x as Record<string, unknown>;
+          const inner = pick(o.message, depth + 1) || pick((o.error as Record<string, unknown> | undefined)?.message, depth + 1);
+          return inner || JSON.stringify(x).slice(0, 500); // 순환·BigInt면 catch로
+        } catch { return ""; }
       };
-      throw new Error((pick(m) || pick(ev.data) || "runtime error").slice(0, 500));
+      const d = ev.data as Record<string, unknown> | undefined;
+      throw new Error((pick(m) || pick(d?.error) || pick(d) || "runtime error").slice(0, 500));
     }
   }
 
