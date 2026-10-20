@@ -27,7 +27,6 @@ type Inner = Decision | "hold";
 // 판단 전에 걷어내기(실사용 오탐 — node -e "…", git commit -m "$(cat <<'EOF' …)", cat >> f <<'EOF' …):
 // ① heredoc 본문 → <<H  ② 명령 치환은 `cat <<H`만 허용(그 밖은 실제 실행되는 코드라 null = 묻기)  ③ 따옴표 안 글자 → §
 function strip(cmd: string): string | null {
-  if (/\\['"]/.test(cmd)) return null; // 따옴표 밖 \' \" — 가짜 따옴표 덩어리로 연결 기호를 감출 수 있음(리뷰)
   let bad = false;
   let c = cmd.replace(/<<-?\s*(['"]?)(\w+)\1[^\n]*\n([\s\S]*?)\n\s*\2\s*(?=\n|$)/g, (m, q, _w, body) => {
     if (!q && /\$\(|`/.test(body)) bad = true; // 따옴표 없는 heredoc은 본문의 $(…)도 실행됨(리뷰)
@@ -37,8 +36,30 @@ function strip(cmd: string): string | null {
   const subs = [...c.matchAll(/\$\(([^()]*)\)|`([^`]*)`/g)];
   if (subs.some((m) => !/^\s*cat\s+<<H\s*$/.test((m[1] ?? m[2] ?? "").trim() ? (m[1] ?? m[2] ?? "") : "x"))) return null;
   if (/\$\(|`/.test(c.replace(/\$\(\s*cat\s+<<H\s*\)/g, ""))) return null; // 짝 안 맞는 치환
-  c = c.replace(/\$\(\s*cat\s+<<H\s*\)/g, "§").replace(/\$?'[^']*'/g, "§").replace(/"(?:[^"\\]|\\.)*"/g, "§"); // § = 따옴표 덩어리(실제 글자 Q와 안 겹치게)
-  return c;
+  return quoteScan(c.replace(/\$\(\s*cat\s+<<H\s*\)/g, "§"));
+}
+// 따옴표를 왼쪽부터 셸처럼 읽어 덩어리마다 § — "…" 안의 '는 글자, '…' 안의 \는 글자, 따옴표 밖 \x는 글자 하나(꾸밈) = §.
+// 정규식 두 개로 따로 걷으면 "it's" 의 '가 뒤의 '와 짝지어 사이 명령(git push)을 감춤(리뷰). 안 닫힌 따옴표 = null(묻기).
+function quoteScan(c: string): string | null {
+  let out = "", i = 0;
+  while (i < c.length) {
+    const ch = c[i];
+    if (ch === "\\") { out += c[i + 1] === "\n" ? " " : "§"; i += 2; continue; } // 줄 이음은 띄어쓰기
+    if (ch === "'" || (ch === "$" && c[i + 1] === "'")) {
+      const ansi = ch === "$"; i += ansi ? 2 : 1;
+      while (i < c.length && c[i] !== "'") i += ansi && c[i] === "\\" ? 2 : 1;
+      if (i >= c.length) return null;
+      i++; out += "§"; continue;
+    }
+    if (ch === '"') {
+      i++;
+      while (i < c.length && c[i] !== '"') i += c[i] === "\\" ? 2 : 1;
+      if (i >= c.length) return null;
+      i++; out += "§"; continue;
+    }
+    out += ch; i++;
+  }
+  return out;
 }
 // 따옴표·백슬래시를 셸처럼 걷어낸 원문 — Crew API 주소 감추기 검사용. (`git "push"`·`su""do`·`pu\sh`·`$'push'`처럼 명령 이름을 꾸민 건 아래에서 hold)
 const unquote = (raw: string) => raw.replace(/\$'/g, "'").replace(/\\(.)/g, "$1").replace(/["']/g, "");
@@ -55,7 +76,7 @@ function bashDecision(raw: string, worktree: string): Inner {
   if (/[(){}]/.test(c)) return "hold"; // 서브셸·그룹·함수
   // 리다이렉트로 쓰기 — worktree 밖(~·$ 포함)이면 hold
   const outRedirect = [...c.matchAll(/(?:&?>{1,2}&?|>\|)\s*([^\s|&;]+)/g)].map((m) => m[1]); // >&파일 = 출력·에러를 파일로(리뷰)
-  if (outRedirect.some((p) => p !== "/dev/null" && outside(worktree, p))) return "hold";
+  if (outRedirect.some((p) => p !== "/dev/null" && (p.includes("§") || outside(worktree, p)))) return "hold"; // 따옴표 경로는 확인 불가
   let res: Inner = "allow";
   // 연결(&&, ||, ;, |, &, 줄바꿈) 단위로 나눠 각 부분 확인
   for (const part of c.split(/&&|\|\||[;|&\n]/)) {
@@ -69,18 +90,24 @@ function bashDecision(raw: string, worktree: string): Inner {
     if (HOLD_CMD.has(base)) return "hold";
     const args = words.slice(1).filter((a) => !a.startsWith("-"));
     const writes = WRITERS.has(base) && (base !== "sed" || words.some((a) => /^-[a-zA-Z]*i/.test(a) || a.startsWith("--in-place"))); // sed는 -i일 때만 씀
-    // sed는 첫 인자 = 스크립트, -i 바로 뒤 '' = 백업 접미사(macOS) → 그 둘은 빼고 파일만 봄
-    const files = base !== "sed" ? args : words.slice(1).filter((a, k, w) => !a.startsWith("-") && !(a === "§" && /^-[a-zA-Z]*i$/.test(w[k - 1] ?? ""))).slice(1);
+    // sed는 첫 인자 = 스크립트 → 빼고 파일만. -i 바로 뒤에 §가 둘이면 앞 것 = 백업 접미사(macOS -i '') → 그것도 뺌(리뷰: 접미사 없을 때 파일이 빠지던 것)
+    const sedArgs = (() => { const w = words.slice(1); const k = w.findIndex((a) => /^-[a-zA-Z]*i$/.test(a)); return k >= 0 && w[k + 1] === "§" && w[k + 2] === "§" ? [...w.slice(0, k + 1), ...w.slice(k + 2)] : w; })();
+    const files = base !== "sed" ? args : (words.some((a) => /^(-e|--expression|-f)/.test(a)) ? sedArgs.filter((a) => !a.startsWith("-")) : sedArgs.filter((a) => !a.startsWith("-")).slice(1));
     if (writes && files.some((a) => a.includes("§") || outside(worktree, a))) return "hold"; // 따옴표 경로는 확인 불가 → 사람
-    if (base === "cd" && words[1] && outside(worktree, words[1])) return "hold";
+    if (base === "cd" && words[1] && (words[1].includes("§") || outside(worktree, words[1]))) return "hold";
     if (base === "find" && words.some((a) => /^-(exec|execdir|ok|okdir|delete|fprint)/.test(a))) return "hold";
-    if (/^(node|bun|deno|python3?)$/.test(base) && words.some((a) => /^(-e|-p|-c|--eval|--print|eval)$/.test(a))) return "hold"; // 인라인 코드 실행
-    if (base === "npx" && !SAFE_NPX.has(words.find((a, k) => k > 0 && !a.startsWith("-")) ?? "")) return "hold";
-    if (/^(npm|pnpm|yarn|bun)$/.test(base) && /^(publish|exec|x|dlx|unpublish|login|adduser|token|owner|access)$/.test(words[1] ?? "")) return "hold";
+    // 인터프리터 — 인라인 코드(-e0·--eval=·--import·--require), 파이프·heredoc으로 받은 코드(스크립트 파일 없음)는 사람(리뷰)
+    if (/^(node|bun|deno|python3?|tsx|ts-node)$/.test(base)) {
+      if (words.slice(1).some((a) => /^(-[epcr]|--eval|--print|--import|--require|--loader|--experimental-loader|eval$)/.test(a)) || /<</.test(part)) return "hold";
+      if (!args.length && !words.some((a) => /^(--test|--version|-v|-V|--help)$/.test(a))) return "hold";
+    }
+    if (base === "npx" && (!SAFE_NPX.has(words.find((a, k) => k > 0 && !a.startsWith("-")) ?? "") || words.some((a) => /^(-p|--package)/.test(a)))) return "hold";
+    if (/^(npm|pnpm|yarn|bun)$/.test(base) && /^(publish|exec|x|dlx|unpublish|login|adduser|token|owner|access|global)$/.test(words[1] ?? "")) return "hold";
+    if (/^(npm|pnpm|yarn|bun)$/.test(base) && words.some((a) => /^(-g|--global|--location=global)$/.test(a))) return "hold"; // 전역 설치 = 밖에 쓰기 + 설치 스크립트
     // 결과를 파일로 쓰는 옵션(sort -o, git diff --output=, mv --target-directory= …) — 사람(리뷰)
     if (words.some((a) => /^(--output|--target-directory|--out-file)\b/.test(a)) || ((base === "sort" || base === "tree") && words.includes("-o")) || (base === "uniq" && args.length > 1)) return "hold";
     // sed 스크립트의 w(파일 쓰기)·e(실행) — 따옴표 안이라 원문에서 확인(리뷰)
-    if (base === "sed" && [...raw.matchAll(/'([^']*)'|"([^"]*)"/g)].some((m) => /(^|[;\s}])[wW]\s*\S|\/[gpiImM0-9]*w\s*\S|(^|[;\s])e(\s|;|$)/.test(m[1] ?? m[2] ?? ""))) return "hold";
+    if (base === "sed" && [...raw.matchAll(/'([^']*)'|"([^"]*)"/g)].some((m) => /(^|[;\s}!$\d,\/])[wW]\s+\S|\/[gpiImM0-9]*w\s+\S|(^|[;\s}!$\d,])e(\s|;|$)/.test(m[1] ?? m[2] ?? ""))) return "hold"; // 주소(1w·$w)·s///w 포함
     if (base === "git") {
       const sub = words[1] ?? "";
       if (sub && !/^[a-z][a-z-]*$/.test(sub)) return "hold"; // -c·-C·변수 — 설정 주입·우회
@@ -107,7 +134,10 @@ export function decide(tool: string, input: Record<string, unknown>, worktree: s
 // 플래그 조합(-ilc, -l -c, -ec)도. 못 벗기면 원문 그대로 → 첫 단어가 셸이라 hold(사람).
 export function fromAgentRequest(req: Record<string, unknown>): { tool: string; input: Record<string, unknown> } {
   const tool = String(req.tool_name ?? req.tool ?? "");
-  const command = typeof req.command === "string" ? req.command : Array.isArray(req.command) ? req.command.map(String).join(" ") : "";
+  // 배열 꼴 ["/bin/zsh","-lc","npm test"] — 셸 + -…c 플래그면 마지막 = 명령(합치면 포장을 못 벗김, 리뷰)
+  const arr = Array.isArray(req.command) ? req.command.map(String) : null;
+  if (arr && arr.length >= 3 && /(^|\/)(zsh|bash|sh)$/.test(arr[0]) && arr.slice(1, -1).every((a) => /^-[a-zA-Z]+$/.test(a)) && /c$/.test(arr[arr.length - 2]) && /^(shell|exec|exec_command|bash|Bash|local_shell)$/.test(String(req.tool_name ?? req.tool ?? ""))) return { tool: "Bash", input: { command: arr[arr.length - 1] } };
+  const command = typeof req.command === "string" ? req.command : arr ? arr.join(" ") : "";
   if (!command || !/^(shell|exec|exec_command|bash|Bash|local_shell)$/.test(tool)) return { tool, input: req };
   const m = /^\s*(?:\/usr)?(?:\/bin\/)?(?:zsh|bash|sh)\s+(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*c\s+(?:'((?:[^']|'\\'')*)'|"((?:[^"\\]|\\.)*)")\s*$/.exec(command);
   const inner = m ? (m[1] !== undefined ? m[1].replace(/'\\''/g, "'") : m[2].replace(/\\(["\\$`])/g, "$1")) : command;
@@ -119,8 +149,8 @@ const patchPaths = (input: Record<string, unknown>) => [...String(input.patch ??
 
 function decideBase(tool: string, input: Record<string, unknown>, worktree: string): Inner {
   if (tool === "WebFetch") return "hold"; // 밖으로 데이터를 실어 보낼 수 있음(?d=비밀) — 사람(리뷰)
-  // 사용자 MCP(기억·도구)는 사용자가 이미 설치·허용한 것 — 단 머지·푸시·삭제·생성·전송·배포·실행 같은 쓰기 도구는 사람(리뷰: GitHub MCP 머지로 차단 우회)
-  if (tool.startsWith("mcp__")) return /merge|push|delete|remove|create|send|deploy|exec|run|write|update|post|publish|comment|close|approve/i.test(tool.split("__").pop() ?? "") ? "hold" : "allow";
+  // 사용자 MCP — 읽기 도구(get·list·search·read·find…)만 자동, 나머지(머지·편집·이동·전송…)는 사람(리뷰: 쓰기 동사 목록은 늘 빠짐 → 읽기 목록으로)
+  if (tool.startsWith("mcp__")) return /(^|_)(get|list|search|read|find|fetch|view|query|recall|status|describe|show|lookup|overview|map|trace|check|screenshot|console)(_|$)/i.test(tool.split("__").pop() ?? "") ? "allow" : "hold";
   if (READ_TOOLS.has(tool)) return "allow";
   if (EDIT_TOOLS.has(tool)) {
     const p = String(input.file_path ?? input.notebook_path ?? input.path ?? "");
