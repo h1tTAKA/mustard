@@ -2,6 +2,7 @@
 import { isAbsolute } from "node:path";
 import { readMsgs } from "@/lib/crew/crewChat";
 import { postHuman, registerRoot } from "@/lib/crew/crewRunner";
+import { crossSite } from "@/lib/crew/crewPolicy";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,7 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  if (crossSite(request)) return Response.json({ ok: false, error: "cross-site" }, { status: 403 }); // #1137 다른 사이트의 폼 POST로 Crew 조작 금지
   let b: { root?: unknown; text?: unknown; replyTo?: unknown };
   try { b = await request.json(); } catch { return Response.json({ ok: false, error: "bad json" }, { status: 400 }); }
   const root = typeof b.root === "string" ? b.root : "";

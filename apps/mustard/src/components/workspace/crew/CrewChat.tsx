@@ -39,7 +39,7 @@ export default function CrewChat({ root }: { root: string }) {
   const msgText = (m: CrewMsg) => (m.i18n ? t(m.i18n.key, m.i18n.vars) + (m.i18n.suffix ?? "") : m.from === "human" ? (m.kind === "decision" ? relocalize(m.text, DECISION_KEYS, t) : m.text) : relocalize(m.text, CREW_TEXT_KEYS, t));
   const toast = useToast();
   const [roles, setRoles] = useCrewRoles();
-  const [runs] = useCrewRuns(root, () => {});
+  const [runs, reloadRuns] = useCrewRuns(root, () => {});
   const [msgs, setMsgs] = useState<CrewMsg[]>([]);
   const [text, setText] = useState("");
   const [reply, setReply] = useState<CrewMsg | null>(null);
@@ -71,6 +71,18 @@ export default function CrewChat({ root }: { root: string }) {
     if (!r) return { kind: "idle" };
     return { kind: r.state === "needs-permission" ? "waiting" : "working", card: titles.get(r.taskId) ?? "" };
   }, [runs, titles]);
+  // #1137 권한 알림 → 그 카드가 지금 권한 대기이고 그 카드의 마지막 권한 글이면 허락·거절 버튼(보드 카드 창까지 안 가도 되게)
+  const lastPerm = useMemo(() => { const m = new Map<string, string>(); for (const x of msgs) if (x.kind === "permission" && x.taskId) m.set(x.taskId, x.id); return m; }, [msgs]);
+  const [permBusy, setPermBusy] = useState(false);
+  const answerPerm = async (taskId: string, approved: boolean) => {
+    if (permBusy) return;
+    setPermBusy(true);
+    try {
+      const j = await (await fetch("/api/crew/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, taskId, action: "permission", approved }) })).json();
+      if (!j?.ok) throw new Error(j?.error);
+    } catch (e) { toast(`${t("crew.runFailed")}: ${String((e as Error)?.message ?? e)}`, "error"); }
+    finally { setPermBusy(false); reloadRuns(); }
+  };
   const workingCount = roles.filter((r) => status(r.id).kind !== "idle").length;
 
   const send = async () => {
@@ -221,6 +233,12 @@ export default function CrewChat({ root }: { root: string }) {
                         {last && <span className="text-[9.5px] tabular-nums text-zinc-400">{time(m.ts)}</span>}
                       </span>
                     </div>
+                    {m.kind === "permission" && m.taskId && lastPerm.get(m.taskId) === m.id && runs.get(m.taskId)?.state === "needs-permission" && (
+                      <div className="mt-1 flex gap-1.5">
+                        <button type="button" disabled={permBusy} onClick={() => void answerPerm(m.taskId!, false)} className="rounded-lg px-2.5 py-1 text-[12px] font-medium text-zinc-600 transition hover:bg-amber-100 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-white/10">{t("crew.deny")}</button>
+                        <button type="button" disabled={permBusy} onClick={() => void answerPerm(m.taskId!, true)} className="rounded-lg bg-amber-500 px-2.5 py-1 text-[12px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50">{t("crew.approve")}</button>
+                      </div>
+                    )}
                     {cardChip}
                   </div>
                 </div>

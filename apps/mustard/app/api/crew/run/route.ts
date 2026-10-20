@@ -2,6 +2,7 @@
 // 권한 승인은 이 경로(사람 클릭)로만 — 에이전트 메시지로 승인되지 않음.
 import { isAbsolute } from "node:path";
 import { createPr, decideCard, listRuns, respondPermission, startRun, stopRun, takeover, MAX_CONCURRENT } from "@/lib/crew/crewRunner";
+import { crossSite } from "@/lib/crew/crewPolicy";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,7 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  if (crossSite(request)) return Response.json({ ok: false, error: "cross-site" }, { status: 403 }); // #1137 다른 사이트의 폼 POST로 Crew 조작 금지
   let b: { root?: unknown; taskId?: unknown; action?: unknown; approved?: unknown; decision?: unknown; text?: unknown };
   try { b = await request.json(); } catch { return Response.json({ ok: false, error: "bad json" }, { status: 400 }); }
   const root = typeof b.root === "string" ? b.root : "", taskId = typeof b.taskId === "string" ? b.taskId : "";

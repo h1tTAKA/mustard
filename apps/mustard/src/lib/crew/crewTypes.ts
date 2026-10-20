@@ -18,7 +18,7 @@ export interface CrewTask {
   // #1114 쪼개기 — split = spec 관문에 올라온 제안, children = 승인 후 만든 하위 카드, parentId·dependsOn = 하위 카드 쪽
   split?: CrewSubtask[]; children?: string[]; parentId?: string; dependsOn?: string[];
 }
-export interface CrewBoard { version: 1; tasks: CrewTask[] }
+export interface CrewBoard { version: 1; tasks: CrewTask[]; }
 export type CrewOp =
   | { op: "create"; title: string; body?: string; status?: CrewStatus; role?: string; pipeline?: string[] }
   | { op: "update"; id: string; title?: string; body?: string; role?: string; pipeline?: string[] } // pipeline [] = 지움(담당 하나·자동)
