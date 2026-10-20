@@ -7,6 +7,7 @@ const known = new Set(["scope-planner", "screen-designer", "data-architect", "ap
 assert.deepStrictEqual(readJson('Sure.\n```json\n{"intent":"work","reply":"ok"}\n```'), { intent: "work", reply: "ok" }, "울타리·앞말 붙어도");
 assert.strictEqual(readJson("no json here"), null);
 assert.strictEqual(readJson("[1,2]"), null, "배열은 아님");
+assert.deepStrictEqual(readJson('Use {x} like this: {"intent":"work","reply":"a } b"} — thanks {y}'), { intent: "work", reply: "a } b" }, "앞뒤 {}·문자열 안 } 무시");
 assert.deepStrictEqual(readAnswer('{"intent":"work","reply":"Let us plan it."}'), { intent: "work", reply: "Let us plan it." });
 assert.deepStrictEqual(readAnswer("Yes, it's done."), { intent: "question", reply: "Yes, it's done." }, "JSON 아니면 글 전체 = 질문 답");
 assert.deepStrictEqual(readAnswer('{"intent":"nope","reply":"x"}').intent, "question", "모르는 intent = 질문");

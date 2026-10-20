@@ -15,7 +15,8 @@ import type { AgentProviderKind } from "./types";
 // | "deck-agent"(덱 생성/분류 — 대화형 경량: 저추론·nunopi-cards 없음)
 // | "quiz"(Ask 아웃풋 퀴즈 — 생성+채점 겸용, 경량: 블록만 출력)
 // | "pr-review"(#1127 PR 에이전트 리뷰 — 클라가 프롬프트 완성, 리뷰어 시스템프롬프트, JSON만, 추론 깊이 유지).
-export type AnalyzeMode = "code" | "text" | "explain-token" | "explain-concept" | "chat" | "explain-card" | "dedup-cards" | "deck-agent" | "quiz" | "pr-review";
+// | "crew"(#1139 Crew 대화방 답·팀 회의 — 클라가 프롬프트 완성, 팀원 시스템프롬프트(JSON 허용·학습 카드 없음), 저추론).
+export type AnalyzeMode = "code" | "text" | "explain-token" | "explain-concept" | "chat" | "explain-card" | "dedup-cards" | "deck-agent" | "quiz" | "pr-review" | "crew";
 
 // 학습 챗 한 메시지.
 export interface ChatMessage {

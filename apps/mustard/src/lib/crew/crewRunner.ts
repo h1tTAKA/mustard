@@ -496,7 +496,7 @@ async function ask(role: CrewRole, prompt: string): Promise<string> {
   const pid = AGENT_ID[role.provider] ?? "claude-agent";
   const ac = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const res = await Promise.race([provider.analyze({ code: "crew chat", locale: narrationLocale(), providerId: pid, mode: "chat", messages: [{ role: "user", content: prompt }],
+  const res = await Promise.race([provider.analyze({ locale: narrationLocale(), providerId: pid, mode: "crew", code: prompt, messages: [{ role: "user", content: prompt }],
     ...(role.model?.trim() && (role.provider === "claude-code" || ANALYZE[role.provider]) ? { providerSettings: { [pid]: { model: role.model.trim() } } } : {}) } as Parameters<typeof provider.analyze>[0], // 다른 AI(grok·cursor)는 Claude로 → 그 모델 id는 안 맞음
     { signal: ac.signal }),
     new Promise<never>((_, rej) => { timer = setTimeout(() => { ac.abort(); rej(new Error("timeout")); }, 90_000); })]).finally(() => clearTimeout(timer));
@@ -532,7 +532,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
   if ([...(g.answering ?? [])].some((k) => k.startsWith(`${root}\n`))) { queue.set(root, { human, roleId, taskId, everyone }); return; }
   const first = getRole(everyone ? MODERATOR : roleId) ?? getRole(MODERATOR);
   if (!first) { say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.answerFailed", { role: roleId }) }); return; }
-  let who = first;
+  let who = first, meeting = false;
   speaking(root, first.id);
   try {
     const lang = LANG[narrationLocale()] ?? "English";
@@ -551,10 +551,11 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       `Answer ONLY with JSON: {"intent":"question"|"work","reply":"..."}`].join("\n")));
     say(root, { from: first.id, provider: first.provider, kind: opener.intent === "work" ? "meeting" : "answer", text: opener.reply.slice(0, 2000), replyTo: human.id, ...card });
     const transcript = [`${first.id}: ${clip(opener.reply, 600)}`];
+    meeting = opener.intent === "work";
     if (opener.intent !== "work") {
       if (!everyone) return;
       // @all 질문 — 나머지 역할이 차례로(앞 답을 보며) 한두 문장
-      for (const r of listRoles().filter((x) => x.id !== first.id)) {
+      for (const r of listRoles().filter((x) => x.id !== first.id).slice(0, 8)) { // 역할을 늘려도 호출 상한(리뷰)
         who = r; speaking(root, r.id);
         const text = await ask(r, [`You are "${roleLabel(r.id)}" (${r.id}) on a software team board. The human asked the whole team:`, `> ${request}`, "",
           `Facts:`, ...facts, "", `Teammates so far:`, ...transcript, "",
@@ -567,7 +568,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     // ② 팀 회의 — 진행자가 참여 역할 고르기(@all이면 전원)
     const mod = getRole(MODERATOR) ?? first;
     const known = new Set(listRoles().map((r) => r.id));
-    let members = listRoles().map((r) => r.id).filter((id) => id !== mod.id);
+    let members = listRoles().map((r) => r.id).filter((id) => id !== mod.id).slice(0, 8); // @all 전원(상한 8, 리뷰)
     if (!everyone) {
       who = mod; speaking(root, mod.id);
       const kick = readJson(await ask(mod, [`You moderate a short team meeting on a software board. Request from the human:`, `> ${request}`, "",
@@ -593,7 +594,8 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     const summary = typeof wrap?.reply === "string" && wrap.reply.trim() ? wrap.reply.trim() : plan.title;
     say(root, { from: mod.id, provider: mod.provider, kind: "meeting", text: summary.slice(0, 2000), replyTo: human.id, taskId: made.id, taskTitle: made.title, ...(plan.pipeline[0] ? { mentions: [plan.pipeline[0]] } : {}) });
   } catch {
-    say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.answerFailed", { role: roleLabel(who.id) }) });
+    // 회의 중에 끊기면 카드 없이 멈췄다고(리뷰: 발언만 남고 끝난 것처럼 보임)
+    say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx(meeting ? "crewchat.meetingStopped" : "crewchat.answerFailed", { role: roleLabel(who.id) }) });
   } finally {
     speaking(root);
     const nx = queue.get(root);
