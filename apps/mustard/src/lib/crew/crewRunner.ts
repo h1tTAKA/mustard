@@ -519,9 +519,13 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       `Plain text, no headings.`].join("\n");
     const provider = ANALYZE[role.provider] ?? snaClaudeProvider;
     const pid = AGENT_ID[role.provider] ?? "claude-agent";
-    const res = await provider.analyze({ code: "crew chat", locale: narrationLocale(), providerId: pid, mode: "chat", messages: [{ role: "user", content: prompt }],
+    const ac = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const res = await Promise.race([provider.analyze({ code: "crew chat", locale: narrationLocale(), providerId: pid, mode: "chat", messages: [{ role: "user", content: prompt }],
       ...(role.model?.trim() && (role.provider === "claude-code" || ANALYZE[role.provider]) ? { providerSettings: { [pid]: { model: role.model.trim() } } } : {}) } as Parameters<typeof provider.analyze>[0], // 다른 AI(grok·cursor)는 Claude로 → 그 모델 id는 안 맞음
-      { signal: AbortSignal.timeout(90_000) }); // CLI가 멈춰도 '답장 쓰는 중'이 영원히 남지 않게(리뷰)
+      { signal: ac.signal }),
+      // 90초 — 신호만으론 CLI가 조용히 멈추면 안 끊김(스트림 이벤트마다 확인) → 타이머와 경주해 자리를 비움(재리뷰)
+      new Promise<never>((_, rej) => { timer = setTimeout(() => { ac.abort(); rej(new Error("timeout")); }, 90_000); })]).finally(() => clearTimeout(timer));
     const text = (res?.summary ?? "").trim();
     if (!text || isFailedNote(text)) throw new Error(text || "empty");
     say(root, { from: role.id, provider: role.provider, kind: "answer", text: text.slice(0, 2000), replyTo: human.id, ...(t ? { taskId: t.id, taskTitle: t.title } : {}) });
@@ -533,7 +537,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     if (nx) { queue.delete(root); void answerHuman(root, nx.human, nx.roleId, nx.taskId); }
   }
 }
-export const answeringRoles = (root: string) => [...(g.answering ?? [])].filter((k) => k.startsWith(`${root}\n`)).map((k) => k.slice(root.length + 1));
+export const answeringRoles = (root: string) => [...new Set([...[...(g.answering ?? [])].filter((k) => k.startsWith(`${root}\n`)).map((k) => k.slice(root.length + 1)), ...(g.answerNext?.get(root) ? [g.answerNext.get(root)!.roleId] : [])])]; // 차례를 기다리는 답도 '쓰는 중'(재리뷰)
 
 // #1110 Draft PR 만들기 — 사람 클릭으로만(에이전트는 push·PR 금지 정책). 카드 마지막 실행의 작업 폴더·브랜치에서 push → gh pr create --draft.
 const pexecFile = promisify(execFile);
