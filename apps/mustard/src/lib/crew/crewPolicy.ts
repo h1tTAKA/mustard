@@ -96,7 +96,7 @@ const outside = (worktree: string, p: string) => /^~|\$/.test(p) || !inside(work
 function bashDecision(raw: string, worktree: string): Inner {
   // Mustard Crew API를 에이전트가 직접 부르기(권한 허락 등) = 차단 — 따옴표로 쪼개 감춰도(리뷰)
   if (/\/api\/crew\b/.test(unquote(raw))) return "deny";
-  if (/[^\S \t\n]/.test(raw)) return DENY_RE.test(raw) ? "deny" : "hold"; // CR·NBSP·전각 공백 — JS와 bash가 띄어쓰기로 보는 게 달라 판정이 어긋남(리뷰)
+  if (/[^\S \t\n]|[\0-\x08\x0e-\x1f\x7f]/.test(raw)) return DENY_RE.test(raw) ? "deny" : "hold"; // CR·NBSP·전각 공백·NUL 등 제어 문자 — JS와 bash가 띄어쓰기로 보는 게 달라 판정이 어긋남(리뷰)
   const cmd = strip(raw);
   if (cmd === null) return DENY_RE.test(raw) ? "deny" : "hold"; // 명령 치환 등 — 실제로 실행되는 코드가 숨어 있음
   if (DENY_RE.test(cmd)) return "deny";
