@@ -175,6 +175,12 @@ samp {
 .dark .nunopi-range::-webkit-slider-thumb { background: #8b86f5; border-color: #13141b; }
 .dark .nunopi-range::-moz-range-thumb { background: #8b86f5; border-color: #13141b; }
 
+/* #1139 Crew 대화방 말풍선 — @역할 칩(대화방 renderText의 칩과 같은 색: 하늘, 나 = 호박). 마크다운 안이라 링크 꼴(#@역할)로 그림 */
+.crew-md.nunopi-md a[href^="#@"] { text-decoration: none; border-radius: 0.25rem; padding: 0 0.25rem; font-weight: 500; background: rgb(14 165 233 / 0.1); color: #0369a1; }
+.dark .crew-md.nunopi-md a[href^="#@"] { color: #7dd3fc; }
+.crew-md.nunopi-md a[href="#@you"] { background: rgb(245 158 11 / 0.15); color: #b45309; }
+.dark .crew-md.nunopi-md a[href="#@you"] { color: #fcd34d; }
+
 /* 챗 어시스턴트 마크다운 렌더 (.nunopi-md 스코프) */
 .nunopi-md { font-size: 0.75rem; line-height: 1.6; word-break: break-word; }
 /* 크게 보기(확대) — 루트 폰트 키우고 헤딩도 em으로 함께 확대(추가설명 모달). */
