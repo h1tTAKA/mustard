@@ -210,7 +210,10 @@ async function runViaSnaOnce(
     } else if (type === "complete") {
       usage = mapUsage(ev.data);
     } else if (type === "error") {
-      throw new Error(String(ev.message ?? "runtime error"));
+      // ev.message가 객체로 오는 경우(Codex 인증 오류 등) — "[object Object]" 대신 안의 글자를 꺼냄(#1139 앱 확인)
+      const m = ev.message as unknown, d = (ev.data ?? {}) as Record<string, unknown>;
+      const pick = (x: unknown): string => typeof x === "string" ? x : x && typeof x === "object" ? String((x as Record<string, unknown>).message ?? (x as { error?: { message?: unknown } }).error?.message ?? JSON.stringify(x)) : "";
+      throw new Error((pick(m) || pick(d.error) || pick(d) || "runtime error").slice(0, 500));
     }
   }
 
