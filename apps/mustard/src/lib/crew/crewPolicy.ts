@@ -23,10 +23,8 @@ const SAFE_NPX = new Set(["tsc", "eslint", "prettier", "vitest", "jest", "tsx", 
 const SAFE_ENV = /^(CI|NODE_ENV|FORCE_COLOR|NO_COLOR|TZ|LANG|LC_\w+|DEBUG|PORT|TERM)$/; // 앞에 붙는 VAR=값 중 허용(GIT_*·PATH·NODE_OPTIONS 등은 코드 실행 통로)
 const WRITERS = new Set(["cp", "mv", "touch", "mkdir", "rm", "rmdir", "sed"]); // 경로 인자를 씀 → worktree 밖이면 hold
 type Inner = Decision | "hold";
-const MCP_READ_FIRST = new Set(["get", "list", "search", "read", "find", "fetch", "view", "query", "describe", "show", "lookup"]); // 이름 첫 조각이 이것일 때만
-// 이름 그대로 읽기 전용인 것(첫 조각이 동사가 아님) — Mustard 코드 그래프·인앱 브라우저 읽기, Loom 기억 읽기
-const MCP_READ_NAMES = /^(katchup_(check_freshness|file_api|find_all|find_code|repo_map|search|trace_calls)|browser_(read|console|status|screenshot)|memory_(search|read|status|overview))$/;
-const MCP_WRITE = new Set(["merge", "push", "delete", "remove", "create", "send", "deploy", "exec", "execute", "run", "write", "update", "post", "publish", "comment", "close", "approve", "replace", "mark", "set", "save", "edit", "move", "add", "reply", "submit", "invoke", "click", "type", "navigate", "open", "upload", "install", "rename", "assign", "label", "reopen", "lock", "fork", "transfer", "archive", "cancel", "trigger", "dispatch", "start", "stop", "kill", "reset", "clear", "put", "patch", "insert", "apply", "commit", "tag", "release", "grant", "revoke", "share", "invite", "remember", "purge", "upgrade", "batch", "new", "tab", "and", "or", "eval", "call", "request", "ingest", "sync", "store", "record", "log", "enable", "disable", "toggle", "resolve", "unlock", "pin", "ack", "retry", "restore", "import", "schedule", "enqueue", "index", "append", "accept", "decline", "subscribe", "notify", "in", "out", "login", "logout", "auth", "connect"]); // and·or = "list_and_create" 같은 복합 이름은 사람
+// 자동 허락하는 MCP 도구(서버 이름까지) — Mustard 코드 그래프·인앱 브라우저 읽기, Loom 기억 읽기. 그 밖은 사람(크루가 쓰면 그때 추가)
+const MCP_READ_NAMES = /^mcp__mustard__(katchup_(check_freshness|file_api|find_all|find_code|repo_map|search|trace_calls)|browser_(read|console|status|screenshot))$|^mcp__[\w-]*loom[\w-]*__memory_(search|read|status)$/;
 
 // 판단 전에 걷어내기(실사용 오탐 — node -e "…", git commit -m "$(cat <<'EOF' …)", cat >> f <<'EOF' …):
 // ① heredoc 본문 → <<H  ② 명령 치환은 `cat <<H`만 허용(그 밖은 실제 실행되는 코드라 null = 묻기)  ③ 따옴표 안 글자 → §
@@ -46,35 +44,36 @@ function strip(cmd: string): string | null {
 // 따옴표를 왼쪽부터 셸처럼 읽어 덩어리마다 § — "…" 안의 '는 글자, '…' 안의 \는 글자, 따옴표 밖 \x는 글자 하나(꾸밈) = §.
 // 정규식 두 개로 따로 걷으면 "it's" 의 '가 뒤의 '와 짝지어 사이 명령(git push)을 감춤(리뷰). 안 닫힌 따옴표 = null(묻기).
 function quoteScan(c: string): string | null {
-  let out = "", i = 0;
+  // ws = 바로 앞이 '이스케이프 안 된' 공백·;|& 또는 맨 앞 — 그때만 #가 주석 시작(a\ #x·a\<줄>#x는 글자, 리뷰)
+  let out = "", i = 0, ws = true;
   while (i < c.length) {
     const ch = c[i];
-    if (ch === "#" && (i === 0 || /[\s;|&]/.test(c[i - 1]))) { while (i < c.length && c[i] !== "\n") i++; continue; } // 주석 — 안의 '는 따옴표 아님(리뷰)
-    if (ch === "\\") { out += c[i + 1] === "\n" ? " " : "§"; i += 2; continue; } // 줄 이음은 띄어쓰기
+    if (ch === "#" && ws) { while (i < c.length && c[i] !== "\n") i++; continue; } // 주석 — 안의 '는 따옴표 아님(리뷰)
+    if (ch === "\\") { if (c[i + 1] !== "\n") { out += "§"; ws = false; } i += 2; continue; } // 줄 이음(\+줄바꿈)은 bash처럼 둘 다 지움 — 앞뒤가 붙음
     if (ch === "'" || (ch === "$" && c[i + 1] === "'")) {
       const ansi = ch === "$"; i += ansi ? 2 : 1;
       while (i < c.length && c[i] !== "'") i += ansi && c[i] === "\\" ? 2 : 1;
       if (i >= c.length) return null;
-      i++; out += "§"; continue;
+      i++; out += "§"; ws = false; continue;
     }
     if (ch === '"') {
       i++;
       while (i < c.length && c[i] !== '"') i += c[i] === "\\" ? 2 : 1;
       if (i >= c.length) return null;
-      i++; out += "§"; continue;
+      i++; out += "§"; ws = false; continue;
     }
-    out += ch; i++;
+    out += ch; ws = /[\s;|&]/.test(ch); i++;
   }
   return out;
 }
 // idx 위치가 따옴표·주석 안인가(heredoc 표시 판정용) — quoteScan과 같은 규칙
 function quoteStateAt(c: string, idx: number): boolean {
-  let i = 0;
+  let i = 0, ws = true;
   while (i < idx) {
     const ch = c[i];
-    if (ch === "#" && (i === 0 || /[\s;|&]/.test(c[i - 1]))) { while (i < c.length && c[i] !== "\n") { if (i === idx) return true; i++; } continue; }
-    if (ch === "\\") { if (i + 1 === idx) return true; i += 2; continue; } // \<<X = 글자 <, heredoc 아님(리뷰)
-    if (ch === "'" || (ch === "$" && c[i + 1] === "'")) { const ansi = ch === "$"; i += ansi ? 2 : 1; while (i < c.length && c[i] !== "'") { if (i >= idx) return true; i += ansi && c[i] === "\\" ? 2 : 1; } i++; continue; }
+    if (ch === "#" && ws) { while (i < c.length && c[i] !== "\n") { if (i === idx) return true; i++; } continue; }
+    if (ch === "\\") { if (i + 1 === idx) return true; if (c[i + 1] !== "\n") ws = false; i += 2; continue; } // \<<X = 글자 <, heredoc 아님(리뷰)
+    if (ch === "'" || (ch === "$" && c[i + 1] === "'")) { const ansi = ch === "$"; i += ansi ? 2 : 1; while (i < c.length && c[i] !== "'") { if (i >= idx) return true; i += ansi && c[i] === "\\" ? 2 : 1; } i++; ws = false; continue; }
     if (ch === '"') { // "…" 안의 $(…)는 명령 자리(git commit -m "$(cat <<'EOF' …)") — 그 안은 따옴표 아님
       i++; let sub = 0;
       while (i < c.length && (c[i] !== '"' || sub > 0)) {
@@ -83,9 +82,9 @@ function quoteStateAt(c: string, idx: number): boolean {
         if (c[i] === ")" && sub > 0) { sub--; i++; continue; }
         i += c[i] === "\\" ? 2 : 1;
       }
-      i++; continue;
+      i++; ws = false; continue;
     }
-    i++;
+    ws = /[\s;|&]/.test(ch); i++;
   }
   return false;
 }
@@ -177,13 +176,8 @@ const patchPaths = (input: Record<string, unknown>) => [...String(input.patch ??
 
 function decideBase(tool: string, input: Record<string, unknown>, worktree: string): Inner {
   if (tool === "WebFetch") return "hold"; // 밖으로 데이터를 실어 보낼 수 있음(?d=비밀) — 사람(리뷰)
-  // 사용자 MCP — 알려진 읽기 도구 이름 또는 '읽기 동사로 시작 + 쓰기 동사 없음'만 자동, 나머지는 사람(리뷰: update_status·get_or_create·eval_code)
-  if (tool.startsWith("mcp__")) {
-    const name = (tool.split("__").pop() ?? "").toLowerCase(), parts = name.split(/[_-]/);
-    if (MCP_READ_NAMES.test(name)) return "allow";
-    if (parts.some((w) => MCP_WRITE.has(w))) return "hold";
-    return MCP_READ_FIRST.has(parts[0]) ? "allow" : "hold"; // 읽기 동사로 시작하는 이름만(eval_code·call_api 같은 명사 섞임 방지, 리뷰)
-  }
+  // 사용자 MCP — 서버까지 맞춘 알려진 읽기 도구만 자동, 나머지는 사람. 이름 단어로 읽기·쓰기를 가르는 건 매번 빠짐(리뷰: query_sql·fetch_url·eval_code)
+  if (tool.startsWith("mcp__")) return MCP_READ_NAMES.test(tool) ? "allow" : "hold";
   if (READ_TOOLS.has(tool)) return "allow";
   if (EDIT_TOOLS.has(tool)) {
     const p = String(input.file_path ?? input.notebook_path ?? input.path ?? "");
