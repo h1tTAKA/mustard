@@ -56,6 +56,16 @@ export function parseHandoff(raw: string | null, fallbackSummary?: string): Hand
 // 카드의 파이프라인 — 없으면 담당 역할 하나(자동 배정이면 범위 기획자부터).
 export const pipelineOf = (t: Pick<CrewTask, "pipeline" | "role">): string[] => (t.pipeline?.length ? t.pipeline : [t.role ?? "scope-planner"]);
 
+// #1139 @ 없는 대화방 글 → 받을 카드·역할. 진행 중·사람 대기·Review·Ready 카드 중 가장 최근에 움직인 것(하위가 있는 부모 제외),
+// 담당 = 실행 중인 역할 > 지금 단계 역할. 그런 카드가 없으면 범위 기획자(카드 없이 답).
+const LISTEN: CrewTask["status"][] = ["running", "needs-you", "review", "ready"];
+export function pickListener(tasks: CrewTask[], runningRole: (taskId: string) => string | undefined = () => undefined): { taskId?: string; role: string } {
+  const t = tasks.filter((x) => LISTEN.includes(x.status) && !x.children?.length).sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  if (!t) return { role: "scope-planner" };
+  const p = pipelineOf(t);
+  return { taskId: t.id, role: runningRole(t.id) ?? p[Math.min(t.stage ?? 0, p.length - 1)] };
+}
+
 // 역할(role, 단계 stage)이 handoff로 끝남 → 다음 칸·필드. knownRoles = 지금 있는 역할 id(범위 기획자가 모르는 역할을 적으면 버림).
 export function next(task: CrewTask, h: Handoff, knownRoles: Set<string>): FlowResult {
   let pipeline = pipelineOf(task);

@@ -1,6 +1,6 @@
 // crewFlow 점검 — node --experimental-strip-types src/lib/crew/crewFlow.check.ts
 import assert from "node:assert";
-import { childProgress, decideGate, next, parseHandoff, pipelineOf, waitingOn, MAX_CONSULTS, MAX_REVIEWS, MAX_TEST_LOOPS } from "./crewFlow.ts";
+import { childProgress, decideGate, next, parseHandoff, pickListener, pipelineOf, waitingOn, MAX_CONSULTS, MAX_REVIEWS, MAX_TEST_LOOPS } from "./crewFlow.ts";
 import type { CrewTask } from "./crewTypes.ts";
 
 const known = new Set(["scope-planner", "screen-designer", "data-architect", "app-builder", "test-engineer", "bug-fixer", "release-checker", "doc-writer"]);
@@ -115,6 +115,18 @@ assert.ok(r.patch.gate?.text?.includes("에러 처리 빠짐"));
   const tasks = [{ id: "a", status: "done" as const }, { id: "b", status: "running" as const }];
   assert.deepStrictEqual(waitingOn({ dependsOn: ["a", "b", "gone"] }, tasks), ["b"], "Done·지워진 건 안 기다림");
   assert.deepStrictEqual(childProgress({ children: ["a", "b", "gone"] }, tasks), { done: 1, total: 2 });
+}
+
+// #1139 @ 없는 글 받는 카드·역할
+{
+  const mk = (id: string, status: CrewTask["status"], updatedAt: number, extra: Partial<CrewTask> = {}): CrewTask => ({ id, title: id, body: "", status, order: 0, createdAt: 0, updatedAt, ...extra });
+  assert.deepStrictEqual(pickListener([]), { role: "scope-planner" }, "카드 없음 = 범위 기획자");
+  assert.deepStrictEqual(pickListener([mk("a", "done", 9), mk("b", "backlog", 8)]), { role: "scope-planner" }, "끝난·대기열 카드는 안 받음");
+  const ts = [mk("old", "review", 1, { pipeline: ["app-builder", "doc-writer"], stage: 1 }), mk("new", "needs-you", 5, { pipeline: ["scope-planner", "app-builder"], stage: 1 })];
+  assert.deepStrictEqual(pickListener(ts), { taskId: "new", role: "app-builder" }, "가장 최근 카드의 지금 단계 역할");
+  assert.deepStrictEqual(pickListener(ts, (id) => (id === "new" ? "test-engineer" : undefined)), { taskId: "new", role: "test-engineer" }, "실행 중이면 그 역할");
+  assert.deepStrictEqual(pickListener([mk("p", "running", 9, { children: ["c"] }), mk("c", "ready", 3, { role: "doc-writer" })]), { taskId: "c", role: "doc-writer" }, "하위 있는 부모 제외");
+  assert.deepStrictEqual(pickListener([mk("r", "review", 2, { pipeline: ["a", "b"], stage: 7 })]).role, "b", "단계 넘침은 마지막 역할");
 }
 
 console.log("crewFlow.check ok");
