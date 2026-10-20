@@ -22,6 +22,12 @@ export function worktreeFor(root: string, taskId: string, title: string): { dir:
   return { dir: join(baseDir(), sha(normPath(root)), id8), branch: `crew/${id8}${s ? `-${s}` : ""}` };
 }
 
+// #1135 crew/<id8>[-slug] 브랜치 → 그 카드 작업 폴더·id8(캐치업 세션 찾기가 worktree 기록 폴더도 보게). crew 브랜치 아니면 null.
+export function crewDirForBranch(root: string, branch: string): { dir: string; id8: string } | null {
+  const m = /^crew\/([0-9a-z]{1,8})(?:-|$)/.exec(branch);
+  return m ? { dir: join(baseDir(), sha(normPath(root)), m[1]), id8: m[1] } : null;
+}
+
 async function isWorktree(dir: string): Promise<boolean> {
   if (!existsSync(dir)) return false;
   try { return (await git(dir, ["rev-parse", "--is-inside-work-tree"])) === "true"; } catch { return false; }

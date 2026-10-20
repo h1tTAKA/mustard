@@ -4,11 +4,13 @@ import { useRef, useState } from "react";
 import { IconChevronDown, IconLoader2 } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import type { SessionMsg } from "@/lib/agentSessionParse";
+import type { CrewTalk } from "@/lib/sessionCard";
 
 export default function CatchupSessionRaw({ root, hash }: { root: string; hash: string }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [msgs, setMsgs] = useState<SessionMsg[] | null>(null);
+  const [crew, setCrew] = useState<CrewTalk[]>([]); // #1135 Crew 커밋 — 역할끼리 주고받은 대화방 글(앞에)
   const [failed, setFailed] = useState(false);
   const loadingRef = useRef(false);
   const [openTools, setOpenTools] = useState<Set<number>>(() => new Set()); // 펼친 도구 출력(기본은 몇 줄만)
@@ -18,7 +20,7 @@ export default function CatchupSessionRaw({ root, hash }: { root: string; hash: 
     if (!next || msgs || loadingRef.current) return;
     setFailed(false); loadingRef.current = true;
     fetch(`/api/repo/session-link?root=${encodeURIComponent(root)}&hash=${encodeURIComponent(hash)}`).then((r) => r.json())
-      .then((d) => { const m = d?.session?.messages; if (!Array.isArray(m)) throw new Error(); setMsgs(m as SessionMsg[]); })
+      .then((d) => { const m = d?.session?.messages; if (!Array.isArray(m)) throw new Error(); setMsgs(m as SessionMsg[]); if (Array.isArray(d.session.crew)) setCrew(d.session.crew as CrewTalk[]); })
       .catch(() => setFailed(true)).finally(() => { loadingRef.current = false; });
   };
 
@@ -34,6 +36,12 @@ export default function CatchupSessionRaw({ root, hash }: { root: string; hash: 
         : !msgs ? <div className="flex justify-center py-2"><IconLoader2 size={12} stroke={2} className="animate-spin text-zinc-400" aria-hidden /></div>
         : (
           <div className="nunopi-scroll mt-1 flex max-h-96 flex-col gap-1.5 overflow-y-auto rounded-md border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950">
+            {crew.map((c, i) => (
+              <div key={`c${i}`} className="whitespace-pre-wrap break-words px-0.5 text-[11px] leading-snug text-zinc-700 dark:text-zinc-200">
+                <span className="font-mono text-[10.5px] font-medium text-mustard-600 dark:text-mustard-400">@{c.from}{c.to.length ? ` → ${c.to.map((x) => `@${x}`).join(" ")}` : ""}</span> {c.text}
+              </div>
+            ))}
+            {crew.length > 0 && msgs.length > 0 && <hr className="border-zinc-200 dark:border-zinc-800" />}
             {msgs.map((m, i) => m.role === "tool" ? (() => {
               // 도구 호출·출력 — 고정폭, 기본 앞 4줄(누르면 전체). line-clamp(-webkit-box)는 줄마다 배경이 끊겨 보여서 안 씀(#1064 유저 보고).
               const lines = m.text.split("\n"); const long = lines.length > 4 || m.text.length > 400; const full = openTools.has(i);
