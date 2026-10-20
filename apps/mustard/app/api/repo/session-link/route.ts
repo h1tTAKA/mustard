@@ -25,7 +25,8 @@ export async function POST(req: Request): Promise<Response> {
     if (crew) {
       let room = 6000;
       for (const m of readMsgs(root, 0, 100_000).filter((m) => m.taskId?.replace(/[^a-z0-9]/gi, "").toLowerCase().startsWith(crew.id8) && m.kind !== "permission").reverse()) {
-        const text = m.text.slice(0, Math.min(1500, room)); if (!text) break;
+        if (room <= 0) break;
+        const text = m.text.slice(0, Math.min(1500, room)); if (!text) continue; // 빈 글은 건너뜀(그 앞 글까지 버리지 않게, 재리뷰)
         talk.unshift({ from: m.from, kind: m.kind, to: m.mentions ?? [], text, ts: m.ts }); room -= text.length;
       }
     }
