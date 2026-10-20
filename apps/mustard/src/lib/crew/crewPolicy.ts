@@ -45,7 +45,23 @@ function bashDecision(raw: string, worktree: string): Decision {
   return "allow";
 }
 
-export function decide(tool: string, input: Record<string, unknown>, worktree: string): Decision {
+// #1137 auto = 레포의 '전부 알아서' 모드 — 묻기(ask)를 허락으로. 차단(deny: push·머지·파괴적 git·sudo·위험 rm)은 그대로.
+export function decide(tool: string, input: Record<string, unknown>, worktree: string, auto = false): Decision {
+  const d = decideBase(tool, input, worktree);
+  return auto && d === "ask" ? "allow" : d;
+}
+
+// #1137 Codex·OpenCode(SNA 승인 흐름) 요청 → 정책 입력. Codex는 shell 명령을 `/bin/zsh -lc '…'`로 감싸 보냄 → 벗겨서 Bash로 판정.
+export function fromAgentRequest(req: Record<string, unknown>): { tool: string; input: Record<string, unknown> } {
+  const tool = String(req.tool_name ?? req.tool ?? "");
+  const command = typeof req.command === "string" ? req.command : Array.isArray(req.command) ? req.command.map(String).join(" ") : "";
+  if (!command || !/^(shell|exec|exec_command|bash|Bash|local_shell)$/.test(tool)) return { tool, input: req };
+  const m = /^\s*(?:\/usr)?(?:\/bin\/)?(?:zsh|bash|sh)\s+-l?c\s+(?:'((?:[^']|'\\'')*)'|"((?:[^"\\]|\\.)*)")\s*$/.exec(command);
+  const inner = m ? (m[1] !== undefined ? m[1].replace(/'\\''/g, "'") : m[2].replace(/\\(["\\$`])/g, "$1")) : command;
+  return { tool: "Bash", input: { command: inner } };
+}
+
+function decideBase(tool: string, input: Record<string, unknown>, worktree: string): Decision {
   if (READ_TOOLS.has(tool) || tool.startsWith("mcp__")) return "allow"; // 사용자 MCP(기억·도구)는 사용자가 이미 설치·허용한 것
   if (EDIT_TOOLS.has(tool)) {
     const p = String(input.file_path ?? input.notebook_path ?? input.path ?? "");

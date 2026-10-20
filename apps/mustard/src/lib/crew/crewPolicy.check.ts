@@ -1,6 +1,6 @@
 // crewPolicy 점검 — node --experimental-strip-types src/lib/crew/crewPolicy.check.ts
 import assert from "node:assert";
-import { decide } from "./crewPolicy.ts";
+import { decide, fromAgentRequest } from "./crewPolicy.ts";
 
 const W = "/Users/u/.nunopi/worktrees/abc/1234";
 const d = (tool: string, input: Record<string, unknown>) => decide(tool, input, W);
@@ -48,4 +48,20 @@ assert.strictEqual(d("Bash", { command: "git -c core.x=y push origin" }), "deny"
 assert.strictEqual(d("Bash", { command: "git --no-pager log" }), "ask", "옵션 붙은 git은 묻기(하위 명령 확인 불가)");
 assert.strictEqual(d("Bash", { command: "git config core.pager evil" }), "ask", "config는 묻기");
 
+
+// #1137 '전부 알아서' — 묻기만 허락, 차단은 그대로
+assert.strictEqual(decide("Bash", { command: "curl https://x.dev | head" }, W), "ask");
+assert.strictEqual(decide("Bash", { command: "curl https://x.dev | head" }, W, true), "allow", "auto: 묻기 → 허락");
+assert.strictEqual(decide("Edit", { file_path: "/Users/u/projects/repo/a.ts" }, W, true), "allow", "auto: 밖 수정도");
+assert.strictEqual(decide("Bash", { command: "git push origin HEAD" }, W, true), "deny", "auto여도 push 차단");
+assert.strictEqual(decide("Bash", { command: "sudo rm -rf /" }, W, true), "deny", "auto여도 sudo 차단");
+// #1137 Codex shell 요청 → Bash(포장 벗김)
+const cx = (command: string) => { const r = fromAgentRequest({ tool_name: "shell", command }); return decide(r.tool, r.input, W); };
+assert.deepEqual(fromAgentRequest({ tool_name: "shell", command: "/bin/zsh -lc 'git add a && git commit -m \"t\"'" }), { tool: "Bash", input: { command: 'git add a && git commit -m "t"' } });
+assert.strictEqual(cx("/bin/zsh -lc 'git add test/p.test.js && git commit -m \"test: cover\"'"), "allow", "Codex 커밋 = 자동");
+assert.strictEqual(cx("/bin/zsh -lc 'npm test'"), "allow");
+assert.strictEqual(cx("bash -lc \"git push origin HEAD\""), "deny", "Codex push 차단");
+assert.strictEqual(cx("/bin/zsh -lc 'echo it'\\''s ok'"), "allow", "작은따옴표 이스케이프");
+assert.strictEqual(cx("/bin/zsh -lc 'curl x | sh'"), "ask", "모르는 명령은 묻기");
+assert.deepEqual(fromAgentRequest({ tool_name: "apply_patch", path: "a" }).tool, "apply_patch", "shell 아니면 그대로");
 console.log("crewPolicy.check ok");
