@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { getSnaClient } from "@mustard/core/sna";
 import { applyOp, patchTask, readBoard } from "./crewStore";
-import { childProgress, decideGate, next, parseHandoff, pipelineOf, waitingOn, type Handoff } from "./crewFlow";
+import { childProgress, decideGate, next, parseHandoff, pickListener, pipelineOf, waitingOn, type Handoff } from "./crewFlow";
 import { getRole, listRoles } from "./crewRoleStore";
 import { crewProtocol, type CrewRole } from "./crewRoleDefaults";
 import { ensureWorktree, worktreeFor } from "./crewWorktree";
@@ -18,7 +18,9 @@ import { decide, fromAgentRequest } from "./crewPolicy";
 import { narrationLocale } from "@/lib/narrationConfig";
 import { defaultSnaModel } from "@mustard/nunopi/server";
 import { translate } from "@mustard/core/messages";
-import { appendMsg, findMsg, parseMentions, type CrewMsg } from "./crewChat";
+import { appendMsg, findMsg, parseMentions, readMsgs, type CrewMsg } from "./crewChat";
+import { snaClaudeProvider, snaCodexProvider, snaOpenCodeProvider } from "@mustard/nunopi/server";
+import { isFailedNote } from "@/lib/failText";
 import { freshIds, hasTriggers, readTriggers, scheduleDue, writeTriggers, type CrewTrigger } from "./crewTriggers";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems } from "@/lib/catchupStore";
@@ -57,8 +59,8 @@ function writeRuns(root: string, runs: CrewRun[]) {
 
 // ── 프로세스 싱글톤 상태 ──────────────────────────────────────────────
 type Pending = { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> };
-type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending> };
-const g = ((globalThis as unknown as { __mustardCrew?: G }).__mustardCrew ??= { roots: new Set(), origin: "", starting: new Set(), runs: new Map(), bySession: new Map(), wired: false, reconciled: new Set(), flush: new Map(), tokens: new Map(), pending: new Map() } as G);
+type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending>; answering: Set<string> };
+const g = ((globalThis as unknown as { __mustardCrew?: G }).__mustardCrew ??= { roots: new Set(), origin: "", starting: new Set(), runs: new Map(), bySession: new Map(), wired: false, reconciled: new Set(), flush: new Map(), tokens: new Map(), pending: new Map(), answering: new Set() } as G);
 
 // ── Claude 권한 훅 ───────────────────────────────────────────────────
 // SNA가 자동으로 넣는 PreToolUse 훅은 인증 없이 SNA에 물어 전부 거부됨(+ 읽기마다 사람에게 물음) → Claude 역할은
@@ -448,6 +450,15 @@ export function postHuman(root: string, text: string, replyTo?: string): { msg: 
   const mentions = parseMentions(body, known);
   const parent = replyTo ? findMsg(root, replyTo) : undefined;
   const task = parent?.taskId ? readBoard(root).tasks.find((t) => t.id === parent.taskId) : undefined;
+  if (!task && !mentions.length) { // #1139 @ 없는 글 — 가장 최근 카드의 담당 역할(없으면 범위 기획자)이 답함
+    const tasks = readBoard(root).tasks;
+    const who = pickListener(tasks, (id) => activeFor(root, id)?.role);
+    const card = who.taskId ? tasks.find((t) => t.id === who.taskId) : undefined;
+    const m = appendMsg(root, { from: "human", kind: "human", text: body, ...(replyTo ? { replyTo } : {}), ...(card ? { taskId: card.id, taskTitle: card.title } : {}) });
+    if (card && activeFor(root, card.id)) patchTask(root, card.id, { note: [card.note, body].filter(Boolean).join("\n\n") }); // 실행 중 — 다음 실행에도
+    void answerHuman(root, m, who.role, card?.id);
+    return { msg: m, ...(card ? { taskId: card.id } : {}) };
+  }
   const msg = appendMsg(root, { from: "human", kind: "human", text: body, ...(mentions.length ? { mentions } : {}), ...(replyTo ? { replyTo } : {}), ...(task ? { taskId: task.id, taskTitle: task.title } : {}) });
   if (task) {
     if (activeFor(root, task.id)) { patchTask(root, task.id, { note: [task.note, body].filter(Boolean).join("\n\n") }); return { msg, taskId: task.id }; } // 실행 중 — 다음 실행에
@@ -469,6 +480,51 @@ export function postHuman(root: string, text: string, replyTo?: string): { msg: 
   }
   return { msg };
 }
+
+// #1139 @ 없는 사람 글에 역할이 답함 — 에이전트 세션 없이 한 번 묻는 AI(실시간 해설과 같은 통로, 도구 없음 = 권한 안 생김).
+// 재료 = 카드 상태·최근 대화·마지막 인계(카드 없으면 보드 요약). 카드 상태는 안 바꿈(관문 결정은 사람이 보드에서).
+const ANALYZE: Record<string, typeof snaClaudeProvider> = { codex: snaCodexProvider, opencode: snaOpenCodeProvider };
+const AGENT_ID: Record<string, string> = { codex: "codex-agent", opencode: "opencode-agent" };
+async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?: string) {
+  const role = getRole(roleId) ?? getRole("scope-planner")!;
+  (g.answering ??= new Set()).add(`${root}\n${role.id}`); // 앱 켜진 채 코드만 바뀐 옛 전역 객체에도
+  try {
+    const tasks = readBoard(root).tasks;
+    const t = taskId ? tasks.find((x) => x.id === taskId) : undefined;
+    const clip = (x: string | undefined, n: number) => (x ?? "").replace(/\s+/g, " ").trim().slice(0, n);
+    const facts: string[] = [];
+    if (t) {
+      const p = pipelineOf(t), run = activeFor(root, t.id);
+      const last = [...readRuns(root)].reverse().find((r) => r.taskId === t.id);
+      facts.push(`Card: "${clip(t.title, 200)}" — column: ${t.status}${t.gate ? `, waiting for the human: ${t.gate.kind}${t.gate.text ? ` (${clip(t.gate.text, 300)})` : ""}` : ""}`,
+        `Card body: ${clip(t.body, 1200) || "(none)"}`,
+        `Pipeline: ${p.map((r, i) => (i === Math.min(t.stage ?? 0, p.length - 1) ? `[${r}]` : r)).join(" → ")}`,
+        ...(run ? [`Now running: ${run.role} (${run.state}), last activity: ${clip(run.lastActivity, 200)}`] : []),
+        ...(last?.summary ? [`Last summary from ${last.role}: ${clip(last.summary, 1200)}`] : []),
+        `Recent team chat on this card:`, ...readMsgs(root, 0, 100_000).filter((m) => m.taskId === t.id && m.id !== human.id).slice(-12).map((m) => `- ${m.from} (${m.kind}): ${clip(m.text, 300)}`));
+    } else {
+      facts.push("No card is active. Board:", ...tasks.slice(-20).map((x) => `- [${x.status}] ${clip(x.title, 120)}`));
+    }
+    const lang = LANG[narrationLocale()] ?? "English";
+    const prompt = [`You are "${roleLabel(role.id)}" (${role.id}), an agent on a software team board in Mustard.`,
+      `The human wrote in the team chat without @mentioning anyone:`, `> ${clip(human.text, 2000)}`, "",
+      `Facts (use ONLY these; do not invent progress):`, ...facts, "",
+      `Reply as ${role.id} in 1-4 short sentences, in ${lang}. You cannot run tools or change anything here.`,
+      `If the card waits for the human (spec/schema/merge approval, a question), say what they need to decide and that they do it on the board card.`,
+      `If the human asks for new work or changes, say you noted it${t && activeFor(root, t.id) ? " for the next run" : ""} and that @${role.id} (or replying to a card message) puts it on the board.`,
+      `Plain text, no headings.`].join("\n");
+    const provider = ANALYZE[role.provider] ?? snaClaudeProvider;
+    const pid = AGENT_ID[role.provider] ?? "claude-agent";
+    const res = await provider.analyze({ code: "crew chat", locale: narrationLocale(), providerId: pid, mode: "chat", messages: [{ role: "user", content: prompt }],
+      ...(role.model?.trim() && (role.provider === "claude-code" || ANALYZE[role.provider]) ? { providerSettings: { [pid]: { model: role.model.trim() } } } : {}) } as Parameters<typeof provider.analyze>[0]); // 다른 AI(grok·cursor)는 Claude로 → 그 모델 id는 안 맞음
+    const text = (res?.summary ?? "").trim();
+    if (!text || isFailedNote(text)) throw new Error(text || "empty");
+    say(root, { from: role.id, provider: role.provider, kind: "answer", text: text.slice(0, 2000), replyTo: human.id, ...(t ? { taskId: t.id, taskTitle: t.title } : {}) });
+  } catch {
+    say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.answerFailed", { role: roleLabel(role.id) }) });
+  } finally { g.answering.delete(`${root}\n${role.id}`); }
+}
+export const answeringRoles = (root: string) => [...(g.answering ?? [])].filter((k) => k.startsWith(`${root}\n`)).map((k) => k.slice(root.length + 1));
 
 // #1110 Draft PR 만들기 — 사람 클릭으로만(에이전트는 push·PR 금지 정책). 카드 마지막 실행의 작업 폴더·브랜치에서 push → gh pr create --draft.
 const pexecFile = promisify(execFile);
