@@ -123,7 +123,7 @@ export default function CrewChat({ root }: { root: string }) {
   const mdEsc = (x: string) => x.replace(/[\\*_`[\]~|&]/g, "\\$&");
   const renderMd = (s: string) => (
     <Markdown className="text-[12.5px] leading-relaxed" onLink={(href) => { if (/^(https?:|mailto:)/i.test(href)) window.open(href, "_blank", "noopener"); return true; }}>
-      {s.replace(/```nunopi-cards[\s\S]*?(```|$)/g, "").trim().split(/((?<=^|\n)[ \t]*```[\s\S]*?(?:```|$)|(?<=^|\n)[ \t]*~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`)/).map((seg, i) => (i % 2 ? seg : seg
+      {s.replace(/```nunopi-cards[\s\S]*?(```|$)/g, "").trim().split(/((?<=^|\n)[ \t]*```[\s\S]*?(?:```|$)|(?<=^|\n)[ \t]*~~~[\s\S]*?(?:~~~|$)|`[^`\n]+`)/).map((seg, i) => (i % 2 ? seg : seg
         .replace(/(?<![\w.*_/])@([a-z0-9][a-z0-9-]{0,39})/gi, (m0, id: string) => {
           const k = id.toLowerCase();
           return k === "you" ? `**@${mdEsc(t("crewchat.you.name"))}**` : known.has(k) ? `**@${mdEsc(roleName(t, roles, k))}**` : m0;
