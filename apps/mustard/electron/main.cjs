@@ -622,10 +622,13 @@ ipcMain.handle("github:issue-create", (_e, { cwd, title, body, labels, assignees
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args });
 });
 // PR 목록·상세(#814) — gh pr list/view --json. statusCheckRollup=CI 체크(서브3 재사용).
-ipcMain.handle("github:pr-list", (_e, { cwd, state, limit }) => {
+// #1141 who = 누구 것(VS Code 확장 첫 화면처럼): review = 나에게 리뷰 요청, assigned = 내 담당, mine = 내가 만듦. 그 밖 = 전체.
+const PR_WHO = { review: ["--search", "review-requested:@me"], assigned: ["--assignee", "@me"], mine: ["--author", "@me"] };
+ipcMain.handle("github:pr-list", (_e, { cwd, state, limit, who }) => {
   const st = state === "closed" ? "closed" : state === "all" ? "all" : "open";
   const lim = Math.min(Math.max(Number(limit) || 50, 1), 1000);
-  return githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "list", "--json", "number,title,state,isDraft,author,createdAt,updatedAt,statusCheckRollup", "--state", st, "--limit", String(lim)] });
+  const w = typeof who === "string" && Object.hasOwn(PR_WHO, who) ? PR_WHO[who] : [];
+  return githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "list", "--json", "number,title,state,isDraft,author,createdAt,updatedAt,statusCheckRollup", "--state", st, "--limit", String(lim), ...w] });
 });
 ipcMain.handle("github:pr-view", async (_e, { cwd, number }) => {
   const n = Number(number);

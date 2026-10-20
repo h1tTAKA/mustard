@@ -44,7 +44,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     issueList: (cwd, state, limit) => ipcRenderer.invoke("github:issue-list", { cwd, state, limit }),  // #813
     issueView: (cwd, number) => ipcRenderer.invoke("github:issue-view", { cwd, number }),
     issueCreate: (cwd, opts) => ipcRenderer.invoke("github:issue-create", { cwd, ...opts }),  // #945 이슈 생성(opts: title/body?/labels?)
-    prList: (cwd, state, limit) => ipcRenderer.invoke("github:pr-list", { cwd, state, limit }),  // #814
+    prList: (cwd, state, limit, who) => ipcRenderer.invoke("github:pr-list", { cwd, state, limit, who }), // #1141 who  // #814
     prView: (cwd, number) => ipcRenderer.invoke("github:pr-view", { cwd, number }),
     metaCandidates: (cwd, field) => ipcRenderer.invoke("github:meta-candidates", { cwd, field }), // #1131 리뷰어·담당자·라벨·마일스톤
     editMeta: (cwd, kind, number, field, add, remove) => ipcRenderer.invoke("github:edit-meta", { cwd, kind, number, field, add, remove }),
