@@ -18,9 +18,10 @@ export interface CrewTask {
   // #1114 쪼개기 — split = spec 관문에 올라온 제안, children = 승인 후 만든 하위 카드, parentId·dependsOn = 하위 카드 쪽
   split?: CrewSubtask[]; children?: string[]; parentId?: string; dependsOn?: string[];
 }
-export interface CrewBoard { version: 1; tasks: CrewTask[] }
+export interface CrewBoard { version: 1; tasks: CrewTask[]; auto?: boolean } // #1137 auto = 이 레포 '전부 알아서'(권한 묻기 → 자동 허락, 차단은 그대로)
 export type CrewOp =
   | { op: "create"; title: string; body?: string; status?: CrewStatus; role?: string; pipeline?: string[] }
   | { op: "update"; id: string; title?: string; body?: string; role?: string; pipeline?: string[] } // pipeline [] = 지움(담당 하나·자동)
   | { op: "move"; id: string; status: CrewStatus; index: number }
-  | { op: "delete"; id: string };
+  | { op: "delete"; id: string }
+  | { op: "auto"; on: boolean };

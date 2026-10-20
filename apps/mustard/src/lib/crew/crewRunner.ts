@@ -14,7 +14,7 @@ import { childProgress, decideGate, next, parseHandoff, pipelineOf, waitingOn, t
 import { getRole, listRoles } from "./crewRoleStore";
 import { crewProtocol, type CrewRole } from "./crewRoleDefaults";
 import { ensureWorktree, worktreeFor } from "./crewWorktree";
-import { decide } from "./crewPolicy";
+import { decide, fromAgentRequest } from "./crewPolicy";
 import { narrationLocale } from "@/lib/narrationConfig";
 import { defaultSnaModel } from "@mustard/nunopi/server";
 import { translate } from "@mustard/core/messages";
@@ -85,7 +85,7 @@ function writeHook() { mkdirSync(baseDir(), { recursive: true }); writeFileSync(
 export async function hookDecision(runId: string, token: string, tool: string, input: Record<string, unknown>): Promise<{ decision: "allow" | "deny"; reason?: string }> {
   const run = g.runs.get(runId);
   if (!run || g.tokens.get(runId) !== token || !ACTIVE.includes(run.state)) return { decision: "deny", reason: "unknown or finished run" };
-  const d = decide(tool, input ?? {}, run.worktree);
+  const d = decide(tool, input ?? {}, run.worktree, readBoard(run.root, false).auto === true); // #1137 '전부 알아서'면 묻기 → 허락
   if (d === "allow") return { decision: "allow" };
   if (d === "deny") { run.lastActivity = `⛔ ${tool} blocked by policy`; persist(run); return { decision: "deny", reason: "Blocked by Mustard Crew policy (push/merge/destructive git are human-only)" }; }
   if (g.pending.has(runId)) return { decision: "deny", reason: "another permission is pending" };
@@ -271,12 +271,24 @@ async function wire() {
     }
     persist(run);
   });
+  // #1137 Codex·OpenCode(SNA 승인 흐름)도 Claude 훅과 같은 정책 — 허락·차단은 바로 답하고, 묻기만 사람에게(대화방에도 알림).
   sna.agent.onPermissionRequest(({ session, request, createdAt }) => {
     const id = g.bySession.get(session); const run = id ? g.runs.get(id) : undefined;
     if (!run || !ACTIVE.includes(run.state)) return;
+    const req = (request ?? {}) as Record<string, unknown>;
+    const { tool, input } = fromAgentRequest(req);
+    const d = decide(tool, input, run.worktree, readBoard(run.root, false).auto === true);
+    if (d !== "ask") {
+      run.lastActivity = d === "allow" ? `⚙ ${tool}` : `⛔ ${tool} blocked by policy`;
+      persist(run);
+      void sna.agent.respondPermission(session, d === "allow").catch(() => {});
+      return;
+    }
     run.state = "needs-permission"; run.permission = { request, at: createdAt || Date.now() };
     moveCard(run.root, run.taskId, "needs-you");
     persist(run, true);
+    const cmd = typeof input.command === "string" ? input.command : "";
+    say(run.root, { from: run.role, provider: run.provider, kind: "permission", taskId: run.taskId, mentions: ["you"], ...tx("crewchat.permission", { tool: `${tool}${cmd ? `: ${cmd.slice(0, 200)}` : ""}` }) });
   });
   await sna.agent.subscribePermissions().catch(() => {});
 }
