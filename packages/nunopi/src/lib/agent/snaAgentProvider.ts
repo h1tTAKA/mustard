@@ -210,10 +210,19 @@ async function runViaSnaOnce(
     } else if (type === "complete") {
       usage = mapUsage(ev.data);
     } else if (type === "error") {
-      // ev.message가 객체로 오는 경우(Codex 인증 오류 등) — "[object Object]" 대신 안의 글자를 꺼냄(#1139 앱 확인)
-      const m = ev.message as unknown, d = (ev.data ?? {}) as Record<string, unknown>;
-      const pick = (x: unknown): string => typeof x === "string" ? x : x && typeof x === "object" ? String((x as Record<string, unknown>).message ?? (x as { error?: { message?: unknown } }).error?.message ?? JSON.stringify(x)) : "";
-      throw new Error((pick(m) || pick(d.error) || pick(d) || "runtime error").slice(0, 500));
+      // ev.message가 객체로 오는 경우(Codex 인증 오류 등) — "[object Object]" 대신 안의 글자를 꺼냄(#1139 앱 확인). 글자·숫자는 예전 그대로.
+      const m = ev.message as unknown;
+      if (m === undefined || m === null || typeof m !== "object") throw new Error(String(m ?? "runtime error"));
+      const pick = (x: unknown, depth = 0): string => {
+        if (x === undefined || x === null) return "";
+        if (typeof x !== "object") return String(x);
+        if (depth > 3) return "";
+        const o = x as Record<string, unknown>;
+        const inner = pick(o.message, depth + 1) || pick((o.error as Record<string, unknown> | undefined)?.message, depth + 1);
+        if (inner) return inner;
+        try { return JSON.stringify(x).slice(0, 500); } catch { return ""; } // 순환·BigInt — 버림
+      };
+      throw new Error((pick(m) || pick(ev.data) || "runtime error").slice(0, 500));
     }
   }
 
