@@ -17,15 +17,20 @@ export async function POST(request: Request): Promise<Response> {
   if (!existsSync(path) || !statSync(path).isDirectory()) return Response.json({ error: "not a directory" }, { status: 400 });
   try {
     // 머지 커밋도 포함(#1064 머지 세션) — merge 표시로 Diff 자동 설명은 건너뜀(머지 diff는 브랜치 전체라 큼).
-    const { stdout } = await pexecFile("git", ["log", "HEAD", "--branches=crew/*", "--source", "-n", "20", `--since=@${Math.floor(since)}`, "--format=%H%x1f%ct%x1f%P%x1f%s%x1f%S"], { cwd: path, timeout: 8000 });
-    const commits = stdout.split("\n").filter(Boolean).map((l) => { const [hash, ct, parents = "", subject = "", src = ""] = l.split("\x1f"); return { hash, ts: Number(ct), subject, merge: parents.trim().split(/\s+/).length > 1, crew: src.startsWith("crew/") ? src : undefined }; });
+    const { stdout } = await pexecFile("git", ["log", "HEAD", "--branches=crew/*", "-n", "20", `--since=@${Math.floor(since)}`, "--format=%H%x1f%ct%x1f%P%x1f%s"], { cwd: path, timeout: 8000 });
+    const commits = stdout.split("\n").filter(Boolean).map((l) => { const [hash, ct, parents = "", subject = ""] = l.split("\x1f"); return { hash, ts: Number(ct), subject, merge: parents.trim().split(/\s+/).length > 1 }; });
+    // Crew 커밋 = crew 브랜치에만 있고 HEAD엔 없는 것(--not HEAD). --source만 쓰면 내 브랜치와 공유하는 옛 커밋도 crew로 적힘(리뷰)
+    const crewOnly = new Map<string, string>();
+    if (commits.length) {
+      const c = await pexecFile("git", ["log", "--branches=crew/*", "--not", "HEAD", "--source", "-n", "200", `--since=@${Math.floor(since)}`, "--format=%H%x1f%S"], { cwd: path, timeout: 8000 }).catch(() => ({ stdout: "" }));
+      for (const l of c.stdout.split("\n")) { const [h, src = ""] = l.split("\x1f"); if (h && src.startsWith("crew/")) crewOnly.set(h, src); }
+    }
     // #1062 캐치업 diff 카드에 "어느 브랜치·커밋" 표시용 — 지금 HEAD 브랜치(분리 HEAD면 "HEAD").
     const branch = (await pexecFile("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: path, timeout: 4000 }).catch(() => ({ stdout: "" }))).stdout.trim();
     // #1068 커밋마다 "만들 때 브랜치"(HEAD reflog) — 앱이 꺼져 있다가 몰아서 처리해도 지금 브랜치가 아니라 그때 브랜치. 모르면 지금 브랜치.
-    // #1135 Crew 커밋은 HEAD reflog에 없음 → --source의 crew 브랜치. reflog 먼저 — --source는 HEAD와 crew 둘 다에서 닿는 커밋을 crew로 적을 수 있음(내 커밋이 Crew로 보이지 않게).
     const reflog = commits.length ? (await pexecFile("git", ["reflog", "-n", "2000", "--format=%H%x1f%gs"], { cwd: path, timeout: 4000 }).catch(() => ({ stdout: "" }))).stdout : "";
     const at = branchesFromReflog(reflog.split("\n").filter(Boolean));
-    return Response.json({ ok: true, commits: commits.map(({ crew, ...c }) => ({ ...c, branch: at.get(c.hash) ?? crew ?? branch })), branch });
+    return Response.json({ ok: true, commits: commits.map((c) => ({ ...c, branch: crewOnly.get(c.hash) ?? at.get(c.hash) ?? branch })), branch });
   } catch (e) {
     // 커밋 없는 새 레포(HEAD 없음) 등 — 빈 목록
     return Response.json({ ok: true, commits: [], note: String((e as Error)?.message ?? e).slice(0, 200) });

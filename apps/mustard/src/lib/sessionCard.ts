@@ -17,11 +17,12 @@ const CREW_PROMPT = "앞부분 [Crew 대화]는 역할 에이전트(@역할)끼�
 export interface CrewTalk { from: string; kind: string; to: string[]; text: string }
 
 export function sessionDigest(msgs: SessionMsg[], crew: CrewTalk[] = []): string {
-  const talk = crew.length ? ["[Crew 대화]", ...crew.map((c) => `@${c.from}${c.to.length ? ` → ${c.to.map((x) => `@${x}`).join(" ")}` : ""} (${c.kind}): ${c.text}`), "[에이전트 기록]"] : [];
+  const talk = crew.map((c) => `@${c.from}${c.to.length ? ` → ${c.to.map((x) => `@${x}`).join(" ")}` : ""} (${c.kind}): ${c.text}`);
   const lines = msgs.map((m) => (m.role === "user" ? "[사용자] " : m.role === "assistant" ? "[AI] " : "[도구] ") + (m.role === "tool" ? m.text.slice(0, TOOL_CLIP) : m.text));
-  const head = talk.join("\n").slice(0, INPUT_MAX / 2); // Crew 대화는 앞에 고정(상한 반), 에이전트 기록은 남은 만큼 최근 쪽
-  const all = lines.join("\n"), room = INPUT_MAX - head.length;
-  return (head ? head + "\n" : "") + (all.length > room ? all.slice(-room) : all);
+  // Crew 대화는 앞에 고정(상한 반), 에이전트 기록은 남은 만큼 최근 쪽. 구역 표지는 자르지 않음(리뷰)
+  const head = talk.length ? `[Crew 대화]\n${talk.join("\n").slice(0, INPUT_MAX / 2)}\n[에이전트 기록]\n` : "";
+  const all = lines.join("\n"), room = Math.max(0, INPUT_MAX - head.length);
+  return head + (all.length > room ? all.slice(-room) : all);
 }
 
 export interface LinkedSession { agent: string; sessionId: string; branch?: string; messages: SessionMsg[]; closed?: boolean; crew?: CrewTalk[] }
