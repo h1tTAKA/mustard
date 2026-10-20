@@ -59,7 +59,7 @@ function writeRuns(root: string, runs: CrewRun[]) {
 
 // ── 프로세스 싱글톤 상태 ──────────────────────────────────────────────
 type Pending = { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> };
-type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending>; answering: Set<string> };
+type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending>; answering: Set<string>; answerNext?: Map<string, { human: CrewMsg; roleId: string; taskId?: string }> };
 const g = ((globalThis as unknown as { __mustardCrew?: G }).__mustardCrew ??= { roots: new Set(), origin: "", starting: new Set(), runs: new Map(), bySession: new Map(), wired: false, reconciled: new Set(), flush: new Map(), tokens: new Map(), pending: new Map(), answering: new Set() } as G);
 
 // ── Claude 권한 훅 ───────────────────────────────────────────────────
@@ -485,8 +485,12 @@ export function postHuman(root: string, text: string, replyTo?: string): { msg: 
 // 재료 = 카드 상태·최근 대화·마지막 인계(카드 없으면 보드 요약). 카드 상태는 안 바꿈(관문 결정은 사람이 보드에서).
 const ANALYZE: Record<string, typeof snaClaudeProvider> = { codex: snaCodexProvider, opencode: snaOpenCodeProvider };
 const AGENT_ID: Record<string, string> = { codex: "codex-agent", opencode: "opencode-agent" };
+// 레포마다 한 번에 하나(리뷰: 글을 연달아 보내면 AI 호출이 줄줄이 — 다른 해설과 슬롯을 나눠 씀). 쓰는 중에 온 글은 가장 최근 것만 이어서.
 async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?: string) {
-  const role = getRole(roleId) ?? getRole("scope-planner")!;
+  const queue = (g.answerNext ??= new Map());
+  if ([...(g.answering ?? [])].some((k) => k.startsWith(`${root}\n`))) { queue.set(root, { human, roleId, taskId }); return; }
+  const role = getRole(roleId) ?? getRole("scope-planner");
+  if (!role) { say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.answerFailed", { role: roleId }) }); return; }
   (g.answering ??= new Set()).add(`${root}\n${role.id}`); // 앱 켜진 채 코드만 바뀐 옛 전역 객체에도
   try {
     const tasks = readBoard(root).tasks;
@@ -516,13 +520,18 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     const provider = ANALYZE[role.provider] ?? snaClaudeProvider;
     const pid = AGENT_ID[role.provider] ?? "claude-agent";
     const res = await provider.analyze({ code: "crew chat", locale: narrationLocale(), providerId: pid, mode: "chat", messages: [{ role: "user", content: prompt }],
-      ...(role.model?.trim() && (role.provider === "claude-code" || ANALYZE[role.provider]) ? { providerSettings: { [pid]: { model: role.model.trim() } } } : {}) } as Parameters<typeof provider.analyze>[0]); // 다른 AI(grok·cursor)는 Claude로 → 그 모델 id는 안 맞음
+      ...(role.model?.trim() && (role.provider === "claude-code" || ANALYZE[role.provider]) ? { providerSettings: { [pid]: { model: role.model.trim() } } } : {}) } as Parameters<typeof provider.analyze>[0], // 다른 AI(grok·cursor)는 Claude로 → 그 모델 id는 안 맞음
+      { signal: AbortSignal.timeout(90_000) }); // CLI가 멈춰도 '답장 쓰는 중'이 영원히 남지 않게(리뷰)
     const text = (res?.summary ?? "").trim();
     if (!text || isFailedNote(text)) throw new Error(text || "empty");
     say(root, { from: role.id, provider: role.provider, kind: "answer", text: text.slice(0, 2000), replyTo: human.id, ...(t ? { taskId: t.id, taskTitle: t.title } : {}) });
   } catch {
     say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.answerFailed", { role: roleLabel(role.id) }) });
-  } finally { g.answering.delete(`${root}\n${role.id}`); }
+  } finally {
+    g.answering.delete(`${root}\n${role.id}`);
+    const nx = queue.get(root);
+    if (nx) { queue.delete(root); void answerHuman(root, nx.human, nx.roleId, nx.taskId); }
+  }
 }
 export const answeringRoles = (root: string) => [...(g.answering ?? [])].filter((k) => k.startsWith(`${root}\n`)).map((k) => k.slice(root.length + 1));
 
