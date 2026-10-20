@@ -25,6 +25,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   // 변경 구간별 에이전트 노트. key = diffText 해시(구간 내용 기반 안정 키 → 같은 diff 재오픈 시 매칭).
   const [notes, setNotes] = useState<Record<string, { status: "loading" | "done" | "error"; text?: string }>>({});
   const [lines, setLines] = useState<DLine[] | null>(null);
+  const [full, setFull] = useState(false); // #1133 PR diff를 파일 전체로 받았나(아니면 바뀐 구간만)
   // #1127 PR diff — 에이전트 리뷰 지적(버린 것 제외)을 줄 옆 🤖로. 펼친 줄은 지적 내용 표시.
   const [findings, setFindings] = useState<Finding[]>(() => (pr ? loadPrReview(root, pr)?.findings ?? [] : []));
   const [openLines, setOpenLines] = useState<Set<number>>(new Set());
@@ -131,11 +132,16 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
       try {
         // 워킹트리(커밋 전) diff면 git-diff, 커밋 diff면 git-show.
         let raw: string;
-        if (pr) { // PR diff — gh(Electron)로
-          const r = await window.nunopiDesktop?.github?.prFileDiff?.(root, pr, file);
+        if (pr) { // PR diff — gh(Electron)로. 먼저 파일 전체(#1133), 못 받으면(바이너리·큰 파일·실패) 바뀐 구간만
+          const f = await window.nunopiDesktop?.github?.prFileFullDiff?.(root, pr, file);
           if (cancelled) return;
-          if (!r?.ok || r.data?.missing) { setStatus("error"); return; } // missing = gh diff에 없음(큰 PR) → '변경 없음' 대신 오류
-          raw = r.data?.diff ?? "";
+          if (f?.ok && f.data?.diff) { raw = f.data.diff; setFull(true); }
+          else {
+            const r = await window.nunopiDesktop?.github?.prFileDiff?.(root, pr, file);
+            if (cancelled) return;
+            if (!r?.ok || r.data?.missing) { setStatus("error"); return; } // missing = gh diff에 없음(큰 PR) → '변경 없음' 대신 오류
+            raw = r.data?.diff ?? ""; setFull(false);
+          }
         } else {
           const r = worktree
             ? await fetch("/api/repo/git-diff", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, file, kind: worktree }) })
@@ -292,6 +298,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
         <IconBrandGithub size={13} stroke={2} className="shrink-0" aria-hidden />
         <span className="shrink-0 font-medium">{t("github.prReviewBanner", { n: pr })}</span>
         <span className="truncate font-mono text-[10.5px] text-zinc-400 dark:text-zinc-500">{file}</span>
+        {status === "ok" && <span className="ml-auto shrink-0 text-[10.5px] text-zinc-400 dark:text-zinc-500">{t(full ? "github.diffFullFile" : "github.diffHunksOnly")}</span>}
       </div>
       {body}
     </div>
