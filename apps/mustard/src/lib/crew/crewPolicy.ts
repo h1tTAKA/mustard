@@ -28,7 +28,7 @@ type Inner = Decision | "hold";
 // ① heredoc 본문 → <<H  ② 명령 치환은 `cat <<H`만 허용(그 밖은 실제 실행되는 코드라 null = 묻기)  ③ 따옴표 안 글자 → §
 function strip(cmd: string): string | null {
   let bad = false;
-  let c = cmd.replace(/<<-?\s*(['"]?)(\w+)\1[^\n]*\n([\s\S]*?)\n\s*\2\s*(?=\n|$)/g, (m, q, _w, body) => {
+  const c = cmd.replace(/<<-?\s*(['"]?)(\w+)\1[^\n]*\n([\s\S]*?)\n\s*\2\s*(?=\n|$)/g, (m, q, _w, body) => {
     if (!q && /\$\(|`/.test(body)) bad = true; // 따옴표 없는 heredoc은 본문의 $(…)도 실행됨(리뷰)
     return m.slice(0, m.indexOf("\n")).replace(/<<-?\s*(['"]?)\w+\1/, "<<H");
   });
@@ -67,7 +67,7 @@ const unquote = (raw: string) => raw.replace(/\$'/g, "'").replace(/\\(.)/g, "$1"
 const outside = (worktree: string, p: string) => /^~|\$/.test(p) || !inside(worktree, p);
 
 function bashDecision(raw: string, worktree: string): Inner {
-  // Mustard Crew API를 에이전트가 직접 부르기(자동 모드 켜기·권한 허락) = 차단 — 따옴표로 쪼개 감춰도(리뷰)
+  // Mustard Crew API를 에이전트가 직접 부르기(권한 허락 등) = 차단 — 따옴표로 쪼개 감춰도(리뷰)
   if (/\/api\/crew\b/.test(unquote(raw))) return "deny";
   const cmd = strip(raw);
   if (cmd === null) return DENY_RE.test(raw) ? "deny" : "hold"; // 명령 치환 등 — 실제로 실행되는 코드가 숨어 있음
@@ -158,8 +158,8 @@ function decideBase(tool: string, input: Record<string, unknown>, worktree: stri
   }
   if (tool === "apply_patch") { const ps = patchPaths(input); return ps.length && ps.every((p) => !outside(worktree, p)) ? "allow" : "hold"; }
   if (tool === "Bash") return bashDecision(String(input.command ?? ""), worktree);
-  return "hold"; // 모르는 도구 — 자동 모드여도 사람
+  return "hold"; // 모르는 도구 — 사람
 }
 
-// #1137 Crew API는 같은 출처(앱 화면)에서만 — 다른 사이트가 폼 POST로 '전부 알아서'를 켜거나 권한을 허락하지 못하게(리뷰)
+// #1137 Crew API는 같은 출처(앱 화면)에서만 — 다른 사이트가 폼 POST로 카드를 만들거나 권한을 허락하지 못하게(리뷰). 브라우저 밖 호출은 샌드박스 이슈에서
 export const crossSite = (req: Request) => { const s = req.headers.get("sec-fetch-site"); return !!s && s !== "same-origin" && s !== "none"; };
