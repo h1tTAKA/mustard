@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconPlus, IconX, IconLoader2 } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
+import GhAvatar from "@/components/workspace/github/GhAvatar";
 
 export type MetaItem = { value: string; color?: string; readonly?: boolean };
 type Result = { ok: boolean; detail?: string };
@@ -63,7 +64,8 @@ export default function MetaRow({ root, field, title, items, empty, exclude = []
   const dot = (color?: string) => color ? <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: `#${color}` }} aria-hidden /> : null;
 
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px]">
+    // 줄 전체가 기준(relative) — 목록을 줄 폭에 맞춰 바로 아래에 펼쳐 좁은 패널에서 오른쪽이 안 잘리게(유저)
+    <div ref={box} className="relative mt-1 flex flex-wrap items-center gap-1 text-[11px]">
       <span className="text-zinc-400 dark:text-zinc-500">{title}:</span>
       {items.map((i) => (
         <span key={i.value} className={chip} style={i.color ? { backgroundColor: `#${i.color}22` } : undefined}>
@@ -77,21 +79,22 @@ export default function MetaRow({ root, field, title, items, empty, exclude = []
         </span>
       ))}
       {!items.length && <span className="text-zinc-400 dark:text-zinc-500">{empty}</span>}
-      <div ref={box} className="relative inline-flex">
-        <button type="button" onClick={() => { setErr(null); setCands(null); setOpen((v) => !v); }} title={`${title} ${t("github.addItem")}`} aria-label={`${title} ${t("github.addItem")}`} aria-expanded={open}
+      <div className="inline-flex">
+        <button type="button" onClick={() => { setErr(null); setCands(null); setOpen((v) => !v); }} title={t("github.addTo", { name: title })} aria-label={t("github.addTo", { name: title })} aria-expanded={open}
           className="shrink-0 text-zinc-400 transition hover:text-zinc-600 dark:hover:text-zinc-200">
           <IconPlus size={12} stroke={2} aria-hidden />
         </button>
         {open && (
-          <div className="absolute left-0 top-full z-30 mt-1 w-52 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="absolute inset-x-0 top-full z-30 mt-1 max-w-72 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+            <p className="mb-1 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">{t("github.addTo", { name: title })}</p>
             {cands === null ? (
               <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-zinc-400"><IconLoader2 size={12} className="animate-spin" aria-hidden />…</div>
             ) : err ? null : pick.length ? (
               <div className="max-h-56 overflow-y-auto">
                 {pick.map((c) => (
                   <button key={c.value} type="button" onClick={() => void change([c.value], single ? items.map((i) => i.value) : [], c.value)} disabled={!!busy}
-                    className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11.5px] text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-800">
-                    {busy === c.value ? <IconLoader2 size={12} className="animate-spin" aria-hidden /> : dot(c.color)}<span className="truncate">{c.value}</span>
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[11.5px] text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-800">
+                    {busy === c.value ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : field === "reviewer" || field === "assignee" ? <GhAvatar login={c.value} size={14} /> : dot(c.color)}<span className="truncate">{c.value}</span>
                   </button>
                 ))}
               </div>
