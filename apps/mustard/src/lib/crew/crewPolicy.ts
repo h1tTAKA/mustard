@@ -23,12 +23,15 @@ const SAFE_NPX = new Set(["tsc", "eslint", "prettier", "vitest", "jest", "tsx", 
 const SAFE_ENV = /^(CI|NODE_ENV|FORCE_COLOR|NO_COLOR|TZ|LANG|LC_\w+|DEBUG|PORT|TERM)$/; // 앞에 붙는 VAR=값 중 허용(GIT_*·PATH·NODE_OPTIONS 등은 코드 실행 통로)
 const WRITERS = new Set(["cp", "mv", "touch", "mkdir", "rm", "rmdir", "sed"]); // 경로 인자를 씀 → worktree 밖이면 hold
 type Inner = Decision | "hold";
+const MCP_READ = new Set(["get", "list", "search", "read", "find", "fetch", "view", "query", "recall", "status", "describe", "show", "lookup", "overview", "map", "trace", "check", "screenshot", "console", "code", "api", "repo", "freshness", "stats"]);
+const MCP_WRITE = new Set(["merge", "push", "delete", "remove", "create", "send", "deploy", "exec", "execute", "run", "write", "update", "post", "publish", "comment", "close", "approve", "replace", "mark", "set", "save", "edit", "move", "add", "reply", "submit", "invoke", "click", "type", "navigate", "open", "upload", "install", "rename", "assign", "label", "reopen", "lock", "fork", "transfer", "archive", "cancel", "trigger", "dispatch", "start", "stop", "kill", "reset", "clear", "put", "patch", "insert", "apply", "commit", "tag", "release", "grant", "revoke", "share", "invite", "remember", "purge", "upgrade", "batch", "new", "tab", "and", "or"]); // and·or = "list_and_create" 같은 복합 이름은 사람
 
 // 판단 전에 걷어내기(실사용 오탐 — node -e "…", git commit -m "$(cat <<'EOF' …)", cat >> f <<'EOF' …):
 // ① heredoc 본문 → <<H  ② 명령 치환은 `cat <<H`만 허용(그 밖은 실제 실행되는 코드라 null = 묻기)  ③ 따옴표 안 글자 → §
 function strip(cmd: string): string | null {
   let bad = false;
-  const c = cmd.replace(/<<-?\s*(['"]?)(\w+)\1[^\n]*\n([\s\S]*?)\n\s*\2\s*(?=\n|$)/g, (m, q, _w, body) => {
+  const c = cmd.replace(/<<-?\s*(['"]?)(\w+)\1[^\n]*\n([\s\S]*?)\n\s*\2\s*(?=\n|$)/g, (m, q, _w, body, at: number) => {
+    if (quoteStateAt(cmd, at)) return m; // 따옴표·주석 안의 "<<X"는 heredoc 아님 — 지우면 다음 줄 명령이 감춰짐(리뷰)
     if (!q && /\$\(|`/.test(body)) bad = true; // 따옴표 없는 heredoc은 본문의 $(…)도 실행됨(리뷰)
     return m.slice(0, m.indexOf("\n")).replace(/<<-?\s*(['"]?)\w+\1/, "<<H");
   });
@@ -44,6 +47,7 @@ function quoteScan(c: string): string | null {
   let out = "", i = 0;
   while (i < c.length) {
     const ch = c[i];
+    if (ch === "#" && (i === 0 || /[\s;|&(){}]/.test(c[i - 1]))) { while (i < c.length && c[i] !== "\n") i++; continue; } // 주석 — 안의 '는 따옴표 아님(리뷰)
     if (ch === "\\") { out += c[i + 1] === "\n" ? " " : "§"; i += 2; continue; } // 줄 이음은 띄어쓰기
     if (ch === "'" || (ch === "$" && c[i + 1] === "'")) {
       const ansi = ch === "$"; i += ansi ? 2 : 1;
@@ -60,6 +64,28 @@ function quoteScan(c: string): string | null {
     out += ch; i++;
   }
   return out;
+}
+// idx 위치가 따옴표·주석 안인가(heredoc 표시 판정용) — quoteScan과 같은 규칙
+function quoteStateAt(c: string, idx: number): boolean {
+  let i = 0;
+  while (i < idx) {
+    const ch = c[i];
+    if (ch === "#" && (i === 0 || /[\s;|&(){}]/.test(c[i - 1]))) { while (i < c.length && c[i] !== "\n") { if (i === idx) return true; i++; } continue; }
+    if (ch === "\\") { i += 2; continue; }
+    if (ch === "'" || (ch === "$" && c[i + 1] === "'")) { const ansi = ch === "$"; i += ansi ? 2 : 1; while (i < c.length && c[i] !== "'") { if (i >= idx) return true; i += ansi && c[i] === "\\" ? 2 : 1; } i++; continue; }
+    if (ch === '"') { // "…" 안의 $(…)는 명령 자리(git commit -m "$(cat <<'EOF' …)") — 그 안은 따옴표 아님
+      i++; let sub = 0;
+      while (i < c.length && (c[i] !== '"' || sub > 0)) {
+        if (i >= idx) return sub === 0;
+        if (c[i] === "$" && c[i + 1] === "(") { sub++; i += 2; continue; }
+        if (c[i] === ")" && sub > 0) { sub--; i++; continue; }
+        i += c[i] === "\\" ? 2 : 1;
+      }
+      i++; continue;
+    }
+    i++;
+  }
+  return false;
 }
 // 따옴표·백슬래시를 셸처럼 걷어낸 원문 — Crew API 주소 감추기 검사용. (`git "push"`·`su""do`·`pu\sh`·`$'push'`처럼 명령 이름을 꾸민 건 아래에서 hold)
 const unquote = (raw: string) => raw.replace(/\$'/g, "'").replace(/\\(.)/g, "$1").replace(/["']/g, "");
@@ -149,8 +175,12 @@ const patchPaths = (input: Record<string, unknown>) => [...String(input.patch ??
 
 function decideBase(tool: string, input: Record<string, unknown>, worktree: string): Inner {
   if (tool === "WebFetch") return "hold"; // 밖으로 데이터를 실어 보낼 수 있음(?d=비밀) — 사람(리뷰)
-  // 사용자 MCP — 읽기 도구(get·list·search·read·find…)만 자동, 나머지(머지·편집·이동·전송…)는 사람(리뷰: 쓰기 동사 목록은 늘 빠짐 → 읽기 목록으로)
-  if (tool.startsWith("mcp__")) return /(^|_)(get|list|search|read|find|fetch|view|query|recall|status|describe|show|lookup|overview|map|trace|check|screenshot|console)(_|$)/i.test(tool.split("__").pop() ?? "") ? "allow" : "hold";
+  // 사용자 MCP — 이름 조각(_로 나눔)에 쓰기 동사가 하나라도 있으면 사람, 없고 읽기 동사가 있으면 자동, 둘 다 없으면 사람(리뷰: update_status·get_or_create)
+  if (tool.startsWith("mcp__")) {
+    const parts = (tool.split("__").pop() ?? "").toLowerCase().split(/[_-]/);
+    if (parts.some((w) => MCP_WRITE.has(w))) return "hold";
+    return parts.some((w) => MCP_READ.has(w)) ? "allow" : "hold";
+  }
   if (READ_TOOLS.has(tool)) return "allow";
   if (EDIT_TOOLS.has(tool)) {
     const p = String(input.file_path ?? input.notebook_path ?? input.path ?? "");
