@@ -234,6 +234,7 @@ export default function CrewChat({ root }: { root: string }) {
                       <div className="mb-0.5 flex items-baseline gap-1.5 px-0.5">
                         <span className="text-[11.5px] font-medium text-zinc-700 dark:text-zinc-200">{who(m.from)}</span>
                         {m.provider && <span className="text-[10px] text-zinc-400 dark:text-zinc-500">{PROVIDER_LABEL[m.provider] ?? m.provider}</span>}
+                        {m.kind === "meeting" && <span className="text-[10px] text-zinc-400 dark:text-zinc-500">· {t("crewchat.meeting")}</span>}{/* #1139 팀 회의 발언 */}
                       </div>
                     )}
                     <div className="flex items-end gap-1.5">
