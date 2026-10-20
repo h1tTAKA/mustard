@@ -80,6 +80,7 @@ interface NunopiDesktopApi {
     // #1123 PR 리뷰 — 변경 파일(봤음 포함)·파일별 diff·봤음 표시(GitHub에 저장)
     prFiles?(cwd: string, number: number): Promise<{ ok: boolean; data?: { prId: string; head?: string; files: { path: string; additions: number; deletions: number; changeType: string; viewed: boolean }[]; truncated?: boolean }; kind?: string; detail?: string }>;
     prFileDiff?(cwd: string, number: number, path: string): Promise<{ ok: boolean; data?: { diff: string; missing?: boolean }; kind?: string; detail?: string }>;
+    prFileFullDiff?(cwd: string, number: number, path: string): Promise<{ ok: boolean; data?: { diff?: string; fallback?: boolean }; kind?: string; detail?: string }>;
     prFileViewed?(cwd: string, prId: string, path: string, viewed: boolean): Promise<{ ok: boolean; kind?: string; detail?: string }>;
     prLineComment?(cwd: string, number: number, path: string, line: number, body: string, commitId?: string): Promise<{ ok: boolean; data?: { id?: number; url?: string }; kind?: string; detail?: string }>;
     prReviewReply?(cwd: string, number: number, commentId: number, body: string): Promise<{ ok: boolean; kind?: string; detail?: string }>;
