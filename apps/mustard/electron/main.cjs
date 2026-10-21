@@ -838,15 +838,19 @@ ipcMain.handle("github:pr-file-diff", async (_e, { cwd, number, path }) => {
   let hit = prDiffCache.get(key);
   if (!hit || Date.now() - hit.at > 30_000) {
     const gen = prDiffGen.get(key) ?? 0;
+    // #1145 이 diff의 커밋 — 받기 전·후 head가 같을 때만(사이에 push되면 모름 → 보류 리뷰가 섞임으로 막음). 캐시에도 diff와 짝으로.
+    const headOf = async () => { const v = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "headRefOid"] }); const h = v.ok ? v.data?.headRefOid : null; return typeof h === "string" && /^[0-9a-f]{40}$/.test(h) ? h : null; };
+    const h1 = await headOf();
     const r = await githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "diff", String(n), "--color", "never"], timeout: 30000 });
     if (!r.ok) return r;
-    hit = { at: Date.now(), files: githubBridge.splitDiffByFile(r.stdout) };
+    const h2 = h1 ? await headOf() : null;
+    hit = { at: Date.now(), files: githubBridge.splitDiffByFile(r.stdout), ...(h1 && h1 === h2 ? { head: h1 } : {}) };
     if ((prDiffGen.get(key) ?? 0) === gen) prDiffCache.set(key, hit); // 받는 사이 새로고침됐으면 저장 안 함(이번 응답만 사용)
     if (prDiffCache.size > 20) prDiffCache.delete(prDiffCache.keys().next().value);
   }
   // PR엔 있는데 gh pr diff 결과에 없음(아주 큰 PR 등) → "변경 없음"이 아니라 missing으로(리뷰).
   if (!Object.hasOwn(hit.files, path)) return { ok: true, data: { diff: "", missing: true } };
-  return { ok: true, data: { diff: hit.files[path] } };
+  return { ok: true, data: { diff: hit.files[path], ...(hit.head ? { head: hit.head } : {}) } };
 });
 // 봤음 표시 — GitHub에 저장(웹·다른 기기와 같은 상태).
 // PR 파일 전체 diff(#1133, VS Code 확장처럼) — merge base와 head의 원문을 받아 로컬 git diff -U100000(기존 diff 탭과 같은 모양).

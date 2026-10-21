@@ -150,7 +150,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   useEffect(() => {
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- diff 바뀌면 로딩 리셋(키 변경 시)
-    setStatus("loading"); setLines(null); setTokens([]);
+    setStatus("loading"); setLines(null); setTokens([]); setHead(undefined); // head도 — 새 파일 받는 동안 옛 파일 커밋으로 댓글 안 담기게(리뷰)
     (async () => {
       try {
         // 워킹트리(커밋 전) diff면 git-diff, 커밋 diff면 git-show.
@@ -163,10 +163,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
             const r = await window.nunopiDesktop?.github?.prFileDiff?.(root, pr, file);
             if (cancelled) return;
             if (!r?.ok || r.data?.missing) { setStatus("error"); return; } // missing = gh diff에 없음(큰 PR) → '변경 없음' 대신 오류
-            raw = r.data?.diff ?? ""; setFull(false);
-            const fh = await window.nunopiDesktop?.github?.prFiles?.(root, pr).catch(() => null); // 구간 diff엔 head가 없음 → 지금 head(보류 댓글 커밋 섞임 판별, 리뷰)
-            if (cancelled) return;
-            setHead(fh?.ok ? fh.data?.head : undefined);
+            raw = r.data?.diff ?? ""; setFull(false); setHead(r.data?.head); // 구간 diff도 그 diff의 커밋(받는 사이 push면 없음, 리뷰)
           }
         } else {
           const r = worktree
