@@ -163,7 +163,10 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
             const r = await window.nunopiDesktop?.github?.prFileDiff?.(root, pr, file);
             if (cancelled) return;
             if (!r?.ok || r.data?.missing) { setStatus("error"); return; } // missing = gh diff에 없음(큰 PR) → '변경 없음' 대신 오류
-            raw = r.data?.diff ?? ""; setFull(false); setHead(undefined);
+            raw = r.data?.diff ?? ""; setFull(false);
+            const fh = await window.nunopiDesktop?.github?.prFiles?.(root, pr).catch(() => null); // 구간 diff엔 head가 없음 → 지금 head(보류 댓글 커밋 섞임 판별, 리뷰)
+            if (cancelled) return;
+            setHead(fh?.ok ? fh.data?.head : undefined);
           }
         } else {
           const r = worktree

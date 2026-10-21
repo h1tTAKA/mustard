@@ -42,10 +42,10 @@ export function addDraft(list: DraftComment[], c: Omit<DraftComment, "id">, id: 
 export const removeDraft = (list: DraftComment[], id: string) => list.filter((x) => x.id !== id);
 
 // 리뷰 요청 — commit_id는 보류 댓글들이 본 diff의 커밋. 아는 커밋이 둘 이상이면 mixed(줄 번호 기준이 달라 한 리뷰로 못 보냄 — 리뷰: 옛 줄 번호가 새 코드 엉뚱한 줄에),
-// 아는 커밋이 없으면(구간만 받은 diff) 지금 head(fallback).
+// 아는 커밋과 모르는 게 섞여도 mixed, 다 모르면 지금 head(fallback).
 export function reviewRequest(list: DraftComment[], fallbackHead?: string): { commitId?: string; mixed?: boolean; comments: { path: string; line: number; side: "LEFT" | "RIGHT"; startLine?: number; body: string }[] } {
   const heads = [...new Set(list.map((x) => x.head).filter((h): h is string => !!h && /^[0-9a-f]{40}$/.test(h)))];
-  if (heads.length > 1) return { mixed: true, comments: [] };
+  if (heads.length > 1 || (heads.length && list.some((x) => x.head !== heads[0]))) return { mixed: true, comments: [] }; // 모르는 커밋 + 아는 커밋 = 기준 불명(리뷰)
   const commitId = heads[0] ?? fallbackHead;
   return { commitId, comments: list.map((x) => ({ path: x.path, line: x.line, side: x.side, ...(x.startLine ? { startLine: x.startLine } : {}), body: x.body })) };
 }

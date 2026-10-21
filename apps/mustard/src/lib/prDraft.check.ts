@@ -16,6 +16,7 @@ assert.deepStrictEqual(reviewRequest(l, H2), { commitId: H1, comments: [
   { path: "src/a.ts", line: 13, side: "RIGHT", body: "rename b" },
   { path: "src/a.ts", line: 5, side: "LEFT", startLine: 3, body: "why removed?" }] }, "같은 head면 그 커밋");
 assert.deepStrictEqual(reviewRequest([...l, { id: "9", path: "y", side: "RIGHT", line: 1, body: "z", head: H2 }], "c".repeat(40)), { mixed: true, comments: [] }, "커밋 섞이면 못 보냄");
+assert.deepStrictEqual(reviewRequest([...l, { id: "9", path: "y", side: "RIGHT", line: 1, body: "z" }], H2), { mixed: true, comments: [] }, "아는 커밋 + 모르는 커밋도 못 보냄");
 assert.strictEqual(reviewRequest([{ id: "9", path: "y", side: "RIGHT", line: 1, body: "z" }], H2).commitId, H2, "커밋 모르면 지금 head");
 assert.strictEqual(removeDraft(l, "1").length, 1);
 
