@@ -50,8 +50,11 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
   useEffect(() => {
     let alive = true;
     setDraftPaths(loadDrafts(root, number).map((d) => d.path)); // eslint-disable-line react-hooks/set-state-in-effect -- PR 바뀌면 그 PR 보류분
-    void window.nunopiDesktop?.github?.prLineComments?.(root, number).then((r) => { if (alive && r.ok && r.data) setThreadPaths(r.data.filter((c) => c.inReplyTo == null).map((c) => c.path)); }).catch(() => {});
-    return () => { alive = false; };
+    // 이벤트로 다시 부를 땐 0.3초 모아서 한 번(지적 여러 개 연달아 채택해도 gh 조회 한 번, 리뷰)
+    const timer = setTimeout(() => {
+      void window.nunopiDesktop?.github?.prLineComments?.(root, number).then((r) => { if (alive && r.ok && r.data) setThreadPaths(r.data.filter((c) => c.inReplyTo == null).map((c) => c.path)); }).catch(() => {});
+    }, cmtTick ? 300 : 0);
+    return () => { alive = false; clearTimeout(timer); };
   }, [root, number, reloadKey, cmtTick]);
   const onCountRef = useRef(onCount);
   useEffect(() => { onCountRef.current = onCount; }, [onCount]);
