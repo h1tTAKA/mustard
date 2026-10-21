@@ -959,7 +959,7 @@ ipcMain.handle("github:pr-review-submit", async (_e, { cwd, number, commitId, co
   // 하나라도 잘못되면 전체 거절(일부만 빠진 채 '다 올림'으로 보이지 않게, 리뷰)
   const list = Array.isArray(comments) ? comments : [];
   const okC = (c) => c && typeof c.path === "string" && c.path && Number.isInteger(c.line) && c.line > 0 && typeof c.body === "string" && c.body.trim()
-    && (c.side == null || SIDES.has(c.side)) && (c.startLine == null || (Number.isInteger(c.startLine) && c.startLine > 0 && ((c.startSide ?? c.side ?? "RIGHT") !== (c.side ?? "RIGHT") || c.startLine < c.line)));
+    && (c.side == null || SIDES.has(c.side)) && (c.startSide == null || SIDES.has(c.startSide)) && (c.startLine == null || (Number.isInteger(c.startLine) && c.startLine > 0 && ((c.startSide ?? c.side ?? "RIGHT") !== (c.side ?? "RIGHT") || c.startLine < c.line)));
   if (list.length > 100 || !list.every(okC)) return { ok: false, kind: "error", detail: "invalid comments" };
   if (!list.length && ev === "COMMENT" && !text) return { ok: false, kind: "error", detail: "empty review" }; // 줄 댓글도 본문도 없는 코멘트 리뷰
   if (ev === "REQUEST_CHANGES" && !text && !list.length) return { ok: false, kind: "error", detail: "request changes needs a comment" };

@@ -32,6 +32,7 @@ export default function CommentComposer({ root, kind, number, onPosted, review =
   const submitDrafts = async (ev: "COMMENT" | "APPROVE" | "REQUEST_CHANGES") => {
     const sent = loadDrafts(root, number);
     const req = reviewRequest(sent, head);
+    if (req.mixed) { setError(t("github.draftMixed")); return; }
     if (!req.commitId) { setError(t("github.error")); return; }
     const r = await window.nunopiDesktop?.github?.prReviewSubmit?.(root, number, req.commitId, req.comments, { event: ev, body: text.trim() }).catch((e) => ({ ok: false, detail: String((e as Error)?.message || e) }));
     if (!mountedRef.current) return;

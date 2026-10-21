@@ -201,9 +201,20 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const draftAt = new Map<string, DraftComment[]>();
   for (const d of drafts) if (d.path === file) draftAt.set(`${d.side}:${d.line}`, [...(draftAt.get(`${d.side}:${d.line}`) ?? []), d]);
   const sel = pick?.file === file ? pick : null;
+  // GitHub는 PR diff 구간(바뀐 줄 앞뒤 3줄) 안에만 줄 댓글을 받음 — 파일 전체(#1133)로 받았으면 먼 줄엔 + 없음(리뷰: 422로 보류 리뷰 전체가 막힘)
+  const near: boolean[] = new Array(lines.length).fill(!full);
+  if (full) {
+    const code = lines.map((l, i) => (l.kind === "add" || l.kind === "del" || l.kind === "ctx" ? i : -1)).filter((i) => i >= 0);
+    code.forEach((i, k) => { if (lines[i].kind !== "ctx") for (let d = Math.max(0, k - 3); d <= Math.min(code.length - 1, k + 3); d++) near[code[d]] = true; });
+  }
+  // 범위 안 줄(LEFT = 옛 번호 있는 줄, RIGHT = 새 번호 있는 줄) — 빠진 줄 없이 이어지고 모두 댓글 가능해야 범위(리뷰: 구간 사이 숨은 줄을 suggestion이 지움)
+  const rangeRows = (side: "LEFT" | "RIGHT", a: number, b: number) => {
+    const idx = lines.map((l, i) => ((side === "LEFT" ? l.kind !== "add" && l.oldN != null && l.oldN >= a && l.oldN <= b : l.kind !== "del" && l.newN != null && l.newN >= a && l.newN <= b) && l.kind !== "meta" && l.kind !== "hunk" ? i : -1)).filter((i) => i >= 0);
+    return idx.length === b - a + 1 && idx.every((i) => near[i]) ? idx : null;
+  };
   // + 누름 — Shift면 같은 쪽 앞서 고른 줄부터 범위, 아니면 한 줄
   const choose = (side: "LEFT" | "RIGHT", ln: number, shift: boolean) => setPick((p) => {
-    if (shift && p && p.file === file && p.side === side && p.anchor !== ln) return { file, side, line: Math.max(p.anchor, ln), start: Math.min(p.anchor, ln), anchor: p.anchor };
+    if (shift && p && p.file === file && p.side === side && p.anchor !== ln && rangeRows(side, Math.min(p.anchor, ln), Math.max(p.anchor, ln))) return { file, side, line: Math.max(p.anchor, ln), start: Math.min(p.anchor, ln), anchor: p.anchor };
     return { file, side, line: ln, anchor: ln };
   });
   // 오버뷰 룰러용: 연속 "같은 종류(추가/삭제)" 줄을 한 블록으로. 수정(삭제+추가)은 빨강 블록·초록 블록 따로 →
@@ -241,7 +252,8 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
         const lineN = l.newN as number;
         const side: "LEFT" | "RIGHT" = l.kind === "del" ? "LEFT" : "RIGHT"; // 바뀌지 않은 줄은 새 코드 쪽에
         const ln = (side === "LEFT" ? l.oldN : l.newN) ?? 0;
-        const inSel = !!sel && sel.side === side && ln >= (sel.start ?? sel.line) && ln <= sel.line;
+        const selLn = sel?.side === "LEFT" ? l.oldN : l.newN; // 범위 테두리 — LEFT 범위엔 안 바뀐 줄도(옛 번호로)
+        const inSel = !!sel && selLn != null && l.kind !== (sel.side === "LEFT" ? "add" : "del") && selLn >= (sel.start ?? sel.line) && selLn <= sel.line;
         const lineD = pr ? draftAt.get(`${side}:${ln}`) ?? [] : [];
         const composeHere = !!sel && sel.side === side && sel.line === ln;
         const lineT = pr ? [...(l.oldN != null && l.kind !== "add" ? threadAt.get(`LEFT:${l.oldN}`) ?? [] : []), ...(l.newN != null ? threadAt.get(`RIGHT:${l.newN}`) ?? [] : [])] : [];
@@ -257,7 +269,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
             )}
             <span className="w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">{l.oldN ?? ""}</span>
             {/* #1145 줄 댓글 + — 새 줄번호 칸 왼쪽, 줄에 올리면 보임. Shift+누름 = 범위 */}
-            {pr && ln > 0 && (
+            {pr && ln > 0 && near[i] && (
               <button type="button" onClick={(e) => choose(side, ln, e.shiftKey)} title={t("github.lineCommentAdd")} aria-label={`${t("github.lineCommentAdd")} ${ln}`}
                 className="absolute inset-y-px left-9 z-[1] flex w-[14px] items-center justify-center rounded bg-mustard-500 text-brown-900 opacity-0 shadow-sm hover:bg-mustard-400 focus:opacity-100 group-hover:opacity-100">
                 <IconPlus size={11} stroke={2.6} aria-hidden />
@@ -309,7 +321,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
               {composeHere && sel && (
                 <div style={{ width: paneW ? paneW - 20 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 font-sans">
                   <LineComposer root={root} pr={pr!} file={file} sel={sel} head={head}
-                    code={sel.side === "RIGHT" ? lines.filter((x) => x.kind !== "del" && x.newN != null && x.newN >= (sel.start ?? sel.line) && x.newN <= sel.line).map((x) => x.text) : null}
+                    code={sel.side === "RIGHT" ? rangeRows("RIGHT", sel.start ?? sel.line, sel.line)?.map((k) => lines[k].text) ?? null : null}
                     onClose={() => setPick(null)} onPosted={reloadThreads} />
                 </div>
               )}
@@ -403,7 +415,10 @@ function LineComposer({ root, pr, file, sel, head, code, onClose, onPosted }: { 
   const addToReview = () => {
     const body = text.trim();
     if (!body) return;
-    if (!saveDrafts(root, pr, addDraft(loadDrafts(root, pr), { path: file, side: sel.side, line: sel.line, startLine: sel.start, body, head }, crypto.randomUUID()))) { toast(t("prReview.saveFailed"), "error"); return; }
+    const cur = loadDrafts(root, pr);
+    const next = addDraft(cur, { path: file, side: sel.side, line: sel.line, startLine: sel.start, body, head }, crypto.randomUUID());
+    if (next.length === cur.length) { setErr(t("github.draftNotAdded")); return; } // 같은 자리·같은 글이 이미 있거나 100개 꽉 참(리뷰)
+    if (!saveDrafts(root, pr, next)) { toast(t("prReview.saveFailed"), "error"); return; }
     toast(t("github.draftAdded"));
     onClose();
   };

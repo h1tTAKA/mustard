@@ -41,10 +41,12 @@ export function addDraft(list: DraftComment[], c: Omit<DraftComment, "id">, id: 
 }
 export const removeDraft = (list: DraftComment[], id: string) => list.filter((x) => x.id !== id);
 
-// 리뷰 요청 — commit_id는 보류 댓글들이 본 diff의 커밋(모두 같을 때), 섞였거나 없으면 지금 head(fallback)
-export function reviewRequest(list: DraftComment[], fallbackHead?: string): { commitId?: string; comments: { path: string; line: number; side: "LEFT" | "RIGHT"; startLine?: number; body: string }[] } {
+// 리뷰 요청 — commit_id는 보류 댓글들이 본 diff의 커밋. 아는 커밋이 둘 이상이면 mixed(줄 번호 기준이 달라 한 리뷰로 못 보냄 — 리뷰: 옛 줄 번호가 새 코드 엉뚱한 줄에),
+// 아는 커밋이 없으면(구간만 받은 diff) 지금 head(fallback).
+export function reviewRequest(list: DraftComment[], fallbackHead?: string): { commitId?: string; mixed?: boolean; comments: { path: string; line: number; side: "LEFT" | "RIGHT"; startLine?: number; body: string }[] } {
   const heads = [...new Set(list.map((x) => x.head).filter((h): h is string => !!h && /^[0-9a-f]{40}$/.test(h)))];
-  const commitId = heads.length === 1 && list.every((x) => x.head === heads[0]) ? heads[0] : fallbackHead;
+  if (heads.length > 1) return { mixed: true, comments: [] };
+  const commitId = heads[0] ?? fallbackHead;
   return { commitId, comments: list.map((x) => ({ path: x.path, line: x.line, side: x.side, ...(x.startLine ? { startLine: x.startLine } : {}), body: x.body })) };
 }
 
