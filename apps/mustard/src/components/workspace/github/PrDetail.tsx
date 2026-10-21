@@ -32,7 +32,7 @@ function stateLabel(d: GhPrDetail, t: (k: string) => string): { text: string; cl
 
 // onOpenFile = 변경 파일 → 가운데 diff 탭(#1123, Files changed 탭에서 사용)
 // #1143 PR별 체크아웃 직전 브랜치(레포#번호 → 브랜치) — 상세 화면을 닫았다 열어도 "이전 브랜치로"가 남게. 앱 끄면 사라짐(그땐 깃 그래프로)
-const PREV_BRANCH = new Map<string, string>();
+const PREV_BRANCH = new Map<string, { prev: string; pr: string }>(); // pr = 체크아웃한 PR 브랜치(돌아갈 때 아직 거기 있는지 확인)
 
 export default function PrDetail({ root, number, reloadKey, host = "github", onBack, onOpenFile, agent }: { root: string; number: number; reloadKey: number; host?: "github" | "gitlab" | "other"; onBack: () => void; onOpenFile?: (file: string) => void; agent?: { providerId: AgentProviderKind; providerSettings: ProviderSettings } }) {
   const t = useT();
@@ -58,7 +58,8 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
   // #1143 PR 브랜치 체크아웃 — 체크아웃 직전 브랜치를 PR별로 기억(목록에 나갔다 와도 남게) → "이전 브랜치로"는 그 이름으로(git-switch, 리뷰).
   // 다른 PR 버튼과 같은 actBusy로 막음(체크아웃 중 Merge·Close 등 동시 실행 방지, 리뷰).
   const backKey = `${root}#${number}`;
-  const [prevBranch, setPrevBranch] = useState<string | undefined>(() => PREV_BRANCH.get(backKey));
+  const [prevBranch, setPrevBranch] = useState<string | undefined>(() => PREV_BRANCH.get(backKey)?.prev);
+  const forget = () => { PREV_BRANCH.delete(backKey); setPrevBranch(undefined); };
   const checkout = async () => {
     const fn = window.nunopiDesktop?.github?.prCheckout;
     if (!fn || actBusy) return;
@@ -66,7 +67,7 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
     try {
       const r = await fn(root, number);
       if (r.ok) {
-        if (r.data?.prev && r.data.prev !== r.data.branch) { PREV_BRANCH.set(backKey, r.data.prev); setPrevBranch(r.data.prev); }
+        if (r.data?.prev && r.data.branch && r.data.prev !== r.data.branch) { PREV_BRANCH.set(backKey, { prev: r.data.prev, pr: r.data.branch }); setPrevBranch(r.data.prev); }
         toast(t("github.checkedOut", { n: number, branch: r.data?.branch ?? "" }), "success");
       } else toast(t("github.checkoutFailed", { why: (r.detail ?? "").slice(0, 200) }), "error");
     } catch { toast(t("github.checkoutFailed", { why: "" }), "error"); } finally { setActBusy(false); }
@@ -75,9 +76,17 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
     if (actBusy || !prevBranch) return;
     setActBusy(true);
     try {
+      // 그사이 다른 브랜치로 옮겼으면 되돌리지 않음(엉뚱한 곳으로 가지 않게, 리뷰) — 지금 브랜치는 git-recent 창구로
+      const pr = PREV_BRANCH.get(backKey)?.pr;
+      const now = await (await fetch("/api/repo/git-recent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, since: Math.floor(Date.now() / 1000) }) })).json().catch(() => null);
+      if (pr && typeof now?.branch === "string" && now.branch && now.branch !== pr) { forget(); toast(t("github.backMoved", { branch: now.branch })); return; }
       const d = await (await fetch("/api/repo/git-switch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, branch: prevBranch }) })).json();
-      if (d?.ok) { PREV_BRANCH.delete(backKey); setPrevBranch(undefined); toast(t("github.backToPrevDone", { branch: prevBranch }), "success"); }
-      else toast(t("github.checkoutFailed", { why: String(d?.error ?? "").slice(0, 200) }), "error");
+      if (d?.ok) { forget(); toast(t("github.backToPrevDone", { branch: prevBranch }), "success"); }
+      else {
+        const why = String(d?.error ?? "");
+        if (/did not match|invalid reference|not a valid|unknown revision/i.test(why)) forget(); // 이전 브랜치가 지워짐·이름 바뀜 — 버튼 치움
+        toast(t("github.checkoutFailed", { why: why.slice(0, 200) }), "error");
+      }
     } catch { toast(t("github.checkoutFailed", { why: "" }), "error"); } finally { setActBusy(false); }
   };
   const [actErr, setActErr] = useState<string | null>(null);
