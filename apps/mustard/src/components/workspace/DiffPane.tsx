@@ -8,6 +8,7 @@ import { setFindingStatus, postFinding } from "@/lib/prReviewRun";
 import { useLocale, useT, useToast } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
+import { Thread, type LineComment } from "@/components/workspace/github/PrReviewComments";
 import { type DLine, parseDiff, groupHunks, type Hunk, noteStoreKey, loadNotes, saveNote, explainDiffText, HUNK_NOTES_EVENT } from "@/lib/hunkNotes";
 
 const EXT_LANG: Record<string, string> = {
@@ -29,6 +30,8 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   // #1127 PR diff — 에이전트 리뷰 지적(버린 것 제외)을 줄 옆 🤖로. 펼친 줄은 지적 내용 표시.
   const [findings, setFindings] = useState<Finding[]>(() => (pr ? loadPrReview(root, pr)?.findings ?? [] : []));
   const [openLines, setOpenLines] = useState<Set<number>>(new Set());
+  const [threads, setThreads] = useState<LineComment[]>([]);
+  const [threadTick, setThreadTick] = useState(0);
   const [posting, setPosting] = useState<Set<string>>(new Set()); // GitHub에 올리는 중인 지적
   const adoptHere = async (f: Finding) => {
     if (!pr || posting.has(f.id)) return;
@@ -40,10 +43,17 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   useEffect(() => {
     if (!pr) return;
     const key = prReviewKey(root, pr);
-    const on = (e: Event) => { if ((e as CustomEvent<string>).detail === key) setFindings(loadPrReview(root, pr)?.findings ?? []); };
+    const on = (e: Event) => { if ((e as CustomEvent<string>).detail === key) { setFindings(loadPrReview(root, pr)?.findings ?? []); setThreadTick((n) => n + 1); } }; // 지적 채택 = 새 줄 댓글
     window.addEventListener(PR_REVIEW_EVENT, on);
     return () => window.removeEventListener(PR_REVIEW_EVENT, on);
   }, [root, pr]);
+  // #1145 GitHub에 달린 줄 댓글 스레드 — 그 줄(LEFT=옛 번호, RIGHT=새 번호) 밑에. 줄이 사라진(outdated) 건 대화 탭에만.
+  useEffect(() => {
+    if (!pr) return;
+    let alive = true;
+    void window.nunopiDesktop?.github?.prLineComments?.(root, pr).then((r) => { if (alive && r.ok && r.data) setThreads(r.data); }).catch(() => {});
+    return () => { alive = false; };
+  }, [root, pr, threadTick]);
   const [tokens, setTokens] = useState<ThemedToken[][]>([]); // 코드줄(add/del/ctx) 순서별 하이라이트 토큰
   const [status, setStatus] = useState<"loading" | "ok" | "error" | "empty">("loading");
   const [isDark, setIsDark] = useState(false);
@@ -172,6 +182,9 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   let codeIdx = 0; // add/del/ctx 진행 인덱스 → tokens 매칭
   const byLine = new Map<number, Finding[]>();
   for (const f of findings) if (f.file === file && f.status !== "discarded") byLine.set(f.line, [...(byLine.get(f.line) ?? []), f]);
+  const threadAt = new Map<string, LineComment[]>(); // "LEFT:12" → 그 줄(범위면 끝 줄)에 달린 스레드(첫 댓글), GitHub처럼
+  for (const c of threads) if (c.path === file && c.inReplyTo == null && !c.outdated && c.line) { const k = `${c.side ?? "RIGHT"}:${c.line}`; threadAt.set(k, [...(threadAt.get(k) ?? []), c]); }
+  const reloadThreads = () => setThreadTick((n) => n + 1);
   // 오버뷰 룰러용: 연속 "같은 종류(추가/삭제)" 줄을 한 블록으로. 수정(삭제+추가)은 빨강 블록·초록 블록 따로 →
   // 삭제도 빨강으로 보임. (줄마다 틱 찍으면 새파일서 바코드 벽이라 병합.)
   const total = Math.max(1, lines.length);
@@ -205,6 +218,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
         const endH = pr ? undefined : hunkEnd.get(i); // 구간 끝 → 아래에 노트(PR diff는 없음)
         const lineF = pr && l.newN != null ? byLine.get(l.newN) : undefined; // #1127 이 줄의 에이전트 지적
         const lineN = l.newN as number;
+        const lineT = pr ? [...(l.oldN != null && l.kind !== "add" ? threadAt.get(`LEFT:${l.oldN}`) ?? [] : []), ...(l.newN != null ? threadAt.get(`RIGHT:${l.newN}`) ?? [] : [])] : [];
         const row = (
           <div key={i} className={`relative flex w-max min-w-full ${bg} ${lineF ? "ring-1 ring-inset ring-mustard-500/70" : ""}`}>
             {/* #1127 지적 있는 줄 — 옛 줄번호 칸 왼쪽에 눈에 띄는 배지(오른쪽 정렬 번호는 3자리까지 안 가림, 코드 정렬 그대로), 누르면 지적 펼침 */}
@@ -223,8 +237,8 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
             </span>
           </div>
         );
-        if (lineF) {
-          const opened = openLines.has(l.newN as number);
+        if (lineF || lineT.length) {
+          const opened = !!lineF && openLines.has(l.newN as number);
           return (
             <Fragment key={`f-${i}`}>
               {row}
@@ -244,6 +258,11 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
                   )}
                 </div>
               ))}</div>}
+              {lineT.map((c) => (
+                <div key={`t-${c.id}`} style={{ width: paneW ? paneW - 20 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 bg-white font-sans dark:bg-[var(--s-pane)]">
+                  <Thread root={root} number={pr!} prTitle="" top={c} replies={threads.filter((x) => x.inReplyTo === c.id)} onChanged={reloadThreads} />
+                </div>
+              ))}
             </Fragment>
           );
         }

@@ -12,7 +12,7 @@ import { prReviewKey, PR_REVIEW_EVENT } from "@/lib/prReview";
 // 옛 에이전트 꼬리표(<sub>🤖 Mustard agent review</sub>)만 기울임으로 보이게 — 다른 <sub>·원문은 그대로
 const legacyFooter = (b: string) => b.replace("<sub>🤖 Mustard agent review</sub>", "_🤖 Mustard agent review_");
 
-type LineComment = { id: number; mine: boolean; reactionGroups?: GhReactionGroup[]; threadId?: string; resolved?: boolean; path: string; line: number | null; outdated: boolean; body: string; author: string; createdAt: string; url: string; inReplyTo: number | null };
+export type LineComment = { id: number; mine: boolean; reactionGroups?: GhReactionGroup[]; threadId?: string; resolved?: boolean; path: string; line: number | null; outdated: boolean; side?: "LEFT" | "RIGHT"; startLine?: number | null; body: string; author: string; createdAt: string; url: string; inReplyTo: number | null };
 
 export default function PrReviewComments({ root, number, prTitle = "", reloadKey, onOpenFile }: { root: string; number: number; prTitle?: string; reloadKey: number; onOpenFile?: (file: string) => void }) {
   const t = useT();
@@ -43,7 +43,8 @@ export default function PrReviewComments({ root, number, prTitle = "", reloadKey
   );
 }
 
-function Thread({ root, number, prTitle, top, replies, onOpenFile, onChanged }: { root: string; number: number; prTitle: string; top: LineComment; replies: LineComment[]; onOpenFile?: (file: string) => void; onChanged: () => void }) {
+// #1145 diff 줄 밑에도 같은 스레드(답글·Resolve) — DiffPane이 가져다 씀
+export function Thread({ root, number, prTitle, top, replies, onOpenFile, onChanged }: { root: string; number: number; prTitle: string; top: LineComment; replies: LineComment[]; onOpenFile?: (file: string) => void; onChanged: () => void }) {
   const t = useT();
   const [open, setOpen] = useState(!top.resolved); // 해결된 스레드는 접어서 시작
   const [replying, setReplying] = useState(false);
@@ -84,7 +85,7 @@ function Thread({ root, number, prTitle, top, replies, onOpenFile, onChanged }: 
       <div className="mb-1.5 flex items-center gap-1.5">
         <button type="button" onClick={() => onOpenFile?.(top.path)} disabled={!onOpenFile}
           className="flex min-w-0 items-center gap-1 font-mono text-[10.5px] text-zinc-400 hover:text-zinc-600 disabled:cursor-default dark:text-zinc-500 dark:hover:text-zinc-300">
-          <IconFile size={12} stroke={2} className="shrink-0" aria-hidden /><span className="truncate">{top.path}{top.line ? `:${top.line}` : ""}</span>
+          <IconFile size={12} stroke={2} className="shrink-0" aria-hidden /><span className="truncate">{top.path}{top.line ? `:${top.startLine ? `${top.startLine}-` : ""}${top.line}` : ""}</span>
         </button>
         {top.outdated && <span className="shrink-0 rounded bg-zinc-200 px-1 text-[9.5px] text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">{t("github.outdated")}</span>}
         {top.resolved && <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-emerald-500/15 px-1 text-[9.5px] font-medium text-emerald-600 dark:text-emerald-400"><IconCircleCheck size={10} aria-hidden />{t("github.resolved")}</span>}
