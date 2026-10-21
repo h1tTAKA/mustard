@@ -630,6 +630,17 @@ ipcMain.handle("github:pr-list", (_e, { cwd, state, limit, who }) => {
   const w = typeof who === "string" && Object.hasOwn(PR_WHO, who) ? PR_WHO[who] : [];
   return githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "list", "--json", "number,title,state,isDraft,author,createdAt,updatedAt,statusCheckRollup", "--state", st, "--limit", String(lim), ...w] });
 });
+// #1143 PR 브랜치 체크아웃 — gh pr checkout N(셸 없음). 작업 중 변경이 있으면 git이 막음(자동 stash 안 함, #1025와 같은 원칙) → 오류 글 그대로.
+ipcMain.handle("github:pr-checkout", async (_e, { cwd, number }) => {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
+  const head = async () => String((await execFileP("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd, encoding: "utf8", timeout: 5000 }).catch(() => ({ stdout: "" }))).stdout).trim();
+  const prev = await head(); // 돌아갈 곳 — 'git checkout -'(직전 위치)은 그사이 다른 곳으로 옮기면 엉뚱해짐(리뷰)
+  // GH_PROMPT_DISABLED — 포크 원격 등에서 gh가 묻느라 60초 매달리지 않게(리뷰)
+  const r = await githubBridge.ghRun({ gh: ghExe(), cwd, env: { ...(ghEnv() ?? process.env), GH_PROMPT_DISABLED: "1" }, args: ["pr", "checkout", String(n)], timeout: 60000 });
+  if (!r.ok) return r;
+  return { ok: true, data: { branch: await head(), prev: prev && prev !== "HEAD" ? prev : undefined } };
+});
 ipcMain.handle("github:pr-view", async (_e, { cwd, number }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };

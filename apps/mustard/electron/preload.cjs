@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     prFiles: (cwd, number) => ipcRenderer.invoke("github:pr-files", { cwd, number }),  // #1123 변경 파일 + 봤음
     prFileDiff: (cwd, number, path) => ipcRenderer.invoke("github:pr-file-diff", { cwd, number, path }),
     prFileFullDiff: (cwd, number, path) => ipcRenderer.invoke("github:pr-file-full-diff", { cwd, number, path }), // #1133 파일 전체
+    prCheckout: (cwd, number) => ipcRenderer.invoke("github:pr-checkout", { cwd, number }), // #1143
     prFileViewed: (cwd, prId, path, viewed) => ipcRenderer.invoke("github:pr-file-viewed", { cwd, prId, path, viewed }),
     prLineComment: (cwd, number, path, line, body, commitId) => ipcRenderer.invoke("github:pr-line-comment", { cwd, number, path, line, body, commitId }), // #1127
     prLineComments: (cwd, number) => ipcRenderer.invoke("github:pr-line-comments", { cwd, number }),
