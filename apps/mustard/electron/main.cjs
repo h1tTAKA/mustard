@@ -847,10 +847,11 @@ ipcMain.handle("github:pr-file-diff", async (_e, { cwd, number, path }) => {
     const gen = prDiffGen.get(key) ?? 0;
     // #1149 이 diff의 커밋 — base·head를 먼저 읽고 그 head의 diff를 compare(세 점 = PR diff와 같은 merge-base 비교)로 받아 못 박음.
     // (gh pr diff는 그때 최신이라 pr view와 반영 시점이 어긋나면 짝이 틀릴 수 있음.) compare 실패(큰 PR 등)면 #1145 방식: gh pr diff + 받기 전·후 head 같을 때만.
-    const refsOf = async () => { const v = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "baseRefOid,headRefOid"] }); const ok = (h) => typeof h === "string" && /^[0-9a-f]{40}$/.test(h); return v.ok && ok(v.data?.baseRefOid) && ok(v.data?.headRefOid) ? { base: v.data.baseRefOid, head: v.data.headRefOid } : null; };
+    const refsOf = async () => { const v = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "baseRefOid,headRefOid,changedFiles"] }); const ok = (h) => typeof h === "string" && /^[0-9a-f]{40}$/.test(h); return v.ok && ok(v.data?.baseRefOid) && ok(v.data?.headRefOid) ? { base: v.data.baseRefOid, head: v.data.headRefOid, count: v.data.changedFiles } : null; };
     const h1 = await refsOf();
     const c = h1 ? await githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-H", "Accept: application/vnd.github.diff", `repos/{owner}/{repo}/compare/${h1.base}...${h1.head}`], timeout: 30000 }) : null;
-    if (c?.ok && c.stdout?.startsWith("diff --git ")) hit = { at: Date.now(), files: githubBridge.splitDiffByFile(c.stdout), head: h1.head };
+    const cf = c?.ok && c.stdout?.startsWith("diff --git ") ? githubBridge.splitDiffByFile(c.stdout) : null;
+    if (cf && Object.keys(cf).length === h1.count) hit = { at: Date.now(), files: cf, head: h1.head }; // 파일 수가 PR과 같을 때만(큰 PR은 오류 없이 잘려 올 수 있음, 리뷰)
     else {
       const r = await githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "diff", String(n), "--color", "never"], timeout: 30000 });
       if (!r.ok) return r;

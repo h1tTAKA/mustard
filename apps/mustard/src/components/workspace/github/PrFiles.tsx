@@ -96,6 +96,7 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
   for (const f of findings) if (f.status === "open") openCount.set(f.file, (openCount.get(f.file) ?? 0) + 1);
   const tally = (list: string[]) => { const m = new Map<string, number>(); for (const p of list) m.set(p, (m.get(p) ?? 0) + 1); return m; };
   const threadCount = tally(threadPaths), draftCount = tally(draftPaths);
+  const listed = new Set(files.map((f) => f.path));
   // 폴더별 묶음(경로 순) — 같은 폴더 파일을 한 덩어리로.
   const groups: { dir: string; items: PrFile[] }[] = [];
   for (const f of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
@@ -126,7 +127,7 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
             )}
             {g.items.map((f) => {
               const c = CHANGE[f.changeType] ?? CHANGE.MODIFIED;
-              const threads = (threadCount.get(f.path) ?? 0) + (f.previousPath ? threadCount.get(f.previousPath) ?? 0 : 0); // #1149 이름 바뀌기 전 경로로 달린 것도
+              const threads = (threadCount.get(f.path) ?? 0) + (f.previousPath && !listed.has(f.previousPath) ? threadCount.get(f.previousPath) ?? 0 : 0); // #1149 이름 바뀌기 전 경로로 달린 것도(옛 이름이 목록에 따로 있으면 그 줄에서만, 리뷰)
               return (
                 <div key={f.path} className={`group flex items-center gap-2 py-1 pl-6 pr-3 transition hover:bg-zinc-100 dark:hover:bg-zinc-800/60 ${f.viewed ? "opacity-60" : ""}`}>
                   <button type="button" onClick={() => onOpenFile?.(f.path)} disabled={!onOpenFile} title={f.path}
