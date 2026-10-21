@@ -72,8 +72,8 @@ function splitDiffByFile(raw) {
     if (plus && unquote(plus[1]) !== "/dev/null") path = unquote(plus[1]).replace(/^b\//, "");
     else if (minus && unquote(minus[1]) !== "/dev/null") path = unquote(minus[1]).replace(/^a\//, "");
     if (!path) { // 바이너리·모드만 바뀜 등 +++/--- 없음 → 헤더에서
-      const m = part.match(/^diff --git (?:"?a\/)(.+?)"? (?:"?b\/)(.+?)"?$/m);
-      if (m) path = m[2];
+      const m = part.match(/^diff --git ("?)a\/.+?\1 ("?)b\/(.+?)\2$/m);
+      if (m) path = m[2] ? unquote(`"${m[3]}"`) : m[3]; // 따옴표로 감싼 경로(한글 등 8진 이스케이프)도 복원(#1149 리뷰)
     }
     if (path) out[path] = part;
   }
