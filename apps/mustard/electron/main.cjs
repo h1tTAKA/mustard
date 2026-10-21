@@ -600,7 +600,7 @@ ipcMain.handle("integrations:set-token", (_e, { host, token }) => {
 ipcMain.handle("integrations:token-status", (_e, { host }) => ({ hasToken: TOKEN_HOSTS.includes(host) && loadHostToken(host) != null }));
 ipcMain.handle("integrations:clear-token", (_e, { host }) => { if (TOKEN_HOSTS.includes(host)) clearHostToken(host); return { ok: true }; });
 
-ipcMain.handle("github:auth", (_e, { cwd }) => githubBridge.authDiagnose({ gh: ghExe(), cwd, env: ghEnv() }));
+ipcMain.handle("github:auth", (_e, { cwd }) => githubBridge.authDiagnose({ gh: ghExe(), cwd, env: ghEnv(), probe: ["api", "rate_limit"] })); // #1151 로그인 필요면 API로 한 번 더(오프라인 구분)
 // 이슈 목록·상세(#813) — gh issue list/view --json. state=open|closed|all(기본 open).
 ipcMain.handle("github:issue-list", (_e, { cwd, state, limit }) => {
   const st = state === "closed" ? "closed" : state === "all" ? "all" : "open";

@@ -11,6 +11,8 @@ const { tm } = require("./main-i18n.cjs"); // #1095 사용자 노출 문구 다�
 function classifyGhError(e) {
   if (e?.code === "ENOENT") return { kind: "not-installed", detail: tm("gh.notInstalled") };
   const s = String(e?.stderr || e?.message || "").toLowerCase();
+  // #1151 인터넷 끊김 — 인증 검사보다 먼저(오프라인 gh 오류엔 "gh auth login" 안내가 섞여 나와 로그인 필요로 오분류됐음).
+  if (/dial tcp|no such host|connection refused|connection reset|i\/o timeout|network is unreachable|tls handshake timeout|could not resolve host|error connecting to/.test(s)) return { kind: "offline", detail: tm("gh.offline") };
   // #964 glab은 미인증 시 "401 Unauthorized"로 나옴(gh 문구와 다름) → 401/unauthorized도 not-authed.
   if (/auth login|not logged|authentication|gh auth|no accounts|unauthorized|\b401\b/.test(s)) return { kind: "not-authed", detail: tm("gh.notAuthed") };
   if (/rate limit|api rate|\b403\b/.test(s)) return { kind: "rate-limited", detail: tm("gh.rateLimited") };
@@ -41,9 +43,16 @@ async function ghJson({ gh, cwd, args, env }) {
 
 // 인증 진단 — { state: "ok"|"not-installed"|"not-authed"|"rate-limited"|"error", detail? }.
 // env에 GH_TOKEN 주입되면(#826) gh auth status가 그 토큰으로 exit 0 → ok.
-async function authDiagnose({ gh, cwd, env }) {
+// #1151 probe(gh만) — 오프라인 gh auth status는 네트워크 말 없이 "token invalid, gh auth login"만 냄 → 로그인 필요로 나오면 API를 한 번 더(rate_limit = 호출 한도 안 잡힘):
+// 네트워크 오류면 offline, 되면 ok(토큰 멀쩡), 그 밖엔 로그인 필요 그대로.
+async function authDiagnose({ gh, cwd, env, probe }) {
   const r = await ghRun({ gh, cwd, args: ["auth", "status"], timeout: 8000, env });
   if (r.ok) return { state: "ok" };
+  if (r.kind === "not-authed" && probe) {
+    const p = await ghRun({ gh, cwd, args: probe, timeout: 8000, env });
+    if (p.ok) return { state: "ok" };
+    if (p.kind === "offline") return { state: "offline", detail: p.detail };
+  }
   return { state: r.kind, detail: r.detail };
 }
 
