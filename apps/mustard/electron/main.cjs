@@ -630,6 +630,15 @@ ipcMain.handle("github:pr-list", (_e, { cwd, state, limit, who }) => {
   const w = typeof who === "string" && Object.hasOwn(PR_WHO, who) ? PR_WHO[who] : [];
   return githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "list", "--json", "number,title,state,isDraft,author,createdAt,updatedAt,statusCheckRollup", "--state", st, "--limit", String(lim), ...w] });
 });
+// #1143 PR 브랜치 체크아웃 — gh pr checkout N(셸 없음). 작업 중 변경이 있으면 git이 막음(자동 stash 안 함, #1025와 같은 원칙) → 오류 글 그대로.
+ipcMain.handle("github:pr-checkout", async (_e, { cwd, number }) => {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
+  const r = await githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "checkout", String(n)], timeout: 60000 });
+  if (!r.ok) return r;
+  const b = await execFileP("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd, encoding: "utf8", timeout: 5000 }).catch(() => ({ stdout: "" }));
+  return { ok: true, data: { branch: String(b.stdout).trim() } };
+});
 ipcMain.handle("github:pr-view", async (_e, { cwd, number }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
