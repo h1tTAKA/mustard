@@ -41,9 +41,10 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
   const [threadPaths, setThreadPaths] = useState<string[]>([]);
   const [draftPaths, setDraftPaths] = useState<string[]>(() => loadDrafts(root, number).map((d) => d.path));
   const [cmtTick, setCmtTick] = useState(0);
+  const fromEvent = useRef(false); // 이번 조회가 이벤트 때문이면 0.3초 모음(새로고침·처음은 바로, 리뷰)
   useEffect(() => {
     const keys = [prReviewKey(root, number), prDraftKey(root, number)];
-    const on = (e: Event) => { if (keys.includes((e as CustomEvent<string>).detail)) { setDraftPaths(loadDrafts(root, number).map((d) => d.path)); setCmtTick((n) => n + 1); } };
+    const on = (e: Event) => { if (keys.includes((e as CustomEvent<string>).detail)) { setDraftPaths(loadDrafts(root, number).map((d) => d.path)); fromEvent.current = true; setCmtTick((n) => n + 1); } };
     window.addEventListener(PR_REVIEW_EVENT, on); window.addEventListener(PR_DRAFT_EVENT, on);
     return () => { window.removeEventListener(PR_REVIEW_EVENT, on); window.removeEventListener(PR_DRAFT_EVENT, on); };
   }, [root, number]);
@@ -53,7 +54,8 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
     // 이벤트로 다시 부를 땐 0.3초 모아서 한 번(지적 여러 개 연달아 채택해도 gh 조회 한 번, 리뷰)
     const timer = setTimeout(() => {
       void window.nunopiDesktop?.github?.prLineComments?.(root, number).then((r) => { if (alive && r.ok && r.data) setThreadPaths(r.data.filter((c) => c.inReplyTo == null).map((c) => c.path)); }).catch(() => {});
-    }, cmtTick ? 300 : 0);
+    }, fromEvent.current ? 300 : 0);
+    fromEvent.current = false;
     return () => { alive = false; clearTimeout(timer); };
   }, [root, number, reloadKey, cmtTick]);
   const onCountRef = useRef(onCount);
