@@ -54,11 +54,11 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     prFileFullDiff: (cwd, number, path) => ipcRenderer.invoke("github:pr-file-full-diff", { cwd, number, path }), // #1133 파일 전체
     prCheckout: (cwd, number) => ipcRenderer.invoke("github:pr-checkout", { cwd, number }), // #1143
     prFileViewed: (cwd, prId, path, viewed) => ipcRenderer.invoke("github:pr-file-viewed", { cwd, prId, path, viewed }),
-    prLineComment: (cwd, number, path, line, body, commitId) => ipcRenderer.invoke("github:pr-line-comment", { cwd, number, path, line, body, commitId }), // #1127
+    prLineComment: (cwd, number, path, line, body, commitId, opts) => ipcRenderer.invoke("github:pr-line-comment", { cwd, number, path, line, body, commitId, ...(opts ?? {}) }), // #1127 · #1145 opts = { side, startLine, startSide }
     prLineComments: (cwd, number) => ipcRenderer.invoke("github:pr-line-comments", { cwd, number }),
     prReviewReply: (cwd, number, commentId, body) => ipcRenderer.invoke("github:pr-review-reply", { cwd, number, commentId, body }), // #1129
     prThreadResolve: (cwd, threadId, resolve) => ipcRenderer.invoke("github:pr-thread-resolve", { cwd, threadId, resolve }),
-    prReviewSubmit: (cwd, number, commitId, comments) => ipcRenderer.invoke("github:pr-review-submit", { cwd, number, commitId, comments }), // #1127 여러 지적 한 번에
+    prReviewSubmit: (cwd, number, commitId, comments, review) => ipcRenderer.invoke("github:pr-review-submit", { cwd, number, commitId, comments, ...(review ?? {}) }), // #1127 여러 지적 한 번에 · #1145 review = { event, body }
     checks: (cwd) => ipcRenderer.invoke("github:checks", { cwd }),  // #812 현재 브랜치 CI
     checkAnnotations: (cwd, checkRunId) => ipcRenderer.invoke("github:check-annotations", { cwd, checkRunId }),  // #812
     jobSteps: (cwd, jobId) => ipcRenderer.invoke("github:job-steps", { cwd, jobId }),  // #812

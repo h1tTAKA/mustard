@@ -2,9 +2,10 @@
 // PR 변경 파일(#1123) — VS Code GitHub PR 확장의 "Files changed"처럼: 폴더별 파일·변경 종류·+/−·봤음 체크(GitHub에 저장).
 // 파일 클릭 → 가운데 diff 탭(onOpenFile). 봤음은 낙관적으로 바로 반영하고 실패하면 되돌림.
 import { useEffect, useRef, useState } from "react";
-import { IconLoader2, IconAlertTriangle, IconFolder, IconRobot } from "@tabler/icons-react";
+import { IconLoader2, IconAlertTriangle, IconFolder, IconRobot, IconMessage } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import { loadPrReview, prReviewKey, PR_REVIEW_EVENT, type Finding } from "@/lib/prReview";
+import { loadDrafts, prDraftKey, PR_DRAFT_EVENT } from "@/lib/prDraft";
 
 type PrFile = { path: string; additions: number; deletions: number; changeType: string; viewed: boolean };
 type Load = { loading: boolean; prId?: string; files?: PrFile[]; truncated?: boolean; error?: string };
@@ -36,6 +37,27 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
     window.addEventListener(PR_REVIEW_EVENT, on);
     return () => window.removeEventListener(PR_REVIEW_EVENT, on);
   }, [root, number]);
+  // #1145 파일별 줄 댓글 스레드 수(GitHub, 해결된 것 포함·답글 제외) + 보류 댓글 수. 댓글 달기·리뷰 보내기(이벤트)·새로고침마다 다시.
+  const [threadPaths, setThreadPaths] = useState<string[]>([]);
+  const [draftPaths, setDraftPaths] = useState<string[]>(() => loadDrafts(root, number).map((d) => d.path));
+  const [cmtTick, setCmtTick] = useState(0);
+  const fromEvent = useRef(false); // 이번 조회가 이벤트 때문이면 0.3초 모음(새로고침·처음은 바로, 리뷰)
+  useEffect(() => {
+    const keys = [prReviewKey(root, number), prDraftKey(root, number)];
+    const on = (e: Event) => { if (keys.includes((e as CustomEvent<string>).detail)) { setDraftPaths(loadDrafts(root, number).map((d) => d.path)); fromEvent.current = true; setCmtTick((n) => n + 1); } };
+    window.addEventListener(PR_REVIEW_EVENT, on); window.addEventListener(PR_DRAFT_EVENT, on);
+    return () => { window.removeEventListener(PR_REVIEW_EVENT, on); window.removeEventListener(PR_DRAFT_EVENT, on); };
+  }, [root, number]);
+  useEffect(() => {
+    let alive = true;
+    setDraftPaths(loadDrafts(root, number).map((d) => d.path)); // eslint-disable-line react-hooks/set-state-in-effect -- PR 바뀌면 그 PR 보류분
+    // 이벤트로 다시 부를 땐 0.3초 모아서 한 번(지적 여러 개 연달아 채택해도 gh 조회 한 번, 리뷰)
+    const timer = setTimeout(() => {
+      void window.nunopiDesktop?.github?.prLineComments?.(root, number).then((r) => { if (alive && r.ok && r.data) setThreadPaths(r.data.filter((c) => c.inReplyTo == null).map((c) => c.path)); }).catch(() => {});
+    }, fromEvent.current ? 300 : 0);
+    fromEvent.current = false;
+    return () => { alive = false; clearTimeout(timer); };
+  }, [root, number, reloadKey, cmtTick]);
   const onCountRef = useRef(onCount);
   useEffect(() => { onCountRef.current = onCount; }, [onCount]);
 
@@ -72,6 +94,8 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
   const viewed = files.filter((f) => f.viewed).length;
   const openCount = new Map<string, number>();
   for (const f of findings) if (f.status === "open") openCount.set(f.file, (openCount.get(f.file) ?? 0) + 1);
+  const tally = (list: string[]) => { const m = new Map<string, number>(); for (const p of list) m.set(p, (m.get(p) ?? 0) + 1); return m; };
+  const threadCount = tally(threadPaths), draftCount = tally(draftPaths);
   // 폴더별 묶음(경로 순) — 같은 폴더 파일을 한 덩어리로.
   const groups: { dir: string; items: PrFile[] }[] = [];
   for (const f of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
@@ -109,6 +133,8 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
                     <span className={`w-3 shrink-0 text-center font-mono text-[10px] font-bold ${c.cls}`}>{c.ch}</span>
                     <span className={`truncate text-[12px] text-zinc-700 dark:text-zinc-200 ${f.viewed ? "line-through decoration-zinc-400/60" : ""}`}>{baseOf(f.path)}</span>
                     {openCount.get(f.path) ? <span title={t("github.tabAgentReview")} className="inline-flex shrink-0 items-center gap-0.5 rounded bg-mustard-500/15 px-1 text-[9.5px] font-semibold tabular-nums text-mustard-700 dark:text-mustard-400"><IconRobot size={10} stroke={2} aria-hidden />{openCount.get(f.path)}</span> : null}
+                    {threadCount.get(f.path) ? <span title={t("github.reviewComments")} className="inline-flex shrink-0 items-center gap-0.5 rounded bg-zinc-500/15 px-1 text-[9.5px] font-semibold tabular-nums text-zinc-600 dark:text-zinc-300"><IconMessage size={10} stroke={2} aria-hidden />{threadCount.get(f.path)}</span> : null}
+                    {draftCount.get(f.path) ? <span title={t("github.draftPending")} className="inline-flex shrink-0 items-center gap-0.5 rounded border border-dashed border-mustard-500/50 px-1 text-[9.5px] font-semibold tabular-nums text-mustard-700 dark:text-mustard-400"><IconMessage size={10} stroke={2} aria-hidden />{draftCount.get(f.path)}</span> : null}
                     <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums">
                       {f.additions > 0 && <span className="text-emerald-600 dark:text-emerald-400">+{f.additions}</span>}
                       {f.deletions > 0 && <span className="ml-1 text-rose-500 dark:text-rose-400">−{f.deletions}</span>}
