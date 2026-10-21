@@ -410,7 +410,7 @@ function LineComposer({ root, pr, file, sel, head, code, onClose, onPosted }: { 
     const r = await window.nunopiDesktop?.github?.prLineComment?.(root, pr, file, sel.line, body, head, { side: sel.side, ...(sel.start ? { startLine: sel.start, startSide: sel.side } : {}) }).catch(() => null);
     if (!mounted.current) return;
     setBusy(false);
-    if (r?.ok) { onPosted(); onClose(); } else setErr(r?.detail || t("github.error"));
+    if (r?.ok) { onPosted(); onClose(); window.dispatchEvent(new CustomEvent(PR_REVIEW_EVENT, { detail: prReviewKey(root, pr) })); } else setErr(r?.detail || t("github.error")); // 이벤트 = 변경 파일 댓글 수·대화 탭도 다시
   };
   const addToReview = () => {
     const body = text.trim();
