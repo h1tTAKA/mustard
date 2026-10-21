@@ -1,8 +1,8 @@
 "use client";
 // GitHub 패널 PR 상세(#814) — gh pr view → 제목·상태·머지상태·담당자 + 체크(ChecksView)·본문·코멘트.
 import { useEffect, useRef, useState } from "react";
-import { IconLoader2, IconAlertTriangle, IconArrowLeft, IconExternalLink, IconPencil, IconGitPullRequest, IconGitPullRequestDraft, IconGitPullRequestClosed, IconGitMerge, IconChevronDown, IconCheck } from "@tabler/icons-react";
-import { useT } from "@mustard/core";
+import { IconLoader2, IconAlertTriangle, IconArrowLeft, IconExternalLink, IconPencil, IconGitPullRequest, IconGitPullRequestDraft, IconGitPullRequestClosed, IconGitMerge, IconChevronDown, IconCheck, IconGitBranch, IconArrowBackUp } from "@tabler/icons-react";
+import { useT, useToast } from "@mustard/core";
 import { useConfirm } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import { relTime } from "@/lib/relTime";
@@ -33,6 +33,7 @@ function stateLabel(d: GhPrDetail, t: (k: string) => string): { text: string; cl
 // onOpenFile = 변경 파일 → 가운데 diff 탭(#1123, Files changed 탭에서 사용)
 export default function PrDetail({ root, number, reloadKey, host = "github", onBack, onOpenFile, agent }: { root: string; number: number; reloadKey: number; host?: "github" | "gitlab" | "other"; onBack: () => void; onOpenFile?: (file: string) => void; agent?: { providerId: AgentProviderKind; providerSettings: ProviderSettings } }) {
   const t = useT();
+  const toast = useToast();
   const [load, setLoad] = useState<Load>({ loading: true });
   const [tab, setTab] = useState<"conversation" | "files">("conversation"); // #1123 대화 | 변경 파일(#1127 에이전트 리뷰는 변경 파일 안 위쪽)
   const [fileCount, setFileCount] = useState<number | null>(null);
@@ -51,6 +52,27 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
   const [bodyDraft, setBodyDraft] = useState("");
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [actBusy, setActBusy] = useState(false);
+  // #1143 PR 브랜치 체크아웃 — 성공하면 "이전 브랜치로" 버튼(git-switch prev, 깃 그래프와 같은 창구)
+  const [checkedOut, setCheckedOut] = useState(false);
+  const [coBusy, setCoBusy] = useState(false);
+  const checkout = async () => {
+    const fn = window.nunopiDesktop?.github?.prCheckout;
+    if (!fn || coBusy) return;
+    setCoBusy(true);
+    try {
+      const r = await fn(root, number);
+      if (r.ok) { setCheckedOut(true); toast(t("github.checkedOut", { n: number, branch: r.data?.branch ?? "" }), "success"); }
+      else toast(t("github.checkoutFailed", { why: (r.detail ?? "").slice(0, 200) }), "error");
+    } catch { toast(t("github.checkoutFailed", { why: "" }), "error"); } finally { setCoBusy(false); }
+  };
+  const backToPrev = async () => {
+    if (coBusy) return;
+    setCoBusy(true);
+    try {
+      const d = await (await fetch("/api/repo/git-switch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, prev: true }) })).json();
+      if (d?.ok) { setCheckedOut(false); toast(t("github.backToPrevDone"), "success"); } else toast(t("github.checkoutFailed", { why: String(d?.error ?? "").slice(0, 200) }), "error");
+    } catch { toast(t("github.checkoutFailed", { why: "" }), "error"); } finally { setCoBusy(false); }
+  };
   const [actErr, setActErr] = useState<string | null>(null);
   const confirm = useConfirm();
   const runAct = async (fn: () => Promise<{ ok: boolean; detail?: string } | undefined>) => {
@@ -212,6 +234,9 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
               {d.state.toUpperCase() === "OPEN" && (d.isDraft
                 ? <button type="button" onClick={() => void confirmState("ready", t("github.markReady"), <IconGitPullRequest size={15} stroke={2} aria-hidden />)} disabled={actBusy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{actBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconGitPullRequest size={13} stroke={2} className="text-emerald-500" aria-hidden />}{t("github.markReady")}</button>
                 : <button type="button" onClick={() => void confirmState("draft", t("github.markDraft"), <IconGitPullRequestDraft size={15} stroke={2} aria-hidden />)} disabled={actBusy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{actBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconGitPullRequestDraft size={13} stroke={2} className="text-zinc-400" aria-hidden />}{t("github.markDraft")}</button>)}
+              {d.state.toUpperCase() === "OPEN" && window.nunopiDesktop?.github?.prCheckout && (checkedOut
+                ? <button type="button" onClick={() => void backToPrev()} disabled={coBusy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{coBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconArrowBackUp size={13} stroke={2} className="text-zinc-400" aria-hidden />}{t("github.backToPrev")}</button>
+                : <button type="button" onClick={() => void checkout()} disabled={coBusy} title={t("github.checkoutTitle")} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{coBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconGitBranch size={13} stroke={2} className="text-zinc-400" aria-hidden />}{t("github.checkout")}</button>)}
               {/* Close / Reopen — 항상 오른쪽 끝(ml-auto). */}
               {d.state.toUpperCase() === "OPEN"
                 ? <button type="button" onClick={() => void confirmState("close", t("github.close"), <IconGitPullRequestClosed size={15} stroke={2} aria-hidden />)} disabled={actBusy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{actBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconGitPullRequestClosed size={13} stroke={2} className="text-rose-500" aria-hidden />}{t("github.close")}</button>
