@@ -72,8 +72,14 @@ function splitDiffByFile(raw) {
     if (plus && unquote(plus[1]) !== "/dev/null") path = unquote(plus[1]).replace(/^b\//, "");
     else if (minus && unquote(minus[1]) !== "/dev/null") path = unquote(minus[1]).replace(/^a\//, "");
     if (!path) { // 바이너리·모드만 바뀜 등 +++/--- 없음 → 헤더에서
-      const m = part.match(/^diff --git ("?)a\/.+?\1 ("?)b\/(.+?)\2$/m);
-      if (m) path = m[2] ? unquote(`"${m[3]}"`) : m[3]; // 따옴표로 감싼 경로(한글 등 8진 이스케이프)도 복원(#1149 리뷰)
+      // #1149 리뷰: 이름 바뀜·복사면 "rename to/copy to" 줄(접두어 없음, 안 헷갈림). 아니면 헤더 "a/X b/X"가 대칭이라 가운데서 자름(경로에 " b/"가 있어도).
+      // 그래도 안 되면 정규식. 따옴표로 감싼 경로(한글 등 8진 이스케이프)는 unquote.
+      const to = part.match(/^(?:rename|copy) to (.+)$/m);
+      const head = (part.match(/^diff --git (.+)$/m) || [])[1] || "";
+      const half = (head.length - 1) / 2, l = head.slice(0, half), r = head.slice(half + 1);
+      if (to) path = unquote(to[1]);
+      else if (Number.isInteger(half) && head[half] === " " && /^"?a\//.test(l) && /^"?b\//.test(r) && l.replace(/^("?)a\//, "$1") === r.replace(/^("?)b\//, "$1")) path = unquote(r.replace(/^("?)b\//, "$1"));
+      else { const m = head.match(/^("?)a\/.+?\1 ("?)b\/(.+?)\2$/); if (m) path = m[2] ? unquote(`"${m[3]}"`) : m[3]; }
     }
     if (path) out[path] = part;
   }
