@@ -198,7 +198,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const threadAt = new Map<string, LineComment[]>(); // "LEFT:12" → 그 줄(범위면 끝 줄)에 달린 스레드(첫 댓글), GitHub처럼
   for (const c of threads) if (c.path === file && c.inReplyTo == null && !c.outdated && c.line) { const k = `${c.side ?? "RIGHT"}:${c.line}`; threadAt.set(k, [...(threadAt.get(k) ?? []), c]); }
   const reloadThreads = () => setThreadTick((n) => n + 1);
-  const draftAt = new Map<string, DraftComment[]>(); // #1145 줄 밑 상자(스레드·보류·입력칸) 폭 = 패널 − 34px(왼쪽 여백 + 오른쪽 미니맵 14px 안 덮게)
+  const draftAt = new Map<string, DraftComment[]>(); // 줄 밑 상자(지적·AI 노트·스레드·보류·입력칸, #1145·#1147) 폭 = 패널 − 34px(왼쪽 여백 + 오른쪽 미니맵 14px 안 덮게)
   for (const d of drafts) if (d.path === file) draftAt.set(`${d.side}:${d.line}`, [...(draftAt.get(`${d.side}:${d.line}`) ?? []), d]);
   const sel = pick?.file === file ? pick : null;
   // GitHub는 PR diff 구간(바뀐 줄 앞뒤 3줄) 안에만 줄 댓글을 받음 — 파일 전체(#1133)로 받았으면 먼 줄엔 + 없음(리뷰: 422로 보류 리뷰 전체가 막힘)
@@ -288,7 +288,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
             <Fragment key={`f-${i}`}>
               {row}
               {opened && <div id={`prf-${lineN}`}>{lineF.map((f) => (
-                <div key={f.id} style={{ width: paneW ? paneW - 20 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-mustard-500/30 bg-mustard-50/80 px-3 py-2 font-sans dark:bg-mustard-500/[0.07]">
+                <div key={f.id} style={{ width: paneW ? paneW - 34 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-mustard-500/30 bg-mustard-50/80 px-3 py-2 font-sans dark:bg-mustard-500/[0.07]">
                   <div className="flex items-center gap-1.5 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400">
                     <IconRobot size={11} stroke={2} aria-hidden />{t(`prReview.sev.${f.severity}`)}
                     {f.status === "adopted" && (f.url ? <a href={f.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-emerald-600 hover:underline dark:text-emerald-400"><IconCheck size={10} aria-hidden />{t("prReview.adopted")}</a> : <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400"><IconCheck size={10} aria-hidden />{t("prReview.adopted")}</span>)}
@@ -349,7 +349,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
             {row}
             {/* 구간 끝: 아래에 노트(변경 코드 밑) */}
             {endNote?.status === "done" && (
-              <div style={{ width: paneW ? paneW - 20 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-mustard-500/30 bg-mustard-500/10 px-3 py-2 font-sans backdrop-blur-sm dark:border-mustard-400/30 dark:bg-mustard-400/12">
+              <div style={{ width: paneW ? paneW - 34 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-mustard-500/30 bg-mustard-500/10 px-3 py-2 font-sans backdrop-blur-sm dark:border-mustard-400/30 dark:bg-mustard-400/12">
                 <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400"><IconSparkles size={11} stroke={2.5} aria-hidden />{t("workspace.hunkNote")}</div>
                 <div className="prose prose-sm max-w-none text-[12px] leading-relaxed text-zinc-700 dark:prose-invert dark:text-zinc-200 prose-headings:my-1 prose-headings:text-[12px] prose-headings:font-semibold prose-p:my-1 prose-ul:my-1 prose-li:my-0"><Markdown>{endNote.text ?? ""}</Markdown></div>
               </div>
