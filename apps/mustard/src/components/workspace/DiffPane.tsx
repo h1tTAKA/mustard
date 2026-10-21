@@ -150,7 +150,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   useEffect(() => {
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- diff 바뀌면 로딩 리셋(키 변경 시)
-    setStatus("loading"); setLines(null); setTokens([]); setHead(undefined); // head도 — 새 파일 받는 동안 옛 파일 커밋으로 댓글 안 담기게(리뷰)
+    setStatus("loading"); setLines(null); setTokens([]); setHead(undefined); setPick(null); // head·고른 줄도 — 다시 받으면 줄·커밋 기준이 바뀔 수 있음(입력칸은 로딩 동안 어차피 사라짐, 리뷰)
     (async () => {
       try {
         // 워킹트리(커밋 전) diff면 git-diff, 커밋 diff면 git-show.
@@ -255,7 +255,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
         const selLn = sel?.side === "LEFT" ? l.oldN : l.newN; // 범위 테두리 — LEFT 범위엔 안 바뀐 줄도(옛 번호로)
         const inSel = !!sel && selLn != null && l.kind !== (sel.side === "LEFT" ? "add" : "del") && selLn >= (sel.start ?? sel.line) && selLn <= sel.line;
         const lineD = pr ? draftAt.get(`${side}:${ln}`) ?? [] : [];
-        const composeHere = !!sel && sel.side === side && sel.line === ln;
+        const composeHere = !!sel && !!head && sel.side === side && sel.line === ln;
         const lineT = pr ? [...(l.oldN != null && l.kind !== "add" ? threadAt.get(`LEFT:${l.oldN}`) ?? [] : []), ...(l.newN != null ? threadAt.get(`RIGHT:${l.newN}`) ?? [] : [])] : [];
         const row = (
           <div key={i} className={`group relative flex w-max min-w-full ${bg} ${lineF || inSel ? "ring-1 ring-inset ring-mustard-500/70" : ""}`}>
