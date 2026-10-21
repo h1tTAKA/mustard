@@ -78,7 +78,7 @@ interface NunopiDesktopApi {
     editItem(cwd: string, kind: "issue" | "pr", number: number, title: string, body: string): Promise<{ ok: boolean; kind?: string; detail?: string }>;  // #822 제목·본문(빈 값은 미반영)
     setState(cwd: string, kind: "issue" | "pr", number: number, action: "close" | "reopen" | "ready" | "draft"): Promise<{ ok: boolean; kind?: string; detail?: string }>;
     // #1123 PR 리뷰 — 변경 파일(봤음 포함)·파일별 diff·봤음 표시(GitHub에 저장)
-    prFiles?(cwd: string, number: number): Promise<{ ok: boolean; data?: { prId: string; head?: string; files: { path: string; additions: number; deletions: number; changeType: string; viewed: boolean }[]; truncated?: boolean }; kind?: string; detail?: string }>;
+    prFiles?(cwd: string, number: number): Promise<{ ok: boolean; data?: { prId: string; head?: string; files: { path: string; previousPath?: string; additions: number; deletions: number; changeType: string; viewed: boolean }[]; truncated?: boolean }; kind?: string; detail?: string }>;
     prFileDiff?(cwd: string, number: number, path: string): Promise<{ ok: boolean; data?: { diff: string; missing?: boolean; head?: string }; kind?: string; detail?: string }>;
     prFileFullDiff?(cwd: string, number: number, path: string): Promise<{ ok: boolean; data?: { diff?: string; fallback?: boolean; head?: string }; kind?: string; detail?: string }>;
     prCheckout?(cwd: string, number: number): Promise<{ ok: boolean; data?: { branch?: string; prev?: string }; kind?: string; detail?: string }>;

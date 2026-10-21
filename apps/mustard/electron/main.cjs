@@ -828,6 +828,12 @@ ipcMain.handle("github:pr-files", async (_e, { cwd, number }) => {
     after = pr.files.pageInfo.endCursor;
     if (page === 29) truncated = true; // 상한 도달 — 화면에 안내(리뷰)
   }
+  // #1149 이름 바뀐 파일의 옛 경로 — GraphQL 변경 파일엔 없음 → 바뀐 게 있을 때만 REST(previous_filename)로 보충. 옛 경로로 달린 줄 댓글도 세게. 못 받아도 목록은 그대로.
+  if (files.some((f) => f.changeType === "RENAMED")) {
+    const rest = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "--paginate", "--slurp", `repos/{owner}/{repo}/pulls/${n}/files?per_page=100`] });
+    const prev = new Map((rest.ok && Array.isArray(rest.data) ? rest.data.flat() : []).filter((x) => x && typeof x.previous_filename === "string").map((x) => [x.filename, x.previous_filename]));
+    for (const f of files) if (prev.has(f.path)) f.previousPath = prev.get(f.path);
+  }
   return { ok: true, data: { prId, head, files, truncated } };
 });
 // 파일별 diff — gh pr diff는 PR 전체라, 같은 PR을 연달아 열 때 다시 받지 않게 짧게 캐시(30s).
