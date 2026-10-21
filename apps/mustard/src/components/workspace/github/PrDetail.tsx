@@ -277,7 +277,7 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
             {/* #1131 리뷰 기록(작성자별 판정) */}
             {host === "github" && <PrReviews reviews={d.reviews ?? []} />}
             {/* 입력창 하나 — 남의 PR이면 Send 옆에 Approve·Request changes(#1131, 내 PR은 GitHub가 막아서 숨김) */}
-            {host === "github" && <CommentComposer root={root} kind="pr" number={number} review={!!d.viewerLogin && d.viewerLogin !== d.author?.login} onPosted={() => setCmtNonce((n) => n + 1)} />}
+            {host === "github" && <CommentComposer root={root} kind="pr" number={number} review={!!d.viewerLogin && d.viewerLogin !== d.author?.login} head={d.headRefOid} onOpenFile={onOpenFile} onPosted={() => setCmtNonce((n) => n + 1)} />}
           </div>
         )}
       </div>

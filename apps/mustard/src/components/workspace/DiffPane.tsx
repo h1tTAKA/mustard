@@ -41,7 +41,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   useEffect(() => {
     if (!pr) return;
     const key = prDraftKey(root, pr);
-    const on = (e: Event) => { if ((e as CustomEvent<string>).detail === key) setDrafts(loadDrafts(root, pr)); };
+    const on = (e: Event) => { if ((e as CustomEvent<string>).detail === key) { setDrafts(loadDrafts(root, pr)); setThreadTick((n) => n + 1); } }; // 리뷰로 보냈으면 줄 밑 스레드로
     window.addEventListener(PR_DRAFT_EVENT, on);
     return () => window.removeEventListener(PR_DRAFT_EVENT, on);
   }, [root, pr]);
