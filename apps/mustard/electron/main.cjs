@@ -646,7 +646,7 @@ ipcMain.handle("github:pr-view", async (_e, { cwd, number }) => {
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
   // #1131 reviews(판정 기록) + 내 로그인(내 PR이면 승인·변경 요청 숨김) — 로그인은 실패해도 상세는 보임
   const [r, me] = await Promise.all([
-    githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "number,title,state,isDraft,author,createdAt,assignees,body,comments,statusCheckRollup,mergeStateStatus,url,reactionGroups,reviews,reviewRequests,labels,milestone"] }),
+    githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "number,title,state,isDraft,author,createdAt,assignees,body,comments,statusCheckRollup,mergeStateStatus,url,reactionGroups,reviews,reviewRequests,labels,milestone,headRefOid"] }),
     viewerLogin(cwd).catch(() => null),
   ]);
   return r.ok && r.data ? { ok: true, data: { ...r.data, viewerLogin: me } } : r;
@@ -899,7 +899,7 @@ ipcMain.handle("github:pr-file-full-diff", async (_e, { cwd, number, path }) => 
       const at = diff.indexOf("\n@@");
       if (at < 0) return fallback; // 차이 없음 등
       // 머리말의 임시 경로(a/var/…/a) → 실제 경로. 내용 줄은 그대로
-      return { ok: true, data: { diff: `diff --git a/${f.prev || path} b/${path}\n--- a/${f.prev || path}\n+++ b/${path}${diff.slice(at)}` } };
+      return { ok: true, data: { head: cmp.head, diff: `diff --git a/${f.prev || path} b/${path}\n--- a/${f.prev || path}\n+++ b/${path}${diff.slice(at)}` } }; // #1145 head = 이 diff의 커밋(줄 댓글 commit_id)
     } finally { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } }
   } catch { return fallback; }
 });
@@ -912,9 +912,14 @@ ipcMain.handle("github:pr-file-viewed", (_e, { cwd, prId, path, viewed }) => {
 // PR 생성(#944) — 성공 시 stdout=생성된 PR URL. base/head 빈값이면 플래그 생략(gh 기본: 현재 브랜치/origin default).
 // PR 줄 리뷰 댓글(#1127) — 에이전트 지적을 채택하면 그 파일·줄(head 커밋 기준 새 파일 줄, RIGHT)에 리뷰 댓글로.
 // -f(raw)라 본문·경로의 "@"가 파일 읽기로 안 바뀜. no-shell 인자.
-ipcMain.handle("github:pr-line-comment", async (_e, { cwd, number, path, line, body, commitId }) => {
+// #1145 사람이 직접 — side(RIGHT=새 줄·LEFT=지운 줄), 여러 줄이면 startLine(+startSide). 없으면 예전처럼 RIGHT 한 줄.
+const SIDES = new Set(["LEFT", "RIGHT"]);
+ipcMain.handle("github:pr-line-comment", async (_e, { cwd, number, path, line, body, commitId, side, startLine, startSide }) => {
   const n = Number(number), ln = Number(line);
   if (!Number.isInteger(n) || n <= 0 || !Number.isInteger(ln) || ln <= 0) return { ok: false, kind: "error", detail: "invalid pr/line" };
+  const sd = SIDES.has(side) ? side : "RIGHT";
+  const sl = startLine == null ? null : Number(startLine), ss = SIDES.has(startSide) ? startSide : sd;
+  if (sl != null && (!Number.isInteger(sl) || sl <= 0 || (ss === sd && sl >= ln))) return { ok: false, kind: "error", detail: "invalid start line" };
   if (typeof path !== "string" || !path || typeof body !== "string" || !body.trim()) return { ok: false, kind: "error", detail: "empty path/body" };
   // 줄 번호는 리뷰 때 diff 기준 → 그때 head 커밋(commitId)에 담(그 뒤 push돼도 같은 코드 줄, GitHub가 지난 코드로 표시). 없으면(옛 저장분) 지금 head.
   let sha = typeof commitId === "string" && /^[0-9a-f]{40}$/.test(commitId) ? commitId : null;
@@ -924,7 +929,7 @@ ipcMain.handle("github:pr-line-comment", async (_e, { cwd, number, path, line, b
     sha = head.data?.headRefOid;
   }
   if (typeof sha !== "string" || !/^[0-9a-f]{40}$/.test(sha)) return { ok: false, kind: "error", detail: "no head commit" };
-  const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/pulls/${n}/comments`, "-f", `body=${body}`, "-f", `commit_id=${sha}`, "-f", `path=${path}`, "-F", `line=${ln}`, "-f", "side=RIGHT"] });
+  const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/pulls/${n}/comments`, "-f", `body=${body}`, "-f", `commit_id=${sha}`, "-f", `path=${path}`, "-F", `line=${ln}`, "-f", `side=${sd}`, ...(sl != null ? ["-F", `start_line=${sl}`, "-f", `start_side=${ss}`] : [])] });
   if (!r.ok) return r;
   return { ok: true, data: { id: r.data?.id, url: r.data?.html_url } };
 });
@@ -943,18 +948,26 @@ ipcMain.handle("github:pr-thread-resolve", (_e, { cwd, threadId, resolve }) => {
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "graphql", "-f", `query=mutation($id:ID!){${m}(input:{threadId:$id}){thread{id isResolved}}}`, "-f", `id=${threadId}`] });
 });
 // PR 리뷰 한 번에(#1127, 유저 요청) — 여러 지적을 GitHub 리뷰 1건(COMMENT)의 줄 댓글들로. JSON 본문은 임시 파일(--input, 0600)로 넘기고 바로 지움.
-ipcMain.handle("github:pr-review-submit", async (_e, { cwd, number, commitId, comments }) => {
+// #1145 보류 리뷰 — event(APPROVE·REQUEST_CHANGES·COMMENT, 기본 COMMENT)·리뷰 본문 body·줄별 side/startLine/startSide. 줄 댓글 없이 판정만도 됨.
+const REVIEW_EVENT = new Set(["APPROVE", "REQUEST_CHANGES", "COMMENT"]);
+ipcMain.handle("github:pr-review-submit", async (_e, { cwd, number, commitId, comments, event, body }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
   if (typeof commitId !== "string" || !/^[0-9a-f]{40}$/.test(commitId)) return { ok: false, kind: "error", detail: "no head commit" };
+  const ev = REVIEW_EVENT.has(event) ? event : "COMMENT";
+  const text = typeof body === "string" ? body.trim() : "";
   // 하나라도 잘못되면 전체 거절(일부만 빠진 채 '다 올림'으로 보이지 않게, 리뷰)
   const list = Array.isArray(comments) ? comments : [];
-  if (!list.length || list.length > 100 || !list.every((c) => c && typeof c.path === "string" && c.path && Number.isInteger(c.line) && c.line > 0 && typeof c.body === "string" && c.body.trim())) return { ok: false, kind: "error", detail: "invalid comments" };
+  const okC = (c) => c && typeof c.path === "string" && c.path && Number.isInteger(c.line) && c.line > 0 && typeof c.body === "string" && c.body.trim()
+    && (c.side == null || SIDES.has(c.side)) && (c.startLine == null || (Number.isInteger(c.startLine) && c.startLine > 0 && ((c.startSide ?? c.side ?? "RIGHT") !== (c.side ?? "RIGHT") || c.startLine < c.line)));
+  if (list.length > 100 || !list.every(okC)) return { ok: false, kind: "error", detail: "invalid comments" };
+  if (!list.length && ev === "COMMENT" && !text) return { ok: false, kind: "error", detail: "empty review" }; // 줄 댓글도 본문도 없는 코멘트 리뷰
+  if (ev === "REQUEST_CHANGES" && !text && !list.length) return { ok: false, kind: "error", detail: "request changes needs a comment" };
   // 나만 쓰는 새 임시 폴더(mkdtemp, 이름 예측·충돌 없음) 안에 쓰고 폴더째 지움
   const dir = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "mustard-review-"));
   const file = require("node:path").join(dir, "review.json");
   try {
-    writeFileSync(file, JSON.stringify({ commit_id: commitId, event: "COMMENT", comments: list.map((c) => ({ path: c.path, line: c.line, side: "RIGHT", body: c.body })) }), { mode: 0o600, flag: "wx" });
+    writeFileSync(file, JSON.stringify({ commit_id: commitId, event: ev, ...(text ? { body: text } : {}), comments: list.map((c) => ({ path: c.path, line: c.line, side: c.side ?? "RIGHT", body: c.body, ...(c.startLine ? { start_line: c.startLine, start_side: c.startSide ?? c.side ?? "RIGHT" } : {}) })) }), { mode: 0o600, flag: "wx" });
     const r = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-X", "POST", `repos/{owner}/{repo}/pulls/${n}/reviews`, "--input", file] });
     if (!r.ok) return r;
     return { ok: true, data: { id: r.data?.id, url: r.data?.html_url } };
@@ -983,7 +996,8 @@ ipcMain.handle("github:pr-line-comments", async (_e, { cwd, number }) => {
   // REST 리액션 요약({"+1": n, …}) → 대화 댓글과 같은 reactionGroups 모양(ReactionBar 공용)
   const RX = { "+1": "THUMBS_UP", "-1": "THUMBS_DOWN", laugh: "LAUGH", hooray: "HOORAY", confused: "CONFUSED", heart: "HEART", rocket: "ROCKET", eyes: "EYES" };
   const groups = (rx) => Object.entries(RX).map(([k, e]) => ({ content: e, users: { totalCount: Number(rx?.[k]) || 0 } }));
-  return { ok: true, data: all.map((c) => ({ id: c.id, mine: !!me && c.user?.login === me, reactionGroups: groups(c.reactions), ...(threads.get(c.id) ?? {}), path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
+  // #1145 side·startLine = diff 안 줄 위치(LEFT = 지운 줄)
+  return { ok: true, data: all.map((c) => ({ id: c.id, mine: !!me && c.user?.login === me, reactionGroups: groups(c.reactions), ...(threads.get(c.id) ?? {}), path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, side: c.side ?? "RIGHT", startLine: c.start_line ?? c.original_start_line ?? null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
 });
 ipcMain.handle("github:pr-create", (_e, { cwd, base, head, title, body, draft, reviewers, assignees, labels, milestone }) => {
   if (!title || typeof title !== "string" || !title.trim()) return { ok: false, kind: "error", detail: "title required" };
