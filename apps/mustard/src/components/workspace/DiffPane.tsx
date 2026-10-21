@@ -198,7 +198,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const threadAt = new Map<string, LineComment[]>(); // "LEFT:12" → 그 줄(범위면 끝 줄)에 달린 스레드(첫 댓글), GitHub처럼
   for (const c of threads) if (c.path === file && c.inReplyTo == null && !c.outdated && c.line) { const k = `${c.side ?? "RIGHT"}:${c.line}`; threadAt.set(k, [...(threadAt.get(k) ?? []), c]); }
   const reloadThreads = () => setThreadTick((n) => n + 1);
-  const draftAt = new Map<string, DraftComment[]>();
+  const draftAt = new Map<string, DraftComment[]>(); // #1145 줄 밑 상자(스레드·보류·입력칸) 폭 = 패널 − 34px(왼쪽 여백 + 오른쪽 미니맵 14px 안 덮게)
   for (const d of drafts) if (d.path === file) draftAt.set(`${d.side}:${d.line}`, [...(draftAt.get(`${d.side}:${d.line}`) ?? []), d]);
   const sel = pick?.file === file ? pick : null;
   // GitHub는 PR diff 구간(바뀐 줄 앞뒤 3줄) 안에만 줄 댓글을 받음 — 파일 전체(#1133)로 받았으면 먼 줄엔 + 없음(리뷰: 422로 보류 리뷰 전체가 막힘)
@@ -304,12 +304,12 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
                 </div>
               ))}</div>}
               {lineT.map((c) => (
-                <div key={`t-${c.id}`} style={{ width: paneW ? paneW - 20 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 bg-white font-sans dark:bg-[var(--s-pane)]">
+                <div key={`t-${c.id}`} style={{ width: paneW ? paneW - 34 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 bg-white font-sans dark:bg-[var(--s-pane)]">
                   <Thread root={root} number={pr!} prTitle="" top={c} replies={threads.filter((x) => x.inReplyTo === c.id)} onChanged={reloadThreads} />
                 </div>
               ))}
               {lineD.map((d) => (
-                <div key={`d-${d.id}`} style={{ width: paneW ? paneW - 20 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-dashed border-mustard-500/50 bg-white px-3 py-2 font-sans dark:bg-[var(--s-pane)]">
+                <div key={`d-${d.id}`} style={{ width: paneW ? paneW - 34 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-dashed border-mustard-500/50 bg-white px-3 py-2 font-sans dark:bg-[var(--s-pane)]">
                   <div className="flex items-center gap-1.5 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400">
                     <IconClock size={11} stroke={2} aria-hidden />{t("github.draftPending")}{d.startLine ? ` · ${d.startLine}-${d.line}` : ""}
                     <button type="button" onClick={() => { if (!saveDrafts(root, pr!, removeDraft(loadDrafts(root, pr!), d.id))) toast(t("prReview.saveFailed"), "error"); }}
@@ -319,7 +319,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
                 </div>
               ))}
               {composeHere && sel && (
-                <div style={{ width: paneW ? paneW - 20 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 font-sans">
+                <div style={{ width: paneW ? paneW - 34 : undefined }} className="sticky left-0 z-[5] my-1 ml-2.5 font-sans">
                   <LineComposer root={root} pr={pr!} file={file} sel={sel} head={head}
                     code={sel.side === "RIGHT" ? rangeRows("RIGHT", sel.start ?? sel.line, sel.line)?.map((k) => lines[k].text) ?? null : null}
                     onClose={() => setPick(null)} onPosted={reloadThreads} />
