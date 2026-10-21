@@ -19,4 +19,11 @@ assert.deepStrictEqual(Object.keys(splitDiffByFile("")), []);
 assert.strictEqual(splitDiffByFile(raw).constructor, undefined, "프로토타입 없음");
 const emo = splitDiffByFile('diff --git "a/🙂 \\t.md" "b/🙂 \\t.md"\n--- "a/🙂 \\t.md"\n+++ "b/🙂 \\t.md"\n@@ -1 +1 @@\n-a\n+b\n');
 assert.deepStrictEqual(Object.keys(emo), ["🙂 \t.md"], "이모지 + 이스케이프 섞인 경로");
+// #1149 헤더만 있는 파일(바이너리·권한만·내용 없는 이름 변경) — 따옴표 한글, 경로 속 " b/", 공백 이름 변경
+const only = (d) => Object.keys(splitDiffByFile(d));
+assert.deepStrictEqual(only('diff --git "a/\\355\\225\\234.png" "b/\\355\\225\\234.png"\nBinary files differ\n'), ["한.png"], "따옴표 한글 바이너리");
+assert.deepStrictEqual(only("diff --git a/s.ts b/s.ts\nold mode 100644\nnew mode 100755\n"), ["s.ts"], "권한만");
+assert.deepStrictEqual(only("diff --git a/old.sh b/new.sh\nsimilarity index 100%\nrename from old.sh\nrename to new.sh\n"), ["new.sh"], "내용 없는 이름 변경");
+assert.deepStrictEqual(only("diff --git a/docs/a b/notes.md b/docs/a b/notes.md\nBinary files differ\n"), ["docs/a b/notes.md"], "경로에 ' b/'");
+assert.deepStrictEqual(only("diff --git a/x y b/z w\nsimilarity index 100%\nrename from x y\nrename to z w\n"), ["z w"], "공백 경로 이름 변경");
 console.log("github-bridge.test ok");

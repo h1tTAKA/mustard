@@ -7,7 +7,7 @@ import { useT } from "@mustard/core";
 import { loadPrReview, prReviewKey, PR_REVIEW_EVENT, type Finding } from "@/lib/prReview";
 import { loadDrafts, prDraftKey, PR_DRAFT_EVENT } from "@/lib/prDraft";
 
-type PrFile = { path: string; additions: number; deletions: number; changeType: string; viewed: boolean };
+type PrFile = { path: string; previousPath?: string; additions: number; deletions: number; changeType: string; viewed: boolean };
 type Load = { loading: boolean; prId?: string; files?: PrFile[]; truncated?: boolean; error?: string };
 
 // 변경 종류 → 한 글자 배지(VS Code·git 표기). RENAMED/COPIED 등은 R/C.
@@ -96,6 +96,7 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
   for (const f of findings) if (f.status === "open") openCount.set(f.file, (openCount.get(f.file) ?? 0) + 1);
   const tally = (list: string[]) => { const m = new Map<string, number>(); for (const p of list) m.set(p, (m.get(p) ?? 0) + 1); return m; };
   const threadCount = tally(threadPaths), draftCount = tally(draftPaths);
+  const listed = new Set(files.map((f) => f.path));
   // 폴더별 묶음(경로 순) — 같은 폴더 파일을 한 덩어리로.
   const groups: { dir: string; items: PrFile[] }[] = [];
   for (const f of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
@@ -126,6 +127,7 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
             )}
             {g.items.map((f) => {
               const c = CHANGE[f.changeType] ?? CHANGE.MODIFIED;
+              const threads = (threadCount.get(f.path) ?? 0) + (f.previousPath && !listed.has(f.previousPath) ? threadCount.get(f.previousPath) ?? 0 : 0); // #1149 이름 바뀌기 전 경로로 달린 것도(옛 이름이 목록에 따로 있으면 그 줄에서만, 리뷰)
               return (
                 <div key={f.path} className={`group flex items-center gap-2 py-1 pl-6 pr-3 transition hover:bg-zinc-100 dark:hover:bg-zinc-800/60 ${f.viewed ? "opacity-60" : ""}`}>
                   <button type="button" onClick={() => onOpenFile?.(f.path)} disabled={!onOpenFile} title={f.path}
@@ -133,7 +135,7 @@ export default function PrFiles({ root, number, reloadKey, onOpenFile, onCount }
                     <span className={`w-3 shrink-0 text-center font-mono text-[10px] font-bold ${c.cls}`}>{c.ch}</span>
                     <span className={`truncate text-[12px] text-zinc-700 dark:text-zinc-200 ${f.viewed ? "line-through decoration-zinc-400/60" : ""}`}>{baseOf(f.path)}</span>
                     {openCount.get(f.path) ? <span title={t("github.tabAgentReview")} className="inline-flex shrink-0 items-center gap-0.5 rounded bg-mustard-500/15 px-1 text-[9.5px] font-semibold tabular-nums text-mustard-700 dark:text-mustard-400"><IconRobot size={10} stroke={2} aria-hidden />{openCount.get(f.path)}</span> : null}
-                    {threadCount.get(f.path) ? <span title={t("github.reviewComments")} className="inline-flex shrink-0 items-center gap-0.5 rounded bg-zinc-500/15 px-1 text-[9.5px] font-semibold tabular-nums text-zinc-600 dark:text-zinc-300"><IconMessage size={10} stroke={2} aria-hidden />{threadCount.get(f.path)}</span> : null}
+                    {threads ? <span title={t("github.reviewComments")} className="inline-flex shrink-0 items-center gap-0.5 rounded bg-zinc-500/15 px-1 text-[9.5px] font-semibold tabular-nums text-zinc-600 dark:text-zinc-300"><IconMessage size={10} stroke={2} aria-hidden />{threads}</span> : null}
                     {draftCount.get(f.path) ? <span title={t("github.draftPending")} className="inline-flex shrink-0 items-center gap-0.5 rounded border border-dashed border-mustard-500/50 px-1 text-[9.5px] font-semibold tabular-nums text-mustard-700 dark:text-mustard-400"><IconMessage size={10} stroke={2} aria-hidden />{draftCount.get(f.path)}</span> : null}
                     <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums">
                       {f.additions > 0 && <span className="text-emerald-600 dark:text-emerald-400">+{f.additions}</span>}

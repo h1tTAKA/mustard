@@ -812,7 +812,8 @@ ipcMain.handle("github:pr-files", async (_e, { cwd, number }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
   prDiffCache.delete(`${cwd}#${n}`); prDiffGen.set(`${cwd}#${n}`, (prDiffGen.get(`${cwd}#${n}`) ?? 0) + 1);
-  if (prDiffGen.size > 50) prDiffGen.delete(prDiffGen.keys().next().value); // 상한(재리뷰) // 목록을 새로 불러오면 diff도 새로(push 직후 옛 diff 방지, 리뷰)
+  // 목록을 새로 불러오면 diff도 새로(push 직후 옛 diff 방지, 리뷰). 세대 표는 상한 없음(#1149) — 받는 중 지워지면 0으로 돌아가 옛 diff가 캐시됨.
+  // ponytail: PR당 숫자 하나(앱 켜 둔 동안 본 PR 수만큼), 수천 개여도 작음 — 문제 되면 받는 중인 키는 빼고 오래된 것부터 지우기.
   const files = []; let prId = null; let head = null; let after = null; let truncated = false;
   for (let page = 0; page < 30; page++) { // 최대 3,000개
     const args = ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", `number=${n}`, "-f", `query=${PR_FILES_Q}`];
@@ -827,6 +828,12 @@ ipcMain.handle("github:pr-files", async (_e, { cwd, number }) => {
     after = pr.files.pageInfo.endCursor;
     if (page === 29) truncated = true; // 상한 도달 — 화면에 안내(리뷰)
   }
+  // #1149 이름 바뀐 파일의 옛 경로 — GraphQL 변경 파일엔 없음 → 바뀐 게 있을 때만 REST(previous_filename)로 보충. 옛 경로로 달린 줄 댓글도 세게. 못 받아도 목록은 그대로.
+  if (files.some((f) => f.changeType === "RENAMED")) {
+    const rest = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "--paginate", "--slurp", `repos/{owner}/{repo}/pulls/${n}/files?per_page=100`] });
+    const prev = new Map((rest.ok && Array.isArray(rest.data) ? rest.data.flat() : []).filter((x) => x && typeof x.previous_filename === "string").map((x) => [x.filename, x.previous_filename]));
+    for (const f of files) if (prev.has(f.path)) f.previousPath = prev.get(f.path);
+  }
   return { ok: true, data: { prId, head, files, truncated } };
 });
 // 파일별 diff — gh pr diff는 PR 전체라, 같은 PR을 연달아 열 때 다시 받지 않게 짧게 캐시(30s).
@@ -838,13 +845,19 @@ ipcMain.handle("github:pr-file-diff", async (_e, { cwd, number, path }) => {
   let hit = prDiffCache.get(key);
   if (!hit || Date.now() - hit.at > 30_000) {
     const gen = prDiffGen.get(key) ?? 0;
-    // #1145 이 diff의 커밋 — 받기 전·후 head가 같을 때만(사이에 push되면 모름 → 보류 리뷰가 섞임으로 막음). 캐시에도 diff와 짝으로.
-    const headOf = async () => { const v = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "headRefOid"] }); const h = v.ok ? v.data?.headRefOid : null; return typeof h === "string" && /^[0-9a-f]{40}$/.test(h) ? h : null; };
-    const h1 = await headOf();
-    const r = await githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "diff", String(n), "--color", "never"], timeout: 30000 });
-    if (!r.ok) return r;
-    const h2 = h1 ? await headOf() : null;
-    hit = { at: Date.now(), files: githubBridge.splitDiffByFile(r.stdout), ...(h1 && h1 === h2 ? { head: h1 } : {}) };
+    // #1149 이 diff의 커밋 — base·head를 먼저 읽고 그 head의 diff를 compare(세 점 = PR diff와 같은 merge-base 비교)로 받아 못 박음.
+    // (gh pr diff는 그때 최신이라 pr view와 반영 시점이 어긋나면 짝이 틀릴 수 있음.) compare 실패(큰 PR 등)면 #1145 방식: gh pr diff + 받기 전·후 head 같을 때만.
+    const refsOf = async () => { const v = await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "baseRefOid,headRefOid,changedFiles"] }); const ok = (h) => typeof h === "string" && /^[0-9a-f]{40}$/.test(h); return v.ok && ok(v.data?.baseRefOid) && ok(v.data?.headRefOid) ? { base: v.data.baseRefOid, head: v.data.headRefOid, count: v.data.changedFiles } : null; };
+    const h1 = await refsOf();
+    const c = h1 ? await githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["api", "-H", "Accept: application/vnd.github.diff", `repos/{owner}/{repo}/compare/${h1.base}...${h1.head}`], timeout: 30000 }) : null;
+    const cf = c?.ok && c.stdout?.startsWith("diff --git ") ? githubBridge.splitDiffByFile(c.stdout) : null;
+    if (cf && Object.keys(cf).length === h1.count) hit = { at: Date.now(), files: cf, head: h1.head }; // 파일 수가 PR과 같을 때만(큰 PR은 오류 없이 잘려 올 수 있음, 리뷰)
+    else {
+      const r = await githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "diff", String(n), "--color", "never"], timeout: 30000 });
+      if (!r.ok) return r;
+      const h2 = h1 ? await refsOf() : null;
+      hit = { at: Date.now(), files: githubBridge.splitDiffByFile(r.stdout), ...(h1 && h2 && h1.head === h2.head ? { head: h1.head } : {}) };
+    }
     if ((prDiffGen.get(key) ?? 0) === gen) prDiffCache.set(key, hit); // 받는 사이 새로고침됐으면 저장 안 함(이번 응답만 사용)
     if (prDiffCache.size > 20) prDiffCache.delete(prDiffCache.keys().next().value);
   }
