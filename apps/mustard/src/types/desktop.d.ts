@@ -62,7 +62,7 @@ interface NunopiDesktopApi {
     issueList(cwd: string, state?: "open" | "closed" | "all", limit?: number): Promise<GhResult<GhIssue[]>>;
     issueView(cwd: string, number: number): Promise<GhResult<GhIssueDetail>>;
     issueCreate(cwd: string, opts: { title: string; body?: string; labels?: string | string[]; assignees?: string[]; milestone?: string }): Promise<{ ok: boolean; stdout?: string; kind?: string; detail?: string }>;  // #945 성공 시 stdout=이슈 URL
-    prList(cwd: string, state?: "open" | "closed" | "all", limit?: number): Promise<GhResult<GhPr[]>>;  // #814
+    prList(cwd: string, state?: "open" | "closed" | "all", limit?: number, who?: "all" | "review" | "assigned" | "mine"): Promise<GhResult<GhPr[]>>;  // #814
     prView(cwd: string, number: number): Promise<GhResult<GhPrDetail>>;
     metaCandidates?(cwd: string, field: GhMetaField): Promise<{ ok: boolean; data?: { value: string; color?: string }[]; kind?: string; detail?: string }>;
     editMeta?(cwd: string, kind: "issue" | "pr", number: number, field: GhMetaField, add: string[], remove: string[]): Promise<{ ok: boolean; kind?: string; detail?: string }>;

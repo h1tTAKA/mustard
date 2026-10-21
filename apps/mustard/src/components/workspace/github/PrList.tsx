@@ -9,6 +9,7 @@ import { ChecksSummary } from "@/components/workspace/github/ChecksView";
 import PrCompose from "@/components/workspace/github/PrCompose";
 
 type Filter = "open" | "closed" | "all";
+type Who = "all" | "review" | "assigned" | "mine"; // #1141 누구 것
 type Load = { loading: boolean; rows?: GhPr[]; error?: string; hasMore?: boolean };
 const HOVER_DELAY_MS = 450;
 
@@ -23,6 +24,7 @@ function prColor(pr: GhPr): string {
 export default function PrList({ root, reloadKey, host = "github", onOpen }: { root: string; reloadKey: number; host?: "github" | "gitlab" | "other"; onOpen: (n: number) => void }) {
   const t = useT();
   const [filter, setFilter] = useState<Filter>("open");
+  const [who, setWho] = useState<Who>("all");
   const [limit, setLimit] = useState(50);
   const [load, setLoad] = useState<Load>({ loading: true });
   const [composing, setComposing] = useState(false); // #944 PR 생성 폼
@@ -53,12 +55,12 @@ export default function PrList({ root, reloadKey, host = "github", onOpen }: { r
     const myId = ++reqIdRef.current;
     setLoad((p) => ({ loading: true, rows: p.rows, hasMore: p.hasMore }));
     (async () => {
-      const r = await list(root, filter, limit);
+      const r = host === "gitlab" ? await list(root, filter, limit) : await nd!.github!.prList(root, filter, limit, who);
       if (!mountedRef.current || myId !== reqIdRef.current) return;
       if (r.ok) setLoad({ loading: false, rows: r.data, hasMore: r.data.length >= limit && limit < 1000 });
       else setLoad({ loading: false, error: r.detail || t("github.error") });
     })();
-  }, [root, filter, limit, reloadKey, localReload, host, t]);
+  }, [root, filter, limit, who, reloadKey, localReload, host, t]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -94,6 +96,16 @@ export default function PrList({ root, reloadKey, host = "github", onOpen }: { r
           </button>
         ) : null}
       </div>
+      {host === "github" && ( /* #1141 누구 것 — 상태 줄 아래 둘째 줄, 같은 칩(유저 선택) */
+        <div className="flex shrink-0 items-center gap-1 border-b border-zinc-100 px-2 py-1 dark:border-zinc-800/60">
+          {(["all", "review", "assigned", "mine"] as Who[]).map((w) => (
+            <button key={w} type="button" onClick={() => { setWho(w); setLimit(50); setLoad({ loading: true }); }} aria-pressed={who === w}
+              className={`rounded px-2 py-0.5 text-[11px] font-medium transition ${who === w ? "bg-mustard-500/15 text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
+              {t(w === "all" ? "github.whoAll" : w === "review" ? "github.whoReview" : w === "assigned" ? "github.whoAssigned" : "github.whoMine")}
+            </button>
+          ))}
+        </div>
+      )}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
         {load.loading && !load.rows?.length ? (
           <div className="flex items-center gap-2 p-4 text-[12px] text-zinc-400 dark:text-zinc-500"><IconLoader2 size={14} className="animate-spin" aria-hidden /> …</div>
