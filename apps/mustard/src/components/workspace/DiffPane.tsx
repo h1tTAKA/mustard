@@ -268,8 +268,8 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
               </button>
             )}
             <span className="w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">{l.oldN ?? ""}</span>
-            {/* #1145 줄 댓글 + — 새 줄번호 칸 왼쪽, 줄에 올리면 보임. Shift+누름 = 범위 */}
-            {pr && ln > 0 && near[i] && (
+            {/* #1145 줄 댓글 + — 새 줄번호 칸 왼쪽, 줄에 올리면 보임. Shift+누름 = 범위. 이 diff의 커밋을 모르면(받는 사이 push·조회 실패) 없음 — 지금 head로 달면 엉뚱한 줄(리뷰) */}
+            {pr && head && ln > 0 && near[i] && (
               <button type="button" onClick={(e) => choose(side, ln, e.shiftKey)} title={t("github.lineCommentAdd")} aria-label={`${t("github.lineCommentAdd")} ${ln}`}
                 className="absolute inset-y-px left-9 z-[1] flex w-[14px] items-center justify-center rounded bg-mustard-500 text-brown-900 opacity-0 shadow-sm hover:bg-mustard-400 focus:opacity-100 group-hover:opacity-100">
                 <IconPlus size={11} stroke={2.6} aria-hidden />
