@@ -31,6 +31,9 @@ function stateLabel(d: GhPrDetail, t: (k: string) => string): { text: string; cl
 }
 
 // onOpenFile = 변경 파일 → 가운데 diff 탭(#1123, Files changed 탭에서 사용)
+// #1143 PR별 체크아웃 직전 브랜치(레포#번호 → 브랜치) — 상세 화면을 닫았다 열어도 "이전 브랜치로"가 남게. 앱 끄면 사라짐(그땐 깃 그래프로)
+const PREV_BRANCH = new Map<string, string>();
+
 export default function PrDetail({ root, number, reloadKey, host = "github", onBack, onOpenFile, agent }: { root: string; number: number; reloadKey: number; host?: "github" | "gitlab" | "other"; onBack: () => void; onOpenFile?: (file: string) => void; agent?: { providerId: AgentProviderKind; providerSettings: ProviderSettings } }) {
   const t = useT();
   const toast = useToast();
@@ -52,26 +55,30 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
   const [bodyDraft, setBodyDraft] = useState("");
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [actBusy, setActBusy] = useState(false);
-  // #1143 PR 브랜치 체크아웃 — 성공하면 "이전 브랜치로" 버튼(git-switch prev, 깃 그래프와 같은 창구)
-  const [checkedOut, setCheckedOut] = useState(false);
-  const [coBusy, setCoBusy] = useState(false);
+  // #1143 PR 브랜치 체크아웃 — 체크아웃 직전 브랜치를 PR별로 기억(목록에 나갔다 와도 남게) → "이전 브랜치로"는 그 이름으로(git-switch, 리뷰).
+  // 다른 PR 버튼과 같은 actBusy로 막음(체크아웃 중 Merge·Close 등 동시 실행 방지, 리뷰).
+  const backKey = `${root}#${number}`;
+  const [prevBranch, setPrevBranch] = useState<string | undefined>(() => PREV_BRANCH.get(backKey));
   const checkout = async () => {
     const fn = window.nunopiDesktop?.github?.prCheckout;
-    if (!fn || coBusy) return;
-    setCoBusy(true);
+    if (!fn || actBusy) return;
+    setActBusy(true);
     try {
       const r = await fn(root, number);
-      if (r.ok) { setCheckedOut(true); toast(t("github.checkedOut", { n: number, branch: r.data?.branch ?? "" }), "success"); }
-      else toast(t("github.checkoutFailed", { why: (r.detail ?? "").slice(0, 200) }), "error");
-    } catch { toast(t("github.checkoutFailed", { why: "" }), "error"); } finally { setCoBusy(false); }
+      if (r.ok) {
+        if (r.data?.prev && r.data.prev !== r.data.branch) { PREV_BRANCH.set(backKey, r.data.prev); setPrevBranch(r.data.prev); }
+        toast(t("github.checkedOut", { n: number, branch: r.data?.branch ?? "" }), "success");
+      } else toast(t("github.checkoutFailed", { why: (r.detail ?? "").slice(0, 200) }), "error");
+    } catch { toast(t("github.checkoutFailed", { why: "" }), "error"); } finally { setActBusy(false); }
   };
   const backToPrev = async () => {
-    if (coBusy) return;
-    setCoBusy(true);
+    if (actBusy || !prevBranch) return;
+    setActBusy(true);
     try {
-      const d = await (await fetch("/api/repo/git-switch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, prev: true }) })).json();
-      if (d?.ok) { setCheckedOut(false); toast(t("github.backToPrevDone"), "success"); } else toast(t("github.checkoutFailed", { why: String(d?.error ?? "").slice(0, 200) }), "error");
-    } catch { toast(t("github.checkoutFailed", { why: "" }), "error"); } finally { setCoBusy(false); }
+      const d = await (await fetch("/api/repo/git-switch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, branch: prevBranch }) })).json();
+      if (d?.ok) { PREV_BRANCH.delete(backKey); setPrevBranch(undefined); toast(t("github.backToPrevDone", { branch: prevBranch }), "success"); }
+      else toast(t("github.checkoutFailed", { why: String(d?.error ?? "").slice(0, 200) }), "error");
+    } catch { toast(t("github.checkoutFailed", { why: "" }), "error"); } finally { setActBusy(false); }
   };
   const [actErr, setActErr] = useState<string | null>(null);
   const confirm = useConfirm();
@@ -234,9 +241,9 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
               {d.state.toUpperCase() === "OPEN" && (d.isDraft
                 ? <button type="button" onClick={() => void confirmState("ready", t("github.markReady"), <IconGitPullRequest size={15} stroke={2} aria-hidden />)} disabled={actBusy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{actBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconGitPullRequest size={13} stroke={2} className="text-emerald-500" aria-hidden />}{t("github.markReady")}</button>
                 : <button type="button" onClick={() => void confirmState("draft", t("github.markDraft"), <IconGitPullRequestDraft size={15} stroke={2} aria-hidden />)} disabled={actBusy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{actBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconGitPullRequestDraft size={13} stroke={2} className="text-zinc-400" aria-hidden />}{t("github.markDraft")}</button>)}
-              {d.state.toUpperCase() === "OPEN" && window.nunopiDesktop?.github?.prCheckout && (checkedOut
-                ? <button type="button" onClick={() => void backToPrev()} disabled={coBusy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{coBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconArrowBackUp size={13} stroke={2} className="text-zinc-400" aria-hidden />}{t("github.backToPrev")}</button>
-                : <button type="button" onClick={() => void checkout()} disabled={coBusy} title={t("github.checkoutTitle")} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{coBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconGitBranch size={13} stroke={2} className="text-zinc-400" aria-hidden />}{t("github.checkout")}</button>)}
+              {d.state.toUpperCase() === "OPEN" && window.nunopiDesktop?.github?.prCheckout && (prevBranch
+                ? <button type="button" onClick={() => void backToPrev()} disabled={actBusy} title={prevBranch} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{actBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconArrowBackUp size={13} stroke={2} className="text-zinc-400" aria-hidden />}{t("github.backToPrev")}</button>
+                : <button type="button" onClick={() => void checkout()} disabled={actBusy} title={t("github.checkoutTitle")} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{actBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconGitBranch size={13} stroke={2} className="text-zinc-400" aria-hidden />}{t("github.checkout")}</button>)}
               {/* Close / Reopen — 항상 오른쪽 끝(ml-auto). */}
               {d.state.toUpperCase() === "OPEN"
                 ? <button type="button" onClick={() => void confirmState("close", t("github.close"), <IconGitPullRequestClosed size={15} stroke={2} aria-hidden />)} disabled={actBusy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{actBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconGitPullRequestClosed size={13} stroke={2} className="text-rose-500" aria-hidden />}{t("github.close")}</button>
