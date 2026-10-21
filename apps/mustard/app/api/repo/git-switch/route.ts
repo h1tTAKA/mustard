@@ -18,7 +18,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     // prev: 이전 위치로(#1025) — `git checkout -`는 직전이 브랜치가 아닌 커밋(분리 HEAD)이어도 돌아감(switch -는 브랜치만).
     const args = prev === true ? ["checkout", "-"] : remote === true ? ["switch", "--track", branch as string] : ["switch", branch as string];
-    await pexecFile("git", args, { cwd: path, maxBuffer: 20_000_000, timeout: 20000 });
+    await pexecFile("git", args, { cwd: path, maxBuffer: 20_000_000, timeout: 20000, env: { ...process.env, LC_ALL: "C" } }); // 오류 글을 영어로 — 화면이 "브랜치 없음"을 알아보게(#1143 재리뷰)
     return Response.json({ ok: true });
   } catch (e) {
     const err = e as { stderr?: string; message?: string };

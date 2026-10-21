@@ -79,7 +79,8 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
       // 그사이 다른 브랜치로 옮겼으면 되돌리지 않음(엉뚱한 곳으로 가지 않게, 리뷰) — 지금 브랜치는 git-recent 창구로
       const pr = PREV_BRANCH.get(backKey)?.pr;
       const now = await (await fetch("/api/repo/git-recent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, since: Math.floor(Date.now() / 1000) }) })).json().catch(() => null);
-      if (pr && typeof now?.branch === "string" && now.branch && now.branch !== pr) { forget(); toast(t("github.backMoved", { branch: now.branch })); return; }
+      if (pr && (typeof now?.branch !== "string" || !now.branch)) { toast(t("github.checkoutFailed", { why: "" }), "error"); return; } // 지금 브랜치를 모르면 옮기지 않음(재리뷰)
+      if (pr && now.branch !== pr) { forget(); toast(t("github.backMoved", { branch: now.branch })); return; }
       const d = await (await fetch("/api/repo/git-switch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, branch: prevBranch }) })).json();
       if (d?.ok) { forget(); toast(t("github.backToPrevDone", { branch: prevBranch }), "success"); }
       else {
