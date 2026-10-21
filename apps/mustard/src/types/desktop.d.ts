@@ -57,7 +57,7 @@ interface NunopiDesktopApi {
   };
   // GitHub 패널(#809/#810) — gh CLI 브릿지. auth=인증 상태 진단(cwd=레포). 서브3~5서 checks/이슈/PR 메서드 추가.
   github?: {
-    auth(cwd: string): Promise<{ state: "ok" | "not-installed" | "not-authed" | "rate-limited" | "error"; detail?: string }>;
+    auth(cwd: string): Promise<{ state: "ok" | "not-installed" | "not-authed" | "rate-limited" | "offline" | "error"; detail?: string }>;
     // 이슈 목록·상세(#813). 성공 { ok:true, data } | 실패 { ok:false, kind, detail }.
     issueList(cwd: string, state?: "open" | "closed" | "all", limit?: number): Promise<GhResult<GhIssue[]>>;
     issueView(cwd: string, number: number): Promise<GhResult<GhIssueDetail>>;
@@ -96,7 +96,7 @@ interface NunopiDesktopApi {
   };
   // 연동 확장(#960) — GitLab glab 감지 + bitbucket/azure 토큰(safeStorage).
   integrations?: {
-    glabStatus(cwd?: string): Promise<{ state: "ok" | "not-installed" | "not-authed" | "rate-limited" | "error"; detail?: string }>;
+    glabStatus(cwd?: string): Promise<{ state: "ok" | "not-installed" | "not-authed" | "rate-limited" | "offline" | "error"; detail?: string }>;
     // GitLab 조회(#964) — glab JSON을 GhPr/GhIssue로 정규화 반환(UI 재사용). cwd=레포 경로.
     glabMrList(cwd: string, state?: "open" | "closed" | "all", limit?: number): Promise<GhResult<GhPr[]>>;
     glabMrView(cwd: string, number: number): Promise<GhResult<GhPrDetail>>;

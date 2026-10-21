@@ -12,7 +12,7 @@ import PrDetail from "@/components/workspace/github/PrDetail";
 import type { CiDot } from "@/components/workspace/github/useBranchCi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 
-type AuthState = "ok" | "not-installed" | "not-authed" | "rate-limited" | "error";
+type AuthState = "ok" | "not-installed" | "not-authed" | "rate-limited" | "offline" | "error"; // offline = 인터넷 끊김(#1151)
 type Probe = { loading: boolean; state?: AuthState; detail?: string };
 type OpenItem = { kind: "issue" | "pr"; number: number }; // 상세 열림 — 반반 분할(#824)이라 kind로 이슈/PR 구분
 
@@ -190,6 +190,7 @@ export default function GithubPanel({ root, ciDot, onOpenPrDiff, agent }: { root
                   {probe.state === "not-installed" ? t("github.notInstalled")
                     : probe.state === "not-authed" ? t("github.notAuthed")
                     : probe.state === "rate-limited" ? t("github.rateLimited")
+                    : probe.state === "offline" ? t("github.offline")
                     : t("github.error")}
                 </p>
                 {probe.detail && <p className="mt-1 break-words text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{probe.detail === DESKTOP_ONLY ? t("github.desktopOnly") : probe.detail}</p>}
@@ -201,7 +202,7 @@ export default function GithubPanel({ root, ciDot, onOpenPrDiff, agent }: { root
             </button>
             {/* 토큰(PAT) 폴백(#826) — gh 미설치가 아니면 토큰으로 연결. 이 에러 화면에 있다는 건 아직 인증 안 됐다는 뜻
                 → 항상 입력 노출(교체 가능). 저장된 토큰이 있는데 여기 왔으면 그 토큰이 인증 실패한 것. */}
-            {host === "github" && probe.state !== "not-installed" && (
+            {host === "github" && probe.state !== "not-installed" && probe.state !== "offline" && ( /* #1151 인터넷 끊김엔 토큰 무의미(저장 토큰 '안 됨' 오안내도) */
               <div className="mt-1 flex flex-col gap-1.5 border-t border-zinc-100 pt-3 dark:border-zinc-800/60">
                 {hasToken && (
                   <div className="flex items-center gap-2 text-[11px]">
