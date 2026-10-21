@@ -812,7 +812,8 @@ ipcMain.handle("github:pr-files", async (_e, { cwd, number }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
   prDiffCache.delete(`${cwd}#${n}`); prDiffGen.set(`${cwd}#${n}`, (prDiffGen.get(`${cwd}#${n}`) ?? 0) + 1);
-  if (prDiffGen.size > 50) prDiffGen.delete(prDiffGen.keys().next().value); // 상한(재리뷰) // 목록을 새로 불러오면 diff도 새로(push 직후 옛 diff 방지, 리뷰)
+  // 목록을 새로 불러오면 diff도 새로(push 직후 옛 diff 방지, 리뷰). 세대 표는 상한 없음(#1149) — 받는 중 지워지면 0으로 돌아가 옛 diff가 캐시됨.
+  // ponytail: PR당 숫자 하나(앱 켜 둔 동안 본 PR 수만큼), 수천 개여도 작음 — 문제 되면 받는 중인 키는 빼고 오래된 것부터 지우기.
   const files = []; let prId = null; let head = null; let after = null; let truncated = false;
   for (let page = 0; page < 30; page++) { // 최대 3,000개
     const args = ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", `number=${n}`, "-f", `query=${PR_FILES_Q}`];
