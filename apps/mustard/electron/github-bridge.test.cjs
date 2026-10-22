@@ -32,6 +32,7 @@ assert.strictEqual(classifyGhError({ stderr: 'Get "https://api.github.com/rate_l
 assert.strictEqual(classifyGhError({ stderr: "error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com" }).kind, "offline");
 assert.strictEqual(classifyGhError({ stderr: "X Failed to log in to github.com account me (keyring)\n- The token in keyring is invalid.\n- To re-authenticate, run: gh auth login -h github.com" }).kind, "not-authed");
 assert.strictEqual(classifyGhError({ stderr: "HTTP 401: Bad credentials (https://api.github.com/rate_limit)" }).kind, "not-authed");
+assert.notStrictEqual(classifyGhError({ message: "Command failed: gh search prs no such host" }).kind, "offline", "실행 인자(검색어)는 안 봄");
 
 // authDiagnose + probe — 가짜 gh(auth status는 늘 로그인 실패 문구, api는 MODE에 따라)
 (async () => {
@@ -43,13 +44,15 @@ if [ "$1" = auth ]; then echo "X Failed to log in to github.com account me (keyr
 case "$MODE" in
   offline) echo 'Get "https://api.github.com/rate_limit": dial tcp: lookup api.github.com: no such host' >&2; exit 1;;
   ok) echo '{}'; exit 0;;
+  hang) sleep 20;;
   *) echo "HTTP 401: Bad credentials" >&2; exit 1;;
 esac
 `, { mode: 0o755 });
   const run = (MODE, probe = ["api", "rate_limit"]) => authDiagnose({ gh, cwd: dir, env: { ...process.env, MODE }, probe });
   try {
     assert.strictEqual((await run("offline")).state, "offline", "인터넷 끊김 = 연결 안 됨");
-    assert.strictEqual((await run("ok")).state, "ok", "API 되면 로그인 멀쩡");
+    assert.strictEqual((await run("ok")).state, "not-authed", "API 돼도 ok로 안 바꿈(다른 호스트 로그인 풀림 가릴 수 있음, 리뷰)");
+    assert.strictEqual((await run("hang")).state, "offline", "응답 없음(시간 초과) = 연결 안 됨");
     assert.strictEqual((await run("401")).state, "not-authed", "진짜 로그인 풀림");
     assert.strictEqual((await run("offline", null)).state, "not-authed", "probe 없으면(glab) 그대로");
     console.log("github-bridge.test ok");

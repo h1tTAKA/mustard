@@ -18,7 +18,7 @@ function mainLocale() {
 const DICT = {
   "gh.notInstalled": { ko: "gh(GitHub CLI)를 찾을 수 없음", ja: "gh(GitHub CLI)が見つかりません", en: "gh (GitHub CLI) not found" },
   "gh.notAuthed": { ko: "인증 필요 — 터미널에서 `gh auth login` 또는 `glab auth login`", ja: "認証が必要です — ターミナルで `gh auth login` または `glab auth login`", en: "Authentication required — run `gh auth login` or `glab auth login` in a terminal" },
-  "gh.offline": { ko: "GitHub에 연결할 수 없어요 — 인터넷 연결을 확인하고 다시 시도", ja: "GitHub に接続できません — インターネット接続を確認して再試行してください", en: "Can't reach GitHub — check your internet connection and retry" },
+  "gh.offline": { ko: "서버에 연결할 수 없어요 — 인터넷 연결을 확인하고 다시 시도", ja: "サーバーに接続できません — インターネット接続を確認して再試行してください", en: "Can't reach the server — check your internet connection and retry" }, // #1151 gh·glab 공용
   "gh.rateLimited": { ko: "API rate limit — 잠시 후 재시도", ja: "API レート制限 — しばらくして再試行してください", en: "API rate limit — try again shortly" },
   "gh.runError": { ko: "gh 실행 오류", ja: "gh 実行エラー", en: "gh execution error" },
   "gh.noCwd": { ko: "작업 디렉터리를 찾을 수 없음", ja: "作業ディレクトリが見つかりません", en: "Working directory not found" },

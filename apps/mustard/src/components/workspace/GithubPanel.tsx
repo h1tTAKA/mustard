@@ -190,7 +190,7 @@ export default function GithubPanel({ root, ciDot, onOpenPrDiff, agent }: { root
                   {probe.state === "not-installed" ? t("github.notInstalled")
                     : probe.state === "not-authed" ? t("github.notAuthed")
                     : probe.state === "rate-limited" ? t("github.rateLimited")
-                    : probe.state === "offline" ? t("github.offline")
+                    : probe.state === "offline" ? t("github.offline", { host: host === "gitlab" ? "GitLab" : "GitHub" })
                     : t("github.error")}
                 </p>
                 {probe.detail && <p className="mt-1 break-words text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{probe.detail === DESKTOP_ONLY ? t("github.desktopOnly") : probe.detail}</p>}
