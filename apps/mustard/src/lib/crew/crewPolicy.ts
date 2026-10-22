@@ -234,4 +234,14 @@ function decideBase(tool: string, input: Record<string, unknown>, worktree: stri
 }
 
 // #1137 Crew API는 같은 출처(앱 화면)에서만 — 다른 사이트가 폼 POST로 카드를 만들거나 권한을 허락하지 못하게(리뷰). 브라우저 밖 호출은 샌드박스 이슈에서
-export const crossSite = (req: Request) => { const s = req.headers.get("sec-fetch-site"); return !!s && s !== "same-origin" && s !== "none"; };
+// #1159 강화 — Sec-Fetch-Site가 없으면(옛 브라우저·일부 웹뷰) Origin이 이 서버와 같은지, 그리고 POST는 JSON만:
+// 폼·text/plain 같은 '단순 요청'은 사전 확인 없이 다른 사이트에서 보낼 수 있지만 application/json은 사전 확인(CORS)이 막음.
+// 브라우저 밖 호출(Origin·Sec-Fetch-Site 둘 다 없음, 예: 로컬 스크립트)은 통과 — 그건 이 검사의 대상이 아님.
+export const crossSite = (req: Request) => {
+  const s = req.headers.get("sec-fetch-site");
+  if (s && s !== "same-origin" && s !== "none") return true;
+  const o = req.headers.get("origin");
+  if (!s && o && o !== "null") { try { if (new URL(o).host !== req.headers.get("host")) return true; } catch { return true; } }
+  if (!s && o === "null") return true; // 샌드박스 iframe·file:// 등 출처 숨긴 요청
+  return req.method !== "GET" && req.method !== "HEAD" && !/^application\/json\b/i.test(req.headers.get("content-type") ?? "");
+};

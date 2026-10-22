@@ -1,6 +1,6 @@
 // crewPolicy 점검 — node --experimental-strip-types src/lib/crew/crewPolicy.check.ts
 import assert from "node:assert";
-import { decide, fromAgentRequest } from "./crewPolicy.ts";
+import { crossSite, decide, fromAgentRequest } from "./crewPolicy.ts";
 
 const W = "/Users/u/.nunopi/worktrees/abc/1234";
 const d = (tool: string, input: Record<string, unknown>) => decide(tool, input, W);
@@ -152,5 +152,19 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
     assert.strictEqual(B("echo x > src/out.txt"), "allow", "셸 보통 쓰기");
     assert.strictEqual(decide("apply_patch", { patch: "*** Begin Patch\n*** Add File: .npmrc\n+x\n*** End Patch" }, wt), "ask", "Codex 패치로 보호 파일");
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
+// #1159 Crew API 출처
+{
+  const R = (h: Record<string, string>, method = "POST") => new Request("http://localhost:59720/api/crew/board", { method, headers: { host: "localhost:59720", ...h } });
+  const J = { "content-type": "application/json" };
+  assert.strictEqual(crossSite(R({ ...J, "sec-fetch-site": "same-origin", origin: "http://localhost:59720" })), false, "앱 화면");
+  assert.strictEqual(crossSite(R({ ...J, "sec-fetch-site": "cross-site" })), true, "다른 사이트(Fetch Metadata)");
+  assert.strictEqual(crossSite(R({ ...J, origin: "https://evil.example" })), true, "Sec-Fetch-Site 없이 다른 Origin");
+  assert.strictEqual(crossSite(R({ ...J, origin: "null" })), true, "숨긴 Origin");
+  assert.strictEqual(crossSite(R({ "content-type": "text/plain", "sec-fetch-site": "same-origin" })), true, "POST는 JSON만(폼·text/plain CSRF)");
+  assert.strictEqual(crossSite(R({ "content-type": "application/x-www-form-urlencoded" })), true);
+  assert.strictEqual(crossSite(R({ ...J })), false, "브라우저 밖(헤더 없음) 로컬 호출");
+  assert.strictEqual(crossSite(R({ "sec-fetch-site": "same-origin" }, "GET")), false, "GET은 본문 형식 안 봄");
+  assert.strictEqual(crossSite(R({ "content-type": "application/json; charset=utf-8", origin: "http://localhost:59720" })), false, "charset 붙은 JSON·같은 Origin");
 }
 console.log("crewPolicy.check ok");
