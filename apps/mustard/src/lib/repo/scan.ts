@@ -10,7 +10,7 @@ import { GODOT_FILE_EXTS } from "./godotAssets.ts";
 const SUPPORTED = SUPPORTED_EXTS;
 // 훑지 않을 디렉터리(빌드 산출물·의존성·VCS).
 const IGNORE_DIRS = new Set([
-  "node_modules", ".git", ".next", "dist", "build", "out", "coverage",
+  "node_modules", ".git", ".next", "dist", "dist_electron", "build", "out", "coverage", // dist_electron = electron-builder 출력(.app 안 소스 사본, #1155)
   ".turbo", ".vercel", ".cache", "graphify-out", ".idea", ".vscode",
 ]);
 // 게임 엔진 자동 생성 폴더(#1003, 에픽 #1002) — 그 폴더가 엔진 프로젝트일 때만 바로 아래 이름을 제외.
