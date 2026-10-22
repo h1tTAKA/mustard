@@ -1,14 +1,17 @@
 // 레포 파일 워처(#739) — 워킹트리·.git 변경을 감지해 렌더러에 알림(그래프·변경사항 실시간 갱신).
 // macOS/Windows는 fs.watch recursive(FSEvents 등)로 효율적. Linux 등 미지원이면 supported:false → 렌더러 폴백.
 const { watch } = require("node:fs");
-const { sep } = require("node:path");
 
 const DEBOUNCE_MS = 300;
-// 무시할 경로 조각 — git status/log에 안 잡히거나 폭주원(반응하면 낭비). 저장 한 번에 수십 이벤트 방지의 1차 필터.
-const IGNORE = ["node_modules", `.git${sep}objects`, `.git${sep}logs`, `.git${sep}lfs`, ".next", "dist", "build", ".DS_Store", ".turbo"];
+// 무시할 경로 — git status/log에 안 잡히거나 폭주원(반응하면 낭비). 저장 한 번에 수십 이벤트 방지의 1차 필터.
+// #1155 폴더 이름 단위로(전엔 글자 포함이라 src/distance.ts·src/builder.ts 저장도 무시됐음, 리뷰). .git은 objects·logs·lfs만(HEAD·refs·index는 반응).
+const IGNORE_DIRS = new Set(["node_modules", ".next", "dist", "dist_electron", "build", ".turbo"]);
+const IGNORE_GIT = new Set(["objects", "logs", "lfs"]);
 function ignored(rel) {
   if (!rel) return false;
-  return IGNORE.some((frag) => rel.includes(frag));
+  const segs = rel.split(/[\\/]/);
+  if (segs[segs.length - 1] === ".DS_Store") return true;
+  return segs.some((s, i) => IGNORE_DIRS.has(s) || (s === ".git" && IGNORE_GIT.has(segs[i + 1])));
 }
 
 // id(=레포 경로) → { watcher, timer }. 활성 레포당 하나.
@@ -48,4 +51,4 @@ function stopAll() {
   for (const id of [...watchers.keys()]) stopWatch(id);
 }
 
-module.exports = { startWatch, stopWatch, stopAll };
+module.exports = { startWatch, stopWatch, stopAll, ignored };
