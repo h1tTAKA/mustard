@@ -30,6 +30,10 @@ assert.ok(has("unreal/Source/Game/Hero.cpp"), "Unreal 소스 포함");
 assert.ok(!has("unreal/Intermediate/Build/Gen.cpp") && !has("unreal/Binaries/x.cpp"), "Unreal 생성 폴더 제외");
 assert.ok(has("web/Library/util.ts"), "엔진 아닌 Library는 유지");
 assert.deepStrictEqual([...r.engines].sort(), ["unity", "unreal"], "엔진 감지");
+// #1155 패키징 산출물(.app 안 소스 사본) — 그래프·파일 트리 둘 다 제외
+put("dist_electron/mac-arm64/Mustard.app/Contents/Resources/app/src/a.ts", "export const copy = 1;");
+assert.ok(!scanRepo(root).files.some((f) => f.startsWith("dist_electron/")), "dist_electron 제외");
+assert.ok(!scanAllFiles(root).files.some((f) => f.startsWith("dist_electron/")), "파일 트리도 dist_electron 제외");
 const all = scanAllFiles(root);
 assert.ok(!all.files.some((f) => f.startsWith("client/Library/")), "파일 트리도 Library 제외");
 assert.ok(all.files.includes("client/ProjectSettings/ProjectVersion.txt"), "파일 트리는 ProjectSettings 유지");
