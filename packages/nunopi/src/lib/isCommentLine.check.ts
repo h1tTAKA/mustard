@@ -1,4 +1,4 @@
-// isCommentLine self-check — 실행: node --experimental-strip-types src/lib/isCommentLine.check.ts
+// isCommentLine self-check — 실행: node --experimental-strip-types packages/nunopi/src/lib/isCommentLine.check.ts
 import assert from "node:assert";
 import { isCommentOnlyLine } from "./isCommentLine.ts";
 

@@ -28,6 +28,10 @@ jobs:
       - name: Lint
         run: npm run lint --workspace apps/mustard
 
+      # 레포 점검 56개(electron/*.test.cjs·src/lib/**/*.check.ts 등, #1153) — 빌드보다 먼저(20초, 빨리 실패)
+      - name: Checks
+        run: npm run check
+
       - name: Build
         run: npm run build --workspace apps/mustard
 
