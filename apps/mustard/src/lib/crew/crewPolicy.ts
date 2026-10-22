@@ -1,6 +1,8 @@
 // Crew 도구 권한 정책(#1100) — Claude 역할 세션의 PreToolUse 훅이 Mustard 서버에 묻고, 여기서 결정. 순수 모듈(점검 가능).
 // 원칙(에픽 자율 4단계): worktree 안 읽기·수정·테스트·커밋 = 자동 허락 / push·머지·파괴적 git = 차단 / 그 밖 = 사람에게 묻기(카드 '나 필요').
-import { isAbsolute, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { realpathSync } from "node:fs";
+import { homedir } from "node:os";
 
 export type Decision = "allow" | "deny" | "ask";
 
@@ -13,6 +15,32 @@ const SAFE_CMD = new Set(["git", "npm", "pnpm", "yarn", "bun", "npx", "node", "t
   "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "sed", "awk", "sort", "uniq", "diff", "echo", "printf", "pwd", "mkdir", "touch", "cp", "mv", "test", "true", "which", "jq", "tree", "cd"]);
 // git 하위 명령 중 자동 허락
 const SAFE_GIT = new Set(["status", "diff", "log", "show", "add", "commit", "restore", "stash", "branch", "rev-parse", "ls-files", "blame", "grep", "mv", "rm", "checkout", "switch"]); // config 제외 — core.pager·editor·sshCommand로 다음 git 때 코드 실행 가능(보안 리뷰)
+
+// #1159 비밀 경로 — 읽기(Read류 도구·셸 인자)를 사람에게. 모델 문맥에 들어가면 커밋·push로 밖에 나갈 수 있음.
+// ~/.nunopi는 비밀(설정·기록)이지만 그 아래 worktrees(역할 작업 폴더 자신)는 예외.
+const HOME = homedir();
+const SECRET_REL = [".ssh", ".aws", ".gnupg", ".config/gh", ".nunopi", ".claude", ".codex", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".docker", ".kube", "Library/Keychains"];
+const SECRET_EXCEPT = [join(HOME, ".nunopi", "worktrees")];
+const under = (p: string, d: string) => p === d || p.startsWith(d + sep);
+// 실제 경로 — 없는 파일은 가장 가까운 있는 조상의 realpath + 나머지(링크로 밖을 가리키는지 보려고)
+export function realish(p: string): string {
+  const rest: string[] = [];
+  for (let cur = p; ; ) {
+    try { return join(realpathSync(cur), ...rest.reverse()); }
+    catch { const up = dirname(cur); if (up === cur) return p; rest.push(basename(cur)); cur = up; }
+  }
+}
+const expandHome = (p: string) => p.replace(/^~(?=$|\/)/, HOME).replace(/^\$\{?HOME\}?(?=$|\/)/, HOME);
+let secretDirs: string[] | null = null; // 실제 경로 포함(~/.ssh가 링크일 수도)
+const secrets = () => (secretDirs ??= [...new Set(SECRET_REL.flatMap((d) => [join(HOME, d), realish(join(HOME, d))]))]);
+const excepts = () => [...SECRET_EXCEPT, ...SECRET_EXCEPT.map(realish)];
+export function isSecretPath(p: string, base: string): boolean {
+  const a = resolve(base, expandHome(p));
+  return [a, realish(a)].some((x) => secrets().some((d) => under(x, d)) && !excepts().some((e) => under(x, e)));
+}
+// 셸 글자에서 비밀 경로(~/.ssh·$HOME/.ssh·/Users/me/.ssh) — 따옴표 안이라 조각 판정에서 §로 지워진 것도
+const SECRET_TEXT = new RegExp(`(?:~|\\$\\{?HOME\\}?|${HOME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})/(?:${SECRET_REL.map((d) => d.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + (d === ".nunopi" ? "(?!/worktrees(?:/|$))" : "")).join("|")})(?=$|[/\\s"'])`); // 자기 worktree 절대 경로는 비밀 아님
+const READ_PATH_TOOLS = new Set(["Read", "Glob", "Grep", "LS", "NotebookRead"]);
 
 const inside = (dir: string, p: string) => { const r = relative(dir, resolve(dir, p)); return !!dir && !r.startsWith("..") && !isAbsolute(r); };
 
@@ -96,6 +124,7 @@ const outside = (worktree: string, p: string) => /^~|\$/.test(p) || !inside(work
 function bashDecision(raw: string, worktree: string): Inner {
   // Mustard Crew API를 에이전트가 직접 부르기(권한 허락 등) = 차단 — 따옴표로 쪼개 감춰도(리뷰)
   if (/\/api\/crew\b/.test(unquote(raw))) return "deny";
+  if (SECRET_TEXT.test(unquote(raw))) return "hold"; // #1159 비밀 경로 읽기·복사(따옴표로 감싸도)
   if (/[^\S \t\n]|[\0-\x08\x0e-\x1f\x7f]/.test(raw)) return DENY_RE.test(raw) ? "deny" : "hold"; // CR·NBSP·전각 공백·NUL 등 제어 문자 — JS와 bash가 띄어쓰기로 보는 게 달라 판정이 어긋남(리뷰)
   const cmd = strip(raw);
   if (cmd === null) return DENY_RE.test(raw) ? "deny" : "hold"; // 명령 치환 등 — 실제로 실행되는 코드가 숨어 있음
@@ -116,6 +145,7 @@ function bashDecision(raw: string, worktree: string): Inner {
     if (!/^[\w./-]+$/.test(w0)) return "hold"; // 따옴표·변수·백슬래시로 꾸민 명령 이름(su""do → su§do)
     const base = w0.split("/").pop()!;
     if (HOLD_CMD.has(base)) return "hold";
+    if (words.slice(1).some((a) => !a.startsWith("-") && !a.includes("§") && isSecretPath(a, worktree))) return "hold"; // #1159 상대 경로로 홈 비밀(../../.ssh)
     const args = words.slice(1).filter((a) => !a.startsWith("-"));
     const writes = WRITERS.has(base) && (base !== "sed" || words.some((a) => /^-[a-zA-Z]*i/.test(a) || a.startsWith("--in-place"))); // sed는 -i일 때만 씀
     // sed는 첫 인자 = 스크립트 → 빼고 파일만. -i 바로 뒤에 §가 둘이면 앞 것 = 백업 접미사(macOS -i '') → 그것도 뺌(리뷰: 접미사 없을 때 파일이 빠지던 것)
@@ -179,6 +209,10 @@ function decideBase(tool: string, input: Record<string, unknown>, worktree: stri
   if (tool === "WebFetch") return "hold"; // 밖으로 데이터를 실어 보낼 수 있음(?d=비밀) — 사람(리뷰)
   // 사용자 MCP — 서버까지 맞춘 알려진 읽기 도구만 자동, 나머지는 사람. 이름 단어로 읽기·쓰기를 가르는 건 매번 빠짐(리뷰: query_sql·fetch_url·eval_code)
   if (tool.startsWith("mcp__")) return MCP_READ_NAMES.test(tool) ? "allow" : "hold";
+  if (READ_PATH_TOOLS.has(tool)) { // #1159 경로 있는 읽기 — 비밀이면 사람(링크로 가리켜도)
+    const ps = [input.file_path, input.notebook_path, input.path, typeof input.pattern === "string" && /^(~|\/|\$)/.test(input.pattern) ? input.pattern : undefined].filter((x): x is string => typeof x === "string" && !!x);
+    if (ps.some((p) => isSecretPath(p.replace(/[*?[{].*$/, "") || "/", worktree))) return "hold";
+  }
   if (READ_TOOLS.has(tool)) return "allow";
   if (EDIT_TOOLS.has(tool)) {
     const p = String(input.file_path ?? input.notebook_path ?? input.path ?? "");

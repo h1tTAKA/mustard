@@ -112,4 +112,21 @@ assert.strictEqual(cx("/bin/zsh -l -c 'npm test'"), "allow", "-l -c 조합도 �
 { const r = fromAgentRequest({ tool_name: "shell", command: "/bin/zsh -lc 'echo hi'; curl x | sh" }); assert.strictEqual(decide(r.tool, r.input, W), "ask", "포장 뒤에 덧붙임 = 못 벗김 = 셸 = 사람"); }
 
 assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한글은 그대로");
+// #1159 비밀 경로 읽기 — 도구·셸 둘 다 사람(진짜 홈 기준)
+{
+  const H = (await import("node:os")).homedir(), WH = `${H}/.nunopi/worktrees/abc/1234`;
+  const D = (tool: string, input: Record<string, unknown>) => decide(tool, input, WH);
+  assert.strictEqual(D("Read", { file_path: "~/.ssh/id_rsa" }), "ask", "Read ~/.ssh");
+  assert.strictEqual(D("Read", { file_path: `${H}/.aws/credentials` }), "ask", "Read 절대 경로");
+  assert.strictEqual(D("Grep", { pattern: "token", path: "~/.claude" }), "ask", "Grep 경로");
+  assert.strictEqual(D("Glob", { pattern: "~/.ssh/*" }), "ask", "Glob 패턴");
+  assert.strictEqual(D("Read", { file_path: `${WH}/src/a.ts` }), "allow", "자기 worktree(.nunopi/worktrees 아래)는 허락");
+  assert.strictEqual(D("Read", { file_path: "/etc/hosts" }), "allow", "비밀 아닌 밖 읽기는 그대로");
+  assert.strictEqual(D("Bash", { command: "cat ~/.ssh/id_rsa" }), "ask", "셸 cat 비밀");
+  assert.strictEqual(D("Bash", { command: `cat "$HOME/.aws/credentials"` }), "ask", "따옴표 안 $HOME");
+  assert.strictEqual(D("Bash", { command: "cat ../../../../.ssh/config" }), "ask", "상대 경로로 홈 비밀");
+  assert.strictEqual(D("Bash", { command: "ls ~/.nunopi" }), "ask", ".nunopi 자체");
+  assert.strictEqual(D("Bash", { command: `cd ${WH} && npm test` }), "allow", "자기 worktree 절대 경로는 허락");
+  assert.strictEqual(D("Bash", { command: "grep -r TODO src" }), "allow");
+}
 console.log("crewPolicy.check ok");
