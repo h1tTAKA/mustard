@@ -33,6 +33,7 @@ assert.strictEqual(classifyGhError({ stderr: "error connecting to api.github.com
 assert.strictEqual(classifyGhError({ stderr: "X Failed to log in to github.com account me (keyring)\n- The token in keyring is invalid.\n- To re-authenticate, run: gh auth login -h github.com" }).kind, "not-authed");
 assert.strictEqual(classifyGhError({ stderr: "HTTP 401: Bad credentials (https://api.github.com/rate_limit)" }).kind, "not-authed");
 assert.notStrictEqual(classifyGhError({ message: "Command failed: gh search prs no such host" }).kind, "offline", "실행 인자(검색어)는 안 봄");
+assert.strictEqual(classifyGhError({ killed: true, signal: "SIGTERM", stderr: "", message: "Command failed: gh auth status" }).kind, "offline", "시간 초과는 인증 문구보다 먼저 offline");
 
 // authDiagnose + probe — 가짜 gh(auth status는 늘 로그인 실패 문구, api는 MODE에 따라)
 (async () => {

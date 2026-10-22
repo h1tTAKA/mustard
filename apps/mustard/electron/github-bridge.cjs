@@ -10,6 +10,8 @@ const { tm } = require("./main-i18n.cjs"); // #1095 사용자 노출 문구 다�
 // gh 에러 분류 — UI가 "설치 필요/인증 필요/rate limit" 등 안내를 그릴 수 있게.
 function classifyGhError(e) {
   if (e?.code === "ENOENT") return { kind: "not-installed", detail: tm("gh.notInstalled") };
+  // #1151 시간 초과(응답 없음) = 연결 안 됨 — stderr가 비면 message("Command failed: gh auth status …")가 인증 문구로 잡혀 로그인 필요로 오분류(리뷰)
+  if (e?.killed) return { kind: "offline", detail: tm("gh.offline") };
   const s = String(e?.stderr || e?.message || "").toLowerCase();
   // #1151 인터넷 끊김 — 인증 검사보다 먼저(오프라인 gh 오류엔 "gh auth login" 안내가 섞여 나와 로그인 필요로 오분류됐음).
   // gh가 낸 오류 글(stderr)에서만 — message엔 실행 인자(검색어 등)가 들어 있어 오판(리뷰).
