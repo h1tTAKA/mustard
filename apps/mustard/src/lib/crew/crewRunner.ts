@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, w
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { getSnaClient } from "@mustard/core/sna";
 import { applyOp, patchTask, readBoard } from "./crewStore";
 import { childProgress, decideGate, next, parseHandoff, pickListener, pipelineOf, waitingOn, type Handoff } from "./crewFlow";
@@ -15,6 +15,8 @@ import { getRole, listRoles } from "./crewRoleStore";
 import { crewProtocol, type CrewRole } from "./crewRoleDefaults";
 import { ensureWorktree, worktreeFor } from "./crewWorktree";
 import { decide, fromAgentRequest } from "./crewPolicy";
+import { sandboxSettings } from "./crewSandbox";
+import { readSettings } from "./crewSettings";
 import { narrationLocale } from "@/lib/narrationConfig";
 import { defaultSnaModel } from "@mustard/nunopi/server";
 import { translate } from "@mustard/core/messages";
@@ -34,10 +36,14 @@ export interface CrewRun {
   state: RunState; startedAt: number; endedAt?: number;
   lastActivity?: string; toolCount: number; tokens?: { input: number; output: number }; costUsd?: number;
   summary?: string; error?: string; permission?: { request: Record<string, unknown>; at: number };
+  auto?: boolean; // #1157 시작할 때 보드 Auto였음(Claude는 이때 샌드박스로 띄움)
 }
 
 export const MAX_CONCURRENT = 3; // 동시 실행 상한(에픽 결정 기본값). SNA 세션 상한은 Electron에서 8로.
 const ACTIVE: RunState[] = ["starting", "running", "needs-permission"];
+// #1157 지금 이 실행에 Auto 판정을 쓸지 — 시작할 때 켜져 있었고(= Claude는 샌드박스 안) 지금도 켜져 있을 때만.
+// 도중에 끄면 바로 묻기로 돌아감(샌드박스는 그대로라 안전 쪽). 도중에 켜도 이미 샌드박스 없이 시작한 실행은 자동 안 함.
+const autoNow = (run: CrewRun) => !!run.auto && readSettings(run.root).auto;
 const LANG: Record<string, string> = { ko: "Korean", ja: "Japanese", en: "English" };
 // 금지 — 규약에도 적지만 도구 차단으로 한 번 더(push·머지·브랜치 삭제·강제 리셋)
 const DISALLOWED = ["Bash(git push:*)", "Bash(git merge:*)", "Bash(git branch -D:*)", "Bash(git branch -d:*)", "Bash(git reset --hard:*)", "Bash(git worktree remove:*)"];
@@ -88,7 +94,7 @@ function writeHook() { mkdirSync(baseDir(), { recursive: true }); writeFileSync(
 export async function hookDecision(runId: string, token: string, tool: string, input: Record<string, unknown>): Promise<{ decision: "allow" | "deny"; reason?: string }> {
   const run = g.runs.get(runId);
   if (!run || g.tokens.get(runId) !== token || !ACTIVE.includes(run.state)) return { decision: "deny", reason: "unknown or finished run" };
-  const d = decide(tool, input ?? {}, run.worktree);
+  const d = decide(tool, input ?? {}, run.worktree, { auto: autoNow(run) });
   if (d === "allow") return { decision: "allow" };
   if (d === "deny") { run.lastActivity = `⛔ ${tool} blocked by policy`; persist(run); return { decision: "deny", reason: "Blocked by Mustard Crew policy (push/merge/destructive git are human-only)" }; }
   if (g.pending.has(runId)) return { decision: "deny", reason: "another permission is pending" };
@@ -283,7 +289,7 @@ async function wire() {
     if (run.state === "needs-permission") return;
     const req = (request ?? {}) as Record<string, unknown>;
     const { tool, input } = fromAgentRequest(req);
-    const d = decide(tool, input, run.worktree);
+    const d = decide(tool, input, run.worktree, { auto: autoNow(run) }); // Codex는 이미 OS 샌드박스(workspace-write)
     if (d !== "ask") {
       run.lastActivity = d === "allow" ? `⚙ ${tool}` : `⛔ ${tool} blocked by policy`;
       persist(run);
@@ -365,6 +371,12 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     g.bySession.set(sessionId, run.id);
     await sna.agent.subscribe(sessionId);
     const isClaude = role.provider === "claude-code";
+    // #1157 Auto — Claude는 Claude Code 자체 OS 샌드박스로(쓰기 worktree+원 레포 .git, 비밀 읽기·네트워크 제한). Codex는 SNA가 이미 workspace-write.
+    // OpenCode·그 밖은 샌드박스를 못 씌우니 Auto여도 묻기(auto 판정 안 씀).
+    run.auto = readSettings(root).auto && (isClaude || role.provider === "codex");
+    const sandbox = run.auto && isClaude
+      ? sandboxSettings({ worktree: wt.dir, gitDir: (await pexecFile("git", ["-C", wt.dir, "rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout.trim(), home: homedir(), tmp: tmpdir() })
+      : {};
     const token = randomUUID();
     g.tokens.set(run.id, token);
     if (isClaude) writeHook();
@@ -377,11 +389,11 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
       // Codex: SNA 기본은 작업 폴더마다 .sna/codex-home에 로그인 정보를 복사 → 리프레시 토큰은 한 번 쓰면 무효라 복사본끼리 서로 깨뜨림
       // (라이브 테스트: "refresh token was already used", 사용자 CLI 로그인까지 깨질 위험) → 사용자 원래 CODEX_HOME 하나를 공유(#1108).
       ...(role.provider === "codex" ? { configDir: process.env.CODEX_HOME?.trim() || join(homedir(), ".codex") } : {}),
-      ...(isClaude ? { providerOptions: { settings: { hooks: { PreToolUse: [{ matcher: ".*", hooks: [{ type: "command", command: `node "${hookPath()}" --url=${origin} --run=${run.id} --token=${token}`, timeout: 900 }] }] } } } } : {}),
+      ...(isClaude ? { providerOptions: { settings: { ...sandbox, hooks: { PreToolUse: [{ matcher: ".*", hooks: [{ type: "command", command: `node "${hookPath()}" --url=${origin} --run=${run.id} --token=${token}`, timeout: 900 }] }] } } } } : {}),
       disallowedTools: DISALLOWED,
       meta: { crew: true, runId: run.id },
     });
-    run.state = "running"; run.lastActivity = "started";
+    run.state = "running"; run.lastActivity = run.auto ? "started (auto, sandboxed)" : "started";
     persist(run, true);
     say(root, { from: role.id, provider: role.provider, kind: "start", taskId, taskTitle: task.title, ...tx(note ? "crewchat.restart" : "crewchat.start", { card: task.title }) });
   } catch (e) {
