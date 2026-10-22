@@ -1010,6 +1010,7 @@ export default function SettingsDrawer({
                   const st = ghAuth?.state;
                   const badge = st === "ok" ? { txt: t("settings.ghConnected"), cls: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" }
                     : st === "not-authed" ? { txt: t("settings.ghNotAuthed"), cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400" }
+                    : st === "offline" ? { txt: t("settings.ghOffline"), cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400" } // #1151 인터넷 끊김(로그인과 같은 주의 색)
                     : st === "not-installed" ? { txt: t("settings.ghNotInstalled"), cls: "bg-zinc-500/15 text-zinc-500 dark:text-zinc-400" }
                     : st ? { txt: t("settings.ghError"), cls: "bg-rose-500/15 text-rose-600 dark:text-rose-400" }
                     : { txt: "…", cls: "bg-zinc-500/15 text-zinc-500" };
@@ -1052,6 +1053,7 @@ export default function SettingsDrawer({
                   const st = glabAuth?.state;
                   const badge = st === "ok" ? { txt: t("settings.ghConnected"), cls: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" }
                     : st === "not-authed" ? { txt: t("settings.ghNotAuthed"), cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400" }
+                    : st === "offline" ? { txt: t("settings.ghOffline"), cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400" } // #1151 인터넷 끊김(로그인과 같은 주의 색)
                     : st === "not-installed" ? { txt: t("settings.glabNotInstalled"), cls: "bg-zinc-500/15 text-zinc-500 dark:text-zinc-400" }
                     : st ? { txt: t("settings.ghError"), cls: "bg-rose-500/15 text-rose-600 dark:text-rose-400" }
                     : { txt: "…", cls: "bg-zinc-500/15 text-zinc-500" };
