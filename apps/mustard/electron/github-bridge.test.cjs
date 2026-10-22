@@ -40,6 +40,7 @@ assert.notStrictEqual(classifyGhError({ message: "Command failed: gh search prs 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-gh-"));
   const gh = path.join(dir, "gh");
   fs.writeFileSync(gh, `#!/bin/sh
+if [ "$1" = auth ] && [ "$MODE" = hangauth ]; then sleep 20; fi
 if [ "$1" = auth ]; then echo "X Failed to log in to github.com account me (keyring)" >&2; echo "- To re-authenticate, run: gh auth login -h github.com" >&2; exit 1; fi
 case "$MODE" in
   offline) echo 'Get "https://api.github.com/rate_limit": dial tcp: lookup api.github.com: no such host' >&2; exit 1;;
@@ -53,6 +54,8 @@ esac
     assert.strictEqual((await run("offline")).state, "offline", "인터넷 끊김 = 연결 안 됨");
     assert.strictEqual((await run("ok")).state, "not-authed", "API 돼도 ok로 안 바꿈(다른 호스트 로그인 풀림 가릴 수 있음, 리뷰)");
     assert.strictEqual((await run("hang")).state, "offline", "응답 없음(시간 초과) = 연결 안 됨");
+    const t0 = Date.now(); const h = await run("hangauth");
+    assert.ok(h.state === "offline" && !h.detail && Date.now() - t0 < 12000, "auth status부터 시간 초과면 probe 없이 바로(8초 한 번), detail 없음");
     assert.strictEqual((await run("401")).state, "not-authed", "진짜 로그인 풀림");
     assert.strictEqual((await run("offline", null)).state, "not-authed", "probe 없으면(glab) 그대로");
     console.log("github-bridge.test ok");

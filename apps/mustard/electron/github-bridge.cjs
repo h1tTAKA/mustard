@@ -45,13 +45,15 @@ async function ghJson({ gh, cwd, args, env }) {
 // 인증 진단 — { state: "ok"|"not-installed"|"not-authed"|"rate-limited"|"error", detail? }.
 // env에 GH_TOKEN 주입되면(#826) gh auth status가 그 토큰으로 exit 0 → ok.
 // #1151 probe(gh만) — 오프라인 gh auth status는 네트워크 말 없이 "token invalid, gh auth login"만 냄 → 로그인 필요(또는 시간 초과)면 API를 한 번 더(rate_limit = 호출 한도 안 잡힘):
-// 네트워크 오류·시간 초과면 offline, 그 밖엔 원래 판정 그대로. probe가 성공해도 ok로 바꾸지 않음 — 기본 호스트만 묻는 거라 다른 호스트(GHE) 로그인 풀림을 가림(리뷰).
+// probe가 네트워크 오류·시간 초과면 offline, 그 밖엔 원래 판정 그대로. probe가 성공해도 ok로 바꾸지 않음 — 기본 호스트만 묻는 거라 다른 호스트(GHE) 로그인 풀림을 가림(리뷰).
 async function authDiagnose({ gh, cwd, env, probe }) {
   const r = await ghRun({ gh, cwd, args: ["auth", "status"], timeout: 8000, env });
   if (r.ok) return { state: "ok" };
-  if ((r.kind === "not-authed" || r.timedOut) && probe) {
+  // offline은 detail 없이 — 화면 제목이 같은 말을 함(두 번 안 보이게, 리뷰). auth status부터 시간 초과면 probe 없이 바로(8초 + 8초 대기 방지, 리뷰).
+  if (r.kind === "offline" || r.timedOut) return { state: "offline" };
+  if (r.kind === "not-authed" && probe) {
     const p = await ghRun({ gh, cwd, args: probe, timeout: 8000, env });
-    if (!p.ok && (p.kind === "offline" || p.timedOut)) return { state: "offline", detail: tm("gh.offline") };
+    if (!p.ok && (p.kind === "offline" || p.timedOut)) return { state: "offline" };
   }
   return { state: r.kind, detail: r.detail };
 }
