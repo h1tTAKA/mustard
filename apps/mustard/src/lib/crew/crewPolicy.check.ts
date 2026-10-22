@@ -129,4 +129,28 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   assert.strictEqual(D("Bash", { command: `cd ${WH} && npm test` }), "allow", "자기 worktree 절대 경로는 허락");
   assert.strictEqual(D("Bash", { command: "grep -r TODO src" }), "allow");
 }
+// #1159 쓰기 — 링크로 밖, worktree 안 보호 파일
+{
+  const fs = await import("node:fs"), os = await import("node:os"), path = await import("node:path");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "policy-"));
+  const wt = path.join(tmp, "wt"), outsideFile = path.join(tmp, "zshrc");
+  fs.mkdirSync(path.join(wt, "src"), { recursive: true }); fs.writeFileSync(outsideFile, "");
+  fs.symlinkSync(outsideFile, path.join(wt, "rc")); fs.symlinkSync(tmp, path.join(wt, "up"));
+  const E = (file_path: string) => decide("Edit", { file_path }, wt);
+  const B = (command: string) => decide("Bash", { command }, wt);
+  try {
+    assert.strictEqual(E(path.join(wt, "src/a.ts")), "allow", "보통 파일");
+    assert.strictEqual(E(path.join(wt, "src/new.ts")), "allow", "없는 새 파일");
+    assert.strictEqual(E(path.join(wt, "rc")), "ask", "링크가 밖 파일");
+    assert.strictEqual(E(path.join(wt, "up/zshrc")), "ask", "링크 폴더 너머 새 경로");
+    for (const f of [".claude/settings.json", ".mcp.json", ".npmrc", ".envrc", ".git", ".git/config", ".husky/pre-commit", "pkg/.npmrc", ".vscode/tasks.json"])
+      assert.strictEqual(E(path.join(wt, f)), "ask", `보호 파일: ${f}`);
+    assert.strictEqual(E(path.join(wt, "src/claude.ts")), "allow", "비슷한 이름은 괜찮음");
+    assert.strictEqual(B("echo x > rc"), "ask", "셸 리다이렉트로 링크");
+    assert.strictEqual(B("echo '{}' > .mcp.json"), "ask", "셸로 보호 파일");
+    assert.strictEqual(B("cp a.json .claude/settings.json"), "ask", "cp로 보호 파일");
+    assert.strictEqual(B("echo x > src/out.txt"), "allow", "셸 보통 쓰기");
+    assert.strictEqual(decide("apply_patch", { patch: "*** Begin Patch\n*** Add File: .npmrc\n+x\n*** End Patch" }, wt), "ask", "Codex 패치로 보호 파일");
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
 console.log("crewPolicy.check ok");

@@ -120,6 +120,16 @@ function quoteStateAt(c: string, idx: number): boolean {
 const unquote = (raw: string) => raw.replace(/\$'/g, "'").replace(/\\(.)/g, "$1").replace(/["']/g, "");
 // 경로 인자가 worktree 밖(~·$·절대·..)인가
 const outside = (worktree: string, p: string) => /^~|\$/.test(p) || !inside(worktree, p);
+// #1159 worktree 안이어도 쓰면 안 되는 것 — 다음 역할 시작·사람의 git·npm이 샌드박스 없이 읽고 실행(훅·MCP 서버·설정)
+const PROTECTED_DIRS = new Set([".git", ".claude", ".codex", ".cursor", ".vscode", ".husky", ".githooks"]);
+const PROTECTED_FILES = new Set([".mcp.json", ".npmrc", ".yarnrc", ".yarnrc.yml", ".envrc"]);
+// 쓰기 판정 — 글자상 밖이거나, 실제 경로(링크 따라감)가 밖이거나, 보호 파일이면 안 됨
+function unsafeWrite(worktree: string, p: string): boolean {
+  if (outside(worktree, p)) return true;
+  const segs = relative(worktree, resolve(worktree, p)).split(sep);
+  if (segs.some((x) => PROTECTED_DIRS.has(x)) || PROTECTED_FILES.has(segs[segs.length - 1])) return true;
+  return !under(realish(resolve(worktree, p)), realish(worktree)); // worktree 안 링크가 ~/.zshrc 등을 가리킴
+}
 
 function bashDecision(raw: string, worktree: string): Inner {
   // Mustard Crew API를 에이전트가 직접 부르기(권한 허락 등) = 차단 — 따옴표로 쪼개 감춰도(리뷰)
@@ -133,7 +143,7 @@ function bashDecision(raw: string, worktree: string): Inner {
   if (/[(){}]/.test(c)) return "hold"; // 서브셸·그룹·함수
   // 리다이렉트로 쓰기 — worktree 밖(~·$ 포함)이면 hold
   const outRedirect = [...c.matchAll(/(?:&?>{1,2}&?|>\|)\s*([^\s|&;]+)/g)].map((m) => m[1]); // >&파일 = 출력·에러를 파일로(리뷰)
-  if (outRedirect.some((p) => p !== "/dev/null" && (p.includes("§") || outside(worktree, p)))) return "hold"; // 따옴표 경로는 확인 불가
+  if (outRedirect.some((p) => p !== "/dev/null" && (p.includes("§") || unsafeWrite(worktree, p)))) return "hold"; // 따옴표 경로는 확인 불가
   let res: Inner = "allow";
   // 연결(&&, ||, ;, |, &, 줄바꿈) 단위로 나눠 각 부분 확인
   for (const part of c.split(/&&|\|\||[;|&\n]/)) {
@@ -151,7 +161,7 @@ function bashDecision(raw: string, worktree: string): Inner {
     // sed는 첫 인자 = 스크립트 → 빼고 파일만. -i 바로 뒤에 §가 둘이면 앞 것 = 백업 접미사(macOS -i '') → 그것도 뺌(리뷰: 접미사 없을 때 파일이 빠지던 것)
     const sedArgs = (() => { const w = words.slice(1); const k = w.findIndex((a) => /^-[a-zA-Z]*i$/.test(a)); return k >= 0 && w[k + 1] === "§" && w[k + 2] === "§" ? [...w.slice(0, k + 1), ...w.slice(k + 2)] : w; })();
     const files = base !== "sed" ? args : (words.some((a) => /^(-e|--expression|-f)/.test(a)) ? sedArgs.filter((a) => !a.startsWith("-")) : sedArgs.filter((a) => !a.startsWith("-")).slice(1));
-    if (writes && files.some((a) => a.includes("§") || outside(worktree, a))) return "hold"; // 따옴표 경로는 확인 불가 → 사람
+    if (writes && files.some((a) => a.includes("§") || unsafeWrite(worktree, a))) return "hold"; // 따옴표 경로는 확인 불가 → 사람
     if (base === "cd" && words[1] && (words[1].includes("§") || outside(worktree, words[1]))) return "hold";
     if (base === "find" && words.some((a) => /^-(exec|execdir|ok|okdir|delete|fprint)/.test(a))) return "hold";
     // 인터프리터 — 인라인 코드(-e0·--eval=·--import·--require), 파이프·heredoc으로 받은 코드(스크립트 파일 없음)는 사람(리뷰)
@@ -216,9 +226,9 @@ function decideBase(tool: string, input: Record<string, unknown>, worktree: stri
   if (READ_TOOLS.has(tool)) return "allow";
   if (EDIT_TOOLS.has(tool)) {
     const p = String(input.file_path ?? input.notebook_path ?? input.path ?? "");
-    return p && !outside(worktree, p) ? "allow" : "hold"; // worktree 밖 수정 = 사람(셸 설정·자동 실행 파일 보호)
+    return p && !unsafeWrite(worktree, p) ? "allow" : "hold"; // worktree 밖·링크로 밖·보호 파일 수정 = 사람(셸 설정·자동 실행 파일 보호)
   }
-  if (tool === "apply_patch") { const ps = patchPaths(input); return ps.length && ps.every((p) => !outside(worktree, p)) ? "allow" : "hold"; }
+  if (tool === "apply_patch") { const ps = patchPaths(input); return ps.length && ps.every((p) => !unsafeWrite(worktree, p)) ? "allow" : "hold"; }
   if (tool === "Bash") return bashDecision(String(input.command ?? ""), worktree);
   return "hold"; // 모르는 도구 — 사람
 }
