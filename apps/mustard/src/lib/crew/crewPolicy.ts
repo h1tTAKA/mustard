@@ -153,8 +153,20 @@ function bashDecision(raw: string, worktree: string): Inner {
   return res;
 }
 
-export function decide(tool: string, input: Record<string, unknown>, worktree: string): Decision {
+// #1157 Auto('전부 알아서') — OS 샌드박스(crewSandbox) 위에서만 켬. 셸(Bash)의 묻기·hold → 허락(쓰기·비밀 읽기·네트워크·앱 실행은 OS가 막음, 실측).
+// 그래도: deny는 그대로 + 따옴표·셸 안에 숨긴 금지 명령도 deny(`bash -c "git push"` — 정규식은 따옴표 걷은 글자만 봤음) +
+// 샌드박스가 못 막는 통로(실측: osascript=다른 앱 조종, security=키체인)와 권한 상승·원격 셸·gh는 묻기.
+// 셸 아닌 도구(worktree 밖 Edit·WebFetch·쓰기 MCP·모르는 도구)는 샌드박스 밖이라 auto여도 그대로 묻기.
+// ponytail: 글자 검사는 돌려 쓰기(g=git; $g push)를 못 막음 → push·PR은 네트워크(github.com·api 차단, crewSandbox)가 실제 경계.
+const AUTO_ASK = /(^|[^\w.-])(osascript|security|sudo|doas|su|ssh|scp|sftp|gh)(?=$|[^\w.-])/;
+export function decide(tool: string, input: Record<string, unknown>, worktree: string, opts: { auto?: boolean } = {}): Decision {
   const d = decideBase(tool, input, worktree);
+  if (d === "deny") return "deny";
+  if (opts.auto && tool === "Bash" && d !== "allow") {
+    const text = unquote(String(input.command ?? ""));
+    if (DENY_RE.test(text) || /\/api\/crew\b/.test(text)) return "deny";
+    return AUTO_ASK.test(text) ? "ask" : "allow";
+  }
   return d === "hold" ? "ask" : d;
 }
 

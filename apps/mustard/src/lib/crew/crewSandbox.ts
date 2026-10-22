@@ -3,10 +3,11 @@
 // 실측(10-22, Claude Code 2.1.306)은 crewSandbox.check.ts 머리 주석.
 import { join } from "node:path";
 
-// 패키지 설치·GitHub 받기만(유저 결정). push·gh 같은 쓰기는 정책(deny·hold)이 따로 막음.
+// 패키지 설치 + GitHub 다운로드 전용 주소만(유저 결정). github.com·api.github.com은 뺌 — push·PR·gh API가 거기로 가서,
+// 글자 검사로 못 막는 돌려 쓰기(g=git; $g push, python으로 git)도 네트워크에서 막힘. 대신 샌드박스 안 git clone/fetch 안 됨.
 export const ALLOWED_DOMAINS = [
   "registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org",
-  "github.com", "api.github.com", "codeload.github.com", "objects.githubusercontent.com", "raw.githubusercontent.com",
+  "codeload.github.com", "objects.githubusercontent.com", "raw.githubusercontent.com",
 ];
 
 // 비밀·설정 — 셸이 읽어서 밖으로 실어 나르지 못하게(네트워크 허용 목록에 GitHub가 있으니 읽기 자체를 막음)
