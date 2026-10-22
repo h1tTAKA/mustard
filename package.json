@@ -14,6 +14,7 @@
     "lint": "npm run lint --workspace apps/mustard",
     "build": "npm run build --workspace apps/mustard",
     "dev": "npm run dev --workspace apps/mustard",
-    "electron:dev": "npm run electron:dev --workspace apps/mustard"
+    "electron:dev": "npm run electron:dev --workspace apps/mustard",
+    "check": "node scripts/run-checks.mjs"
   }
 }
