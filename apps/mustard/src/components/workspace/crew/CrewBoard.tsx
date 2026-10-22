@@ -3,7 +3,7 @@
 // 이번 단계: 칸 7개 + 수동 카드(만들기·편집·삭제·드래그) + 담당 역할 지정. 에이전트 실행·커스텀 역할은 에픽 2번부터.
 // 보드는 서버 파일(~/.nunopi/crew)이 기준 — 화면은 연산만 보내고 돌아온 보드로 갱신(창 여러 개여도 덮어쓰기 없음).
 import { useCallback, useEffect, useState } from "react";
-import { IconBolt, IconClockPause, IconCornerDownRight, IconGitPullRequest, IconSubtask, IconLayoutKanban, IconPlus, IconShieldQuestion, IconUsers, IconX } from "@tabler/icons-react";
+import { IconBolt, IconShield, IconShieldCheck, IconClockPause, IconCornerDownRight, IconGitPullRequest, IconSubtask, IconLayoutKanban, IconPlus, IconShieldQuestion, IconUsers, IconX } from "@tabler/icons-react";
 import { useConfirm, useT, useToast } from "@mustard/core";
 import { CREW_STATUSES, type CrewBoard as Board, type CrewOp, type CrewStatus, type CrewTask } from "@/lib/crew/crewTypes";
 import { relTime } from "@/lib/relTime";
@@ -29,6 +29,26 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
   const [rolesOpen, setRolesOpen] = useState(false);
   const [trigOpen, setTrigOpen] = useState(false);
   const [roles, setRoles] = useCrewRoles();
+  // #1157 Auto('전부 알아서') — 레포 보드별. 켜면 다음에 시작하는 Claude·Codex 역할이 OS 샌드박스 안에서 셸 명령을 묻지 않고 실행.
+  const [auto, setAuto] = useState(false);
+  const [autoBusy, setAutoBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/crew/settings?root=${encodeURIComponent(root)}`).then((r) => r.json()).then((j) => { if (alive && j?.ok) setAuto(!!j.settings?.auto); }).catch(() => {});
+    return () => { alive = false; };
+  }, [root]);
+  const toggleAuto = async () => {
+    if (autoBusy) return;
+    const next = !auto;
+    if (next && !(await confirm({ title: t("crew.autoConfirmTitle"), message: t("crew.autoConfirmMsg"), detail: t("crew.autoConfirmDetail"), confirmText: t("crew.autoConfirmOk"), tone: "warn" }))) return;
+    setAutoBusy(true);
+    try {
+      const j = await (await fetch("/api/crew/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, auto: next }) })).json();
+      if (!j?.ok) throw new Error(j?.error);
+      setAuto(!!j.settings.auto);
+    } catch { toast(t("crew.autoFailed"), "error"); }
+    finally { setAutoBusy(false); }
+  };
   const [drag, setDrag] = useState<string | null>(null); // 끌고 있는 카드 id
   const [over, setOver] = useState<{ status: CrewStatus; index: number } | null>(null); // 놓일 자리(칸·순번, 끄는 카드 뺀 기준)
 
@@ -111,6 +131,10 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
         <button type="button" onClick={() => setTrigOpen(true)} title={t("crewtrig.title")}
           className="flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
           <IconBolt size={13} stroke={2} aria-hidden />{t("crewtrig.button")}
+        </button>
+        <button type="button" onClick={() => void toggleAuto()} disabled={autoBusy} aria-pressed={auto} title={t(auto ? "crew.autoTitleOn" : "crew.autoTitleOff")}
+          className={`flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-medium transition disabled:opacity-50 ${auto ? "bg-mustard-500/15 text-mustard-700 hover:bg-mustard-500/25 dark:text-mustard-400" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
+          {auto ? <IconShieldCheck size={13} stroke={2} aria-hidden /> : <IconShield size={13} stroke={2} aria-hidden />}{t("crew.auto")}
         </button>
         <button type="button" onClick={() => setRolesOpen(true)} title={t("crew.rolesTitle")}
           className="flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
