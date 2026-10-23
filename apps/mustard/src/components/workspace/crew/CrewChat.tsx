@@ -36,7 +36,9 @@ const DECISION_KEYS = ["crewchat.decision.approve", "crewchat.decision.retry"];
 export default function CrewChat({ root }: { root: string }) {
   const t = useT();
   // #1125 보드·시스템 메시지는 키로 지금 언어 번역(옛 메시지는 text를 틀과 맞춰 다시 번역), 사람이 친 말은 그대로(키 없는 옛 승인 버튼 문구만 — 고정 문장 통째 일치)
-  const msgText = (m: CrewMsg) => (m.i18n ? t(m.i18n.key, m.i18n.vars) + (m.i18n.suffix ?? "") : m.from === "human" ? (m.kind === "decision" ? relocalize(m.text, DECISION_KEYS, t) : m.text) : relocalize(m.text, CREW_TEXT_KEYS, t));
+  // #1162 권한 요청의 명령은 `…` 안에 들어감 — 여러 줄(heredoc)·` 가 있으면 코드 표시가 깨져 # 줄이 제목으로 렌더됨 → 한 줄(⏎)·' 로(저장된 옛 글도 여기서)
+  const permTool = (v: Record<string, unknown>) => ({ ...v, tool: String(v.tool ?? "").replace(/\s*\n\s*/g, " ⏎ ").replace(/`/g, "'") });
+  const msgText = (m: CrewMsg) => (m.i18n ? t(m.i18n.key, m.kind === "permission" && m.i18n.vars ? permTool(m.i18n.vars) : m.i18n.vars) + (m.i18n.suffix ?? "") : m.from === "human" ? (m.kind === "decision" ? relocalize(m.text, DECISION_KEYS, t) : m.text) : relocalize(m.text, CREW_TEXT_KEYS, t));
   const toast = useToast();
   const [roles, setRoles] = useCrewRoles();
   const [runs, reloadRuns] = useCrewRuns(root, () => {});
@@ -239,8 +241,7 @@ export default function CrewChat({ root }: { root: string }) {
                     )}
                     <div className="flex items-end gap-1.5">
                       <div className={`min-w-0 break-words rounded-2xl px-3 py-1.5 text-[12.5px] leading-relaxed ${first ? "rounded-tl-md" : ""} ${loud ? (m.kind === "blocked" ? "bg-rose-50 text-rose-900 ring-1 ring-rose-300/60 dark:bg-rose-500/10 dark:text-rose-100 dark:ring-rose-500/30" : "bg-amber-50 text-amber-900 ring-1 ring-amber-300/60 dark:bg-amber-500/10 dark:text-amber-100 dark:ring-amber-500/30") : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200/70 dark:bg-white/[0.07] dark:text-zinc-100 dark:ring-white/5"}`}>
-                        {/* 권한 요청 = `명령` 한 줄로(여러 줄 명령이면 코드 표시가 깨져 # 줄이 제목으로 렌더됨 — 이미 저장된 옛 글도) */}
-                        {renderMd(m.kind === "permission" ? msgText(m).replace(/\s*\n\s*/g, " ⏎ ") : msgText(m))}
+                        {renderMd(msgText(m))}
                       </div>
                       <span className="flex shrink-0 flex-col items-start gap-0.5 pb-0.5">
                         {m.taskId && (
