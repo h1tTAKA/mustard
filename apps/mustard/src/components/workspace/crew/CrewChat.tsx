@@ -217,7 +217,7 @@ export default function CrewChat({ root }: { root: string }) {
                 </div>
               ) : isMe ? (
                 /* 나 — 오른쪽 옅은 겨자 말풍선(진한 겨자는 글자가 안 읽힘, #1135 유저) */
-                <div className={`flex flex-col items-end ${first ? "mt-2.5" : "mt-0.5"}`}>
+                <div className={`flex flex-col items-end ${first ? "mt-2.5" : "mt-1"}`}>
                   {parent && <div className="mb-0.5 max-w-[80%] truncate text-[10.5px] text-zinc-400"><IconArrowBackUp size={10} className="mr-0.5 inline" aria-hidden />{who(parent.from)}: {msgText(parent).slice(0, 60)}</div>}
                   <div className="flex max-w-[85%] items-end gap-1.5">
                     {last && <span className="shrink-0 pb-0.5 text-[9.5px] tabular-nums text-zinc-400">{time(m.ts)}</span>}
@@ -227,7 +227,7 @@ export default function CrewChat({ root }: { root: string }) {
                 </div>
               ) : (
                 /* 에이전트 — 왼쪽 아바타·이름·말풍선 */
-                <div className={`group/msg flex gap-2 ${first ? "mt-2.5" : "mt-0.5"}`}>
+                <div className={`group/msg flex gap-2 ${first ? "mt-2.5" : "mt-1"}`}>
                   <div className="w-8 shrink-0">{first && <Avatar from={m.from} known={known} />}</div>
                   <div className="flex min-w-0 max-w-[85%] flex-col items-start">
                     {first && (
@@ -239,7 +239,8 @@ export default function CrewChat({ root }: { root: string }) {
                     )}
                     <div className="flex items-end gap-1.5">
                       <div className={`min-w-0 break-words rounded-2xl px-3 py-1.5 text-[12.5px] leading-relaxed ${first ? "rounded-tl-md" : ""} ${loud ? (m.kind === "blocked" ? "bg-rose-50 text-rose-900 ring-1 ring-rose-300/60 dark:bg-rose-500/10 dark:text-rose-100 dark:ring-rose-500/30" : "bg-amber-50 text-amber-900 ring-1 ring-amber-300/60 dark:bg-amber-500/10 dark:text-amber-100 dark:ring-amber-500/30") : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200/70 dark:bg-white/[0.07] dark:text-zinc-100 dark:ring-white/5"}`}>
-                        {renderMd(msgText(m))}
+                        {/* 권한 요청 = `명령` 한 줄로(여러 줄 명령이면 코드 표시가 깨져 # 줄이 제목으로 렌더됨 — 이미 저장된 옛 글도) */}
+                        {renderMd(m.kind === "permission" ? msgText(m).replace(/\s*\n\s*/g, " ⏎ ") : msgText(m))}
                       </div>
                       <span className="flex shrink-0 flex-col items-start gap-0.5 pb-0.5">
                         {m.taskId && (

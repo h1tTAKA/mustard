@@ -98,7 +98,7 @@ export async function hookDecision(runId: string, token: string, tool: string, i
   run.state = "needs-permission"; run.permission = { request: { tool_name: tool, tool_input: input }, at: Date.now() };
   moveCard(run.root, run.taskId, "needs-you");
   persist(run, true);
-  say(run.root, { from: run.role, provider: run.provider, kind: "permission", taskId: run.taskId, mentions: ["you"], ...tx("crewchat.permission", { tool: `${tool}${input.command ? `: ${String(input.command).slice(0, 200)}` : ""}` }) });
+  say(run.root, { from: run.role, provider: run.provider, kind: "permission", taskId: run.taskId, mentions: ["you"], ...tx("crewchat.permission", { tool: `${tool}${input.command ? `: ${String(input.command).replace(/`/g, "'").slice(0, 200)}` : ""}` }) });
   const ok = await new Promise<boolean>((res) => {
     const timer = setTimeout(() => { // 10분 무응답 = 거절, 카드는 다시 실행 중으로(보안 리뷰)
       g.pending.delete(runId);
@@ -329,7 +329,7 @@ async function wire() {
     moveCard(run.root, run.taskId, "needs-you");
     persist(run, true);
     const cmd = typeof input.command === "string" ? input.command : "";
-    say(run.root, { from: run.role, provider: run.provider, kind: "permission", taskId: run.taskId, mentions: ["you"], ...tx("crewchat.permission", { tool: `${tool}${cmd ? `: ${cmd.slice(0, 200)}` : ""}` }) });
+    say(run.root, { from: run.role, provider: run.provider, kind: "permission", taskId: run.taskId, mentions: ["you"], ...tx("crewchat.permission", { tool: `${tool}${cmd ? `: ${cmd.replace(/`/g, "'").slice(0, 200)}` : ""}` }) });
   });
   await sna.agent.subscribePermissions().catch(() => {});
 }
