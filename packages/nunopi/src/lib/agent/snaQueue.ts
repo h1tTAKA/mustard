@@ -26,12 +26,13 @@ export async function acquireSnaSlot(signal?: AbortSignal, priority = false): Pr
 export async function* abortable<T>(src: AsyncIterable<T>, signal?: AbortSignal): AsyncGenerator<T> {
   if (!signal) { yield* src; return; }
   const it = src[Symbol.asyncIterator]();
+  let f = () => {};
   const stop = new Promise<never>((_, rej) => {
-    const f = () => rej(new Error("Analysis cancelled."));
+    f = () => rej(new Error("Analysis cancelled."));
     if (signal.aborted) f(); else signal.addEventListener("abort", f, { once: true });
   });
   stop.catch(() => {});
   try {
     for (;;) { const r = await Promise.race([it.next(), stop]); if (r.done) return; yield r.value; }
-  } finally { void it.return?.(undefined)?.catch(() => {}); }
+  } finally { signal.removeEventListener("abort", f); void it.return?.(undefined)?.catch(() => {}); } // return은 멈춘 next 뒤에 줄 섬 — 연결 닫기는 최선만
 }

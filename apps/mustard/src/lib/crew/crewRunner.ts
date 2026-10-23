@@ -34,6 +34,7 @@ export interface CrewRun {
   state: RunState; startedAt: number; endedAt?: number;
   lastActivity?: string; toolCount: number; tokens?: { input: number; output: number }; costUsd?: number;
   summary?: string; error?: string; permission?: { request: Record<string, unknown>; at: number };
+  runningAt?: number; // #1162 SNA에 시작을 맡긴 때(준비 시간은 '안 뜸' 3분에 안 셈)
   lastEventAt?: number; // #1162 에이전트에게서 마지막으로 신호(이벤트·권한 요청)가 온 때 — 멈춤 감시
 }
 
@@ -101,7 +102,7 @@ export async function hookDecision(runId: string, token: string, tool: string, i
   const ok = await new Promise<boolean>((res) => {
     const timer = setTimeout(() => { // 10분 무응답 = 거절, 카드는 다시 실행 중으로(보안 리뷰)
       g.pending.delete(runId);
-      if (run.state === "needs-permission") { run.state = "running"; run.permission = undefined; run.lastActivity = "permission timed out (denied)"; moveCard(run.root, run.taskId, "running"); persist(run, true); }
+      if (run.state === "needs-permission") { run.state = "running"; run.permission = undefined; run.lastEventAt = Date.now(); run.lastActivity = "permission timed out (denied)"; moveCard(run.root, run.taskId, "running"); persist(run, true); }
       res(false);
     }, 10 * 60_000);
     g.pending.set(runId, { resolve: (v) => { clearTimeout(timer); g.pending.delete(runId); res(v); }, timer });
@@ -233,17 +234,23 @@ function ensureTicker() {
 }
 // #1162 멈춘 실행 감시 — SNA에 시작을 맡겼는데 에이전트가 아예 안 뜨거나(10-23 실제: 대화 기록 없이 2시간 'started') 도중에 소식이 끊김.
 // 시작 후 3분 동안 신호가 한 번도 없거나, 신호가 오다가 20분 끊기면 실패로 → 기존 흐름이 다시 시도(3번이면 막힘). 사람 답 기다리는 중(needs-permission)은 제외.
+// 준비(worktree·세션 만들기)가 20분 넘게 안 끝나도 같은 처리. 20분 = Claude 도구 하나의 상한(Bash 최대 10분)보다 넉넉히 — 조용한 긴 도구는 안 죽임.
 const NEVER_STARTED_MS = 3 * 60_000, STALLED_MS = 20 * 60_000;
 function watchStalls(now = Date.now()) {
   for (const run of g.runs.values()) {
-    if (run.state !== "running") continue;
-    const never = !run.lastEventAt && now - run.startedAt > NEVER_STARTED_MS;
+    if (run.state !== "running" && run.state !== "starting") continue;
+    const never = !run.lastEventAt && (run.state === "starting" ? now - run.startedAt > STALLED_MS : now - (run.runningAt ?? run.startedAt) > NEVER_STARTED_MS);
     const stalled = !!run.lastEventAt && now - run.lastEventAt > STALLED_MS;
     if (!never && !stalled) continue;
     run.state = "failed"; run.endedAt = now; run.error = tr(never ? "crew.reason.neverStarted" : "crew.reason.stalled");
-    if (run.sessionId) void getSnaClient().then((c) => c.agent.kill(run.sessionId!)).catch(() => {}); // 자리 반납
-    finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘), 이유는 finish가 대화방에
     persist(run, true);
+    // 옛 에이전트를 먼저 끄고(최대 10초) 재시도 — 같은 worktree에서 둘이 돌지 않게(리뷰)
+    const sid = run.sessionId;
+    void (async () => {
+      if (sid) await Promise.race([getSnaClient().then((c) => c.agent.kill(sid)).catch(() => {}), new Promise((r) => setTimeout(r, 10_000))]);
+      finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘), 이유는 finish가 대화방에
+      persist(run, true);
+    })();
   }
 }
 export function registerRoot(root: string, origin?: string) {
@@ -401,10 +408,12 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
       disallowedTools: DISALLOWED,
       meta: { crew: true, runId: run.id },
     });
-    run.state = "running"; run.lastActivity = "started";
+    if (run.state !== "starting") { void sna.agent.kill(sessionId).catch(() => {}); return run; } // #1162 준비가 너무 길어 감시가 이미 실패 처리 — 늦게 뜬 에이전트는 끔
+    run.state = "running"; run.lastActivity = "started"; run.runningAt = Date.now();
     persist(run, true);
     say(root, { from: role.id, provider: role.provider, kind: "start", taskId, taskTitle: task.title, ...tx(note ? "crewchat.restart" : "crewchat.start", { card: task.title }) });
   } catch (e) {
+    if (run.state !== "starting") return run; // #1162 감시가 이미 실패 처리(재시도 중)
     run.state = "failed"; run.endedAt = Date.now(); run.error = oneLine(String((e as Error)?.message ?? e), 400);
     block(root, taskId, stage, run.error); // 시작 자체 실패(worktree·SNA)는 재시도 안 함 — 사람이 확인
     persist(run, true);
@@ -433,7 +442,7 @@ export async function respondPermission(root: string, taskId: string, approved: 
   if (!hook && !run.sessionId) throw new Error("no pending permission");
   // #1137 상태를 먼저(동기) 바꿈 — 기다리는 동안 두 번째 클릭이 같은 세션에 또 답하지 않게(리뷰). SNA 실패면 되돌림.
   const prev = run.permission;
-  run.state = "running"; run.permission = undefined;
+  run.state = "running"; run.permission = undefined; run.lastEventAt = Date.now(); // 사람 기다린 시간은 멈춤으로 안 셈(리뷰)
   if (hook) hook.resolve(approved); // Claude — Mustard 훅이 기다리는 중
   else {
     try { await (await getSnaClient()).agent.respondPermission(run.sessionId!, approved); } // Codex·OpenCode — SNA 승인
