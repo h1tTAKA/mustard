@@ -77,13 +77,69 @@ function shellSecret(raw: string, worktree: string): boolean {
   }
   return false;
 }
+// 셸 토막 — 따옴표('…' "…" \)를 지키며 낱말로, 연결 기호(; & | 줄바꿈)는 따로. sed 스크립트를 정확히 뽑으려고.
+function shWords(raw: string): string[] {
+  const out: string[] = []; let cur = "", q: string | null = null, has = false;
+  const push = () => { if (has) out.push(cur); cur = ""; has = false; };
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (q === "'") { if (c === "'") q = null; else cur += c; continue; }
+    if (q === '"') { if (c === '"') q = null; else if (c === "\\" && i + 1 < raw.length) cur += raw[++i]; else cur += c; continue; }
+    if (c === "'" || c === '"') { q = c; has = true; continue; }
+    if (c === "\\" && i + 1 < raw.length) { cur += raw[++i]; has = true; continue; }
+    if (/\s/.test(c)) { if (c === "\n") { push(); out.push(";"); } else push(); continue; }
+    if (c === ";" || c === "&" || c === "|") { push(); out.push(c); continue; }
+    cur += c; has = true;
+  }
+  push();
+  return out;
+}
+// sed 허락 목록 — 모든 sed 호출의 스크립트가 s<구분자>찾기<구분자>바꾸기<구분자>[gIp숫자] 또는 주소 없는 p·d 하나씩일 때만.
+// w·W·e·r·R·{…}·여러 명령(;)·주소 붙은 명령은 전부 사람(쓰기·셸 실행이 숨는 곳).
+const SED_OPTS = /^(-n|-E|-r|-s|-u|-z|--quiet|--silent|--regexp-extended|--separate|--null-data|-i\S*|--in-place(=\S*)?)$/;
+// 주소(줄 번호·$·/정규식/, 범위 a,b)는 s·p·d 앞에만. 주소 뒤에 w·e 같은 다른 명령이 오면 안 맞음.
+const SED_ADDR = String.raw`(?:\d+|\$|\/(?:\\.|[^\/\n])*\/)`;
+const SED_SCRIPT = new RegExp(String.raw`^(?:${SED_ADDR}(?:,${SED_ADDR})?)?(?:s([^\w\s\\])(?:\\.|(?!\1)[^\n])*\1(?:\\.|(?!\1)[^\n])*\1[gIp0-9]*|[pd])$`);
+function sedSafe(raw: string): boolean {
+  const w = shWords(raw);
+  for (let i = 0; i < w.length; i++) {
+    if (w[i].split("/").pop() !== "sed") continue;
+    const scripts: string[] = []; let k = i + 1, sawScript = false;
+    for (; k < w.length && ![";", "&", "|"].includes(w[k]); k++) {
+      const a = w[k];
+      if (a === "-e" || a === "--expression") { scripts.push(w[++k] ?? ""); sawScript = true; continue; }
+      if (a.startsWith("--expression=")) { scripts.push(a.slice(13)); sawScript = true; continue; }
+      if (a.startsWith("-e") && a.length > 2) { scripts.push(a.slice(2)); sawScript = true; continue; }
+      if (a === "-i" && w[k + 1] === "") { k++; continue; } // macOS sed -i '' (빈 백업 접미사)
+      if (a.startsWith("-")) { if (!SED_OPTS.test(a)) return false; continue; }
+      if (!sawScript) { scripts.push(a); sawScript = true; } // 첫 낱말 = 스크립트, 나머지 = 파일
+    }
+    if (!scripts.length || !scripts.every((x) => SED_SCRIPT.test(x.trim()))) return false;
+  }
+  return true;
+}
+// glob → 정규식(*·?·[..]·{a,b}) — 대표 비밀 파일 이름에 맞아떨어지는지 직접 시험(*.env·{.env,x}·.e[n]v·id_* 등, 리뷰)
+const SECRET_SAMPLES = [".env", ".env.local", ".env.production", "id_rsa", "id_ed25519", "server.pem", "private.key", "cert.p12", ".npmrc", ".netrc", ".pypirc", "credentials.json", "service-account.json", ".git-credentials"];
+function globHitsSecret(glob: string): boolean {
+  const last = glob.split("/").pop() ?? glob;
+  if (!/[*?[{]/.test(last)) return false;
+  let re = "";
+  for (let i = 0; i < last.length; i++) {
+    const c = last[i];
+    if (c === "*") re += "[^/]*"; else if (c === "?") re += "[^/]";
+    else if (c === "[") { const e = last.indexOf("]", i + 1); if (e < 0) { re += "\\["; continue; } re += "[" + last.slice(i + 1, e).replace(/^!/, "^").replace(/\\/g, "\\\\") + "]"; i = e; }
+    else if (c === "{") { const e = last.indexOf("}", i + 1); if (e < 0) { re += "\\{"; continue; } re += "(" + last.slice(i + 1, e).split(",").map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\*/g, "[^/]*")).join("|") + ")"; i = e; }
+    else re += c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  try { const r = new RegExp(`^${re}$`, FOLD ? "i" : ""); return SECRET_SAMPLES.some((n) => r.test(n)); } catch { return true; } // 못 읽는 패턴 = 막는 쪽
+}
 // 경로 있는 읽기 도구 — 도구마다 경로 칸이 다름(Grep pattern은 검색어라 제외, glob은 경로). 와일드카드 앞 고정 부분으로 판정.
 const READ_PATH_FIELDS: Record<string, string[]> = { Read: ["file_path"], NotebookRead: ["notebook_path"], LS: ["path"], Glob: ["path", "pattern"], Grep: ["path", "glob"] };
 function toolSecret(tool: string, input: Record<string, unknown>, worktree: string): boolean {
   for (const k of READ_PATH_FIELDS[tool] ?? []) {
     const v = input[k];
     if (typeof v !== "string" || !v) continue;
-    if ([v, v.replace(/[*?]/g, "x")].some((x) => SECRET_TEXT.test(x) || SECRET_NAMES.test(x) || PROJECT_SECRET.test(x))) return true; // glob *.pem도(리뷰)
+    if (SECRET_TEXT.test(v) || SECRET_NAMES.test(v) || PROJECT_SECRET.test(v) || globHitsSecret(v)) return true; // glob은 비밀 이름에 맞는지 직접(리뷰)
     const head = v.replace(/[*?[{].*$/, "");
     const stat = head === v ? v : head.replace(/[^/]*$/, "") || "."; // 와일드카드 있으면 그 조각 앞 폴더까지만(/Users/x/.s*/ → /Users/x/)
     if (isSecretPath(stat, worktree) || coversHome(stat, worktree)) return true;
@@ -215,7 +271,8 @@ function bashDecision(raw: string, worktree: string): Inner {
     const sedArgs = (() => { const w = words.slice(1); const k = w.findIndex((a) => /^-[a-zA-Z]*i$/.test(a)); return k >= 0 && w[k + 1] === "§" && w[k + 2] === "§" ? [...w.slice(0, k + 1), ...w.slice(k + 2)] : w; })();
     const files = base !== "sed" ? args : (words.some((a) => /^(-e|--expression|-f)/.test(a)) ? sedArgs.filter((a) => !a.startsWith("-")) : sedArgs.filter((a) => !a.startsWith("-")).slice(1));
     if (writes && files.some((a) => a.includes("§") || unsafeWrite(worktree, a))) return "hold"; // 따옴표 경로는 확인 불가 → 사람
-    if (base === "cd" && (!words[1] || words[1] === "-" || words[1].includes("§") || outside(worktree, words[1]) || !under(realish(resolve(worktree, words[1])), realish(worktree)))) return "hold"; // 링크 폴더로 cd(리뷰)
+    const dest = base === "cd" ? words.slice(1).find((a) => a !== "--" && !/^-[LPe@]+$/.test(a)) : undefined; // cd -P·cd -- = 목적지 없음 = 홈(리뷰)
+    if (base === "cd" && (!dest || dest === "-" || dest.includes("§") || outside(worktree, dest) || !under(realish(resolve(worktree, dest)), realish(worktree)))) return "hold"; // 링크 폴더로 cd(리뷰)
     if (base === "find" && words.some((a) => /^-(exec|execdir|ok|okdir|delete|fprint|fls)/.test(a))) return "hold"; // -fprint0·-fprintf·-fls = 파일로 씀
     // 다른 명령을 대신 실행하는 옵션 — 안전한 명령에 붙여 금지 명령을 돌림(git grep -O'sh -c "git push"', rg --pre, sort --compress-program, 리뷰)
     if (words.slice(1).some((a) => /^(-O|--open-files-in-pager|--pre(=|$)|--pre-glob|--compress-program|--exec|--command)/.test(a))) return "hold";
@@ -230,12 +287,7 @@ function bashDecision(raw: string, worktree: string): Inner {
     // 결과를 파일로 쓰는 옵션(sort -o, git diff --output=, mv --target-directory= …) — 사람(리뷰)
     if (words.some((a) => /^(--output|--target-directory|--out-file)\b/.test(a)) || ((base === "sort" || base === "tree") && words.includes("-o")) || (base === "uniq" && args.length > 1)) return "hold";
     // sed 스크립트의 w(파일 쓰기)·e(실행) — 따옴표 안이라 원문에서 확인(리뷰)
-    // sed 쓰기·실행 — 따옴표 걷은 명령 전체에서(따옴표 없는 스크립트도, 리뷰). ① 단독 w파일(빈칸 없이도) ② 주소 뒤 /re/w파일 ③ s///의 w·e 플래그(e = 셸 실행) ④ e 명령.
-    // /window/p 같은 주소 정규식·s/x/world/ 같은 치환 내용은 아님(구획을 세어 플래그만 봄).
-    if (base === "sed") {
-      const sc = unquote(raw).slice(unquote(raw).search(/\bsed\b/) + 3);
-      if (/(^|[;\s}!$\d,])[wW]\s*\S|\/[wW](\s+\S|\/)|\bs([^\w\s\\])(?:\\.|(?!\3).)*?\3(?:\\.|(?!\3).)*?\3[gpiImM0-9]*[wWe]|(^|[;\s}!$\d,])e(\s|;|$)/.test(sc)) return "hold";
-    }
+    if (base === "sed" && !sedSafe(raw)) return "hold"; // #1159 sed는 허락 목록(평범한 s///·p·d만) — 위험한 꼴을 찾아 막기는 계속 샘(리뷰 4번)
     if (base === "git") {
       const sub = words[1] ?? "";
       if (sub && !/^[a-z][a-z-]*$/.test(sub)) return "hold"; // -c·-C·변수 — 설정 주입·우회

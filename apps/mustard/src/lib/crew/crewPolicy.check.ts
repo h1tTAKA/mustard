@@ -215,6 +215,15 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   assert.strictEqual(B("ls .next/*"), "allow", "점 폴더 아래 와일드카드는 괜찮음");
   assert.strictEqual(decide("Grep", { pattern: "PRIVATE", glob: "*.pem" }, WH), "ask", "Grep glob *.pem");
   assert.strictEqual(decide("Grep", { pattern: "x", glob: "*.ts" }, WH), "allow");
+  // 4차 리뷰 — sed 허락 목록·cd 옵션·glob 시험
+  for (const c of ["sed -n '/x/wout.txt' README.md", "sed -n '\\%x%w /tmp/o' README.md", "sed -n '1{w /tmp/zz\n}' README.md", "sed '/x/e git push' README.md", "sed -f evil.sed README.md", "sed 's/a/b/;w /tmp/x' f", "sed -e 's/a/b/' -e 'w /tmp/x' f", "sed 'r /etc/passwd' f"])
+    assert.strictEqual(B(c), "ask", `sed 허락 목록 밖: ${c}`);
+  for (const c of ["sed -i 's/x/ world/' README.md", "sed -n 's/a/b/p' web/index.ts", "sed -i 's|a|b|g' README.md", "sed -e 's/x/y/' -e 's/a/b/g' f", "sed -E 's/(a)/\\1/' f", "sed -n p f", "cat f | sed 's/a/b/'"])
+    assert.strictEqual(B(c), "allow", `평범한 sed: ${c}`);
+  for (const c of ["cd -P && echo x >> .zprofile", "cd -- && echo x >> .zprofile"]) assert.strictEqual(B(c), "ask", `목적지 없는 cd: ${c}`);
+  assert.strictEqual(B("cd -P packages/x && npm test"), "allow", "옵션 + 목적지 있는 cd");
+  for (const g of ["*.env", "{.env,x}", ".e[n]v", "id_*", "*.npmrc", "**/*.pem"]) assert.strictEqual(decide("Grep", { pattern: "x", glob: g }, WH), "ask", `Grep glob: ${g}`);
+  assert.strictEqual(decide("Glob", { pattern: "src/**/*.{ts,tsx}" }, WH), "allow", "평범한 Glob");
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "policy2-")));
   const wt = path.join(tmp, "wt"); fs.mkdirSync(path.join(wt, ".git", "hooks"), { recursive: true });
   fs.symlinkSync(path.join(tmp, "not-yet", "zshrc"), path.join(wt, "dangling")); // 대상 없는 링크
