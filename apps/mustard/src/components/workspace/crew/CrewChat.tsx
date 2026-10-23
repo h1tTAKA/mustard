@@ -38,7 +38,7 @@ export default function CrewChat({ root }: { root: string }) {
   // #1125 보드·시스템 메시지는 키로 지금 언어 번역(옛 메시지는 text를 틀과 맞춰 다시 번역), 사람이 친 말은 그대로(키 없는 옛 승인 버튼 문구만 — 고정 문장 통째 일치)
   // #1162 권한 요청의 명령은 `…` 안에 들어감 — 여러 줄(heredoc)·` 가 있으면 코드 표시가 깨져 # 줄이 제목으로 렌더됨 → 한 줄(⏎)·' 로(저장된 옛 글도 여기서)
   const permTool = (v: Record<string, unknown>) => ({ ...v, tool: String(v.tool ?? "").replace(/\s*\n\s*/g, " ⏎ ").replace(/`/g, "'") });
-  const msgText = (m: CrewMsg) => (m.i18n ? t(m.i18n.key, m.kind === "permission" && m.i18n.vars ? permTool(m.i18n.vars) : m.i18n.vars) + (m.i18n.suffix ?? "") : m.from === "human" ? (m.kind === "decision" ? relocalize(m.text, DECISION_KEYS, t) : m.text) : relocalize(m.text, CREW_TEXT_KEYS, t));
+  const msgText = (m: CrewMsg) => (m.i18n ? t(m.i18n.key, m.kind === "permission" && m.i18n.vars ? permTool(m.i18n.vars) : m.i18n.vars) + (m.i18n.suffix ?? "") : m.from === "human" ? (m.kind === "decision" ? relocalize(m.text, DECISION_KEYS, t) : m.text) : m.kind === "permission" ? relocalize(m.text, CREW_TEXT_KEYS, t).replace(/\s*\n\s*/g, " ⏎ ") : relocalize(m.text, CREW_TEXT_KEYS, t)); // 키 없는 옛 권한 글은 줄만 한 줄로
   const toast = useToast();
   const [roles, setRoles] = useCrewRoles();
   const [runs, reloadRuns] = useCrewRuns(root, () => {});
