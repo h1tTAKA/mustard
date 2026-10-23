@@ -119,6 +119,7 @@ function reconcile(root: string) {
   for (const r of runs) {
     if (ACTIVE.includes(r.state) && !g.runs.has(r.id)) {
       r.state = "failed"; r.error = tr("crew.reason.interrupted"); r.endedAt = Date.now(); changed = true;
+      if (r.sessionId) (g.stale ??= new Map()).set(`${root}\n${r.taskId}`, r.sessionId); // #1162 SNA는 앱보다 오래 삶 — 다음 시작 전에 끔(없으면 no_session)
       block(root, r.taskId, r.stage ?? 0, tr("crew.reason.interrupted"));
     }
   }
@@ -248,13 +249,14 @@ function watchStalls(now = Date.now()) {
     run.state = "failed"; run.endedAt = now; run.error = tr(never ? "crew.reason.neverStarted" : "crew.reason.stalled");
     persist(run, true);
     // 옛 에이전트를 확실히 끈 뒤에만 재시도 — 10초 안에 못 끄면 사람에게(같은 worktree에서 둘이 돌지 않게, 리뷰)
-    const sid = run.sessionId;
+    const sid = run.sessionId, key = `${run.root}\n${run.taskId}`;
+    if (sid) (g.stale ??= new Map()).set(key, sid); // 끄는 10초 사이에 사람이 다시 실행해도 startRun이 먼저 끄게(리뷰)
     void (async () => {
       const killed = !sid || await Promise.race([getSnaClient().then((c) => c.agent.kill(sid)).then(() => true, () => false), new Promise<boolean>((r) => setTimeout(() => r(false), 10_000))]);
+      if (killed && g.stale?.get(key) === sid) g.stale?.delete(key); // 못 끈 세션만 남겨 다음 시작 전에 다시 끔
       // 준비 중 멈춤은 재시도 안 함 — 걸린 agent.start가 나중에 풀려 새 실행과 겹칠 수 있음(리뷰)
       if (killed && !wasStarting) finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘), 이유는 finish가 대화방에
       else {
-        if (!killed && sid) (g.stale ??= new Map()).set(`${run.root}\n${run.taskId}`, sid); // 못 끈 세션 — 다음 시작 전에 다시 끔
         block(run.root, run.taskId, run.stage ?? 0, run.error!);
       }
       persist(run, true);
