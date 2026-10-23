@@ -34,6 +34,7 @@ export interface CrewRun {
   state: RunState; startedAt: number; endedAt?: number;
   lastActivity?: string; toolCount: number; tokens?: { input: number; output: number }; costUsd?: number;
   summary?: string; error?: string; permission?: { request: Record<string, unknown>; at: number };
+  lastEventAt?: number; // #1162 에이전트에게서 마지막으로 신호(이벤트·권한 요청)가 온 때 — 멈춤 감시
 }
 
 export const MAX_CONCURRENT = 3; // 동시 실행 상한(에픽 결정 기본값). SNA 세션 상한은 Electron에서 8로.
@@ -88,6 +89,7 @@ function writeHook() { mkdirSync(baseDir(), { recursive: true }); writeFileSync(
 export async function hookDecision(runId: string, token: string, tool: string, input: Record<string, unknown>): Promise<{ decision: "allow" | "deny"; reason?: string }> {
   const run = g.runs.get(runId);
   if (!run || g.tokens.get(runId) !== token || !ACTIVE.includes(run.state)) return { decision: "deny", reason: "unknown or finished run" };
+  run.lastEventAt = Date.now();
   const d = decide(tool, input ?? {}, run.worktree);
   if (d === "allow") return { decision: "allow" };
   if (d === "deny") { run.lastActivity = `⛔ ${tool} blocked by policy`; persist(run); return { decision: "deny", reason: "Blocked by Mustard Crew policy (push/merge/destructive git are human-only)" }; }
@@ -210,6 +212,7 @@ function ensureTicker() {
       g.trigBusy = true;
       void (async () => { for (const root of g.roots) if (hasTriggers(root)) await checkTriggers(root).catch(() => {}); })().finally(() => { g.trigBusy = false; });
     }
+    watchStalls();
     for (const root of g.roots) {
       let ready: { id: string }[] = [];
       try {
@@ -228,6 +231,21 @@ function ensureTicker() {
     }
   }, 2000);
 }
+// #1162 멈춘 실행 감시 — SNA에 시작을 맡겼는데 에이전트가 아예 안 뜨거나(10-23 실제: 대화 기록 없이 2시간 'started') 도중에 소식이 끊김.
+// 시작 후 3분 동안 신호가 한 번도 없거나, 신호가 오다가 20분 끊기면 실패로 → 기존 흐름이 다시 시도(3번이면 막힘). 사람 답 기다리는 중(needs-permission)은 제외.
+const NEVER_STARTED_MS = 3 * 60_000, STALLED_MS = 20 * 60_000;
+function watchStalls(now = Date.now()) {
+  for (const run of g.runs.values()) {
+    if (run.state !== "running") continue;
+    const never = !run.lastEventAt && now - run.startedAt > NEVER_STARTED_MS;
+    const stalled = !!run.lastEventAt && now - run.lastEventAt > STALLED_MS;
+    if (!never && !stalled) continue;
+    run.state = "failed"; run.endedAt = now; run.error = tr(never ? "crew.reason.neverStarted" : "crew.reason.stalled");
+    if (run.sessionId) void getSnaClient().then((c) => c.agent.kill(run.sessionId!)).catch(() => {}); // 자리 반납
+    finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘), 이유는 finish가 대화방에
+    persist(run, true);
+  }
+}
 export function registerRoot(root: string, origin?: string) {
   g.roots.add(root);
   if (origin) g.origin = safeOrigin(origin);
@@ -243,6 +261,7 @@ async function wire() {
     if (isHistory) return;
     const id = g.bySession.get(session); const run = id ? g.runs.get(id) : undefined;
     if (!run || !ACTIVE.includes(run.state)) return;
+    run.lastEventAt = Date.now();
     const type = String(event.type ?? ""), msg = typeof event.message === "string" ? event.message : "";
     const data = (event.data ?? {}) as Record<string, unknown>;
     if (type === "tool_use") {
@@ -278,6 +297,7 @@ async function wire() {
   sna.agent.onPermissionRequest(({ session, request, createdAt }) => {
     const id = g.bySession.get(session); const run = id ? g.runs.get(id) : undefined;
     if (!run) return;
+    run.lastEventAt = Date.now();
     if (!ACTIVE.includes(run.state)) { void sna.agent.respondPermission(session, false).catch(() => {}); return; } // 끝난 실행 — 거절(매달려 있지 않게)
     // 사람 답을 기다리는 요청이 이미 있음 — SNA 응답엔 요청 id가 없어, 지금 자동으로 답하면 사람이 볼 그 요청에 답이 가버림(리뷰). 사람 답이 먼저.
     if (run.state === "needs-permission") return;
