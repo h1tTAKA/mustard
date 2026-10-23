@@ -406,6 +406,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     g.bySession.set(sessionId, run.id);
     if (run.state !== "starting") { void sna.agent.kill(sessionId).catch(() => {}); return run; } // #1162 준비 중에 감시가 실패 처리 — 시작하지 않음
     persist(run, true); // 세션 번호를 바로 기록 — agent.start 도중 앱이 꺼져도 다음 시작이 이 세션을 끔(리뷰)
+    // ponytail: agent.start가 20분 넘게 걸렸다가 사람이 다시 실행한 뒤에야 풀리면, 아래 상태 확인이 끌 때까지 잠깐 둘이 겹칠 수 있음 — 실제로 보이면 옛 startRun을 기다렸다 시작
     await sna.agent.subscribe(sessionId);
     const isClaude = role.provider === "claude-code";
     const token = randomUUID();
