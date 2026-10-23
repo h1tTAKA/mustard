@@ -20,7 +20,7 @@ import { defaultSnaModel } from "@mustard/nunopi/server";
 import { translate } from "@mustard/core/messages";
 import { appendMsg, findMsg, parseMentions, readMsgs, type CrewMsg } from "./crewChat";
 import { snaClaudeProvider, snaCodexProvider, snaOpenCodeProvider } from "@mustard/nunopi/server";
-import { callsEveryone, pickParticipants, planFromWrapUp, readAnswer, readJson } from "./crewMeeting";
+import { callsEveryone, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting";
 import { isFailedNote } from "@/lib/failText";
 import { freshIds, hasTriggers, readTriggers, scheduleDue, writeTriggers, type CrewTrigger } from "./crewTriggers";
 import { emitNarration } from "@/lib/mcpActivity";
@@ -502,9 +502,18 @@ function failReason(e: unknown): string {
 // 역할에게 묻되, Claude가 아닌 AI가 실패하면 Claude로 한 번 더(대화방에 이유와 함께 알림). 그래도 실패면 throw(이유 담김).
 // failed = 이번 글 처리에서 이미 실패한 AI — 다음 역할부턴 바로 Claude, 알림도 한 번만(리뷰: 같은 AI 역할 여럿이면 알림·헛호출 반복).
 async function askOrFallback(root: string, role: CrewRole, prompt: string, replyTo: string, failed: Set<string>): Promise<{ text: string; provider: string }> {
-  const viaClaude = async () => { try { return { text: await ask({ ...role, provider: "claude-code", model: "" }, prompt), provider: "claude-code" }; } catch (e2) { throw new Error(failReason(e2)); } };
+  // #1162 시간 초과면 같은 AI에게 한 번 더(일시적으로 느린 것 — 대화방에 알림). 두 번째도 실패면 그대로 던짐.
+  const askRetry = async (r: CrewRole) => {
+    try { return await ask(r, prompt); }
+    catch (e) {
+      if (!/timeout/i.test(String((e as Error)?.message ?? e))) throw e;
+      say(root, { from: "board", kind: "blocked", replyTo, ...tx("crewchat.retrying", { role: roleLabel(r.id) }) });
+      return await ask(r, prompt);
+    }
+  };
+  const viaClaude = async () => { try { return { text: await askRetry({ ...role, provider: "claude-code", model: "" }), provider: "claude-code" }; } catch (e2) { throw new Error(failReason(e2)); } };
   if (role.provider !== "claude-code" && failed.has(role.provider)) return viaClaude();
-  try { return { text: await ask(role, prompt), provider: role.provider }; }
+  try { return { text: await askRetry(role), provider: role.provider }; }
   catch (e) {
     const why = failReason(e);
     if (role.provider === "claude-code") throw new Error(why);
@@ -514,16 +523,14 @@ async function askOrFallback(root: string, role: CrewRole, prompt: string, reply
   }
 }
 
-// 역할 하나에게 한 번 묻기 — 역할의 AI·모델, 90초(신호만으론 조용히 멈춘 CLI가 안 끊김 → 타이머와 경주, 재리뷰). 실패면 throw.
+// 역할 하나에게 한 번 묻기 — 역할의 AI·모델. #1162 사람이 기다리는 답이라 SNA 줄 맨 앞(priority), 타이머는 '무진행 90초 + 전체 4분'
+// (스트림 글자·추론이 오면 다시 셈 — 조용히 멈춘 CLI는 그대로 끊김). 실패면 throw.
 async function ask(role: CrewRole, prompt: string): Promise<string> {
   const provider = ANALYZE[role.provider] ?? snaClaudeProvider;
   const pid = AGENT_ID[role.provider] ?? "claude-agent";
-  const ac = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const res = await Promise.race([provider.analyze({ locale: narrationLocale(), providerId: pid, mode: "crew", code: prompt, messages: [{ role: "user", content: prompt }],
+  const res = await withIdleTimeout((touch, signal) => provider.analyze({ locale: narrationLocale(), providerId: pid, mode: "crew", code: prompt, messages: [{ role: "user", content: prompt }],
     ...(role.model?.trim() && (role.provider === "claude-code" || ANALYZE[role.provider]) ? { providerSettings: { [pid]: { model: role.model.trim() } } } : {}) } as Parameters<typeof provider.analyze>[0], // 다른 AI(grok·cursor)는 Claude로 → 그 모델 id는 안 맞음
-    { signal: ac.signal }),
-    new Promise<never>((_, rej) => { timer = setTimeout(() => { ac.abort(); rej(new Error("timeout")); }, 90_000); })]).finally(() => clearTimeout(timer));
+    { signal, onProgress: touch, onThinking: touch, priority: true }), 90_000, 240_000);
   // chat 모드는 학습 카드 블록(```nunopi-cards …```)을 붙임 — 대화방 답엔 필요 없음, 어디 있든 전부 뺌(안 닫힌 건 끝까지)(앱 확인)
   const text = (res?.summary ?? "").replace(/```nunopi-cards[\s\S]*?(```|$)/g, "").trim();
   if (!text || isFailedNote(text)) throw new Error(text || "empty");

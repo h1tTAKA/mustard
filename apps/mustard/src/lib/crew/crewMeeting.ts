@@ -48,3 +48,16 @@ export function planFromWrapUp(j: Record<string, unknown> | null, request: strin
 
 // @all·@everyone — 모든 역할 부르기
 export const callsEveryone = (text: string) => /(^|\s)@(all|everyone)\b/i.test(text);
+
+// #1162 무진행 타이머 — 일이 움직이는 동안(touch)은 기다리고, idleMs 동안 아무 진행이 없거나 전체가 maxMs를 넘으면 끊음(abort + "timeout").
+// (전체 90초 고정은 SNA 줄 서는 시간·긴 답 쓰는 시간까지 세서, 앱 켠 직후 캐치업 자동 설명 뒤에 섰을 때 끊겼음.)
+export function withIdleTimeout<T>(run: (touch: () => void, signal: AbortSignal) => Promise<T>, idleMs: number, maxMs: number): Promise<T> {
+  const ac = new AbortController();
+  let idle: ReturnType<typeof setTimeout> | undefined, hard: ReturnType<typeof setTimeout> | undefined;
+  return new Promise<T>((res, rej) => {
+    const fail = () => { ac.abort(); rej(new Error("timeout")); };
+    const touch = () => { if (ac.signal.aborted) return; clearTimeout(idle); idle = setTimeout(fail, idleMs); };
+    touch(); hard = setTimeout(fail, maxMs);
+    run(touch, ac.signal).then(res, rej);
+  }).finally(() => { clearTimeout(idle); clearTimeout(hard); });
+}
