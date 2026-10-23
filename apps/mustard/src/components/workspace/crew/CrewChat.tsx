@@ -219,7 +219,7 @@ export default function CrewChat({ root }: { root: string }) {
                 </div>
               ) : isMe ? (
                 /* 나 — 오른쪽 옅은 겨자 말풍선(진한 겨자는 글자가 안 읽힘, #1135 유저) */
-                <div className={`flex flex-col items-end ${first ? "mt-2.5" : "mt-1"}`}>
+                <div className={`flex flex-col items-end ${first ? "mt-3" : "mt-2"}`}>
                   {parent && <div className="mb-0.5 max-w-[80%] truncate text-[10.5px] text-zinc-400"><IconArrowBackUp size={10} className="mr-0.5 inline" aria-hidden />{who(parent.from)}: {msgText(parent).slice(0, 60)}</div>}
                   <div className="flex max-w-[85%] items-end gap-1.5">
                     {last && <span className="shrink-0 pb-0.5 text-[9.5px] tabular-nums text-zinc-400">{time(m.ts)}</span>}
@@ -229,7 +229,7 @@ export default function CrewChat({ root }: { root: string }) {
                 </div>
               ) : (
                 /* 에이전트 — 왼쪽 아바타·이름·말풍선 */
-                <div className={`group/msg flex gap-2 ${first ? "mt-2.5" : "mt-1"}`}>
+                <div className={`group/msg flex gap-2 ${first ? "mt-3" : "mt-2"}`}>
                   <div className="w-8 shrink-0">{first && <Avatar from={m.from} known={known} />}</div>
                   <div className="flex min-w-0 max-w-[85%] flex-col items-start">
                     {first && (
