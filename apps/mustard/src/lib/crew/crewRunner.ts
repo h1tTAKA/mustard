@@ -62,7 +62,7 @@ function writeRuns(root: string, runs: CrewRun[]) {
 
 // ── 프로세스 싱글톤 상태 ──────────────────────────────────────────────
 type Pending = { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> };
-type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending>; answering: Set<string>; stale?: Map<string, string>; answerNext?: Map<string, { human: CrewMsg; roleId: string; taskId?: string; everyone?: boolean }> };
+type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending>; answering: Set<string>; answerNext?: Map<string, { human: CrewMsg; roleId: string; taskId?: string; everyone?: boolean }> };
 const g = ((globalThis as unknown as { __mustardCrew?: G }).__mustardCrew ??= { roots: new Set(), origin: "", starting: new Set(), runs: new Map(), bySession: new Map(), wired: false, reconciled: new Set(), flush: new Map(), tokens: new Map(), pending: new Map(), answering: new Set() } as G);
 
 // ── Claude 권한 훅 ───────────────────────────────────────────────────
@@ -119,7 +119,6 @@ function reconcile(root: string) {
   for (const r of runs) {
     if (ACTIVE.includes(r.state) && !g.runs.has(r.id)) {
       r.state = "failed"; r.error = tr("crew.reason.interrupted"); r.endedAt = Date.now(); changed = true;
-      if (r.sessionId) (g.stale ??= new Map()).set(`${root}\n${r.taskId}`, r.sessionId); // #1162 SNA는 앱보다 오래 삶 — 다음 시작 전에 끔(없으면 no_session)
       block(root, r.taskId, r.stage ?? 0, tr("crew.reason.interrupted"));
     }
   }
@@ -249,11 +248,10 @@ function watchStalls(now = Date.now()) {
     run.state = "failed"; run.endedAt = now; run.error = tr(never ? "crew.reason.neverStarted" : "crew.reason.stalled");
     persist(run, true);
     // 옛 에이전트를 확실히 끈 뒤에만 재시도 — 10초 안에 못 끄면 사람에게(같은 worktree에서 둘이 돌지 않게, 리뷰)
-    const sid = run.sessionId, key = `${run.root}\n${run.taskId}`;
-    if (sid) (g.stale ??= new Map()).set(key, sid); // 끄는 10초 사이에 사람이 다시 실행해도 startRun이 먼저 끄게(리뷰)
+    const sid = run.sessionId;
     void (async () => {
       const killed = !sid || await Promise.race([getSnaClient().then((c) => c.agent.kill(sid)).then(() => true, () => false), new Promise<boolean>((r) => setTimeout(() => r(false), 10_000))]);
-      if (killed && g.stale?.get(key) === sid) g.stale?.delete(key); // 못 끈 세션만 남겨 다음 시작 전에 다시 끔
+      if (activeFor(run.root, run.taskId)) { persist(run, true); return; } // 그 사이 사람이 새로 실행 — 카드는 새 실행 몫(리뷰)
       // 준비 중 멈춤은 재시도 안 함 — 걸린 agent.start가 나중에 풀려 새 실행과 겹칠 수 있음(리뷰)
       if (killed && !wasStarting) finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘), 이유는 finish가 대화방에
       else {
@@ -397,8 +395,10 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     rmSync(join(wt.dir, ".crew", "handoff.json"), { force: true }); // 앞 역할 봉투를 이번 결과로 착각하지 않게
     await wire();
     const sna = await getSnaClient();
-    const staleKey = `${root}\n${taskId}`, stale = g.stale?.get(staleKey);
-    if (stale) { await sna.agent.kill(stale); g.stale!.delete(staleKey); } // #1162 감시가 못 끈 옛 에이전트 — 끄기 실패면 시작 안 함(아래 catch → 사람에게)
+    // #1162 이 카드의 직전 실행 세션을 먼저 끔 — 감시·Stop이 못 끈 것, 앱 재시작으로 놓친 것까지(SNA는 앱보다 오래 삶).
+    // 이미 끝난 세션이면 no_session. 끄기 실패면 시작 안 함(아래 catch → 사람에게) — 같은 worktree에 둘이 돌지 않게.
+    const prev = [...g.runs.values(), ...readRuns(root)].filter((r) => r.taskId === taskId && r.id !== run.id && r.sessionId).sort((a, b) => b.startedAt - a.startedAt)[0];
+    if (prev?.sessionId) await sna.agent.kill(prev.sessionId);
     const { sessionId } = await sna.sessions.create({ label: `crew:${task.title.slice(0, 60)}`, cwd: wt.dir, meta: { crew: true, root, taskId, runId: run.id, role: role.id } });
     run.sessionId = sessionId;
     g.bySession.set(sessionId, run.id);
