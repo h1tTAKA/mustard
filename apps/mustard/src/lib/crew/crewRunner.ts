@@ -235,20 +235,23 @@ function ensureTicker() {
 // #1162 멈춘 실행 감시 — SNA에 시작을 맡겼는데 에이전트가 아예 안 뜨거나(10-23 실제: 대화 기록 없이 2시간 'started') 도중에 소식이 끊김.
 // 시작 후 3분 동안 신호가 한 번도 없거나, 신호가 오다가 20분 끊기면 실패로 → 기존 흐름이 다시 시도(3번이면 막힘). 사람 답 기다리는 중(needs-permission)은 제외.
 // 준비(worktree·세션 만들기)가 20분 넘게 안 끝나도 같은 처리. 20분 = Claude 도구 하나의 상한(Bash 최대 10분)보다 넉넉히 — 조용한 긴 도구는 안 죽임.
-const NEVER_STARTED_MS = 3 * 60_000, STALLED_MS = 20 * 60_000;
+// '안 뜸' 10분 = 첫 턴에 도구·글자 없이 오래 생각하는 경우도 넉넉히(오판 3번이면 카드가 막힘, 리뷰).
+const NEVER_STARTED_MS = 10 * 60_000, STALLED_MS = 20 * 60_000;
 function watchStalls(now = Date.now()) {
   for (const run of g.runs.values()) {
     if (run.state !== "running" && run.state !== "starting") continue;
     const never = !run.lastEventAt && (run.state === "starting" ? now - run.startedAt > STALLED_MS : now - (run.runningAt ?? run.startedAt) > NEVER_STARTED_MS);
     const stalled = !!run.lastEventAt && now - run.lastEventAt > STALLED_MS;
     if (!never && !stalled) continue;
+    if (run.state === "starting") g.starting.delete(`${run.root}\n${run.taskId}`); // 멈춘 startRun이 줄 자리·동시 상한을 계속 쥐지 않게(늦게 풀려도 startRun이 상태 보고 그만둠)
     run.state = "failed"; run.endedAt = now; run.error = tr(never ? "crew.reason.neverStarted" : "crew.reason.stalled");
     persist(run, true);
-    // 옛 에이전트를 먼저 끄고(최대 10초) 재시도 — 같은 worktree에서 둘이 돌지 않게(리뷰)
+    // 옛 에이전트를 확실히 끈 뒤에만 재시도 — 10초 안에 못 끄면 사람에게(같은 worktree에서 둘이 돌지 않게, 리뷰)
     const sid = run.sessionId;
     void (async () => {
-      if (sid) await Promise.race([getSnaClient().then((c) => c.agent.kill(sid)).catch(() => {}), new Promise((r) => setTimeout(r, 10_000))]);
-      finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘), 이유는 finish가 대화방에
+      const killed = !sid || await Promise.race([getSnaClient().then((c) => c.agent.kill(sid)).then(() => true, () => false), new Promise<boolean>((r) => setTimeout(() => r(false), 10_000))]);
+      if (killed) finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘), 이유는 finish가 대화방에
+      else block(run.root, run.taskId, run.stage ?? 0, run.error!);
       persist(run, true);
     })();
   }
@@ -390,6 +393,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     const { sessionId } = await sna.sessions.create({ label: `crew:${task.title.slice(0, 60)}`, cwd: wt.dir, meta: { crew: true, root, taskId, runId: run.id, role: role.id } });
     run.sessionId = sessionId;
     g.bySession.set(sessionId, run.id);
+    if (run.state !== "starting") { void sna.agent.kill(sessionId).catch(() => {}); return run; } // #1162 준비 중에 감시가 실패 처리 — 시작하지 않음
     await sna.agent.subscribe(sessionId);
     const isClaude = role.provider === "claude-code";
     const token = randomUUID();
@@ -413,7 +417,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     persist(run, true);
     say(root, { from: role.id, provider: role.provider, kind: "start", taskId, taskTitle: task.title, ...tx(note ? "crewchat.restart" : "crewchat.start", { card: task.title }) });
   } catch (e) {
-    if (run.state !== "starting") return run; // #1162 감시가 이미 실패 처리(재시도 중)
+    if (run.state !== "starting") { if (run.sessionId) void getSnaClient().then((c) => c.agent.kill(run.sessionId!)).catch(() => {}); return run; } // #1162 감시가 이미 실패 처리(재시도 중) — 만든 세션은 정리
     run.state = "failed"; run.endedAt = Date.now(); run.error = oneLine(String((e as Error)?.message ?? e), 400);
     block(root, taskId, stage, run.error); // 시작 자체 실패(worktree·SNA)는 재시도 안 함 — 사람이 확인
     persist(run, true);
