@@ -189,6 +189,12 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   assert.strictEqual(decide("Grep", { pattern: ".ssh", path: "src" }, WH), "allow", "Grep 검색어는 경로 아님");
   assert.strictEqual(B("git commit -m 'add ssh docs'"), "allow", "평범한 글자 ssh는 괜찮음");
   assert.strictEqual(B("rm -rf ~"), "deny", "금지가 먼저");
+  assert.strictEqual(B(`git grep -O'sh -c "git push"' foo`), "ask", "git grep -O로 명령 실행");
+  assert.strictEqual(B("rg --pre ./x.sh foo"), "ask", "rg --pre");
+  assert.strictEqual(B("sort --compress-program=sh big.txt"), "ask");
+  assert.strictEqual(B("find . -fls /tmp/x"), "ask", "find -fls로 밖에 쓰기");
+  assert.strictEqual(B("find . -fprintf out %p"), "ask");
+  assert.strictEqual(B("git grep -n TODO"), "allow", "평범한 git grep");
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "policy2-")));
   const wt = path.join(tmp, "wt"); fs.mkdirSync(path.join(wt, ".git", "hooks"), { recursive: true });
   fs.symlinkSync(path.join(tmp, "not-yet", "zshrc"), path.join(wt, "dangling")); // 대상 없는 링크
@@ -198,6 +204,11 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
     assert.strictEqual(decide("Write", { file_path: path.join(wt, "hooks-link/pre-commit") }, wt), "ask", "링크로 .git/hooks");
     for (const f of [".Git/hooks/pre-commit", ".Claude/settings.json", ".MCP.json"]) assert.strictEqual(decide("Write", { file_path: path.join(wt, f) }, wt), "ask", `대소문자 보호: ${f}`);
     assert.strictEqual(decide("Write", { file_path: path.join(wt, ".crew/handoff.json") }, wt), "allow", "역할 봉투는 그대로");
+    fs.symlinkSync(tmp, path.join(wt, "updir"));
+    assert.strictEqual(decide("Bash", { command: "cd updir && cat x" }, wt), "ask", "링크 폴더로 cd");
+    let prev = path.join(tmp, "chain0"); fs.writeFileSync(prev, "");
+    for (let i = 1; i <= 45; i++) { const n = path.join(wt, `c${i}`); fs.symlinkSync(prev, n); prev = n; }
+    assert.strictEqual(decide("Write", { file_path: prev }, wt), "ask", "링크 사슬 너무 김 = 막기");
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 }
 console.log("crewPolicy.check ok");

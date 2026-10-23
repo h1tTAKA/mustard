@@ -1,6 +1,8 @@
 // Crew 도구 권한 정책(#1100) — Claude 역할 세션의 PreToolUse 훅이 Mustard 서버에 묻고, 여기서 결정. 순수 모듈(점검 가능).
 // 원칙(에픽 자율 4단계): worktree 안 읽기·수정·테스트·커밋 = 자동 허락 / push·머지·파괴적 git = 차단 / 그 밖 = 사람에게 묻기(카드 '나 필요').
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+// 경계(#1159 리뷰): 글자 규칙이라 '명령 글자'만 봄. worktree 파일을 실행하는 것(npm test의 package.json 스크립트·make·node x.js)은
+// 그 안에 숨긴 git push·API 호출을 못 봄 — 진짜 막는 건 OS 샌드박스·서버 쪽 인증(#1157 보류, Crew API 토큰은 별도 이슈).
+import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { lstatSync, readlinkSync } from "node:fs";
 import { homedir } from "node:os";
 
@@ -31,9 +33,10 @@ const under = (p: string, d: string) => { const a = fold(p), b = fold(d); return
 // 실제 경로 — 맨 위부터 한 조각씩, 링크(끊긴 것·/var 같은 시스템 링크 포함)를 만나면 대상으로 갈아탐. 없는 조각은 그대로 붙임.
 // (realpathSync는 끊긴 링크에서 실패해 링크 이름을 그냥 붙였음 → Write가 링크 따라 밖에 새 파일, 리뷰)
 export function realish(p: string, depth = 0): string {
-  const segs = resolve(p).split(sep).filter(Boolean);
-  if (depth > 40) return resolve(p);
-  let cur: string = sep;
+  if (depth > 40) return sep; // 링크 사슬이 너무 김 = 판정 포기 → 루트(어디의 안도 아님 = 막는 쪽, 리뷰)
+  const abs = resolve(p), { root } = parse(abs); // Windows는 C:\ 부터(sep로 쪼개면 첫 조각이 C:라 링크를 못 따라감, 리뷰)
+  const segs = abs.slice(root.length).split(sep).filter(Boolean);
+  let cur: string = root;
   for (let i = 0; i < segs.length; i++) {
     const next = join(cur, segs[i]);
     let link: string | null = null;
@@ -207,8 +210,10 @@ function bashDecision(raw: string, worktree: string): Inner {
     const sedArgs = (() => { const w = words.slice(1); const k = w.findIndex((a) => /^-[a-zA-Z]*i$/.test(a)); return k >= 0 && w[k + 1] === "§" && w[k + 2] === "§" ? [...w.slice(0, k + 1), ...w.slice(k + 2)] : w; })();
     const files = base !== "sed" ? args : (words.some((a) => /^(-e|--expression|-f)/.test(a)) ? sedArgs.filter((a) => !a.startsWith("-")) : sedArgs.filter((a) => !a.startsWith("-")).slice(1));
     if (writes && files.some((a) => a.includes("§") || unsafeWrite(worktree, a))) return "hold"; // 따옴표 경로는 확인 불가 → 사람
-    if (base === "cd" && words[1] && (words[1].includes("§") || outside(worktree, words[1]))) return "hold";
-    if (base === "find" && words.some((a) => /^-(exec|execdir|ok|okdir|delete|fprint)/.test(a))) return "hold";
+    if (base === "cd" && words[1] && (words[1].includes("§") || outside(worktree, words[1]) || !under(realish(resolve(worktree, words[1])), realish(worktree)))) return "hold"; // 링크 폴더로 cd(리뷰)
+    if (base === "find" && words.some((a) => /^-(exec|execdir|ok|okdir|delete|fprint|fls)/.test(a))) return "hold"; // -fprint0·-fprintf·-fls = 파일로 씀
+    // 다른 명령을 대신 실행하는 옵션 — 안전한 명령에 붙여 금지 명령을 돌림(git grep -O'sh -c "git push"', rg --pre, sort --compress-program, 리뷰)
+    if (words.slice(1).some((a) => /^(-O|--open-files-in-pager|--pre(=|$)|--pre-glob|--compress-program|--exec|--command)/.test(a))) return "hold";
     // 인터프리터 — 인라인 코드(-e0·--eval=·--import·--require), 파이프·heredoc으로 받은 코드(스크립트 파일 없음)는 사람(리뷰)
     if (/^(node|bun|deno|python3?|tsx|ts-node)$/.test(base)) {
       if (words.slice(1).some((a) => /^(-[epcr]|--eval|--print|--import|--require|--loader|--experimental-loader|eval$)/.test(a)) || /<</.test(part)) return "hold";
