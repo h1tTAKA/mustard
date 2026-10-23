@@ -42,6 +42,8 @@ export interface AgentAnalyzeCallOptions {
   signal?: AbortSignal;
   // 진행 출력 한 줄씩 흘리는 콜백(예: CLI provider의 stdout 라인). 실시간 상태 표시용.
   onProgress?: (line: string) => void;
+  // #1162 사람이 기다리는 답(Crew 대화방) — SNA 줄 맨 앞(앱 켠 직후 자동 설명이 칸을 차지해도).
+  priority?: boolean;
   // 모델 추론(reasoning/thinking) 누적을 흘리는 콜백 — 답변과 별개(과정). 대기 구간 활동 표시용.
   onThinking?: (line: string) => void;
   // #998 서버가 검증한 읽기 전용 작업 범위 — cwd=레포, addDirs=추가로 읽을 폴더(캐치업 기록). 클라 입력 아님.
