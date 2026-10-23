@@ -189,6 +189,12 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   assert.strictEqual(decide("Grep", { pattern: ".ssh", path: "src" }, WH), "allow", "Grep 검색어는 경로 아님");
   assert.strictEqual(B("git commit -m 'add ssh docs'"), "allow", "평범한 글자 ssh는 괜찮음");
   assert.strictEqual(B("rm -rf ~"), "deny", "금지가 먼저");
+  // 레포 안 비밀 파일(유저 결정: 묻기)
+  for (const c of ["cat .env", "cat .env.local", "grep KEY .env.production", "cat certs/server.pem", "cat id_rsa", "cat config/service-account-prod.json", "cp .env /tmp/x"]) assert.strictEqual(B(c), "ask", `레포 비밀: ${c}`);
+  for (const c of ["cat .env.example", "cp .env.example .env.sample", "cat src/environment.ts", "cat docs/keys.md", "npm test"]) assert.strictEqual(B(c), "allow", `비밀 아님: ${c}`);
+  assert.strictEqual(decide("Read", { file_path: `${WH}/.env` }, WH), "ask", "Read .env");
+  assert.strictEqual(decide("Read", { file_path: `${WH}/.env.example` }, WH), "allow");
+  assert.strictEqual(decide("Glob", { pattern: "**/.env*" }, WH), "ask", "Glob .env 찾기");
   assert.strictEqual(B(`git grep -O'sh -c "git push"' foo`), "ask", "git grep -O로 명령 실행");
   assert.strictEqual(B("rg --pre ./x.sh foo"), "ask", "rg --pre");
   assert.strictEqual(B("sort --compress-program=sh big.txt"), "ask");

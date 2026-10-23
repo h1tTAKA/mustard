@@ -28,6 +28,8 @@ const SECRET_REL = [".ssh", ".aws", ".gnupg", ".config/gh", ".config/gcloud", ".
   "Library/Keychains", "Library/Application Support", "Library/Cookies"];
 // 이름만 봐도 비밀 — 경로를 해석하지 않고 글자 어디서든(따옴표·옵션 값·cd 뒤 상대 경로도, 리뷰)
 const SECRET_NAMES = /(^|[^\w.-])(\.ssh|\.aws|\.gnupg|\.netrc|\.git-credentials|\.pypirc|\.password-store|\.kube|\.azure|gcloud|keychains|\.bash_history|\.zsh_history|\.credentials\.json)(?=$|[^\w-])/i;
+// 레포(worktree) 안 비밀 파일 — 이름으로(유저 결정 10-23: 읽기도 묻기). .env.example·.sample·.template은 예시라 괜찮음.
+const PROJECT_SECRET = /(^|[\s/"'=:(])(\.env(?!\.(example|sample|template|dist)\b)(\.[\w.-]+)?|[\w.-]+\.(pem|key|p12|pfx|keystore|jks)|id_(rsa|ed25519|ecdsa|dsa)(\.pub)?|\.netrc|\.npmrc|\.pypirc|credentials\.json|service-account[\w.-]*\.json)(?=$|[\s"';|&)<>*?])/i; // 끝에 와일드카드(.env*)도
 const SECRET_EXCEPT = [join(HOME, ".nunopi", "worktrees")];
 const under = (p: string, d: string) => { const a = fold(p), b = fold(d); return a === b || a.startsWith(b.endsWith(sep) ? b : b + sep); };
 // 실제 경로 — 맨 위부터 한 조각씩, 링크(끊긴 것·/var 같은 시스템 링크 포함)를 만나면 대상으로 갈아탐. 없는 조각은 그대로 붙임.
@@ -63,7 +65,7 @@ const SECRET_TEXT = new RegExp(`(?:~|\\$\\{?HOME\\}?|${esc(HOME)})/(?:${SECRET_R
 // 셸 명령 — 따옴표 걷은 글자를 빈칸·=·: 로 자른 조각 전부를 경로로 확인(따옴표 안·--opt=값·-f값도). cd 뒤 상대 경로(..)는 위치를 못 따라가 사람에게.
 function shellSecret(raw: string, worktree: string): boolean {
   const text = unquote(raw);
-  if (SECRET_TEXT.test(text) || SECRET_NAMES.test(text)) return true;
+  if (SECRET_TEXT.test(text) || SECRET_NAMES.test(text) || PROJECT_SECRET.test(text)) return true;
   if (/(^|[\s;&|(])cd(\s|$)/.test(text) && /(^|[\s/=])\.\.(\/|\s|$)/.test(text)) return true;
   for (let tok of text.split(/[\s=:,]+/)) {
     tok = tok.replace(/^-[A-Za-z]+(?=[./~$])/, ""); // -f../x 처럼 붙은 짧은 옵션 값
@@ -78,7 +80,7 @@ function toolSecret(tool: string, input: Record<string, unknown>, worktree: stri
   for (const k of READ_PATH_FIELDS[tool] ?? []) {
     const v = input[k];
     if (typeof v !== "string" || !v) continue;
-    if (SECRET_TEXT.test(v) || SECRET_NAMES.test(v)) return true;
+    if (SECRET_TEXT.test(v) || SECRET_NAMES.test(v) || PROJECT_SECRET.test(v)) return true;
     const head = v.replace(/[*?[{].*$/, "");
     const stat = head === v ? v : head.replace(/[^/]*$/, "") || "."; // 와일드카드 있으면 그 조각 앞 폴더까지만(/Users/x/.s*/ → /Users/x/)
     if (isSecretPath(stat, worktree) || coversHome(stat, worktree)) return true;
