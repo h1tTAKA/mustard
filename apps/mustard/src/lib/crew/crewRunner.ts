@@ -62,7 +62,7 @@ function writeRuns(root: string, runs: CrewRun[]) {
 
 // ── 프로세스 싱글톤 상태 ──────────────────────────────────────────────
 type Pending = { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> };
-type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending>; answering: Set<string>; answerNext?: Map<string, { human: CrewMsg; roleId: string; taskId?: string; everyone?: boolean }> };
+type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending>; answering: Set<string>; stale?: Map<string, string>; answerNext?: Map<string, { human: CrewMsg; roleId: string; taskId?: string; everyone?: boolean }> };
 const g = ((globalThis as unknown as { __mustardCrew?: G }).__mustardCrew ??= { roots: new Set(), origin: "", starting: new Set(), runs: new Map(), bySession: new Map(), wired: false, reconciled: new Set(), flush: new Map(), tokens: new Map(), pending: new Map(), answering: new Set() } as G);
 
 // ── Claude 권한 훅 ───────────────────────────────────────────────────
@@ -243,15 +243,20 @@ function watchStalls(now = Date.now()) {
     const never = !run.lastEventAt && (run.state === "starting" ? now - run.startedAt > STALLED_MS : now - (run.runningAt ?? run.startedAt) > NEVER_STARTED_MS);
     const stalled = !!run.lastEventAt && now - run.lastEventAt > STALLED_MS;
     if (!never && !stalled) continue;
-    if (run.state === "starting") g.starting.delete(`${run.root}\n${run.taskId}`); // 멈춘 startRun이 줄 자리·동시 상한을 계속 쥐지 않게(늦게 풀려도 startRun이 상태 보고 그만둠)
+    const wasStarting = run.state === "starting";
+    if (wasStarting) g.starting.delete(`${run.root}\n${run.taskId}`); // 멈춘 startRun이 줄 자리·동시 상한을 계속 쥐지 않게(늦게 풀려도 startRun이 상태 보고 그만둠)
     run.state = "failed"; run.endedAt = now; run.error = tr(never ? "crew.reason.neverStarted" : "crew.reason.stalled");
     persist(run, true);
     // 옛 에이전트를 확실히 끈 뒤에만 재시도 — 10초 안에 못 끄면 사람에게(같은 worktree에서 둘이 돌지 않게, 리뷰)
     const sid = run.sessionId;
     void (async () => {
       const killed = !sid || await Promise.race([getSnaClient().then((c) => c.agent.kill(sid)).then(() => true, () => false), new Promise<boolean>((r) => setTimeout(() => r(false), 10_000))]);
-      if (killed) finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘), 이유는 finish가 대화방에
-      else block(run.root, run.taskId, run.stage ?? 0, run.error!);
+      // 준비 중 멈춤은 재시도 안 함 — 걸린 agent.start가 나중에 풀려 새 실행과 겹칠 수 있음(리뷰)
+      if (killed && !wasStarting) finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘), 이유는 finish가 대화방에
+      else {
+        if (!killed && sid) (g.stale ??= new Map()).set(`${run.root}\n${run.taskId}`, sid); // 못 끈 세션 — 다음 시작 전에 다시 끔
+        block(run.root, run.taskId, run.stage ?? 0, run.error!);
+      }
       persist(run, true);
     })();
   }
@@ -390,6 +395,8 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     rmSync(join(wt.dir, ".crew", "handoff.json"), { force: true }); // 앞 역할 봉투를 이번 결과로 착각하지 않게
     await wire();
     const sna = await getSnaClient();
+    const staleKey = `${root}\n${taskId}`, stale = g.stale?.get(staleKey);
+    if (stale) { await sna.agent.kill(stale); g.stale!.delete(staleKey); } // #1162 감시가 못 끈 옛 에이전트 — 끄기 실패면 시작 안 함(아래 catch → 사람에게)
     const { sessionId } = await sna.sessions.create({ label: `crew:${task.title.slice(0, 60)}`, cwd: wt.dir, meta: { crew: true, root, taskId, runId: run.id, role: role.id } });
     run.sessionId = sessionId;
     g.bySession.set(sessionId, run.id);
