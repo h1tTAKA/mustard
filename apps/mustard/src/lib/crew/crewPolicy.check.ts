@@ -201,6 +201,20 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   assert.strictEqual(B("find . -fls /tmp/x"), "ask", "find -fls로 밖에 쓰기");
   assert.strictEqual(B("find . -fprintf out %p"), "ask");
   assert.strictEqual(B("git grep -n TODO"), "allow", "평범한 git grep");
+  // 3차 리뷰
+  assert.strictEqual(B("sed 's/.*/git push/e' README.md"), "ask", "sed s///e = 셸 실행");
+  assert.strictEqual(B("sed -n 'w/Users/x/.zshrc' README.md"), "ask", "sed w 빈칸 없이");
+  assert.strictEqual(B("sed 's/^/x/w/tmp/out' README.md"), "ask", "sed s///w 빈칸 없이");
+  assert.strictEqual(B("sed -n w/tmp/out README.md"), "ask", "따옴표 없는 sed 스크립트");
+  assert.strictEqual(B("sed -n 's/a/b/p' README.md"), "allow", "평범한 sed");
+  assert.strictEqual(B("sed -i 's/x/world/' README.md"), "allow", "치환 내용이 w로 시작");
+  assert.strictEqual(B("sed -n '/re/w /tmp/out' README.md"), "ask", "주소 뒤 w");
+  assert.strictEqual(B("cd && echo x > .zshrc"), "ask", "인자 없는 cd = 홈");
+  assert.strictEqual(B("cd - && ls"), "ask", "cd -");
+  for (const c of ["cat .en?", "cat .e*", "cat .[e]nv", "cat ~/.a?s/credentials", "cat .$'\\x65'nv"]) assert.strictEqual(B(c), "ask", `와일드카드·숨긴 글자: ${c}`);
+  assert.strictEqual(B("ls .next/*"), "allow", "점 폴더 아래 와일드카드는 괜찮음");
+  assert.strictEqual(decide("Grep", { pattern: "PRIVATE", glob: "*.pem" }, WH), "ask", "Grep glob *.pem");
+  assert.strictEqual(decide("Grep", { pattern: "x", glob: "*.ts" }, WH), "allow");
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "policy2-")));
   const wt = path.join(tmp, "wt"); fs.mkdirSync(path.join(wt, ".git", "hooks"), { recursive: true });
   fs.symlinkSync(path.join(tmp, "not-yet", "zshrc"), path.join(wt, "dangling")); // 대상 없는 링크
