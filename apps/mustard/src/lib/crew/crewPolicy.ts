@@ -1,7 +1,7 @@
 // Crew 도구 권한 정책(#1100) — Claude 역할 세션의 PreToolUse 훅이 Mustard 서버에 묻고, 여기서 결정. 순수 모듈(점검 가능).
 // 원칙(에픽 자율 4단계): worktree 안 읽기·수정·테스트·커밋 = 자동 허락 / push·머지·파괴적 git = 차단 / 그 밖 = 사람에게 묻기(카드 '나 필요').
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { realpathSync } from "node:fs";
+import { lstatSync, readlinkSync } from "node:fs";
 import { homedir } from "node:os";
 
 export type Decision = "allow" | "deny" | "ask";
@@ -17,30 +17,71 @@ const SAFE_CMD = new Set(["git", "npm", "pnpm", "yarn", "bun", "npx", "node", "t
 const SAFE_GIT = new Set(["status", "diff", "log", "show", "add", "commit", "restore", "stash", "branch", "rev-parse", "ls-files", "blame", "grep", "mv", "rm", "checkout", "switch"]); // config 제외 — core.pager·editor·sshCommand로 다음 git 때 코드 실행 가능(보안 리뷰)
 
 // #1159 비밀 경로 — 읽기(Read류 도구·셸 인자)를 사람에게. 모델 문맥에 들어가면 커밋·push로 밖에 나갈 수 있음.
-// ~/.nunopi는 비밀(설정·기록)이지만 그 아래 worktrees(역할 작업 폴더 자신)는 예외.
+// ~/.nunopi는 비밀(설정·기록)이지만 그 아래 worktrees(역할 작업 폴더 자신)는 예외. macOS·Windows는 대소문자 무시(~/.SSH = ~/.ssh, 리뷰).
 const HOME = homedir();
-const SECRET_REL = [".ssh", ".aws", ".gnupg", ".config/gh", ".nunopi", ".claude", ".codex", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".docker", ".kube", "Library/Keychains"];
+const FOLD = process.platform === "darwin" || process.platform === "win32";
+const fold = (p: string) => (FOLD ? p.toLowerCase() : p);
+const SECRET_REL = [".ssh", ".aws", ".gnupg", ".config/gh", ".config/gcloud", ".azure", ".nunopi", ".claude", ".codex", ".netrc", ".npmrc", ".pypirc", ".git-credentials",
+  ".docker", ".kube", ".m2", ".gradle", ".cargo/credentials", ".cargo/credentials.toml", ".gem/credentials", ".password-store", ".bash_history", ".zsh_history", ".env",
+  "Library/Keychains", "Library/Application Support", "Library/Cookies"];
+// 이름만 봐도 비밀 — 경로를 해석하지 않고 글자 어디서든(따옴표·옵션 값·cd 뒤 상대 경로도, 리뷰)
+const SECRET_NAMES = /(^|[^\w.-])(\.ssh|\.aws|\.gnupg|\.netrc|\.git-credentials|\.pypirc|\.password-store|\.kube|\.azure|gcloud|keychains|\.bash_history|\.zsh_history|\.credentials\.json)(?=$|[^\w-])/i;
 const SECRET_EXCEPT = [join(HOME, ".nunopi", "worktrees")];
-const under = (p: string, d: string) => p === d || p.startsWith(d + sep);
-// 실제 경로 — 없는 파일은 가장 가까운 있는 조상의 realpath + 나머지(링크로 밖을 가리키는지 보려고)
-export function realish(p: string): string {
-  const rest: string[] = [];
-  for (let cur = p; ; ) {
-    try { return join(realpathSync(cur), ...rest.reverse()); }
-    catch { const up = dirname(cur); if (up === cur) return p; rest.push(basename(cur)); cur = up; }
+const under = (p: string, d: string) => { const a = fold(p), b = fold(d); return a === b || a.startsWith(b.endsWith(sep) ? b : b + sep); };
+// 실제 경로 — 맨 위부터 한 조각씩, 링크(끊긴 것·/var 같은 시스템 링크 포함)를 만나면 대상으로 갈아탐. 없는 조각은 그대로 붙임.
+// (realpathSync는 끊긴 링크에서 실패해 링크 이름을 그냥 붙였음 → Write가 링크 따라 밖에 새 파일, 리뷰)
+export function realish(p: string, depth = 0): string {
+  const segs = resolve(p).split(sep).filter(Boolean);
+  if (depth > 40) return resolve(p);
+  let cur: string = sep;
+  for (let i = 0; i < segs.length; i++) {
+    const next = join(cur, segs[i]);
+    let link: string | null = null;
+    try { if (lstatSync(next).isSymbolicLink()) link = readlinkSync(next); } catch { /* 없음 */ }
+    if (link !== null) return realish(join(resolve(cur, link), ...segs.slice(i + 1)), depth + 1);
+    cur = next;
   }
+  return cur;
 }
 const expandHome = (p: string) => p.replace(/^~(?=$|\/)/, HOME).replace(/^\$\{?HOME\}?(?=$|\/)/, HOME);
 let secretDirs: string[] | null = null; // 실제 경로 포함(~/.ssh가 링크일 수도)
 const secrets = () => (secretDirs ??= [...new Set(SECRET_REL.flatMap((d) => [join(HOME, d), realish(join(HOME, d))]))]);
-const excepts = () => [...SECRET_EXCEPT, ...SECRET_EXCEPT.map(realish)];
+const excepts = () => [...SECRET_EXCEPT, ...SECRET_EXCEPT.map((e) => realish(e))];
+const homes = () => [HOME, realish(HOME)];
 export function isSecretPath(p: string, base: string): boolean {
   const a = resolve(base, expandHome(p));
   return [a, realish(a)].some((x) => secrets().some((d) => under(x, d)) && !excepts().some((e) => under(x, e)));
 }
-// 셸 글자에서 비밀 경로(~/.ssh·$HOME/.ssh·/Users/me/.ssh) — 따옴표 안이라 조각 판정에서 §로 지워진 것도
-const SECRET_TEXT = new RegExp(`(?:~|\\$\\{?HOME\\}?|${HOME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})/(?:${SECRET_REL.map((d) => d.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + (d === ".nunopi" ? "(?!/worktrees(?:/|$))" : "")).join("|")})(?=$|[/\\s"'])`); // 자기 worktree 절대 경로는 비밀 아님
-const READ_PATH_TOOLS = new Set(["Read", "Glob", "Grep", "LS", "NotebookRead"]);
+// 홈(또는 그 위)을 통째로 — grep -r ../../../../ 처럼 비밀 폴더까지 훑음(리뷰)
+const coversHome = (p: string, base: string) => { const a = resolve(base, expandHome(p)); return [a, realish(a)].some((x) => homes().some((h) => under(h, x))); };
+const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// 셸 글자에서 비밀 경로(~/.ssh·$HOME/.ssh·/Users/me/.ssh) — 자기 worktree 절대 경로는 비밀 아님
+const SECRET_TEXT = new RegExp(`(?:~|\\$\\{?HOME\\}?|${esc(HOME)})/(?:${SECRET_REL.map((d) => esc(d) + (d === ".nunopi" ? "(?!/worktrees(?:/|$))" : "")).join("|")})(?=$|[/\\s"'])`, FOLD ? "i" : "");
+// 셸 명령 — 따옴표 걷은 글자를 빈칸·=·: 로 자른 조각 전부를 경로로 확인(따옴표 안·--opt=값·-f값도). cd 뒤 상대 경로(..)는 위치를 못 따라가 사람에게.
+function shellSecret(raw: string, worktree: string): boolean {
+  const text = unquote(raw);
+  if (SECRET_TEXT.test(text) || SECRET_NAMES.test(text)) return true;
+  if (/(^|[\s;&|(])cd(\s|$)/.test(text) && /(^|[\s/=])\.\.(\/|\s|$)/.test(text)) return true;
+  for (let tok of text.split(/[\s=:,]+/)) {
+    tok = tok.replace(/^-[A-Za-z]+(?=[./~$])/, ""); // -f../x 처럼 붙은 짧은 옵션 값
+    if (!tok || tok.startsWith("-") || !/[/~]|^\.\.?$|^\$/.test(tok)) continue; // 경로처럼 생긴 것만
+    if (isSecretPath(tok, worktree) || coversHome(tok, worktree)) return true;
+  }
+  return false;
+}
+// 경로 있는 읽기 도구 — 도구마다 경로 칸이 다름(Grep pattern은 검색어라 제외, glob은 경로). 와일드카드 앞 고정 부분으로 판정.
+const READ_PATH_FIELDS: Record<string, string[]> = { Read: ["file_path"], NotebookRead: ["notebook_path"], LS: ["path"], Glob: ["path", "pattern"], Grep: ["path", "glob"] };
+function toolSecret(tool: string, input: Record<string, unknown>, worktree: string): boolean {
+  for (const k of READ_PATH_FIELDS[tool] ?? []) {
+    const v = input[k];
+    if (typeof v !== "string" || !v) continue;
+    if (SECRET_TEXT.test(v) || SECRET_NAMES.test(v)) return true;
+    const head = v.replace(/[*?[{].*$/, "");
+    const stat = head === v ? v : head.replace(/[^/]*$/, "") || "."; // 와일드카드 있으면 그 조각 앞 폴더까지만(/Users/x/.s*/ → /Users/x/)
+    if (isSecretPath(stat, worktree) || coversHome(stat, worktree)) return true;
+  }
+  return false;
+}
 
 const inside = (dir: string, p: string) => { const r = relative(dir, resolve(dir, p)); return !!dir && !r.startsWith("..") && !isAbsolute(r); };
 
@@ -126,19 +167,24 @@ const PROTECTED_FILES = new Set([".mcp.json", ".npmrc", ".yarnrc", ".yarnrc.yml"
 // 쓰기 판정 — 글자상 밖이거나, 실제 경로(링크 따라감)가 밖이거나, 보호 파일이면 안 됨
 function unsafeWrite(worktree: string, p: string): boolean {
   if (outside(worktree, p)) return true;
-  const segs = relative(worktree, resolve(worktree, p)).split(sep);
-  if (segs.some((x) => PROTECTED_DIRS.has(x)) || PROTECTED_FILES.has(segs[segs.length - 1])) return true;
-  return !under(realish(resolve(worktree, p)), realish(worktree)); // worktree 안 링크가 ~/.zshrc 등을 가리킴
+  const real = realish(resolve(worktree, p)), realWt = realish(worktree);
+  if (!under(real, realWt)) return true; // worktree 안 링크(끊긴 것도)가 ~/.zshrc 등을 가리킴
+  // 보호 이름 — 글자 경로와 실제 경로 둘 다(링크 hooks-link → .git/hooks, 리뷰), 대소문자 무시(.Git·.Claude)
+  for (const rel of [relative(worktree, resolve(worktree, p)), relative(realWt, real)]) {
+    const segs = rel.split(sep).map((x) => x.toLowerCase());
+    if (segs.some((x) => PROTECTED_DIRS.has(x)) || PROTECTED_FILES.has(segs[segs.length - 1])) return true;
+  }
+  return false;
 }
 
 function bashDecision(raw: string, worktree: string): Inner {
   // Mustard Crew API를 에이전트가 직접 부르기(권한 허락 등) = 차단 — 따옴표로 쪼개 감춰도(리뷰)
   if (/\/api\/crew\b/.test(unquote(raw))) return "deny";
-  if (SECRET_TEXT.test(unquote(raw))) return "hold"; // #1159 비밀 경로 읽기·복사(따옴표로 감싸도)
   if (/[^\S \t\n]|[\0-\x08\x0e-\x1f\x7f]/.test(raw)) return DENY_RE.test(raw) ? "deny" : "hold"; // CR·NBSP·전각 공백·NUL 등 제어 문자 — JS와 bash가 띄어쓰기로 보는 게 달라 판정이 어긋남(리뷰)
   const cmd = strip(raw);
   if (cmd === null) return DENY_RE.test(raw) ? "deny" : "hold"; // 명령 치환 등 — 실제로 실행되는 코드가 숨어 있음
   if (DENY_RE.test(cmd)) return "deny";
+  if (shellSecret(raw, worktree)) return "hold"; // #1159 비밀 경로 읽기·복사·홈 통째 훑기(따옴표·옵션 값·상대 경로도) — 금지 판정 다음
   const c = cmd.replace(/\d*>&\d+/g, " "); // 2>&1 같은 연결은 나누기 전에 걷어냄
   if (/[(){}]/.test(c)) return "hold"; // 서브셸·그룹·함수
   // 리다이렉트로 쓰기 — worktree 밖(~·$ 포함)이면 hold
@@ -155,7 +201,6 @@ function bashDecision(raw: string, worktree: string): Inner {
     if (!/^[\w./-]+$/.test(w0)) return "hold"; // 따옴표·변수·백슬래시로 꾸민 명령 이름(su""do → su§do)
     const base = w0.split("/").pop()!;
     if (HOLD_CMD.has(base)) return "hold";
-    if (words.slice(1).some((a) => !a.startsWith("-") && !a.includes("§") && isSecretPath(a, worktree))) return "hold"; // #1159 상대 경로로 홈 비밀(../../.ssh)
     const args = words.slice(1).filter((a) => !a.startsWith("-"));
     const writes = WRITERS.has(base) && (base !== "sed" || words.some((a) => /^-[a-zA-Z]*i/.test(a) || a.startsWith("--in-place"))); // sed는 -i일 때만 씀
     // sed는 첫 인자 = 스크립트 → 빼고 파일만. -i 바로 뒤에 §가 둘이면 앞 것 = 백업 접미사(macOS -i '') → 그것도 뺌(리뷰: 접미사 없을 때 파일이 빠지던 것)
@@ -219,10 +264,7 @@ function decideBase(tool: string, input: Record<string, unknown>, worktree: stri
   if (tool === "WebFetch") return "hold"; // 밖으로 데이터를 실어 보낼 수 있음(?d=비밀) — 사람(리뷰)
   // 사용자 MCP — 서버까지 맞춘 알려진 읽기 도구만 자동, 나머지는 사람. 이름 단어로 읽기·쓰기를 가르는 건 매번 빠짐(리뷰: query_sql·fetch_url·eval_code)
   if (tool.startsWith("mcp__")) return MCP_READ_NAMES.test(tool) ? "allow" : "hold";
-  if (READ_PATH_TOOLS.has(tool)) { // #1159 경로 있는 읽기 — 비밀이면 사람(링크로 가리켜도)
-    const ps = [input.file_path, input.notebook_path, input.path, typeof input.pattern === "string" && /^(~|\/|\$)/.test(input.pattern) ? input.pattern : undefined].filter((x): x is string => typeof x === "string" && !!x);
-    if (ps.some((p) => isSecretPath(p.replace(/[*?[{].*$/, "") || "/", worktree))) return "hold";
-  }
+  if (toolSecret(tool, input, worktree)) return "hold"; // #1159 경로 있는 읽기 — 비밀·홈 통째면 사람(링크·상대 경로·대소문자도)
   if (READ_TOOLS.has(tool)) return "allow";
   if (EDIT_TOOLS.has(tool)) {
     const p = String(input.file_path ?? input.notebook_path ?? input.path ?? "");

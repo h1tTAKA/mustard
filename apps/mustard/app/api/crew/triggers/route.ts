@@ -7,6 +7,7 @@ import { crossSite } from "@/lib/crew/crewPolicy";
 export const runtime = "nodejs";
 
 export async function GET(request: Request): Promise<Response> {
+  if (crossSite(request)) return Response.json({ ok: false, error: "cross-site" }, { status: 403 }); // #1159 GET도 레포 등록·대기 카드 시작(부수 효과) — <img>로 몰래 부르기 막기
   const root = new URL(request.url).searchParams.get("root") ?? "";
   if (!isAbsolute(root)) return Response.json({ ok: false, error: "absolute root required" }, { status: 400 });
   registerRoot(root, new URL(request.url).origin);

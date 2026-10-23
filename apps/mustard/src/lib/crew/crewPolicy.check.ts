@@ -167,4 +167,37 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   assert.strictEqual(crossSite(R({ "sec-fetch-site": "same-origin" }, "GET")), false, "GET은 본문 형식 안 봄");
   assert.strictEqual(crossSite(R({ "content-type": "application/json; charset=utf-8", origin: "http://localhost:59720" })), false, "charset 붙은 JSON·같은 Origin");
 }
+// #1159 리뷰 우회 — 따옴표 상대 경로·옵션 값·cd·홈 통째·대소문자·끊긴 링크·링크로 보호 폴더·Glob 고정부·GET 출처
+{
+  const fs = await import("node:fs"), os = await import("node:os"), path = await import("node:path");
+  const H = os.homedir(), WH = `${H}/.nunopi/worktrees/abc/1234`;
+  const B = (command: string) => decide("Bash", { command }, WH);
+  assert.strictEqual(B(`cat "../../../../.ssh/id_rsa"`), "ask", "따옴표 안 상대 경로");
+  assert.strictEqual(B("diff --from-file=../../../../.ssh/id_rsa /dev/null"), "ask", "--opt=값");
+  assert.strictEqual(B("cat -n../../../../.aws/credentials"), "ask", "붙은 짧은 옵션 값");
+  assert.strictEqual(B("cd x && cat ../../../../../etc/hosts"), "ask", "cd 뒤 상대 경로는 위치를 못 따라감");
+  assert.strictEqual(B(`grep -r "" ../../../../`), "ask", "홈 통째 훑기");
+  assert.strictEqual(B("find / -name id_rsa"), "ask", "루트부터");
+  assert.strictEqual(B("tar czf x.tgz ~"), "ask", "홈 압축");
+  if (process.platform === "darwin") {
+    assert.strictEqual(decide("Read", { file_path: "~/.SSH/id_rsa" }, WH), "ask", "대소문자(APFS)");
+    assert.strictEqual(B("cat ~/.AWS/credentials"), "ask");
+  }
+  assert.strictEqual(decide("Glob", { pattern: "../../../../.ssh/*" }, WH), "ask", "Glob 상대 패턴");
+  assert.strictEqual(decide("Glob", { pattern: `${H}/.s*/id_rsa` }, WH), "ask", "Glob 와일드카드 앞 고정부(홈)");
+  assert.strictEqual(decide("Grep", { pattern: "x", glob: "~/.ssh/*" }, WH), "ask", "Grep glob 칸");
+  assert.strictEqual(decide("Grep", { pattern: ".ssh", path: "src" }, WH), "allow", "Grep 검색어는 경로 아님");
+  assert.strictEqual(B("git commit -m 'add ssh docs'"), "allow", "평범한 글자 ssh는 괜찮음");
+  assert.strictEqual(B("rm -rf ~"), "deny", "금지가 먼저");
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "policy2-")));
+  const wt = path.join(tmp, "wt"); fs.mkdirSync(path.join(wt, ".git", "hooks"), { recursive: true });
+  fs.symlinkSync(path.join(tmp, "not-yet", "zshrc"), path.join(wt, "dangling")); // 대상 없는 링크
+  fs.symlinkSync(path.join(wt, ".git", "hooks"), path.join(wt, "hooks-link"));
+  try {
+    assert.strictEqual(decide("Write", { file_path: path.join(wt, "dangling") }, wt), "ask", "끊긴 링크로 밖에 새 파일");
+    assert.strictEqual(decide("Write", { file_path: path.join(wt, "hooks-link/pre-commit") }, wt), "ask", "링크로 .git/hooks");
+    for (const f of [".Git/hooks/pre-commit", ".Claude/settings.json", ".MCP.json"]) assert.strictEqual(decide("Write", { file_path: path.join(wt, f) }, wt), "ask", `대소문자 보호: ${f}`);
+    assert.strictEqual(decide("Write", { file_path: path.join(wt, ".crew/handoff.json") }, wt), "allow", "역할 봉투는 그대로");
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
 console.log("crewPolicy.check ok");
