@@ -96,7 +96,7 @@ function mapUsage(data: unknown): AgentUsage | undefined {
 }
 
 // #1093 SNA 동시 세션 줄 — snaQueue.ts(#1162 우선순위, 점검하려고 뗌)
-import { acquireSnaSlot } from "./snaQueue";
+import { abortable, acquireSnaSlot } from "./snaQueue";
 const isSessionLimit = (e: unknown) => /Max active sessions/i.test(e instanceof Error ? e.message : String(e));
 const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((res) => { const t = setTimeout(res, ms); signal?.addEventListener("abort", () => { clearTimeout(t); res(); }, { once: true }); });
 
@@ -105,6 +105,7 @@ async function runViaSna(prompt: string, opts: Parameters<typeof runViaSnaOnce>[
   const deadline = Date.now() + 10 * 60_000;
   for (let wait = 2000; ; wait = Math.min(wait * 2, 30_000)) {
     const release = await acquireSnaSlot(opts.signal, opts.priority);
+    opts.onStart?.();
     try { return await runViaSnaOnce(prompt, opts); }
     catch (e) {
       if (!isSessionLimit(e) || opts.signal?.aborted || Date.now() + wait > deadline) throw e;
@@ -129,6 +130,7 @@ async function runViaSnaOnce(
     effort?: boolean; // 분석은 low; 챗은 미강제
     model?: string; // #987 유저 선택 모델(미지정 = defaultSnaModel)
     workspace?: { cwd: string; addDirs?: string[] }; // #998 읽기 전용 작업 범위(서버 검증값)
+    onStart?: () => void; // #1162 자리 잡고 실행 시작
     priority?: boolean; // #1162 사람이 기다리는 답(Crew 대화방) — 줄 맨 앞
   },
 ): Promise<RunResult> {
@@ -164,14 +166,14 @@ async function runViaSnaOnce(
   let streamed = false;
   let usage: AgentUsage | undefined;
 
-  for await (const ev of client.agent.runOnceStream({
+  for await (const ev of abortable(client.agent.runOnceStream({
     message: prompt,
     provider: opts.runtime,
     systemPrompt: opts.systemPrompt ?? CODE_SYSTEM_PROMPT,
     reasoningLevel,
     timeout: 600_000, // 큰/청크 분석 대비 충분히 크게.
     ...runtimeOpts,
-  })) {
+  }), opts.signal)) {
     if (opts.signal?.aborted) throw new Error("Analysis cancelled.");
     const type = ev.type as string | undefined;
     if (type === "tool_use" || type === "tool_call" || type === "tool_result") {
@@ -367,7 +369,7 @@ function createSnaProvider(cfg: SnaProviderConfig): AgentProvider {
           signal: options?.signal,
           onProgress: streamOnProgress,
           // 추론 표시는 챗류·덱에이전트에서만 — 분석/청크는 partial 파싱 경로라 미전달.
-          onThinking: isChatStream ? options?.onThinking : undefined,
+          onThinking: isChatStream || isCrew ? options?.onThinking : undefined, // #1162 Crew는 추론도 '진행'(무진행 타이머)
           fullProgress,
           // 덱에이전트는 저추론(그룹핑이라 깊은 추론 불필요) — 챗/카드설명만 고추론 허용.
           effort: !isChatLike && !isReview,
@@ -375,6 +377,7 @@ function createSnaProvider(cfg: SnaProviderConfig): AgentProvider {
           model: (request.providerSettings?.[providerId as "claude-agent" | "codex-agent" | "opencode-agent"])?.model,
           workspace: isChat ? options?.workspace : undefined, // #998 캐치업 질문(chat)만 읽기 전용 도구
           priority: options?.priority, // #1162
+          onStart: options?.onStart,
         });
 
         return isChatStream || isDedup || isQuiz || isReview || isCrew

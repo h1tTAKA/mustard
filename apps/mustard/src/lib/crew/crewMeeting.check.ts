@@ -24,7 +24,9 @@ assert.ok(callsEveryone("@all what do you think?") && callsEveryone("hey @Everyo
 // #1162 무진행 타이머
 const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
 assert.strictEqual(await withIdleTimeout(async (touch) => { for (let i = 0; i < 5; i++) { await tick(30); touch(); } return "done"; }, 60, 1000), "done", "진행 중이면 idle보다 오래 걸려도 기다림");
-await assert.rejects(withIdleTimeout(() => new Promise(() => {}), 50, 1000), /timeout/, "움직임 없으면 idle에 끊김");
+await assert.rejects(withIdleTimeout((touch) => { touch(); return new Promise(() => {}); }, 50, 1000), /timeout/, "시작 뒤 움직임 없으면 idle에 끊김");
+assert.strictEqual(await withIdleTimeout(async (touch) => { await tick(120); touch(); return "late"; }, 50, 1000), "late", "시작 전(줄 서기)은 idle 안 셈");
+await assert.rejects(withIdleTimeout(() => new Promise(() => {}), 50, 150), /timeout/, "끝내 시작 못 하면 전체 상한");
 await assert.rejects(withIdleTimeout(async (touch, signal) => { while (!signal.aborted) { await tick(10); touch(); } }, 50, 120), /timeout/, "계속 움직여도 전체 상한");
 let aborted = false;
 await assert.rejects(withIdleTimeout((_t, signal) => new Promise((_r, rej) => signal.addEventListener("abort", () => { aborted = true; rej(new Error("aborted")); })), 30, 1000));

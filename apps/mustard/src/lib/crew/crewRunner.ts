@@ -523,12 +523,14 @@ function failReason(e: unknown): string {
 // failed = 이번 글 처리에서 이미 실패한 AI — 다음 역할부턴 바로 Claude, 알림도 한 번만(리뷰: 같은 AI 역할 여럿이면 알림·헛호출 반복).
 async function askOrFallback(root: string, role: CrewRole, prompt: string, replyTo: string, failed: Set<string>): Promise<{ text: string; provider: string }> {
   // #1162 시간 초과면 같은 AI에게 한 번 더(일시적으로 느린 것 — 대화방에 알림). 두 번째도 실패면 그대로 던짐.
+  // 다시 묻기·Claude로 바꾸기 전부 한 마감(4분) 안에서 — 사람이 기다리는 최대 시간(리뷰: 따로 세면 최악 16분).
+  const deadline = Date.now() + ASK_MAX_MS;
   const askRetry = async (r: CrewRole) => {
-    try { return await ask(r, prompt); }
+    try { return await ask(r, prompt, deadline); }
     catch (e) {
-      if (!/timeout/i.test(String((e as Error)?.message ?? e))) throw e;
+      if (!/timeout/i.test(String((e as Error)?.message ?? e)) || deadline - Date.now() < 30_000) throw e; // 남은 시간이 너무 짧으면 그만
       say(root, { from: "board", kind: "blocked", replyTo, ...tx("crewchat.retrying", { role: roleLabel(r.id) }) });
-      return await ask(r, prompt);
+      return await ask(r, prompt, deadline);
     }
   };
   const viaClaude = async () => { try { return { text: await askRetry({ ...role, provider: "claude-code", model: "" }), provider: "claude-code" }; } catch (e2) { throw new Error(failReason(e2)); } };
@@ -543,14 +545,16 @@ async function askOrFallback(root: string, role: CrewRole, prompt: string, reply
   }
 }
 
-// 역할 하나에게 한 번 묻기 — 역할의 AI·모델. #1162 사람이 기다리는 답이라 SNA 줄 맨 앞(priority), 타이머는 '무진행 90초 + 전체 4분'
-// (스트림 글자·추론이 오면 다시 셈 — 조용히 멈춘 CLI는 그대로 끊김). 실패면 throw.
-async function ask(role: CrewRole, prompt: string): Promise<string> {
+// 역할 하나에게 한 번 묻기 — 역할의 AI·모델. #1162 사람이 기다리는 답이라 SNA 줄 맨 앞(priority), 타이머는 '무진행 90초 + 마감까지'
+// (자리 잡은 뒤부터 셈, 스트림 글자·추론이 오면 다시 셈 — 조용히 멈춘 CLI는 그대로 끊김). 실패면 throw.
+const ASK_MAX_MS = 240_000;
+async function ask(role: CrewRole, prompt: string, deadline = Date.now() + ASK_MAX_MS): Promise<string> {
+  if (deadline - Date.now() <= 0) throw new Error("timeout");
   const provider = ANALYZE[role.provider] ?? snaClaudeProvider;
   const pid = AGENT_ID[role.provider] ?? "claude-agent";
   const res = await withIdleTimeout((touch, signal) => provider.analyze({ locale: narrationLocale(), providerId: pid, mode: "crew", code: prompt, messages: [{ role: "user", content: prompt }],
     ...(role.model?.trim() && (role.provider === "claude-code" || ANALYZE[role.provider]) ? { providerSettings: { [pid]: { model: role.model.trim() } } } : {}) } as Parameters<typeof provider.analyze>[0], // 다른 AI(grok·cursor)는 Claude로 → 그 모델 id는 안 맞음
-    { signal, onProgress: touch, onThinking: touch, priority: true }), 90_000, 240_000);
+    { signal, onStart: touch, onProgress: touch, onThinking: touch, priority: true }), 90_000, deadline - Date.now());
   // chat 모드는 학습 카드 블록(```nunopi-cards …```)을 붙임 — 대화방 답엔 필요 없음, 어디 있든 전부 뺌(안 닫힌 건 끝까지)(앱 확인)
   const text = (res?.summary ?? "").replace(/```nunopi-cards[\s\S]*?(```|$)/g, "").trim();
   if (!text || isFailedNote(text)) throw new Error(text || "empty");
