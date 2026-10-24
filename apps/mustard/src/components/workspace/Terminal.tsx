@@ -99,9 +99,9 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       if (getSetting<boolean>(TKEYS.gpu, TERMINAL_DEFAULTS.gpu)) {
         try {
           const gl = new webgl.WebglAddon();
-          // #1165 GPU 프로세스가 다시 뜨면 WebGL 문맥이 사라짐 → 그대로 두면 글자 빠짐·흰 화면. 떼고 기본(DOM) 렌더로 다시 그림.
+          // #1165 GPU 프로세스가 다시 뜨면 WebGL 문맥이 사라짐 → 그대로 두면 글자 빠짐·흰 화면. 떼면 xterm이 기본(DOM) 렌더로 바꾸고 전체를 다시 그림.
           // ponytail: 이 탭은 WebGL로 안 돌아감(GPU가 또 죽을 수 있음) — 새 탭부터 다시 WebGL.
-          gl.onContextLoss(() => { gl.dispose(); if (term) term.refresh(0, term.rows - 1); });
+          gl.onContextLoss(() => gl.dispose());
           term.loadAddon(gl);
         } catch { /* WebGL 미지원 → 기본 렌더 폴백 */ }
       }
