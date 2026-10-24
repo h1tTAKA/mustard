@@ -202,7 +202,7 @@ export default function CrewChat({ root }: { root: string }) {
           const parent = m.replyTo ? msgs.find((x) => x.id === m.replyTo) : undefined;
           const cardChip = m.taskId && (m.taskTitle || titles.get(m.taskId)) && last ? (
             <button type="button" onClick={() => openCrewTask(root, m.taskId!)} title={t("crewchat.openCard")}
-              className="mt-1 inline-flex max-w-[15rem] items-center gap-1 truncate rounded-full bg-white px-2 py-0.5 text-[10.5px] text-zinc-500 shadow-sm ring-1 ring-zinc-200 transition hover:text-zinc-800 dark:bg-white/[0.06] dark:text-zinc-400 dark:ring-white/10 dark:hover:text-zinc-200">
+              className="mt-2 inline-flex max-w-[15rem] items-center gap-1 truncate rounded-full bg-white px-2 py-0.5 text-[10.5px] text-zinc-500 shadow-sm ring-1 ring-zinc-200 transition hover:text-zinc-800 dark:bg-white/[0.06] dark:text-zinc-400 dark:ring-white/10 dark:hover:text-zinc-200">
               <IconLayoutKanban size={10} aria-hidden /><span className="truncate">{m.taskTitle || titles.get(m.taskId)}</span>
             </button>
           ) : null;
