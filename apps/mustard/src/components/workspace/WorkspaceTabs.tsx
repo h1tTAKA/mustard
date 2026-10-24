@@ -229,6 +229,43 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     return () => { alive = false; clearInterval(iv); clearInterval(ivFast); es?.close(); };
   }, [mounted, active, tabs]);
 
+  // #1167 Crew가 나를 부르면(@you — 질문·권한 요청·관문·막힘) 데스크톱 알림. 대화방을 안 열어 둬도 레포 탭마다 5초 확인.
+  // 처음 본 레포는 기준점만(지금 시각) — 앱 켤 때 옛 글로 알림이 쏟아지지 않게. 같은 ms 글은 id로 한 번만.
+  const crewSince = useRef<Record<string, number>>({});
+  const crewSeen = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!mounted || !active) return;
+    const repoPaths = tabs.filter((x): x is { type: "repo"; path: string } => x.type === "repo").map((x) => x.path);
+    if (repoPaths.length === 0) return;
+    for (const p of repoPaths) crewSince.current[p] ??= Date.now();
+    let alive = true;
+    const TITLE: Record<string, [string, string]> = { question: ["❓", "crewchat.notify.question"], permission: ["🔐", "crewchat.notify.permission"], gate: ["🚦", "crewchat.notify.gate"], blocked: ["⛔", "crewchat.notify.blocked"] };
+    const check = () => {
+      if (!getSetting<boolean>(NKEYS.crew, NOTIF_DEFAULTS.crew)) { for (const p of repoPaths) crewSince.current[p] = Date.now(); return; } // 꺼 둔 동안 글은 켜도 안 울림
+      for (const p of repoPaths) {
+        void fetch(`/api/crew/chat?root=${encodeURIComponent(p)}&since=${crewSince.current[p]}&peek=1`).then((r) => r.json()).then((j: { ok?: boolean; msgs?: { id: string; ts: number; from: string; kind: string; text: string; taskTitle?: string; mentions?: string[]; i18n?: { key: string; vars?: Record<string, string | number> } }[] }) => {
+          if (!alive || !j?.ok) return;
+          for (const m of j.msgs ?? []) {
+            crewSince.current[p] = Math.max(crewSince.current[p] ?? 0, m.ts);
+            if (crewSeen.current.has(m.id)) continue;
+            crewSeen.current.add(m.id);
+            const head = TITLE[m.kind];
+            if (!head || !m.mentions?.includes("you")) continue;
+            const focused = typeof document !== "undefined" && document.hasFocus();
+            const at = tabsRef.current.find((x) => tabKey(x) === activeKeyRef.current);
+            if (getSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching) && focused && at?.type === "repo" && at.path === p) continue; // 지금 이 레포를 보고 있음
+            const name = p.split(/[\\/]/).filter(Boolean).pop() || p;
+            const said = (m.i18n ? tRef.current(m.i18n.key, m.i18n.vars) : m.text).replace(/\s+/g, " ").trim();
+            void desktopNotify({ title: `${head[0]} ${tRef.current(head[1])}`, body: `${name}${m.taskTitle ? ` · ${m.taskTitle}` : ""}\n${said.slice(0, 140)}`, suppressWhileFocused: false, target: { repoPath: p } });
+          }
+          if (crewSeen.current.size > 500) crewSeen.current = new Set([...crewSeen.current].slice(-200)); // 오래된 id 정리
+        }).catch(() => { /* 다음 확인에서 */ });
+      }
+    };
+    const iv = setInterval(check, 5000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [mounted, active, tabs]);
+
   useEffect(() => {
     let ts: Tab[] = [];
     let a: string | null = null;
