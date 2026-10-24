@@ -95,26 +95,8 @@ function mapUsage(data: unknown): AgentUsage | undefined {
   };
 }
 
-// #1093 SNA 런타임 동시 세션 상한(기본 5) — 넘으면 "Max active sessions" 에러. 우리 호출(자동 설명·해설·요약·질문)을
-// 프로세스 단위 슬롯으로 줄 세우고(1개는 다른 사용처 몫으로 남김), 그래도 상한이면(다른 곳이 쓰는 중) 기다렸다 재시도.
-const SNA_SLOTS = 4;
-// globalThis — Next가 라우트마다(analyze·observe·backfill) 이 모듈을 따로 번들해도 한 프로세스에서 한 줄.
-const snaQ = ((globalThis as unknown as { __nunopiSnaQ?: { busy: number; waiters: (() => void)[] } }).__nunopiSnaQ ??= { busy: 0, waiters: [] });
-async function acquireSnaSlot(signal?: AbortSignal): Promise<() => void> {
-  while (snaQ.busy >= SNA_SLOTS) {
-    let woken = false;
-    await new Promise<void>((res) => {
-      const wake = () => { woken = true; signal?.removeEventListener("abort", onAbort); res(); };
-      const onAbort = () => { const i = snaQ.waiters.indexOf(wake); if (i >= 0) snaQ.waiters.splice(i, 1); res(); }; // 취소 = 줄에서 빠지고 바로 깸
-      snaQ.waiters.push(wake);
-      signal?.addEventListener("abort", onAbort, { once: true });
-    });
-    if (signal?.aborted) { if (woken) snaQ.waiters.shift()?.(); throw new Error("Analysis cancelled."); } // 깨움을 받았으면 다음 대기자에게
-  }
-  snaQ.busy++;
-  let done = false;
-  return () => { if (done) return; done = true; snaQ.busy--; snaQ.waiters.shift()?.(); };
-}
+// #1093 SNA 동시 세션 줄 — snaQueue.ts(#1162 우선순위, 점검하려고 뗌)
+import { abortable, acquireSnaSlot } from "./snaQueue";
 const isSessionLimit = (e: unknown) => /Max active sessions/i.test(e instanceof Error ? e.message : String(e));
 const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((res) => { const t = setTimeout(res, ms); signal?.addEventListener("abort", () => { clearTimeout(t); res(); }, { once: true }); });
 
@@ -122,7 +104,8 @@ const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((res) => {
 async function runViaSna(prompt: string, opts: Parameters<typeof runViaSnaOnce>[1]): Promise<RunResult> {
   const deadline = Date.now() + 10 * 60_000;
   for (let wait = 2000; ; wait = Math.min(wait * 2, 30_000)) {
-    const release = await acquireSnaSlot(opts.signal);
+    const release = await acquireSnaSlot(opts.signal, opts.priority);
+    opts.onStart?.();
     try { return await runViaSnaOnce(prompt, opts); }
     catch (e) {
       if (!isSessionLimit(e) || opts.signal?.aborted || Date.now() + wait > deadline) throw e;
@@ -147,6 +130,8 @@ async function runViaSnaOnce(
     effort?: boolean; // 분석은 low; 챗은 미강제
     model?: string; // #987 유저 선택 모델(미지정 = defaultSnaModel)
     workspace?: { cwd: string; addDirs?: string[] }; // #998 읽기 전용 작업 범위(서버 검증값)
+    onStart?: () => void; // #1162 자리 잡고 실행 시작
+    priority?: boolean; // #1162 사람이 기다리는 답(Crew 대화방) — 줄 맨 앞
   },
 ): Promise<RunResult> {
   if (opts.signal?.aborted) throw new Error("Analysis cancelled.");
@@ -181,14 +166,14 @@ async function runViaSnaOnce(
   let streamed = false;
   let usage: AgentUsage | undefined;
 
-  for await (const ev of client.agent.runOnceStream({
+  for await (const ev of abortable(client.agent.runOnceStream({
     message: prompt,
     provider: opts.runtime,
     systemPrompt: opts.systemPrompt ?? CODE_SYSTEM_PROMPT,
     reasoningLevel,
     timeout: 600_000, // 큰/청크 분석 대비 충분히 크게.
     ...runtimeOpts,
-  })) {
+  }), opts.signal)) {
     if (opts.signal?.aborted) throw new Error("Analysis cancelled.");
     const type = ev.type as string | undefined;
     if (type === "tool_use" || type === "tool_call" || type === "tool_result") {
@@ -384,13 +369,15 @@ function createSnaProvider(cfg: SnaProviderConfig): AgentProvider {
           signal: options?.signal,
           onProgress: streamOnProgress,
           // 추론 표시는 챗류·덱에이전트에서만 — 분석/청크는 partial 파싱 경로라 미전달.
-          onThinking: isChatStream ? options?.onThinking : undefined,
+          onThinking: isChatStream || isCrew ? options?.onThinking : undefined, // #1162 Crew는 추론도 '진행'(무진행 타이머)
           fullProgress,
           // 덱에이전트는 저추론(그룹핑이라 깊은 추론 불필요) — 챗/카드설명만 고추론 허용.
           effort: !isChatLike && !isReview,
           // 모드별 모델(#987) — 클라가 뷰별 providerSettings에 주입.
           model: (request.providerSettings?.[providerId as "claude-agent" | "codex-agent" | "opencode-agent"])?.model,
           workspace: isChat ? options?.workspace : undefined, // #998 캐치업 질문(chat)만 읽기 전용 도구
+          priority: options?.priority, // #1162
+          onStart: options?.onStart,
         });
 
         return isChatStream || isDedup || isQuiz || isReview || isCrew

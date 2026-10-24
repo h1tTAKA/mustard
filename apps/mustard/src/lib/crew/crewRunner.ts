@@ -20,7 +20,7 @@ import { defaultSnaModel } from "@mustard/nunopi/server";
 import { translate } from "@mustard/core/messages";
 import { appendMsg, findMsg, parseMentions, readMsgs, type CrewMsg } from "./crewChat";
 import { snaClaudeProvider, snaCodexProvider, snaOpenCodeProvider } from "@mustard/nunopi/server";
-import { callsEveryone, pickParticipants, planFromWrapUp, readAnswer, readJson } from "./crewMeeting";
+import { callsEveryone, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting";
 import { isFailedNote } from "@/lib/failText";
 import { freshIds, hasTriggers, readTriggers, scheduleDue, writeTriggers, type CrewTrigger } from "./crewTriggers";
 import { emitNarration } from "@/lib/mcpActivity";
@@ -34,6 +34,8 @@ export interface CrewRun {
   state: RunState; startedAt: number; endedAt?: number;
   lastActivity?: string; toolCount: number; tokens?: { input: number; output: number }; costUsd?: number;
   summary?: string; error?: string; permission?: { request: Record<string, unknown>; at: number };
+  runningAt?: number; // #1162 SNA에 시작을 맡긴 때(준비 시간은 '안 뜸' 3분에 안 셈)
+  lastEventAt?: number; // #1162 에이전트에게서 마지막으로 신호(이벤트·권한 요청)가 온 때 — 멈춤 감시
 }
 
 export const MAX_CONCURRENT = 3; // 동시 실행 상한(에픽 결정 기본값). SNA 세션 상한은 Electron에서 8로.
@@ -88,6 +90,7 @@ function writeHook() { mkdirSync(baseDir(), { recursive: true }); writeFileSync(
 export async function hookDecision(runId: string, token: string, tool: string, input: Record<string, unknown>): Promise<{ decision: "allow" | "deny"; reason?: string }> {
   const run = g.runs.get(runId);
   if (!run || g.tokens.get(runId) !== token || !ACTIVE.includes(run.state)) return { decision: "deny", reason: "unknown or finished run" };
+  run.lastEventAt = Date.now();
   const d = decide(tool, input ?? {}, run.worktree);
   if (d === "allow") return { decision: "allow" };
   if (d === "deny") { run.lastActivity = `⛔ ${tool} blocked by policy`; persist(run); return { decision: "deny", reason: "Blocked by Mustard Crew policy (push/merge/destructive git are human-only)" }; }
@@ -99,7 +102,7 @@ export async function hookDecision(runId: string, token: string, tool: string, i
   const ok = await new Promise<boolean>((res) => {
     const timer = setTimeout(() => { // 10분 무응답 = 거절, 카드는 다시 실행 중으로(보안 리뷰)
       g.pending.delete(runId);
-      if (run.state === "needs-permission") { run.state = "running"; run.permission = undefined; run.lastActivity = "permission timed out (denied)"; moveCard(run.root, run.taskId, "running"); persist(run, true); }
+      if (run.state === "needs-permission") { run.state = "running"; run.permission = undefined; run.lastEventAt = Date.now(); run.lastActivity = "permission timed out (denied)"; moveCard(run.root, run.taskId, "running"); persist(run, true); }
       res(false);
     }, 10 * 60_000);
     g.pending.set(runId, { resolve: (v) => { clearTimeout(timer); g.pending.delete(runId); res(v); }, timer });
@@ -210,6 +213,7 @@ function ensureTicker() {
       g.trigBusy = true;
       void (async () => { for (const root of g.roots) if (hasTriggers(root)) await checkTriggers(root).catch(() => {}); })().finally(() => { g.trigBusy = false; });
     }
+    watchStalls();
     for (const root of g.roots) {
       let ready: { id: string }[] = [];
       try {
@@ -228,6 +232,35 @@ function ensureTicker() {
     }
   }, 2000);
 }
+// #1162 멈춘 실행 감시 — SNA에 시작을 맡겼는데 에이전트가 아예 안 뜨거나(10-23 실제: 대화 기록 없이 2시간 'started') 도중에 소식이 끊김.
+// 시작 후 3분 동안 신호가 한 번도 없거나, 신호가 오다가 20분 끊기면 실패로 → 기존 흐름이 다시 시도(3번이면 막힘). 사람 답 기다리는 중(needs-permission)은 제외.
+// 준비(worktree·세션 만들기)가 20분 넘게 안 끝나도 같은 처리. 20분 = Claude 도구 하나의 상한(Bash 최대 10분)보다 넉넉히 — 조용한 긴 도구는 안 죽임.
+// '안 뜸' 10분 = 첫 턴에 도구·글자 없이 오래 생각하는 경우도 넉넉히(오판 3번이면 카드가 막힘, 리뷰).
+const NEVER_STARTED_MS = 10 * 60_000, STALLED_MS = 20 * 60_000;
+function watchStalls(now = Date.now()) {
+  for (const run of g.runs.values()) {
+    if (run.state !== "running" && run.state !== "starting") continue;
+    const never = !run.lastEventAt && (run.state === "starting" ? now - run.startedAt > STALLED_MS : now - (run.runningAt ?? run.startedAt) > NEVER_STARTED_MS);
+    const stalled = !!run.lastEventAt && now - run.lastEventAt > STALLED_MS;
+    if (!never && !stalled) continue;
+    const wasStarting = run.state === "starting";
+    if (wasStarting) g.starting.delete(`${run.root}\n${run.taskId}`); // 멈춘 startRun이 줄 자리·동시 상한을 계속 쥐지 않게(늦게 풀려도 startRun이 상태 보고 그만둠)
+    run.state = "failed"; run.endedAt = now; run.error = tr(never ? "crew.reason.neverStarted" : "crew.reason.stalled");
+    persist(run, true);
+    // 옛 에이전트를 확실히 끈 뒤에만 재시도 — 10초 안에 못 끄면 사람에게(같은 worktree에서 둘이 돌지 않게, 리뷰)
+    const sid = run.sessionId;
+    void (async () => {
+      const killed = !sid || await Promise.race([getSnaClient().then((c) => c.agent.kill(sid)).then(() => true, () => false), new Promise<boolean>((r) => setTimeout(() => r(false), 10_000))]);
+      if (activeFor(run.root, run.taskId)) { persist(run, true); return; } // 그 사이 사람이 새로 실행 — 카드는 새 실행 몫(리뷰)
+      // 준비 중 멈춤은 재시도 안 함 — 걸린 agent.start가 나중에 풀려 새 실행과 겹칠 수 있음(리뷰)
+      if (killed && !wasStarting) finish(run, { status: "failed", summary: run.error }); // 재시도(3번이면 막힘), 이유는 finish가 대화방에
+      else {
+        block(run.root, run.taskId, run.stage ?? 0, run.error!);
+      }
+      persist(run, true);
+    })();
+  }
+}
 export function registerRoot(root: string, origin?: string) {
   g.roots.add(root);
   if (origin) g.origin = safeOrigin(origin);
@@ -243,6 +276,7 @@ async function wire() {
     if (isHistory) return;
     const id = g.bySession.get(session); const run = id ? g.runs.get(id) : undefined;
     if (!run || !ACTIVE.includes(run.state)) return;
+    run.lastEventAt = Date.now();
     const type = String(event.type ?? ""), msg = typeof event.message === "string" ? event.message : "";
     const data = (event.data ?? {}) as Record<string, unknown>;
     if (type === "tool_use") {
@@ -278,6 +312,7 @@ async function wire() {
   sna.agent.onPermissionRequest(({ session, request, createdAt }) => {
     const id = g.bySession.get(session); const run = id ? g.runs.get(id) : undefined;
     if (!run) return;
+    run.lastEventAt = Date.now();
     if (!ACTIVE.includes(run.state)) { void sna.agent.respondPermission(session, false).catch(() => {}); return; } // 끝난 실행 — 거절(매달려 있지 않게)
     // 사람 답을 기다리는 요청이 이미 있음 — SNA 응답엔 요청 id가 없어, 지금 자동으로 답하면 사람이 볼 그 요청에 답이 가버림(리뷰). 사람 답이 먼저.
     if (run.state === "needs-permission") return;
@@ -360,9 +395,18 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     rmSync(join(wt.dir, ".crew", "handoff.json"), { force: true }); // 앞 역할 봉투를 이번 결과로 착각하지 않게
     await wire();
     const sna = await getSnaClient();
+    // #1162 이 카드의 직전 실행 세션을 먼저 끔 — 감시·Stop이 못 끈 것, 앱 재시작으로 놓친 것까지(SNA는 앱보다 오래 삶).
+    // 이미 끝난 세션이면 no_session. 끄기 실패면 시작 안 함(아래 catch → 사람에게) — 같은 worktree에 둘이 돌지 않게.
+    // 나보다 먼저 시작한 실행만 — 감시가 포기한 늦은 startRun이 새 실행을 끄지 않게(리뷰). 끄기는 10초까지.
+    if (run.state !== "starting") return run;
+    const prev = [...g.runs.values(), ...readRuns(root)].filter((r) => r.taskId === taskId && r.id !== run.id && r.startedAt < run.startedAt && r.sessionId).sort((a, b) => b.startedAt - a.startedAt)[0];
+    if (prev?.sessionId) await Promise.race([sna.agent.kill(prev.sessionId), new Promise((_, rej) => setTimeout(() => rej(new Error("previous agent did not stop")), 10_000))]);
     const { sessionId } = await sna.sessions.create({ label: `crew:${task.title.slice(0, 60)}`, cwd: wt.dir, meta: { crew: true, root, taskId, runId: run.id, role: role.id } });
     run.sessionId = sessionId;
     g.bySession.set(sessionId, run.id);
+    if (run.state !== "starting") { void sna.agent.kill(sessionId).catch(() => {}); return run; } // #1162 준비 중에 감시가 실패 처리 — 시작하지 않음
+    persist(run, true); // 세션 번호를 바로 기록 — agent.start 도중 앱이 꺼져도 다음 시작이 이 세션을 끔(리뷰)
+    // ponytail: agent.start가 20분 넘게 걸렸다가 사람이 다시 실행한 뒤에야 풀리면, 아래 상태 확인이 끌 때까지 잠깐 둘이 겹칠 수 있음 — 실제로 보이면 옛 startRun을 기다렸다 시작
     await sna.agent.subscribe(sessionId);
     const isClaude = role.provider === "claude-code";
     const token = randomUUID();
@@ -381,10 +425,12 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
       disallowedTools: DISALLOWED,
       meta: { crew: true, runId: run.id },
     });
-    run.state = "running"; run.lastActivity = "started";
+    if (run.state !== "starting") { void sna.agent.kill(sessionId).catch(() => {}); return run; } // #1162 준비가 너무 길어 감시가 이미 실패 처리 — 늦게 뜬 에이전트는 끔
+    run.state = "running"; run.lastActivity = "started"; run.runningAt = Date.now();
     persist(run, true);
     say(root, { from: role.id, provider: role.provider, kind: "start", taskId, taskTitle: task.title, ...tx(note ? "crewchat.restart" : "crewchat.start", { card: task.title }) });
   } catch (e) {
+    if (run.state !== "starting") { if (run.sessionId) void getSnaClient().then((c) => c.agent.kill(run.sessionId!)).catch(() => {}); return run; } // #1162 감시가 이미 실패 처리(재시도 중) — 만든 세션은 정리
     run.state = "failed"; run.endedAt = Date.now(); run.error = oneLine(String((e as Error)?.message ?? e), 400);
     block(root, taskId, stage, run.error); // 시작 자체 실패(worktree·SNA)는 재시도 안 함 — 사람이 확인
     persist(run, true);
@@ -413,7 +459,7 @@ export async function respondPermission(root: string, taskId: string, approved: 
   if (!hook && !run.sessionId) throw new Error("no pending permission");
   // #1137 상태를 먼저(동기) 바꿈 — 기다리는 동안 두 번째 클릭이 같은 세션에 또 답하지 않게(리뷰). SNA 실패면 되돌림.
   const prev = run.permission;
-  run.state = "running"; run.permission = undefined;
+  run.state = "running"; run.permission = undefined; run.lastEventAt = Date.now(); // 사람 기다린 시간은 멈춤으로 안 셈(리뷰)
   if (hook) hook.resolve(approved); // Claude — Mustard 훅이 기다리는 중
   else {
     try { await (await getSnaClient()).agent.respondPermission(run.sessionId!, approved); } // Codex·OpenCode — SNA 승인
@@ -502,9 +548,20 @@ function failReason(e: unknown): string {
 // 역할에게 묻되, Claude가 아닌 AI가 실패하면 Claude로 한 번 더(대화방에 이유와 함께 알림). 그래도 실패면 throw(이유 담김).
 // failed = 이번 글 처리에서 이미 실패한 AI — 다음 역할부턴 바로 Claude, 알림도 한 번만(리뷰: 같은 AI 역할 여럿이면 알림·헛호출 반복).
 async function askOrFallback(root: string, role: CrewRole, prompt: string, replyTo: string, failed: Set<string>): Promise<{ text: string; provider: string }> {
-  const viaClaude = async () => { try { return { text: await ask({ ...role, provider: "claude-code", model: "" }, prompt), provider: "claude-code" }; } catch (e2) { throw new Error(failReason(e2)); } };
+  // #1162 시간 초과면 같은 AI에게 한 번 더(일시적으로 느린 것 — 대화방에 알림). 두 번째도 실패면 그대로 던짐.
+  // 다시 묻기·Claude로 바꾸기 전부 한 마감(4분) 안에서 — 사람이 기다리는 최대 시간(리뷰: 따로 세면 최악 16분).
+  const deadline = Date.now() + ASK_MAX_MS;
+  const askRetry = async (r: CrewRole) => {
+    try { return await ask(r, prompt, deadline); }
+    catch (e) {
+      if (!/timeout/i.test(String((e as Error)?.message ?? e)) || deadline - Date.now() < 30_000) throw e; // 남은 시간이 너무 짧으면 그만
+      say(root, { from: "board", kind: "blocked", replyTo, ...tx("crewchat.retrying", { role: roleLabel(r.id) }) });
+      return await ask(r, prompt, deadline);
+    }
+  };
+  const viaClaude = async () => { try { return { text: await askRetry({ ...role, provider: "claude-code", model: "" }), provider: "claude-code" }; } catch (e2) { throw new Error(failReason(e2)); } };
   if (role.provider !== "claude-code" && failed.has(role.provider)) return viaClaude();
-  try { return { text: await ask(role, prompt), provider: role.provider }; }
+  try { return { text: await askRetry(role), provider: role.provider }; }
   catch (e) {
     const why = failReason(e);
     if (role.provider === "claude-code") throw new Error(why);
@@ -514,16 +571,16 @@ async function askOrFallback(root: string, role: CrewRole, prompt: string, reply
   }
 }
 
-// 역할 하나에게 한 번 묻기 — 역할의 AI·모델, 90초(신호만으론 조용히 멈춘 CLI가 안 끊김 → 타이머와 경주, 재리뷰). 실패면 throw.
-async function ask(role: CrewRole, prompt: string): Promise<string> {
+// 역할 하나에게 한 번 묻기 — 역할의 AI·모델. #1162 사람이 기다리는 답이라 SNA 줄 맨 앞(priority), 타이머는 '무진행 90초 + 마감까지'
+// (자리 잡은 뒤부터 셈, 스트림 글자·추론이 오면 다시 셈 — 조용히 멈춘 CLI는 그대로 끊김). 실패면 throw.
+const ASK_MAX_MS = 240_000;
+async function ask(role: CrewRole, prompt: string, deadline = Date.now() + ASK_MAX_MS): Promise<string> {
+  if (deadline - Date.now() <= 0) throw new Error("timeout");
   const provider = ANALYZE[role.provider] ?? snaClaudeProvider;
   const pid = AGENT_ID[role.provider] ?? "claude-agent";
-  const ac = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const res = await Promise.race([provider.analyze({ locale: narrationLocale(), providerId: pid, mode: "crew", code: prompt, messages: [{ role: "user", content: prompt }],
+  const res = await withIdleTimeout((touch, signal) => provider.analyze({ locale: narrationLocale(), providerId: pid, mode: "crew", code: prompt, messages: [{ role: "user", content: prompt }],
     ...(role.model?.trim() && (role.provider === "claude-code" || ANALYZE[role.provider]) ? { providerSettings: { [pid]: { model: role.model.trim() } } } : {}) } as Parameters<typeof provider.analyze>[0], // 다른 AI(grok·cursor)는 Claude로 → 그 모델 id는 안 맞음
-    { signal: ac.signal }),
-    new Promise<never>((_, rej) => { timer = setTimeout(() => { ac.abort(); rej(new Error("timeout")); }, 90_000); })]).finally(() => clearTimeout(timer));
+    { signal, onStart: touch, onProgress: touch, onThinking: touch, priority: true }), 90_000, deadline - Date.now());
   // chat 모드는 학습 카드 블록(```nunopi-cards …```)을 붙임 — 대화방 답엔 필요 없음, 어디 있든 전부 뺌(안 닫힌 건 끝까지)(앱 확인)
   const text = (res?.summary ?? "").replace(/```nunopi-cards[\s\S]*?(```|$)/g, "").trim();
   if (!text || isFailedNote(text)) throw new Error(text || "empty");

@@ -36,7 +36,9 @@ const DECISION_KEYS = ["crewchat.decision.approve", "crewchat.decision.retry"];
 export default function CrewChat({ root }: { root: string }) {
   const t = useT();
   // #1125 보드·시스템 메시지는 키로 지금 언어 번역(옛 메시지는 text를 틀과 맞춰 다시 번역), 사람이 친 말은 그대로(키 없는 옛 승인 버튼 문구만 — 고정 문장 통째 일치)
-  const msgText = (m: CrewMsg) => (m.i18n ? t(m.i18n.key, m.i18n.vars) + (m.i18n.suffix ?? "") : m.from === "human" ? (m.kind === "decision" ? relocalize(m.text, DECISION_KEYS, t) : m.text) : relocalize(m.text, CREW_TEXT_KEYS, t));
+  // #1162 권한 요청의 명령은 `…` 안에 들어감 — 여러 줄(heredoc)·` 가 있으면 코드 표시가 깨져 # 줄이 제목으로 렌더됨 → 한 줄(⏎)·' 로(저장된 옛 글도 여기서)
+  const permTool = (v: Record<string, unknown>) => ({ ...v, tool: String(v.tool ?? "").replace(/\s*\n\s*/g, " ⏎ ").replace(/`/g, "'") });
+  const msgText = (m: CrewMsg) => (m.i18n ? t(m.i18n.key, m.kind === "permission" && m.i18n.vars ? permTool(m.i18n.vars) : m.i18n.vars) + (m.i18n.suffix ?? "") : m.from === "human" ? (m.kind === "decision" ? relocalize(m.text, DECISION_KEYS, t) : m.text) : m.kind === "permission" ? relocalize(m.text, CREW_TEXT_KEYS, t).replace(/\s*\n\s*/g, " ⏎ ") : relocalize(m.text, CREW_TEXT_KEYS, t)); // 키 없는 옛 권한 글은 줄만 한 줄로
   const toast = useToast();
   const [roles, setRoles] = useCrewRoles();
   const [runs, reloadRuns] = useCrewRuns(root, () => {});
@@ -200,7 +202,7 @@ export default function CrewChat({ root }: { root: string }) {
           const parent = m.replyTo ? msgs.find((x) => x.id === m.replyTo) : undefined;
           const cardChip = m.taskId && (m.taskTitle || titles.get(m.taskId)) && last ? (
             <button type="button" onClick={() => openCrewTask(root, m.taskId!)} title={t("crewchat.openCard")}
-              className="mt-1 inline-flex max-w-[15rem] items-center gap-1 truncate rounded-full bg-white px-2 py-0.5 text-[10.5px] text-zinc-500 shadow-sm ring-1 ring-zinc-200 transition hover:text-zinc-800 dark:bg-white/[0.06] dark:text-zinc-400 dark:ring-white/10 dark:hover:text-zinc-200">
+              className="mt-2 inline-flex max-w-[15rem] items-center gap-1 truncate rounded-full bg-white px-2 py-0.5 text-[10.5px] text-zinc-500 shadow-sm ring-1 ring-zinc-200 transition hover:text-zinc-800 dark:bg-white/[0.06] dark:text-zinc-400 dark:ring-white/10 dark:hover:text-zinc-200">
               <IconLayoutKanban size={10} aria-hidden /><span className="truncate">{m.taskTitle || titles.get(m.taskId)}</span>
             </button>
           ) : null;
@@ -217,7 +219,7 @@ export default function CrewChat({ root }: { root: string }) {
                 </div>
               ) : isMe ? (
                 /* 나 — 오른쪽 옅은 겨자 말풍선(진한 겨자는 글자가 안 읽힘, #1135 유저) */
-                <div className={`flex flex-col items-end ${first ? "mt-2.5" : "mt-0.5"}`}>
+                <div className={`flex flex-col items-end ${first ? "mt-3" : "mt-2"}`}>
                   {parent && <div className="mb-0.5 max-w-[80%] truncate text-[10.5px] text-zinc-400"><IconArrowBackUp size={10} className="mr-0.5 inline" aria-hidden />{who(parent.from)}: {msgText(parent).slice(0, 60)}</div>}
                   <div className="flex max-w-[85%] items-end gap-1.5">
                     {last && <span className="shrink-0 pb-0.5 text-[9.5px] tabular-nums text-zinc-400">{time(m.ts)}</span>}
@@ -227,7 +229,7 @@ export default function CrewChat({ root }: { root: string }) {
                 </div>
               ) : (
                 /* 에이전트 — 왼쪽 아바타·이름·말풍선 */
-                <div className={`group/msg flex gap-2 ${first ? "mt-2.5" : "mt-0.5"}`}>
+                <div className={`group/msg flex gap-2 ${first ? "mt-3" : "mt-2"}`}>
                   <div className="w-8 shrink-0">{first && <Avatar from={m.from} known={known} />}</div>
                   <div className="flex min-w-0 max-w-[85%] flex-col items-start">
                     {first && (
