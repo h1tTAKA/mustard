@@ -97,7 +97,13 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       term.open(host);
       // GPU(WebGL) 렌더 — 설정 gpu=false면 canvas 폴백(#926).
       if (getSetting<boolean>(TKEYS.gpu, TERMINAL_DEFAULTS.gpu)) {
-        try { term.loadAddon(new webgl.WebglAddon()); } catch { /* WebGL 미지원 → 기본 렌더 폴백 */ }
+        try {
+          const gl = new webgl.WebglAddon();
+          // #1165 GPU 프로세스가 다시 뜨면 WebGL 문맥이 사라짐 → 그대로 두면 글자 빠짐·흰 화면. 떼면 xterm이 기본(DOM) 렌더로 바꾸고 전체를 다시 그림.
+          // ponytail: 이 탭은 WebGL로 안 돌아감(GPU가 또 죽을 수 있음) — 새 탭부터 다시 WebGL.
+          gl.onContextLoss(() => gl.dispose());
+          term.loadAddon(gl);
+        } catch { /* WebGL 미지원 → 기본 렌더 폴백 */ }
       }
       // 설정 라이브 갱신(#926) — fontSize/lineHeight/cursor 등 즉시 반영 + fit. (scrollback/gpu는 새 탭부터.)
       const applyTermSettings = () => {
