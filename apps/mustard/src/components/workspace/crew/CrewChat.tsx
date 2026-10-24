@@ -3,8 +3,8 @@
 // 채팅앱(단톡방)형: 방 헤더 + 멤버 프로필 줄(상태 점·누르면 @), 남은 왼쪽 아바타·이름·말풍선, 나는 오른쪽 겨자 말풍선, 보드 안내는 가운데 알림, 날짜 알약.
 // 입력: @에이전트 = 그 역할에게 새 카드(그록봇식), 메시지에 답글 = 그 카드로 전달. 2초 폴링(since 이후만).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconArrowBackUp, IconArrowUp, IconAt, IconLayoutKanban, IconSettings, IconUser, IconUsers, IconX } from "@tabler/icons-react";
-import { Markdown, useT, useToast, relocalize, CREW_TEXT_KEYS } from "@mustard/core";
+import { IconArrowBackUp, IconArrowUp, IconAt, IconBell, IconBellOff, IconLayoutKanban, IconSettings, IconUser, IconUsers, IconX } from "@tabler/icons-react";
+import { Markdown, useT, useToast, relocalize, CREW_TEXT_KEYS, useSetting, setSetting, NKEYS, NOTIF_DEFAULTS } from "@mustard/core";
 import type { CrewMsg } from "@/lib/crew/crewChat";
 import type { CrewRun } from "@/lib/crew/crewRunner";
 import { PROVIDER_LABEL, RoleIcon, isActiveRun, roleDesc, roleName, useCrewRoles, useCrewRuns } from "./crewUi";
@@ -40,6 +40,7 @@ export default function CrewChat({ root }: { root: string }) {
   const permTool = (v: Record<string, unknown>) => ({ ...v, tool: String(v.tool ?? "").replace(/\s*\n\s*/g, " ⏎ ").replace(/`/g, "'") });
   const msgText = (m: CrewMsg) => (m.i18n ? t(m.i18n.key, m.kind === "permission" && m.i18n.vars ? permTool(m.i18n.vars) : m.i18n.vars) + (m.i18n.suffix ?? "") : m.from === "human" ? (m.kind === "decision" ? relocalize(m.text, DECISION_KEYS, t) : m.text) : m.kind === "permission" ? relocalize(m.text, CREW_TEXT_KEYS, t).replace(/\s*\n\s*/g, " ⏎ ") : relocalize(m.text, CREW_TEXT_KEYS, t)); // 키 없는 옛 권한 글은 줄만 한 줄로
   const toast = useToast();
+  const crewNotify = useSetting<boolean>(NKEYS.crew, NOTIF_DEFAULTS.crew); // #1167
   const [roles, setRoles] = useCrewRoles();
   const [runs, reloadRuns] = useCrewRuns(root, () => {});
   const [msgs, setMsgs] = useState<CrewMsg[]>([]);
@@ -159,6 +160,12 @@ export default function CrewChat({ root }: { root: string }) {
         <span className="flex shrink-0 items-center gap-0.5 text-[11.5px] tabular-nums text-zinc-400"><IconUsers size={12} aria-hidden />{roles.length + 1}</span>
         {workingCount > 0 && <span className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10.5px] font-medium text-emerald-600 dark:text-emerald-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" aria-hidden />{workingCount}</span>}
         <span className="ml-auto truncate text-[11px] text-zinc-400 dark:text-zinc-500">{channel}</span>
+        {/* #1167 Crew 알림 on/off — 역할이 나를 부르면(질문·권한·관문·막힘) 데스크톱 알림 */}
+        <button type="button" onClick={() => setSetting(NKEYS.crew, !crewNotify)} aria-pressed={crewNotify}
+          title={`${t("crewchat.notify")} — ${crewNotify ? t("crewchat.notifyOff") : t("crewchat.notifyOn")}`} aria-label={crewNotify ? t("crewchat.notifyOff") : t("crewchat.notifyOn")}
+          className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200">
+          {crewNotify ? <IconBell size={14} aria-hidden /> : <IconBellOff size={14} aria-hidden />}
+        </button>
         <button type="button" onClick={() => setRolesOpen(true)} title={t("crewchat.manageRoles")} aria-label={t("crewchat.manageRoles")}
           className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200">
           <IconSettings size={14} aria-hidden />

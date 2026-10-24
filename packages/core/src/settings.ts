@@ -55,13 +55,14 @@ export const AKEYS = {
 
 // 알림(#928)
 // suppressWhileWatching(#1021, 옛 suppressWhileFocused): "지금 보고 있는 레포 탭"의 에이전트 완료 알림만 억제(#973~). 다른 레포는 포커스여도 알림.
-export const NOTIF_DEFAULTS = { agentDone: true, suppressWhileWatching: true, terminalBell: false, master: true, silent: false };
+export const NOTIF_DEFAULTS = { agentDone: true, suppressWhileWatching: true, terminalBell: false, master: true, silent: false, crew: true };
 export const NKEYS = {
   agentDone: "notif.agentDone",
   suppressWhileWatching: "notif.suppressWhileWatching",
   terminalBell: "notif.terminalBell",
   master: "notif.master",   // #939 알림 전체 on/off
   silent: "notif.silent",   // #939 소리 없이(무음 알림)
+  crew: "notif.crew",       // #1167 Crew 역할이 사람을 부르면(질문·권한·관문·막힘) 알림 — 에이전트 대화방 헤더 🔔
 } as const;
 
 // 워크스페이스/일반(#939)
