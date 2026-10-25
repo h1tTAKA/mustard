@@ -238,7 +238,14 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const noteAt = new Map<number, DiffNote[]>(); // #1169 이 파일·이 diff의 메모(새 코드 줄 번호, 범위면 끝 줄)
   for (const n of dnotes) if (n.path === file && n.scope === scope) noteAt.set(n.line, [...(noteAt.get(n.line) ?? []), n]);
   // 메모 자리의 지금 코드(범위면 범위 전체) — 달 때 저장한 것과 비교해 "줄이 바뀜"(리뷰: 범위 중간 줄이 바뀌어도 잡게)
-  const noteText = (start: number | undefined, end: number) => (rangeRows("RIGHT", start ?? end, end) ?? []).map((k) => lines[k].text).join("\n");
+  // 새 줄 번호 → 줄 위치 표를 한 번만(메모마다 diff 전체를 훑지 않게 — 큰 파일·메모 많을 때, 리뷰)
+  const rowByNew = new Map<number, number>();
+  if (!pr) lines.forEach((l, i) => { if (l.kind !== "del" && l.kind !== "meta" && l.kind !== "hunk" && l.newN != null) rowByNew.set(l.newN, i); });
+  const noteText = (start: number | undefined, end: number) => {
+    const out: string[] = [];
+    for (let n = start ?? end; n <= end; n++) { const k = rowByNew.get(n); if (k === undefined) return ""; out.push(lines[k].text); }
+    return out.join("\n");
+  };
   // GitHub는 PR diff 구간(바뀐 줄 앞뒤 3줄) 안에만 줄 댓글을 받음 — 파일 전체(#1133)로 받았으면 먼 줄엔 + 없음(리뷰: 422로 보류 리뷰 전체가 막힘)
   const near: boolean[] = new Array(lines.length).fill(!full);
   if (full) {
