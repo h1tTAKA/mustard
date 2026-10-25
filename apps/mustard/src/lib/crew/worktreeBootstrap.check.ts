@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { isTrusted, markSetupDone, materialize, normRel, parseConfig, parseInclude, readConfig, runArchive, runSetup, setupDone, trustScript } from "./worktreeBootstrap.ts";
+import { isTrusted, markSetupDone, materialize, noLinkUnder, normRel, parseConfig, parseInclude, readConfig, runArchive, runSetup, setupDone, trustScript } from "./worktreeBootstrap.ts";
 
 // 경로 정리·거부(Orca 규칙)
 assert.strictEqual(normRel("./.env/"), ".env");
@@ -91,6 +91,7 @@ setCfg(wt, { setup: slow }); trustScript(root, slow);
 const t0 = Date.now(); const s2 = await runSetup(root, wt, 300);
 assert.ok(s2.status === "failed" && s2.result.timedOut && Date.now() - t0 < 5000, "시간 초과면 그룹째 끔");
 
+assert.strictEqual(noLinkUnder("/a/b", "/a/bc/x"), false, "base 밖(이름만 비슷)은 거부");
 // 설정 파일이 링크면 안 읽음(로컬 파일 노출 방지)
 const lroot = realpathSync(mkdtempSync(join(tmpdir(), "wtb-link-")));
 writeFileSync(join(lroot, "secret.txt"), JSON.stringify({ scripts: { setup: "cat ~/.ssh/id_rsa" } }));
@@ -100,6 +101,14 @@ const lroot2 = realpathSync(mkdtempSync(join(tmpdir(), "wtb-link2-")));
 mkdirSync(join(lroot2, "real", ".mustard"), { recursive: true }); writeFileSync(join(lroot2, "real", ".mustard", "config.json"), JSON.stringify({ scripts: { setup: "x" } }));
 mkdirSync(join(lroot2, "wt")); symlinkSync(join(lroot2, "real", ".mustard"), join(lroot2, "wt", ".mustard"));
 assert.strictEqual(readConfig(join(lroot2, "wt")).setup, undefined, "중간 폴더 링크도 거부");
+
+// 백그라운드로 남긴 프로세스가 출력 통로를 쥐어도 bash가 끝나면 바로 끝남(그룹째 정리)
+const bg = "sleep 30 & echo started";
+setCfg(wt, { setup: bg }); trustScript(root, bg); markSetupDone(root, wt, "reset");
+const tb = Date.now(); const b = await runSetup(root, wt, 20_000);
+assert.ok(b.status === "ok" && Date.now() - tb < 3000, "exit 기준으로 끝남(시간 초과까지 안 기다림)");
+// 링크 검사 — 정규화 안 된 base(상대·..)여도 허술하게 통과하지 않음
+assert.strictEqual(readConfig(join(lroot2, "wt", "..", "wt")).setup, undefined, "표기가 달라도 링크 거부");
 
 // archive는 메인 체크아웃 설정 + 승인된 것만
 assert.strictEqual(await runArchive(root, wt), null, "archive 없으면 null");

@@ -1,12 +1,12 @@
 // worktree 부트스트랩 설정(#1176) — 새 worktree에 setup 스크립트·Git에 안 올라가는 파일 복사·폴더 공유.
 // Orca(orca.yaml + .worktreeinclude)와 같은 규칙. 설정 파일만 YAML 대신 JSON(.mustard/config.json, 의존성 없이) — 키 이름은 Orca와 같게.
 // 서버 전용.
-import { execFile, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, constants, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { cp } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, delimiter, dirname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
 export const CONFIG_PATH = join(".mustard", "config.json");
@@ -83,8 +83,10 @@ const readSmall = (file: string, base: string): string | null => {
 };
 // base 안의 상대 경로 각 조각이 링크가 아닌지(없는 조각은 통과 — 앞으로 만들 경로). base 자체는 믿음.
 export function noLinkUnder(base: string, full: string): boolean {
-  const rel = full.slice(base.length).split("/").filter(Boolean);
-  let cur = base;
+  const b = resolve(base), f = resolve(full); // 정규화 후 비교 — 표기가 달라도 검사가 그냥 통과되지 않게(리뷰)
+  if (f !== b && !f.startsWith(b + sep)) return false;
+  const rel = relative(b, f).split(sep).filter(Boolean);
+  let cur = b;
   for (const seg of rel) {
     cur = join(cur, seg);
     try { if (lstatSync(cur).isSymbolicLink()) return false; } catch { return true; }
@@ -180,7 +182,25 @@ export const MAX_REVIEW = 4000; // 관문에 보여 줄 수 있는 길이 — �
 export function setupDone(root: string, dir: string): string | null { try { return readFileSync(stateFile(root, dir, "done"), "utf8"); } catch { return null; } }
 export function markSetupDone(root: string, dir: string, value: string) { mkdirSync(dirname(stateFile(root, dir, "done")), { recursive: true }); writeFileSync(stateFile(root, dir, "done"), value); }
 // 스크립트에 넘기는 환경변수는 허용 목록만 — Mustard 프로세스의 API 키·토큰을 레포 코드에 넘기지 않게(리뷰)
-const ENV_KEEP = ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TERM"];
+const ENV_KEEP = ["HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TERM", "SSH_AUTH_SOCK", "NVM_BIN"];
+// Dock으로 켠 앱은 셸 설정을 안 읽어 mise·asdf·volta·bun 경로가 없음 → 있는 것만 PATH 앞에(setup의 npm·pnpm 못 찾음 방지, 리뷰)
+function setupPath(): string {
+  const h = homedir();
+  const extra = [join(h, ".local", "share", "mise", "shims"), join(h, ".asdf", "shims"), join(h, ".volta", "bin"), join(h, ".bun", "bin"), join(h, ".cargo", "bin"), process.env.NVM_BIN ?? ""]
+    .filter((p) => p && existsSync(p));
+  return [...new Set([...extra, ...(process.env.PATH ?? "").split(delimiter)].filter(Boolean))].join(delimiter);
+}
+// pid 파일의 프로세스가 정말 우리 setup인지 — pid는 재사용되므로 명령이 bash -e -c 인지 보고 끔(리뷰)
+function killStale(pidFile: string) {
+  let old = 0;
+  try { old = Number(readFileSync(pidFile, "utf8")); } catch { return; }
+  if (!(old > 0)) return;
+  try {
+    const cmd = execFileSync("ps", ["-o", "command=", "-p", String(old)], { encoding: "utf8", timeout: 5000 }).trim();
+    if (cmd.startsWith("bash -e -c")) process.kill(-old, "SIGKILL");
+  } catch { /* 이미 끝남 */ }
+  rmSync(pidFile, { force: true });
+}
 export const scriptHash = (script: string) => sha(script);
 
 function readTrust(root: string): string[] {
@@ -201,12 +221,12 @@ export function runScript(kind: "setup" | "archive", script: string, root: strin
   mkdirSync(dirname(log), { recursive: true });
   // 앱이 꺼져 주인 없이 남은 이전 실행이 있으면 먼저 끔(같은 worktree에 둘이 돌지 않게, 리뷰)
   const pidFile = stateFile(root, dir, `${kind}.pid`);
-  try { const old = Number(readFileSync(pidFile, "utf8")); if (old > 0) process.kill(-old, "SIGKILL"); } catch { /* 없거나 이미 끝남 */ }
+  killStale(pidFile);
   writeFileSync(log, `# ${kind} ${new Date().toISOString()}\n`);
   return new Promise((res) => {
     const child = spawn("bash", ["-e", "-c", script], {
       cwd: dir, detached: true, // 새 프로세스 그룹 — 시간 초과면 자식들까지 같이 끔
-      env: { ...Object.fromEntries(ENV_KEEP.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]!])), MUSTARD_ROOT_PATH: root, MUSTARD_WORKTREE_PATH: dir, MUSTARD_WORKSPACE_NAME: basename(dir) } as unknown as NodeJS.ProcessEnv, // 허용 목록만(Next 타입이 NODE_ENV를 요구해 형 변환)
+      env: { ...Object.fromEntries(ENV_KEEP.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]!])), MUSTARD_ROOT_PATH: root, MUSTARD_WORKTREE_PATH: dir, MUSTARD_WORKSPACE_NAME: basename(dir), PATH: setupPath() } as unknown as NodeJS.ProcessEnv, // 허용 목록만(Next 타입이 NODE_ENV를 요구해 형 변환)
       stdio: ["ignore", "pipe", "pipe"],
     });
     let tail = "", timedOut = false;
@@ -214,9 +234,17 @@ export function runScript(kind: "setup" | "archive", script: string, root: strin
     const take = (b: Buffer) => { appendFileSync(log, b); tail = (tail + b.toString()).slice(-2000); };
     child.stdout.on("data", take); child.stderr.on("data", take);
     const timer = setTimeout(() => { timedOut = true; try { process.kill(-child.pid!, "SIGKILL"); } catch { /* 이미 끝남 */ } }, timeoutMs);
-    const done = (code: number | null) => { clearTimeout(timer); rmSync(pidFile, { force: true }); res({ ok: code === 0 && !timedOut, code, timedOut, tail: tail.trim().slice(-800), log }); };
+    // exit에서 끝냄 — close는 출력 통로가 닫힐 때라, 스크립트가 백그라운드로 남긴 프로세스가 통로를 쥐면 시간 초과까지 안 끝남(리뷰).
+    // 끝나면 그룹에 남은 자식은 끄고(setup은 준비만 — 상주 프로세스 금지), 남은 출력은 잠깐 더 받음.
+    let finished = false;
+    const done = (code: number | null) => {
+      if (finished) return; finished = true;
+      clearTimeout(timer); rmSync(pidFile, { force: true });
+      try { process.kill(-child.pid!, "SIGKILL"); } catch { /* 그룹 없음 */ }
+      setTimeout(() => res({ ok: code === 0 && !timedOut, code, timedOut, tail: tail.trim().slice(-800), log }), 50);
+    };
     child.on("error", (e) => { take(Buffer.from(String(e))); done(null); });
-    child.on("close", done);
+    child.on("exit", (code) => done(code));
   });
 }
 

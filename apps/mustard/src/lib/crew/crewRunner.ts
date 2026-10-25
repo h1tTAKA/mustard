@@ -35,6 +35,7 @@ export interface CrewRun {
   state: RunState; startedAt: number; endedAt?: number;
   lastActivity?: string; toolCount: number; tokens?: { input: number; output: number }; costUsd?: number;
   summary?: string; error?: string; permission?: { request: Record<string, unknown>; at: number };
+  prepAt?: number; // #1176 setup 끝난 때(준비 단계 감시를 여기서부터)
   runningAt?: number; // #1162 SNA에 시작을 맡긴 때(준비 시간은 '안 뜸' 3분에 안 셈)
   lastEventAt?: number; // #1162 에이전트에게서 마지막으로 신호(이벤트·권한 요청)가 온 때 — 멈춤 감시
 }
@@ -241,7 +242,7 @@ const NEVER_STARTED_MS = 10 * 60_000, STALLED_MS = 20 * 60_000;
 function watchStalls(now = Date.now()) {
   for (const run of g.runs.values()) {
     if (run.state !== "running" && run.state !== "starting") continue;
-    const never = !run.lastEventAt && (run.state === "starting" ? now - run.startedAt > STALLED_MS : now - (run.runningAt ?? run.startedAt) > NEVER_STARTED_MS);
+    const never = !run.lastEventAt && (run.state === "starting" ? now - (run.prepAt ?? run.startedAt) > STALLED_MS : now - (run.runningAt ?? run.startedAt) > NEVER_STARTED_MS);
     const stalled = !!run.lastEventAt && now - run.lastEventAt > STALLED_MS;
     if (!never && !stalled) continue;
     const wasStarting = run.state === "starting";
@@ -394,11 +395,20 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     const wt = await ensureWorktree(root, taskId, task.title, dep ? worktreeFor(root, dep.id, dep.title).branch : undefined);
     Object.assign(run, { worktree: wt.dir, branch: wt.branch, base: wt.base });
     rmSync(join(wt.dir, ".crew", "handoff.json"), { force: true }); // 앞 역할 봉투를 이번 결과로 착각하지 않게
+    await wire();
+    const sna = await getSnaClient();
+    // #1162 이 카드의 직전 실행 세션을 먼저 끔 — 감시·Stop이 못 끈 것, 앱 재시작으로 놓친 것까지(SNA는 앱보다 오래 삶).
+    // 이미 끝난 세션이면 no_session. 끄기 실패면 시작 안 함(아래 catch → 사람에게) — 같은 worktree에 둘이 돌지 않게.
+    // 나보다 먼저 시작한 실행만 — 감시가 포기한 늦은 startRun이 새 실행을 끄지 않게(리뷰). 끄기는 10초까지.
+    if (run.state !== "starting") return run;
+    const prev = [...g.runs.values(), ...readRuns(root)].filter((r) => r.taskId === taskId && r.id !== run.id && r.startedAt < run.startedAt && r.sessionId).sort((a, b) => b.startedAt - a.startedAt)[0];
+    if (prev?.sessionId) await Promise.race([sna.agent.kill(prev.sessionId), new Promise((_, rej) => setTimeout(() => rej(new Error("previous agent did not stop")), 10_000))]);
+    // setup도 옛 에이전트를 끈 뒤에(같은 worktree에 둘이 돌지 않게, 리뷰)
     // #1176 레포 setup 스크립트 — 이 worktree에서 지금 내용으로 아직 안 했으면 에이전트보다 먼저(완료 표시는 worktree 밖). 승인 전이면 사람에게, 실패면 막힘(다시 실행 = 다시 setup).
     {
       run.lastActivity = "setup"; run.lastEventAt = Date.now(); persist(run, true); // 감시 시계를 setup 시작부터(setup 15분 < 감시 20분, 리뷰)
       const out = await runSetup(root, wt.dir);
-      run.lastEventAt = undefined; // 에이전트의 '안 뜸' 감시는 따로
+      run.lastEventAt = undefined; run.prepAt = Date.now(); // 에이전트의 '안 뜸' 감시는 따로, 준비 단계 감시는 setup 끝부터 다시(리뷰)
       if (run.state !== "starting") return run; // 감시가 포기함
       if (out.status === "too-long") throw new Error(tr("crew.reason.setupTooLong"));
       if (out.status === "untrusted") {
@@ -410,14 +420,6 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
       }
       if (out.status === "failed") throw new Error(tr("crew.reason.setupFailed", { tail: out.result.timedOut ? "timeout" : out.result.tail.slice(-400) }));
     }
-    await wire();
-    const sna = await getSnaClient();
-    // #1162 이 카드의 직전 실행 세션을 먼저 끔 — 감시·Stop이 못 끈 것, 앱 재시작으로 놓친 것까지(SNA는 앱보다 오래 삶).
-    // 이미 끝난 세션이면 no_session. 끄기 실패면 시작 안 함(아래 catch → 사람에게) — 같은 worktree에 둘이 돌지 않게.
-    // 나보다 먼저 시작한 실행만 — 감시가 포기한 늦은 startRun이 새 실행을 끄지 않게(리뷰). 끄기는 10초까지.
-    if (run.state !== "starting") return run;
-    const prev = [...g.runs.values(), ...readRuns(root)].filter((r) => r.taskId === taskId && r.id !== run.id && r.startedAt < run.startedAt && r.sessionId).sort((a, b) => b.startedAt - a.startedAt)[0];
-    if (prev?.sessionId) await Promise.race([sna.agent.kill(prev.sessionId), new Promise((_, rej) => setTimeout(() => rej(new Error("previous agent did not stop")), 10_000))]);
     const { sessionId } = await sna.sessions.create({ label: `crew:${task.title.slice(0, 60)}`, cwd: wt.dir, meta: { crew: true, root, taskId, runId: run.id, role: role.id } });
     run.sessionId = sessionId;
     g.bySession.set(sessionId, run.id);
