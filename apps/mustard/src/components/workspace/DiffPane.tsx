@@ -70,8 +70,10 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
     try {
       const r = await sendToAgent(root, formatNotes(list));
       if (!r.ok) { toast(t(r.reason === "no-agent" ? "browser.pickNoAgent" : "github.sendFailed"), "error"); return; }
-      if (!saveDiffNotes(root, markSent(loadDiffNotes(root), new Set(list.map((n) => n.id)), Date.now()))) toast(t("prReview.saveFailed"), "error");
-      toast(t("diffNotes.sentToast", { n: list.length }));
+      // 보냈으니 보냄 표시는 꼭 — 저장 실패면 한 번 더, 그래도 실패면 "보냈지만 표시 못 함"(다시 누르면 또 보내지니까, 리뷰)
+      const ids = new Set(list.map((n) => n.id));
+      const marked = saveDiffNotes(root, markSent(loadDiffNotes(root), ids, Date.now())) || saveDiffNotes(root, markSent(loadDiffNotes(root), ids, Date.now()));
+      toast(marked ? t("diffNotes.sentToast", { n: list.length }) : t("diffNotes.markFailed", { n: list.length }), marked ? undefined : "error");
       requestTerminalFocus(root, r.id); // 보낸 터미널 탭으로 — 에이전트가 받는 걸 보이게(브라우저 보내기와 같음)
     } finally { notesInFlight.delete(root); setSendingNotes(false); }
   };
@@ -235,6 +237,8 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const sel = pick?.file === file ? pick : null;
   const noteAt = new Map<number, DiffNote[]>(); // #1169 이 파일·이 diff의 메모(새 코드 줄 번호, 범위면 끝 줄)
   for (const n of dnotes) if (n.path === file && n.scope === scope) noteAt.set(n.line, [...(noteAt.get(n.line) ?? []), n]);
+  // 메모 자리의 지금 코드(범위면 범위 전체) — 달 때 저장한 것과 비교해 "줄이 바뀜"(리뷰: 범위 중간 줄이 바뀌어도 잡게)
+  const noteText = (start: number | undefined, end: number) => (rangeRows("RIGHT", start ?? end, end) ?? []).map((k) => lines[k].text).join("\n");
   // GitHub는 PR diff 구간(바뀐 줄 앞뒤 3줄) 안에만 줄 댓글을 받음 — 파일 전체(#1133)로 받았으면 먼 줄엔 + 없음(리뷰: 422로 보류 리뷰 전체가 막힘)
   const near: boolean[] = new Array(lines.length).fill(!full);
   if (full) {
@@ -378,7 +382,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
               <div key={`n-${n.id}`} style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-dashed border-mustard-500/50 bg-white px-3 py-2 font-sans dark:bg-[var(--s-pane)]">
                 <div className="flex items-center gap-1.5 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400">
                   <IconClock size={11} stroke={2} aria-hidden />{n.sentAt ? t("diffNotes.sent") : t("diffNotes.pending")}{n.startLine ? ` · ${n.startLine}-${n.line}` : ""}
-                  {n.text !== undefined && n.text !== l.text && <span className="font-medium text-amber-600 dark:text-amber-400">· {t("diffNotes.lineChanged")}</span>}
+                  {n.text !== undefined && n.text !== noteText(n.startLine, n.line) && <span className="font-medium text-amber-600 dark:text-amber-400">· {t("diffNotes.lineChanged")}</span>}
                   <button type="button" onClick={() => { if (!saveDiffNotes(root, removeNote(loadDiffNotes(root), n.id))) toast(t("prReview.saveFailed"), "error"); }}
                     className="ml-auto inline-flex items-center gap-0.5 rounded px-1 font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"><IconX size={11} aria-hidden />{n.sentAt ? t("diffNotes.resolve") : t("github.delete")}</button>
                 </div>
@@ -387,7 +391,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
             ))}
             {noteHere && sel && (
               <div style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 font-sans">
-                <NoteComposer root={root} file={file} scope={scope} sel={sel} lineText={l.text} onClose={() => setPick(null)} />
+                <NoteComposer root={root} file={file} scope={scope} sel={sel} lineText={noteText(sel.start, sel.line)} onClose={() => setPick(null)} />
               </div>
             )}
           </>

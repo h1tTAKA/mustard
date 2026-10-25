@@ -9,7 +9,7 @@ export interface DiffNote {
   startLine?: number; // 범위(같은 쪽, < line)
   body: string;
   scope: string;      // "unstaged" | "staged" | "untracked" | "commit:<hash>" — 어느 diff에서 단 메모인지(화면·보낼 글)
-  text?: string;      // 달 때 그 줄의 코드 — 지금 줄 내용이 다르면 "줄이 바뀜" 표시(리뷰)
+  text?: string;      // 달 때 그 줄(범위면 범위 전체, 줄바꿈으로 이음)의 코드 — 지금 내용이 다르면 "줄이 바뀜" 표시(리뷰)
   createdAt: number;
   sentAt?: number;    // 에이전트에 보낸 때
 }
@@ -41,7 +41,7 @@ export function addNote(list: DiffNote[], n: Omit<DiffNote, "id" | "createdAt" |
   const d: DiffNote = { ...n, body: n.body.trim(), id, createdAt: now };
   if (!d.startLine || d.startLine === d.line) delete d.startLine;
   if (!valid(d)) return list;
-  if (list.some((x) => x.path === d.path && x.line === d.line && x.startLine === d.startLine && x.body === d.body && !x.sentAt)) return list;
+  if (list.some((x) => x.path === d.path && x.scope === d.scope && x.line === d.line && x.startLine === d.startLine && x.body === d.body && !x.sentAt)) return list; // 다른 diff(scope)의 같은 자리는 다른 메모(리뷰)
   // 꽉 차면 보낸 것부터 버림, 전부 안 보낸 거면 거절(조용히 사라지지 않게, 리뷰)
   let base = list;
   while (base.length >= MAX_NOTES) { const i = base.findIndex((x) => x.sentAt); if (i < 0) return list; base = [...base.slice(0, i), ...base.slice(i + 1)]; }

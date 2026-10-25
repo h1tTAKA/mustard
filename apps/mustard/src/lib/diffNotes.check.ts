@@ -4,7 +4,8 @@ import { addNote, formatNote, formatNotes, isFull, markSent, removeNote, unsent,
 
 let l = addNote([], { path: "src/a.ts", line: 12, body: "  rename x  ", scope: "unstaged" }, "1", 100);
 assert.deepStrictEqual(l, [{ path: "src/a.ts", line: 12, body: "rename x", scope: "unstaged", id: "1", createdAt: 100 }], "앞뒤 공백 정리");
-assert.strictEqual(addNote(l, { path: "src/a.ts", line: 12, body: "rename x", scope: "staged" }, "2", 101).length, 1, "같은 자리·같은 글은 하나만");
+assert.strictEqual(addNote(l, { path: "src/a.ts", line: 12, body: "rename x", scope: "unstaged" }, "2", 101).length, 1, "같은 diff·같은 자리·같은 글은 하나만");
+assert.strictEqual(addNote(l, { path: "src/a.ts", line: 12, body: "rename x", scope: "commit:abc" }, "2b", 101).length, 2, "다른 diff의 같은 자리는 다른 메모");
 l = addNote(l, { path: "src/b.ts", line: 9, startLine: 4, body: "split this", scope: "commit:abc" }, "3", 102);
 assert.strictEqual(l[1].startLine, 4, "범위");
 assert.ok(!("startLine" in addNote([], { path: "x", line: 4, startLine: 4, body: "y", scope: "unstaged" }, "4", 1)[0]), "시작=끝이면 한 줄");
