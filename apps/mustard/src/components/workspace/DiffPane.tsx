@@ -561,14 +561,14 @@ async function deliverNotes(root: string, t: ReturnType<typeof useT>, toast: Ret
   }
 }
 
-// #1169 diff 줄 메모 입력칸(PR 아닌 diff) — [취소] [바로 보내기] [모아 보내기에 추가]. ⌘Enter 저장, Esc 취소. 모은 메모는 위 막대에서 에이전트로 한꺼번에, 바로 보내기는 그 메모만. PR LineComposer와 같은 모양.
+// #1169 diff 줄 메모 입력칸(PR 아닌 diff) — [취소] [바로 보내기] [담아 두기]. ⌘Enter 저장, Esc 취소. 모은 메모는 위 막대에서 에이전트로 한꺼번에, 바로 보내기는 그 메모만. PR LineComposer와 같은 모양.
 function NoteComposer({ root, file, scope, sel, lineText, onClose }: { root: string; file: string; scope: string; sel: { line: number; start?: number }; lineText: string; onClose: () => void }) {
   const t = useT();
   const toast = useToast();
   const [text, setText] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
-  // 모아 보내기에 추가 — now면 남긴 그 메모만 바로 보냄(모으지 않고, PR "바로 달기"처럼)
+  // 담아 두기 — now면 남긴 그 메모만 바로 보냄(모으지 않고, PR "바로 달기"처럼)
   const save = (now?: boolean) => {
     const body = text.trim();
     if (!body) return;
