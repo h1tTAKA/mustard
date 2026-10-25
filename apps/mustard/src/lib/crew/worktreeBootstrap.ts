@@ -180,6 +180,8 @@ const trustFile = (root: string) => join(repoDir(root), "setup-trust.json");
 const stateFile = (root: string, dir: string, ext: string) => join(repoDir(root), "setup-state", `${sha(dir, 16)}.${ext}`);
 export const MAX_REVIEW = 4000; // 관문에 보여 줄 수 있는 길이 — 넘는 스크립트는 사람이 끝까지 못 보므로 실행 안 함(리뷰)
 export function setupDone(root: string, dir: string): string | null { try { return readFileSync(stateFile(root, dir, "done"), "utf8"); } catch { return null; } }
+// 새로 만든 worktree = 예전 완료 표시 무효(같은 경로를 다시 만들어도 setup 다시, 리뷰)
+export const clearSetupState = (root: string, dir: string) => rmSync(stateFile(root, dir, "done"), { force: true });
 export function markSetupDone(root: string, dir: string, value: string) { mkdirSync(dirname(stateFile(root, dir, "done")), { recursive: true }); writeFileSync(stateFile(root, dir, "done"), value); }
 // 스크립트에 넘기는 환경변수는 허용 목록만 — Mustard 프로세스의 API 키·토큰을 레포 코드에 넘기지 않게(리뷰)
 const ENV_KEEP = ["HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TERM", "NVM_BIN"]; // SSH_AUTH_SOCK은 안 넘김 — 스크립트가 사용자 SSH 키로 push·접속 못 하게(리뷰)

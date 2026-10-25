@@ -7,7 +7,7 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync } from "
 import { isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
-import { materialize, runArchive, type MaterializeReport } from "./worktreeBootstrap.ts";
+import { clearSetupState, materialize, runArchive, type MaterializeReport } from "./worktreeBootstrap.ts";
 
 const pexec = promisify(execFile);
 const git = async (cwd: string, args: string[]) => (await pexec("git", args, { cwd, timeout: 120_000, maxBuffer: 10_000_000 })).stdout.trim();
@@ -67,6 +67,7 @@ export async function ensureWorktree(root: string, taskId: string, title: string
   await git(root, exists ? ["worktree", "add", dir, branch] : ["worktree", "add", "-b", branch, dir, start]);
   if (crewLink()) throw new Error(".crew is a symlink");
   mkdirSync(join(dir, ".crew"), { recursive: true });
+  clearSetupState(root, dir); // #1176 같은 경로에 새로 만든 worktree — 예전 setup 완료 표시 지움(새 폴더엔 setup이 안 됐으니)
   // #1176 새로 만들 때만 — .worktreeinclude 복사·sharedDirectories 공유(실패해도 worktree는 씀, 보고에 남김)
   const bootstrap = await materialize(root, dir).catch((e): MaterializeReport => ({ shared: [], copied: [], skipped: [{ path: "*", reason: String((e as Error)?.message ?? e).slice(0, 200) }] }));
   return { dir, branch, base, created: true, bootstrap };
