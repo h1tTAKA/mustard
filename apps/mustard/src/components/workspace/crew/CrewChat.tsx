@@ -7,7 +7,7 @@ import { IconArrowBackUp, IconArrowUp, IconAt, IconBell, IconBellOff, IconLayout
 import { Markdown, useT, useToast, relocalize, CREW_TEXT_KEYS, useSetting, setSetting, NKEYS, NOTIF_DEFAULTS } from "@mustard/core";
 import type { CrewMsg } from "@/lib/crew/crewChat";
 import type { CrewRun } from "@/lib/crew/crewRunner";
-import { PROVIDER_LABEL, RoleIcon, isActiveRun, roleDesc, roleName, useCrewRoles, useCrewRuns } from "./crewUi";
+import { PROVIDER_LABEL, RoleIcon, crewRoomOpen, isActiveRun, roleDesc, roleName, useCrewRoles, useCrewRuns } from "./crewUi";
 import RolesDialog from "./RolesDialog";
 
 export const CREW_OPEN_TASK_EVENT = "mustard:crew-open-task"; // detail = { root, taskId } — 보드 열고 그 카드 편집 창
@@ -41,6 +41,7 @@ export default function CrewChat({ root }: { root: string }) {
   const msgText = (m: CrewMsg) => (m.i18n ? t(m.i18n.key, m.kind === "permission" && m.i18n.vars ? permTool(m.i18n.vars) : m.i18n.vars) + (m.i18n.suffix ?? "") : m.from === "human" ? (m.kind === "decision" ? relocalize(m.text, DECISION_KEYS, t) : m.text) : m.kind === "permission" ? relocalize(m.text, CREW_TEXT_KEYS, t).replace(/\s*\n\s*/g, " ⏎ ") : relocalize(m.text, CREW_TEXT_KEYS, t)); // 키 없는 옛 권한 글은 줄만 한 줄로
   const toast = useToast();
   const crewNotify = useSetting<boolean>(NKEYS.crew, NOTIF_DEFAULTS.crew); // #1167
+  useEffect(() => { crewRoomOpen.add(root); return () => { crewRoomOpen.delete(root); }; }, [root]); // #1167 열린 방은 알림 생략
   const [roles, setRoles] = useCrewRoles();
   const [runs, reloadRuns] = useCrewRuns(root, () => {});
   const [msgs, setMsgs] = useState<CrewMsg[]>([]);
@@ -162,7 +163,7 @@ export default function CrewChat({ root }: { root: string }) {
         <span className="ml-auto truncate text-[11px] text-zinc-400 dark:text-zinc-500">{channel}</span>
         {/* #1167 Crew 알림 on/off — 역할이 나를 부르면(질문·권한·관문·막힘) 데스크톱 알림 */}
         <button type="button" onClick={() => setSetting(NKEYS.crew, !crewNotify)} aria-pressed={crewNotify}
-          title={`${t("crewchat.notify")} — ${crewNotify ? t("crewchat.notifyOff") : t("crewchat.notifyOn")}`} aria-label={crewNotify ? t("crewchat.notifyOff") : t("crewchat.notifyOn")}
+          title={`${t("crewchat.notify")} — ${crewNotify ? t("crewchat.notifyOff") : t("crewchat.notifyOn")}`} aria-label={t("crewchat.notify")}
           className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200">
           {crewNotify ? <IconBell size={14} aria-hidden /> : <IconBellOff size={14} aria-hidden />}
         </button>

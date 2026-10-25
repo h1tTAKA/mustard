@@ -4,6 +4,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { IconFiles, IconFolderOpen, IconPlus, IconX, IconMessages, IconFileCode, IconFileText, IconCards, IconBell, IconBellOff } from "@tabler/icons-react";
 import { useT, useShortcut } from "@mustard/core";
 import { getSetting, setSetting, subscribeSettings, NKEYS, NOTIF_DEFAULTS, CKEYS, desktopNotify, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
+import { crewRoomOpen } from "./crew/crewUi";
 import { useToast } from "@mustard/core";
 import { useConfirm } from "@mustard/core";
 import WorkspaceView from "@/components/workspace/WorkspaceView";
@@ -237,12 +238,17 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     if (!mounted || !active) return;
     const repoPaths = tabs.filter((x): x is { type: "repo"; path: string } => x.type === "repo").map((x) => x.path);
     if (repoPaths.length === 0) return;
+    for (const k of Object.keys(crewSince.current)) if (!repoPaths.includes(k)) delete crewSince.current[k]; // 닫은 탭은 잊음 — 다시 열면 새 기준점(닫힌 동안 글 몰아 울림 X, 리뷰)
     for (const p of repoPaths) crewSince.current[p] ??= Date.now();
     let alive = true;
+    const busy = new Set<string>(); // 레포별 확인 중 — 느린 응답에 요청이 쌓이지 않게(리뷰)
     const TITLE: Record<string, [string, string]> = { question: ["❓", "crewchat.notify.question"], permission: ["🔐", "crewchat.notify.permission"], gate: ["🚦", "crewchat.notify.gate"], blocked: ["⛔", "crewchat.notify.blocked"] };
     const check = () => {
       if (!getSetting<boolean>(NKEYS.crew, NOTIF_DEFAULTS.crew)) { for (const p of repoPaths) crewSince.current[p] = Date.now(); return; } // 꺼 둔 동안 글은 켜도 안 울림
       for (const p of repoPaths) {
+        if (busy.has(p)) continue;
+        busy.add(p);
+        // ponytail: 서버가 대화 기록(jsonl)을 매번 처음부터 읽음 — 기록이 커지면 레포별 바이트 위치로 끝만 읽기
         void fetch(`/api/crew/chat?root=${encodeURIComponent(p)}&since=${crewSince.current[p]}&peek=1`).then((r) => r.json()).then((j: { ok?: boolean; msgs?: { id: string; ts: number; from: string; kind: string; text: string; taskTitle?: string; mentions?: string[]; i18n?: { key: string; vars?: Record<string, string | number> } }[] }) => {
           if (!alive || !j?.ok) return;
           for (const m of j.msgs ?? []) {
@@ -251,15 +257,15 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
             crewSeen.current.add(m.id);
             const head = TITLE[m.kind];
             if (!head || !m.mentions?.includes("you")) continue;
+            // 지금 이 레포의 Crew 대화방을 보고 있으면 생략 — 레포 탭만 보고 대화방은 닫혀 있으면 알림(리뷰: 영영 놓침)
             const focused = typeof document !== "undefined" && document.hasFocus();
-            const at = tabsRef.current.find((x) => tabKey(x) === activeKeyRef.current);
-            if (getSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching) && focused && at?.type === "repo" && at.path === p) continue; // 지금 이 레포를 보고 있음
+            if (getSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching) && focused && crewRoomOpen.has(p)) continue;
             const name = p.split(/[\\/]/).filter(Boolean).pop() || p;
             const said = (m.i18n ? tRef.current(m.i18n.key, m.i18n.vars) : m.text).replace(/\s+/g, " ").trim();
             void desktopNotify({ title: `${head[0]} ${tRef.current(head[1])}`, body: `${name}${m.taskTitle ? ` · ${m.taskTitle}` : ""}\n${said.slice(0, 140)}`, suppressWhileFocused: false, target: { repoPath: p } });
           }
           if (crewSeen.current.size > 500) crewSeen.current = new Set([...crewSeen.current].slice(-200)); // 오래된 id 정리
-        }).catch(() => { /* 다음 확인에서 */ });
+        }).catch(() => { /* 다음 확인에서 */ }).finally(() => busy.delete(p));
       }
     };
     const iv = setInterval(check, 5000);

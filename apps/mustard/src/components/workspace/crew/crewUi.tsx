@@ -76,3 +76,6 @@ export function elapsed(from: number, to = Date.now()): string {
   if (m < 60) return `${m}m ${s % 60}s`;
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
+
+// #1167 지금 화면에 열린 Crew 대화방(레포 root) — 열려 있는 방의 Crew 알림은 생략(WorkspaceTabs). 창이 여럿이어도 같은 렌더러 안에서만.
+export const crewRoomOpen = new Set<string>();
