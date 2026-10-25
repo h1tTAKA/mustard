@@ -235,7 +235,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   const crewSince = useRef<Record<string, number>>({});
   const crewSeen = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!mounted || !active) { crewSince.current = {}; return; } // 확인 안 하는 동안 글은 돌아와도 안 울림(새 기준점, 리뷰)
+    if (!mounted) return; // 워크스페이스가 아닌 화면(암기 등)에서도 계속 확인 — 그때가 알림이 제일 필요(리뷰)
     const repoPaths = tabs.filter((x): x is { type: "repo"; path: string } => x.type === "repo").map((x) => x.path);
     for (const k of Object.keys(crewSince.current)) if (!repoPaths.includes(k)) delete crewSince.current[k]; // 닫은 탭은 잊음 — 다시 열면 새 기준점(닫힌 동안 글 몰아 울림 X, 리뷰). 마지막 탭을 닫아도(아래 return 전)
     if (repoPaths.length === 0) return;
@@ -271,7 +271,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     };
     const iv = setInterval(check, 5000);
     return () => { alive = false; clearInterval(iv); };
-  }, [mounted, active, tabs]);
+  }, [mounted, tabs]);
 
   useEffect(() => {
     let ts: Tab[] = [];
