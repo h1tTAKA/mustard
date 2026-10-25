@@ -568,7 +568,7 @@ function NoteComposer({ root, file, scope, sel, lineText, onClose }: { root: str
   const [text, setText] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
-  // 메모 남기기 — now면 남긴 그 메모만 바로 보냄(모으지 않고, PR "바로 달기"처럼)
+  // 모아 보내기에 추가 — now면 남긴 그 메모만 바로 보냄(모으지 않고, PR "바로 달기"처럼)
   const save = (now?: boolean) => {
     const body = text.trim();
     if (!body) return;
