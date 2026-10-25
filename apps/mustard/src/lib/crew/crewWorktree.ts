@@ -3,7 +3,7 @@
 // 결과물 폴더 .crew/는 공유 .git/info/exclude에 넣어 커밋에 안 섞이게.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
@@ -52,7 +52,10 @@ export async function ensureWorktree(root: string, taskId: string, title: string
   const { dir, branch } = worktreeFor(root, taskId, title);
   const base = await git(root, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "HEAD");
   await excludeCrewDir(root);
+  // #1176 .crew가 링크면 거부 — 로그·결과 쓰기가 링크 타고 밖으로 나가지 않게(리뷰)
+  const crewLink = () => { try { return lstatSync(join(dir, ".crew")).isSymbolicLink(); } catch { return false; } };
   if (await isWorktree(dir)) {
+    if (crewLink()) throw new Error(".crew is a symlink");
     mkdirSync(join(dir, ".crew"), { recursive: true });
     const cur = await git(dir, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => branch);
     return { dir, branch: cur === "HEAD" ? branch : cur, base, created: false }; // 분리 HEAD면 계산한 이름(리뷰)
@@ -62,6 +65,7 @@ export async function ensureWorktree(root: string, taskId: string, title: string
   const exists = await git(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).then(() => true, () => false);
   const start = from && (await git(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${from}`]).then(() => true, () => false)) ? from : "HEAD";
   await git(root, exists ? ["worktree", "add", dir, branch] : ["worktree", "add", "-b", branch, dir, start]);
+  if (crewLink()) throw new Error(".crew is a symlink");
   mkdirSync(join(dir, ".crew"), { recursive: true });
   // #1176 새로 만들 때만 — .worktreeinclude 복사·sharedDirectories 공유(실패해도 worktree는 씀, 보고에 남김)
   const bootstrap = await materialize(root, dir).catch((e): MaterializeReport => ({ shared: [], copied: [], skipped: [{ path: "*", reason: String((e as Error)?.message ?? e).slice(0, 200) }] }));

@@ -1375,6 +1375,7 @@ const ko: Dict = {
   "crew.gate.setupSkip": "이번엔 건너뛰기",
   "crewchat.gate.setup": "새 작업 폴더에서 돌릴 setup 스크립트가 있어요. 내용을 확인하고 승인해 주세요.",
   "crew.reason.setupFailed": "setup 스크립트가 실패했어요: {tail}",
+  "crew.reason.setupTooLong": "setup 스크립트가 너무 길어요(4000자 넘음) — 승인 화면에 다 못 보여 줘서 실행하지 않아요",
   "crew.gate.question": "에이전트가 질문했어요",
   "crew.gate.blocked": "막혔어요",
   "crew.gate.approve": "승인",
@@ -2929,6 +2930,7 @@ const ja: Dict = {
   "crew.gate.setupSkip": "今回はスキップ",
   "crewchat.gate.setup": "新しい作業フォルダで実行する setup スクリプトがあります。内容を確認して承認してください。",
   "crew.reason.setupFailed": "setup スクリプトが失敗しました: {tail}",
+  "crew.reason.setupTooLong": "setup スクリプトが長すぎます（4000字超）— 承認画面に全部表示できないため実行しません",
   "crew.gate.question": "エージェントから質問があります",
   "crew.gate.blocked": "ブロックされました",
   "crew.gate.approve": "承認",
@@ -4483,6 +4485,7 @@ const en: Dict = {
   "crew.gate.setupSkip": "Skip this time",
   "crewchat.gate.setup": "There is a setup script to run in the new work folder. Review it and approve.",
   "crew.reason.setupFailed": "The setup script failed: {tail}",
+  "crew.reason.setupTooLong": "The setup script is too long (over 4000 characters) — it can't be shown in full for approval, so it won't run",
   "crew.gate.question": "The agent has a question",
   "crew.gate.blocked": "Blocked",
   "crew.gate.approve": "Approve",
@@ -4719,7 +4722,7 @@ export function relocalize(text: string, keys: string[], t: (key: string, vars?:
 export const CARD_SOURCE_KEYS = ["card.workspaceSource", "mem.chatSource"];
 // Crew 보드·시스템이 저장한 문구(채팅·관문 사유·실행 오류)의 키 — 옛 메시지(키 없이 text만)를 지금 언어로(#1125).
 // 저장되는 키만(화면 버튼·라벨 키를 넣으면 넓은 틀이 사람 말을 번역해 버림 — 리뷰).
-export const CREW_TEXT_KEYS = ["crewchat.permission", "crewchat.answerFailed", "crewchat.meetingStopped", "crewchat.fallback", "crewchat.retrying", "crewchat.skipped", "crewchat.gate.merge", "crewchat.gate.blocked", "crewchat.gate.schema", "crewchat.gate.spec", "crewchat.start", "crewchat.restart", "crewchat.decision.approve", "crewchat.decision.retry", "crewchat.prCreated", "crewsplit.created", "crewsplit.parentDone", "crewtrig.ciChat", "crewtrig.issueChat", "crewtrig.scheduleChat", "crew.reason.interrupted", "crew.reason.stopped", "crew.reason.flowError", "crew.reason.neverStarted", "crew.reason.stalled", "crew.reason.setupFailed"];
+export const CREW_TEXT_KEYS = ["crewchat.permission", "crewchat.answerFailed", "crewchat.meetingStopped", "crewchat.fallback", "crewchat.retrying", "crewchat.skipped", "crewchat.gate.merge", "crewchat.gate.blocked", "crewchat.gate.schema", "crewchat.gate.spec", "crewchat.start", "crewchat.restart", "crewchat.decision.approve", "crewchat.decision.retry", "crewchat.prCreated", "crewsplit.created", "crewsplit.parentDone", "crewtrig.ciChat", "crewtrig.issueChat", "crewtrig.scheduleChat", "crew.reason.interrupted", "crew.reason.stopped", "crew.reason.flowError", "crew.reason.neverStarted", "crew.reason.stalled", "crew.reason.setupFailed", "crew.reason.setupTooLong"];
 // 답변·분석 실패 문구(#1125, ko가 같은 chat.reply*가 먼저 — 옛 fallback.chat* 저장분도 같은 뜻으로) — 실패 순간의 언어로 저장되므로(채팅 기록·분석 요약·경고·캐치업 설명) 보여 줄 때 지금 언어로.
 export const FAILURE_TEXT_KEYS = ["fallback.emptyResponse", "fallback.error", "fallback.requestFailed", "fallback.summaryFailed", "chat.replyFailed", "chat.replyError", "fallback.chatRequestFailed", "fallback.chatError", "analyze.cancelled", "provider.runtimeFailed", "provider.runtimeConnectFailed", "provider.httpError", "provider.connectFailed", "analyze.partialParse", "explain.conceptParseFailed", "explain.tokenParseFailed", "text.parseFailed", "text.summaryFailed"];
 // ponytail: 실패 문구는 짧음 — 긴 정상 답변은 비교 안 하고 통과(런타임 오류 원문이 이보다 길면 원문 그대로)

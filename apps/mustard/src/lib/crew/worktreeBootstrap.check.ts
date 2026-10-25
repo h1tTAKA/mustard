@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { isTrusted, materialize, normRel, parseConfig, parseInclude, runArchive, runSetup, trustScript } from "./worktreeBootstrap.ts";
+import { isTrusted, markSetupDone, materialize, normRel, parseConfig, parseInclude, readConfig, runArchive, runSetup, setupDone, trustScript } from "./worktreeBootstrap.ts";
 
 // 경로 정리·거부(Orca 규칙)
 assert.strictEqual(normRel("./.env/"), ".env");
@@ -63,7 +63,8 @@ assert.strictEqual(readFileSync(join(wt, ".env"), "utf8"), "B=2", "기존 대상
 process.env.MUSTARD_CREW_DIR ??= mkdtempSync(join(tmpdir(), "wtb-crew-"));
 const setCfg = (where: string, scripts: Record<string, string>) => { mkdirSync(join(where, ".mustard"), { recursive: true }); writeFileSync(join(where, ".mustard", "config.json"), JSON.stringify({ scripts })); };
 assert.deepStrictEqual(await runSetup(root, wt), { status: "none" }, "worktree에 setup 없으면 none");
-const script = 'echo "$MUSTARD_WORKSPACE_NAME" > made.txt; test "$MUSTARD_ROOT_PATH" = "' + root + '" && test "$PWD" = "$MUSTARD_WORKTREE_PATH"';
+process.env.MUSTARD_SECRET_TOKEN = "leak-me";
+const script = 'echo "$MUSTARD_WORKSPACE_NAME" > made.txt; test "$MUSTARD_ROOT_PATH" = "' + root + '" && test "$PWD" = "$MUSTARD_WORKTREE_PATH" && test -z "$MUSTARD_SECRET_TOKEN" && test -n "$PATH"';
 setCfg(wt, { setup: script });
 const u = await runSetup(root, wt);
 assert.ok(u.status === "untrusted" && u.script === script && !existsSync(join(wt, "made.txt")), "승인 전엔 실행 안 함");
@@ -72,6 +73,14 @@ assert.ok(isTrusted(root, script) && !isTrusted(root, script + " "), "내용이 
 const ok = await runSetup(root, wt);
 assert.ok(ok.status === "ok" && readFileSync(join(wt, "made.txt"), "utf8").trim() === wt.split("/").pop(), "승인 후 실행 + 환경변수");
 assert.ok(readFileSync(join(wt, ".crew", "setup.log"), "utf8").startsWith("# setup"), "로그 파일");
+assert.ok(setupDone(root, wt) && !existsSync(join(wt, ".crew", "setup-done")), "완료 표시는 worktree 밖(에이전트가 못 씀)");
+assert.deepStrictEqual(await runSetup(root, wt), { status: "none" }, "같은 내용이면 다시 안 돎");
+const long = "echo x # " + "y".repeat(4100);
+setCfg(wt, { setup: long }); trustScript(root, long);
+assert.deepStrictEqual(await runSetup(root, wt), { status: "too-long" }, "4000자 넘으면 승인돼 있어도 안 돎(사람이 끝까지 못 봄)");
+markSetupDone(root, wt, "skipped");
+assert.deepStrictEqual(await runSetup(root, wt), { status: "none" }, "건너뛰기 표시");
+markSetupDone(root, wt, "reset");
 
 const bad = "echo before; false; echo after";
 setCfg(wt, { setup: bad }); trustScript(root, bad);
@@ -81,6 +90,16 @@ const slow = "sleep 30 & sleep 30";
 setCfg(wt, { setup: slow }); trustScript(root, slow);
 const t0 = Date.now(); const s2 = await runSetup(root, wt, 300);
 assert.ok(s2.status === "failed" && s2.result.timedOut && Date.now() - t0 < 5000, "시간 초과면 그룹째 끔");
+
+// 설정 파일이 링크면 안 읽음(로컬 파일 노출 방지)
+const lroot = realpathSync(mkdtempSync(join(tmpdir(), "wtb-link-")));
+writeFileSync(join(lroot, "secret.txt"), JSON.stringify({ scripts: { setup: "cat ~/.ssh/id_rsa" } }));
+mkdirSync(join(lroot, ".mustard")); symlinkSync(join(lroot, "secret.txt"), join(lroot, ".mustard", "config.json"));
+assert.strictEqual(readConfig(lroot).setup, undefined, "링크 설정 거부");
+const lroot2 = realpathSync(mkdtempSync(join(tmpdir(), "wtb-link2-")));
+mkdirSync(join(lroot2, "real", ".mustard"), { recursive: true }); writeFileSync(join(lroot2, "real", ".mustard", "config.json"), JSON.stringify({ scripts: { setup: "x" } }));
+mkdirSync(join(lroot2, "wt")); symlinkSync(join(lroot2, "real", ".mustard"), join(lroot2, "wt", ".mustard"));
+assert.strictEqual(readConfig(join(lroot2, "wt")).setup, undefined, "중간 폴더 링크도 거부");
 
 // archive는 메인 체크아웃 설정 + 승인된 것만
 assert.strictEqual(await runArchive(root, wt), null, "archive 없으면 null");

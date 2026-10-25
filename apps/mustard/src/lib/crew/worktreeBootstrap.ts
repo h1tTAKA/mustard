@@ -3,7 +3,8 @@
 // 서버 전용.
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, constants, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, constants, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { cp } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -72,11 +73,26 @@ export function parseInclude(text: string): string[] {
   return out;
 }
 
-const readSmall = (file: string): string | null => {
-  try { return existsSync(file) && statSync(file).isFile() && statSync(file).size <= MAX_FILE ? readFileSync(file, "utf8") : null; } catch { return null; }
+// 링크면 안 읽음 — 브랜치에 심은 `.mustard/config.json -> ~/비밀파일`이 관문 화면에 내용을 띄우지 않게(리뷰). 중간 폴더 링크도 거부.
+const readSmall = (file: string, base: string): string | null => {
+  try {
+    if (!noLinkUnder(base, file)) return null;
+    const st = lstatSync(file);
+    return st.isFile() && st.size <= MAX_FILE ? readFileSync(file, "utf8") : null;
+  } catch { return null; }
 };
-export const readConfig = (dir: string): BootstrapConfig => { const t = readSmall(join(dir, CONFIG_PATH)); return t === null ? { sharedDirectories: [] } : parseConfig(t); };
-export const readInclude = (dir: string): string[] => { const t = readSmall(join(dir, INCLUDE_FILE)); return t === null ? [] : parseInclude(t); };
+// base 안의 상대 경로 각 조각이 링크가 아닌지(없는 조각은 통과 — 앞으로 만들 경로). base 자체는 믿음.
+export function noLinkUnder(base: string, full: string): boolean {
+  const rel = full.slice(base.length).split("/").filter(Boolean);
+  let cur = base;
+  for (const seg of rel) {
+    cur = join(cur, seg);
+    try { if (lstatSync(cur).isSymbolicLink()) return false; } catch { return true; }
+  }
+  return true;
+}
+export const readConfig = (dir: string): BootstrapConfig => { const t = readSmall(join(dir, CONFIG_PATH), dir); return t === null ? { sharedDirectories: [] } : parseConfig(t); };
+export const readInclude = (dir: string): string[] => { const t = readSmall(join(dir, INCLUDE_FILE), dir); return t === null ? [] : parseInclude(t); };
 
 // ── 새 worktree에 적용(#1176 커밋 2) ─────────────────────────────────────────────
 // 규칙과 원본은 메인 체크아웃 것(Orca와 같음). 공유 먼저, 그다음 복사 — 이미 있는 대상은 건드리지 않음.
@@ -125,6 +141,7 @@ export async function materialize(root: string, dir: string, limits: Limits = CO
     if (!ignored.has(p)) { rep.skipped.push({ path: p, reason: "not-ignored" }); continue; }
     if (!existsSync(src) || !statSync(src).isDirectory()) { rep.skipped.push({ path: p, reason: "missing" }); continue; }
     if (exists(dst)) { rep.skipped.push({ path: p, reason: "exists" }); continue; }
+    if (!noLinkUnder(dir, dst) || !noLinkUnder(root, src)) { rep.skipped.push({ path: p, reason: "symlink-path" }); continue; } // 중간 링크로 worktree 밖에 쓰기 방지(리뷰)
     mkdirSync(dirname(dst), { recursive: true });
     symlinkSync(src, dst, "dir");
     rep.shared.push(p);
@@ -136,12 +153,13 @@ export async function materialize(root: string, dir: string, limits: Limits = CO
     if (!ignored.has(p)) { rep.skipped.push({ path: p, reason: "not-ignored" }); continue; }
     if (!existsSync(src0)) { rep.skipped.push({ path: p, reason: "missing" }); continue; }
     if (exists(dst)) { rep.skipped.push({ path: p, reason: "exists" }); continue; } // 공유로 이미 생겼거나 추적 파일
+    if (!noLinkUnder(dir, dst) || !noLinkUnder(root, dirname(src0))) { rep.skipped.push({ path: p, reason: "symlink-path" }); continue; }
     const src = lstatSync(src0).isSymbolicLink() ? realpathSync(src0) : src0; // 맨 위 링크는 대상 내용을 복사(안쪽 링크는 링크 그대로)
     const m = measure(src, left);
     if (m.over) { rep.skipped.push({ path: p, reason: "over-budget" }); continue; }
     left.bytes -= m.bytes; left.entries -= m.entries;
     mkdirSync(dirname(dst), { recursive: true });
-    cpSync(src, dst, { recursive: true, mode: constants.COPYFILE_FICLONE }); // FICLONE = 되면 clone, 안 되면 일반 복사
+    await cp(src, dst, { recursive: true, mode: constants.COPYFILE_FICLONE }); // FICLONE = 되면 clone, 안 되면 일반 복사. 비동기 — 큰 복사가 서버를 멈추지 않게(리뷰)
     rep.copied.push(p);
   }
   return rep;
@@ -154,7 +172,15 @@ export async function materialize(root: string, dir: string, limits: Limits = CO
 // setup은 새 worktree의 설정, archive는 메인 체크아웃의 설정(Orca와 같음).
 const sha = (s: string, n = 64) => createHash("sha256").update(s).digest("hex").slice(0, n);
 const crewBase = () => process.env.MUSTARD_CREW_DIR || join(homedir(), ".nunopi", "crew");
-const trustFile = (root: string) => join(crewBase(), sha(root.replace(/\/+$/, ""), 32), "setup-trust.json");
+const repoDir = (root: string) => join(crewBase(), sha(root.replace(/\/+$/, ""), 32));
+const trustFile = (root: string) => join(repoDir(root), "setup-trust.json");
+// setup 완료 표시·실행 중 pid — worktree 밖(에이전트가 못 씀). 완료 표시엔 그때 돈 스크립트 지문 → 스크립트가 바뀌면 다시 setup(리뷰).
+const stateFile = (root: string, dir: string, ext: string) => join(repoDir(root), "setup-state", `${sha(dir, 16)}.${ext}`);
+export const MAX_REVIEW = 4000; // 관문에 보여 줄 수 있는 길이 — 넘는 스크립트는 사람이 끝까지 못 보므로 실행 안 함(리뷰)
+export function setupDone(root: string, dir: string): string | null { try { return readFileSync(stateFile(root, dir, "done"), "utf8"); } catch { return null; } }
+export function markSetupDone(root: string, dir: string, value: string) { mkdirSync(dirname(stateFile(root, dir, "done")), { recursive: true }); writeFileSync(stateFile(root, dir, "done"), value); }
+// 스크립트에 넘기는 환경변수는 허용 목록만 — Mustard 프로세스의 API 키·토큰을 레포 코드에 넘기지 않게(리뷰)
+const ENV_KEEP = ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TERM"];
 export const scriptHash = (script: string) => sha(script);
 
 function readTrust(root: string): string[] {
@@ -171,19 +197,24 @@ export function trustScript(root: string, script: string) {
 export interface ScriptResult { ok: boolean; code: number | null; timedOut: boolean; tail: string; log: string }
 export function runScript(kind: "setup" | "archive", script: string, root: string, dir: string, timeoutMs: number): Promise<ScriptResult> {
   const log = join(dir, ".crew", `${kind}.log`);
+  if (!noLinkUnder(dir, log)) return Promise.resolve({ ok: false, code: null, timedOut: false, tail: ".crew is a symlink", log });
   mkdirSync(dirname(log), { recursive: true });
+  // 앱이 꺼져 주인 없이 남은 이전 실행이 있으면 먼저 끔(같은 worktree에 둘이 돌지 않게, 리뷰)
+  const pidFile = stateFile(root, dir, `${kind}.pid`);
+  try { const old = Number(readFileSync(pidFile, "utf8")); if (old > 0) process.kill(-old, "SIGKILL"); } catch { /* 없거나 이미 끝남 */ }
   writeFileSync(log, `# ${kind} ${new Date().toISOString()}\n`);
   return new Promise((res) => {
     const child = spawn("bash", ["-e", "-c", script], {
       cwd: dir, detached: true, // 새 프로세스 그룹 — 시간 초과면 자식들까지 같이 끔
-      env: { ...process.env, MUSTARD_ROOT_PATH: root, MUSTARD_WORKTREE_PATH: dir, MUSTARD_WORKSPACE_NAME: basename(dir) },
+      env: { ...Object.fromEntries(ENV_KEEP.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]!])), MUSTARD_ROOT_PATH: root, MUSTARD_WORKTREE_PATH: dir, MUSTARD_WORKSPACE_NAME: basename(dir) } as unknown as NodeJS.ProcessEnv, // 허용 목록만(Next 타입이 NODE_ENV를 요구해 형 변환)
       stdio: ["ignore", "pipe", "pipe"],
     });
     let tail = "", timedOut = false;
+    if (child.pid) { mkdirSync(dirname(pidFile), { recursive: true }); writeFileSync(pidFile, String(child.pid)); }
     const take = (b: Buffer) => { appendFileSync(log, b); tail = (tail + b.toString()).slice(-2000); };
     child.stdout.on("data", take); child.stderr.on("data", take);
     const timer = setTimeout(() => { timedOut = true; try { process.kill(-child.pid!, "SIGKILL"); } catch { /* 이미 끝남 */ } }, timeoutMs);
-    const done = (code: number | null) => { clearTimeout(timer); res({ ok: code === 0 && !timedOut, code, timedOut, tail: tail.trim().slice(-800), log }); };
+    const done = (code: number | null) => { clearTimeout(timer); rmSync(pidFile, { force: true }); res({ ok: code === 0 && !timedOut, code, timedOut, tail: tail.trim().slice(-800), log }); };
     child.on("error", (e) => { take(Buffer.from(String(e))); done(null); });
     child.on("close", done);
   });
@@ -191,20 +222,27 @@ export function runScript(kind: "setup" | "archive", script: string, root: strin
 
 export type SetupOutcome =
   | { status: "none" }
+  | { status: "too-long" }
   | { status: "untrusted"; script: string }
   | { status: "ok" | "failed"; result: ScriptResult };
 export const SETUP_TIMEOUT = 15 * 60_000, ARCHIVE_TIMEOUT = 5 * 60_000; // setup 15분 — Crew 준비 단계 멈춤 감시(20분, #1162)보다 짧게
 
 // 새 worktree의 setup — 없으면 none, 승인 전이면 untrusted(실행 안 함), 승인됐으면 실행.
+// 끝난 표시가 지금 스크립트와 같으면 다시 안 돎(none). 4000자 넘으면 too-long(사람이 끝까지 못 봄).
 export async function runSetup(root: string, dir: string, timeoutMs = SETUP_TIMEOUT): Promise<SetupOutcome> {
   const { setup } = readConfig(dir);
   if (!setup) return { status: "none" };
+  const done = setupDone(root, dir);
+  if (done === scriptHash(setup) || done === "skipped") return { status: "none" };
+  if (setup.length > MAX_REVIEW) return { status: "too-long" };
   if (!isTrusted(root, setup)) return { status: "untrusted", script: setup };
   const result = await runScript("setup", setup, root, dir, timeoutMs);
+  if (result.ok) markSetupDone(root, dir, scriptHash(setup));
   return { status: result.ok ? "ok" : "failed", result };
 }
 
 // worktree 지우기 전 archive — 승인된 것만, 실패해도 지우기는 진행(결과만 돌려줌). 메인 체크아웃의 설정.
+// ponytail: archive 승인 화면은 아직 없음 — 앱에서 worktree를 지우는 곳이 생기는 #1170(사람용 작업공간)에서 승인 UI 추가. 그 전엔 승인 안 된 archive는 건너뜀.
 export async function runArchive(root: string, dir: string, timeoutMs = ARCHIVE_TIMEOUT): Promise<ScriptResult | null> {
   const { archive } = readConfig(root);
   if (!archive || !isTrusted(root, archive) || !existsSync(dir)) return null;
