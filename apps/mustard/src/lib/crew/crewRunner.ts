@@ -407,6 +407,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     // setup도 옛 에이전트를 끈 뒤에(같은 worktree에 둘이 돌지 않게, 리뷰)
     // #1176 레포 setup 스크립트 — 이 worktree에서 지금 내용으로 아직 안 했으면 에이전트보다 먼저(완료 표시는 worktree 밖). 승인 전이면 사람에게, 실패면 막힘(다시 실행 = 다시 setup).
     {
+      if (run.state !== "starting") return run; // 옛 세션 끄는 동안 Stop·감시가 끝냈으면 setup 시작 안 함(리뷰)
       run.lastActivity = "setup"; run.lastEventAt = Date.now(); persist(run, true); // 감시 시계를 setup 시작부터(setup 15분 < 감시 20분, 리뷰)
       const out = await runSetup(root, wt.dir);
       run.lastEventAt = undefined; run.prepAt = Date.now(); // 에이전트의 '안 뜸' 감시는 따로, 준비 단계 감시는 setup 끝부터 다시(리뷰)
