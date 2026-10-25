@@ -7,6 +7,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
+import { materialize, type MaterializeReport } from "./worktreeBootstrap.ts";
 
 const pexec = promisify(execFile);
 const git = async (cwd: string, args: string[]) => (await pexec("git", args, { cwd, timeout: 120_000, maxBuffer: 10_000_000 })).stdout.trim();
@@ -47,7 +48,7 @@ async function excludeCrewDir(root: string) {
 
 // 있으면 재사용, 없으면 현재 HEAD에서 새 브랜치로 만듦(브랜치만 남아 있으면 그 브랜치로 다시 붙임).
 // from = 새 브랜치를 만들 때 시작점(#1114 의존 카드의 브랜치 — 앞 작업 위에 쌓기). 없거나 못 찾으면 HEAD.
-export async function ensureWorktree(root: string, taskId: string, title: string, from?: string): Promise<{ dir: string; branch: string; base: string; created: boolean }> {
+export async function ensureWorktree(root: string, taskId: string, title: string, from?: string): Promise<{ dir: string; branch: string; base: string; created: boolean; bootstrap?: MaterializeReport }> {
   const { dir, branch } = worktreeFor(root, taskId, title);
   const base = await git(root, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "HEAD");
   await excludeCrewDir(root);
@@ -62,7 +63,9 @@ export async function ensureWorktree(root: string, taskId: string, title: string
   const start = from && (await git(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${from}`]).then(() => true, () => false)) ? from : "HEAD";
   await git(root, exists ? ["worktree", "add", dir, branch] : ["worktree", "add", "-b", branch, dir, start]);
   mkdirSync(join(dir, ".crew"), { recursive: true });
-  return { dir, branch, base, created: true };
+  // #1176 새로 만들 때만 — .worktreeinclude 복사·sharedDirectories 공유(실패해도 worktree는 씀, 보고에 남김)
+  const bootstrap = await materialize(root, dir).catch((e): MaterializeReport => ({ shared: [], copied: [], skipped: [{ path: "*", reason: String((e as Error)?.message ?? e).slice(0, 200) }] }));
+  return { dir, branch, base, created: true, bootstrap };
 }
 
 // 폴더만 정리 — 브랜치(에이전트가 한 커밋)는 남김. 사람이 머지·삭제를 결정.

@@ -1,8 +1,10 @@
 // worktree 부트스트랩 설정(#1176) — 새 worktree에 setup 스크립트·Git에 안 올라가는 파일 복사·폴더 공유.
 // Orca(orca.yaml + .worktreeinclude)와 같은 규칙. 설정 파일만 YAML 대신 JSON(.mustard/config.json, 의존성 없이) — 키 이름은 Orca와 같게.
-// 서버 전용. 이 파일은 읽기·검증만(실제 복사·실행은 다음 커밋).
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+// 서버 전용.
+import { execFile } from "node:child_process";
+import { constants, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 
 export const CONFIG_PATH = join(".mustard", "config.json");
 export const INCLUDE_FILE = ".worktreeinclude";
@@ -73,3 +75,72 @@ const readSmall = (file: string): string | null => {
 };
 export const readConfig = (dir: string): BootstrapConfig => { const t = readSmall(join(dir, CONFIG_PATH)); return t === null ? { sharedDirectories: [] } : parseConfig(t); };
 export const readInclude = (dir: string): string[] => { const t = readSmall(join(dir, INCLUDE_FILE)); return t === null ? [] : parseInclude(t); };
+
+// ── 새 worktree에 적용(#1176 커밋 2) ─────────────────────────────────────────────
+// 규칙과 원본은 메인 체크아웃 것(Orca와 같음). 공유 먼저, 그다음 복사 — 이미 있는 대상은 건드리지 않음.
+// 공유(sharedDirectories) = 메인 폴더로 심링크(편집도 공유) / 복사(.worktreeinclude) = 독립 사본(APFS면 clone — 공간 거의 안 씀).
+// 둘 다 "메인 체크아웃에 실제로 있고 gitignore된 것"만 — 추적 파일·없는 경로는 건너뜀.
+const pexec = promisify(execFile);
+export interface Limits { bytes: number; entries: number }
+export const COPY_LIMITS: Limits = { bytes: 2 * 1024 ** 3, entries: 50_000 }; // 일반 복사 한도(Orca와 같음)
+export interface MaterializeReport { shared: string[]; copied: string[]; skipped: { path: string; reason: string }[] }
+
+// git check-ignore --stdin — 무시되는 경로만 돌려줌(종료 코드 1 = 하나도 없음)
+async function ignoredSet(root: string, paths: string[]): Promise<Set<string>> {
+  if (!paths.length) return new Set();
+  try {
+    const child = pexec("git", ["check-ignore", "--stdin"], { cwd: root, timeout: 30_000, maxBuffer: 10_000_000 });
+    child.child.stdin?.end(paths.join("\n") + "\n");
+    return new Set((await child).stdout.split("\n").map((l) => l.trim()).filter(Boolean));
+  } catch (e) {
+    const out = (e as { stdout?: string }).stdout ?? "";
+    return new Set(out.split("\n").map((l) => l.trim()).filter(Boolean));
+  }
+}
+
+// 크기 재기 — 한도를 넘는 순간 멈춤(끝까지 안 돎)
+function measure(p: string, left: Limits): { bytes: number; entries: number; over: boolean } {
+  let bytes = 0, entries = 0;
+  const walk = (q: string): boolean => {
+    const st = lstatSync(q);
+    entries++; if (st.isFile()) bytes += st.size;
+    if (entries > left.entries || bytes > left.bytes) return false;
+    if (st.isDirectory()) for (const n of readdirSync(q)) if (!walk(join(q, n))) return false;
+    return true;
+  };
+  const ok = walk(p);
+  return { bytes, entries, over: !ok };
+}
+
+export async function materialize(root: string, dir: string, limits: Limits = COPY_LIMITS): Promise<MaterializeReport> {
+  const rep: MaterializeReport = { shared: [], copied: [], skipped: [] };
+  const cfg = readConfig(root), include = readInclude(root);
+  const ignored = await ignoredSet(root, [...cfg.sharedDirectories, ...include]);
+  const exists = (p: string) => { try { lstatSync(p); return true; } catch { return false; } };
+
+  for (const p of cfg.sharedDirectories) {
+    const src = join(root, p), dst = join(dir, p);
+    if (!ignored.has(p)) { rep.skipped.push({ path: p, reason: "not-ignored" }); continue; }
+    if (!existsSync(src) || !statSync(src).isDirectory()) { rep.skipped.push({ path: p, reason: "missing" }); continue; }
+    if (exists(dst)) { rep.skipped.push({ path: p, reason: "exists" }); continue; }
+    mkdirSync(dirname(dst), { recursive: true });
+    symlinkSync(src, dst, "dir");
+    rep.shared.push(p);
+  }
+
+  const left: Limits = { ...limits };
+  for (const p of include) {
+    const src0 = join(root, p), dst = join(dir, p);
+    if (!ignored.has(p)) { rep.skipped.push({ path: p, reason: "not-ignored" }); continue; }
+    if (!existsSync(src0)) { rep.skipped.push({ path: p, reason: "missing" }); continue; }
+    if (exists(dst)) { rep.skipped.push({ path: p, reason: "exists" }); continue; } // 공유로 이미 생겼거나 추적 파일
+    const src = lstatSync(src0).isSymbolicLink() ? realpathSync(src0) : src0; // 맨 위 링크는 대상 내용을 복사(안쪽 링크는 링크 그대로)
+    const m = measure(src, left);
+    if (m.over) { rep.skipped.push({ path: p, reason: "over-budget" }); continue; }
+    left.bytes -= m.bytes; left.entries -= m.entries;
+    mkdirSync(dirname(dst), { recursive: true });
+    cpSync(src, dst, { recursive: true, mode: constants.COPYFILE_FICLONE }); // FICLONE = 되면 clone, 안 되면 일반 복사
+    rep.copied.push(p);
+  }
+  return rep;
+}

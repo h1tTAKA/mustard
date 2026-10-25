@@ -46,4 +46,7 @@ assert.ok(kid.created && existsSync(join(kid.dir, "b.txt")), "의존 브랜치 �
 const lone = await ensureWorktree(root, "kid00002", "lone", "crew/nope");
 assert.ok(lone.created && !existsSync(join(lone.dir, "b.txt")), "없는 브랜치 = HEAD");
 
+// #1176 새로 만들 때 부트스트랩 보고가 붙음(설정 없으면 빈 보고), 재사용이면 없음
+assert.deepStrictEqual(lone.bootstrap, { shared: [], copied: [], skipped: [] }, "새 worktree = 부트스트랩 실행");
+assert.strictEqual((await ensureWorktree(root, "kid00002", "lone")).bootstrap, undefined, "재사용엔 안 돎");
 console.log("crewWorktree.check ok");

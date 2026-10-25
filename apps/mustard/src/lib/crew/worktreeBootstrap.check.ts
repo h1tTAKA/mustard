@@ -1,6 +1,10 @@
 // worktreeBootstrap 점검 — node --experimental-strip-types src/lib/crew/worktreeBootstrap.check.ts
 import assert from "node:assert";
-import { normRel, parseConfig, parseInclude } from "./worktreeBootstrap.ts";
+import { execFileSync } from "node:child_process";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { materialize, normRel, parseConfig, parseInclude } from "./worktreeBootstrap.ts";
 
 // 경로 정리·거부(Orca 규칙)
 assert.strictEqual(normRel("./.env/"), ".env");
@@ -20,4 +24,38 @@ assert.deepStrictEqual(parseConfig(" ".repeat(300 * 1024) + "{}"), { sharedDirec
 assert.deepStrictEqual(parseInclude(["# 비밀", ".env", "./.env", ".env.local  ", "", "!.env.prod", "*.pem", "a?b", ".vscode/settings.json", "../out", "k # not comment"].join("\n")),
   [".env", ".env.local", ".vscode/settings.json", "k # not comment"], "주석·glob·부정·상위 경로 제외, 줄 중간 #은 경로의 일부");
 assert.strictEqual(parseInclude(Array.from({ length: 1200 }, (_, i) => `f${i}`).join("\n")).length, 1000, "1000개까지");
+
+// ── materialize: 임시 레포 → worktree ──
+const root = realpathSync(mkdtempSync(join(tmpdir(), "wtb-")));
+const g = (...a: string[]) => execFileSync("git", a, { cwd: root, encoding: "utf8" }).trim();
+g("init", "-q", "-b", "main"); g("config", "user.email", "t@t"); g("config", "user.name", "t");
+writeFileSync(join(root, ".gitignore"), ".env\n.env.local\nnode_modules/\n.cache/\nbig/\nsecret-link\n");
+writeFileSync(join(root, "tracked.txt"), "t");
+mkdirSync(join(root, ".mustard")); writeFileSync(join(root, ".mustard", "config.json"), JSON.stringify({ worktree: { sharedDirectories: ["node_modules", "tracked.txt", "nope"] } }));
+writeFileSync(join(root, ".worktreeinclude"), [".env", ".env.local", "tracked.txt", "missing.env", "node_modules", "big", "secret-link"].join("\n"));
+g("add", "-A"); g("commit", "-qm", "init");
+writeFileSync(join(root, ".env"), "A=1");
+mkdirSync(join(root, "node_modules", "pkg"), { recursive: true }); writeFileSync(join(root, "node_modules", "pkg", "i.js"), "x");
+mkdirSync(join(root, "big")); for (let i = 0; i < 30; i++) writeFileSync(join(root, "big", `f${i}`), "0123456789");
+writeFileSync(join(root, "real-secret"), "S"); symlinkSync(join(root, "real-secret"), join(root, "secret-link"));
+const wt = join(root, "..", `${root.split("/").pop()}-wt`);
+g("worktree", "add", "-q", "-b", "w", wt);
+
+const rep = await materialize(root, wt, { bytes: 10_000, entries: 20 });
+assert.deepStrictEqual(rep.shared, ["node_modules"], "무시된 폴더만 공유");
+assert.ok(lstatSync(join(wt, "node_modules")).isSymbolicLink() && existsSync(join(wt, "node_modules", "pkg", "i.js")), "공유 = 심링크");
+assert.ok(rep.copied.includes(".env") && readFileSync(join(wt, ".env"), "utf8") === "A=1", ".env 복사");
+writeFileSync(join(wt, ".env"), "B=2"); assert.strictEqual(readFileSync(join(root, ".env"), "utf8"), "A=1", "복사본은 독립");
+const why = Object.fromEntries(rep.skipped.map((x) => [x.path, x.reason]));
+assert.strictEqual(why["tracked.txt"], "not-ignored", "추적 파일은 공유·복사 안 함");
+assert.strictEqual(why["nope"], "not-ignored");
+assert.strictEqual(why["missing.env"], "not-ignored", "gitignore에 없는 경로");
+assert.strictEqual(why[".env.local"], "missing", "무시되지만 없는 파일");
+assert.strictEqual(why["node_modules"], "exists", "이미 공유된 건 다시 복사 안 함");
+assert.strictEqual(why["big"], "over-budget", "한도 넘으면 건너뜀");
+assert.ok(rep.copied.includes("secret-link") && !lstatSync(join(wt, "secret-link")).isSymbolicLink() && readFileSync(join(wt, "secret-link"), "utf8") === "S", "맨 위 링크는 대상 내용을 복사");
+
+const rep2 = await materialize(root, wt, { bytes: 10_000, entries: 20 });
+assert.deepStrictEqual([rep2.shared, rep2.copied], [[], []], "두 번째엔 다 이미 있음 — 덮어쓰지 않음");
+assert.strictEqual(readFileSync(join(wt, ".env"), "utf8"), "B=2", "기존 대상 보존");
 console.log("worktreeBootstrap.check ok");
