@@ -251,7 +251,8 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
         if (busy.has(p)) continue;
         busy.add(p);
         // ponytail: 서버가 대화 기록(jsonl)을 매번 처음부터 읽음 — 기록이 커지면 레포별 바이트 위치로 끝만 읽기
-        void fetch(`/api/crew/chat?root=${encodeURIComponent(p)}&since=${crewSince.current[p]}&peek=1`).then((r) => r.json()).then((j: { ok?: boolean; msgs?: { id: string; ts: number; from: string; kind: string; text: string; taskTitle?: string; mentions?: string[]; i18n?: { key: string; vars?: Record<string, string | number> } }[] }) => {
+        // 4초 시간 제한 — 멈춘 연결이 busy를 영영 쥐지 않게(리뷰)
+        void fetch(`/api/crew/chat?root=${encodeURIComponent(p)}&since=${crewSince.current[p]}&peek=1`, { signal: AbortSignal.timeout(4000) }).then((r) => r.json()).then((j: { ok?: boolean; msgs?: { id: string; ts: number; from: string; kind: string; text: string; taskTitle?: string; mentions?: string[]; i18n?: { key: string; vars?: Record<string, string | number> } }[] }) => {
           if (!alive || !j?.ok) return;
           for (const m of j.msgs ?? []) {
             crewSince.current[p] = Math.max(crewSince.current[p] ?? 0, m.ts);

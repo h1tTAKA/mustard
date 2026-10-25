@@ -13,7 +13,7 @@ export async function GET(request: Request): Promise<Response> {
   if (!isAbsolute(root)) return Response.json({ ok: false, error: "absolute root required" }, { status: 400 });
   // #1167 peek = 알림용 새 글 확인(레포 탭 폴링) — 레포를 Crew 자동 실행 대상으로 올리지 않음(대화방을 연 레포만)
   if (!sp.get("peek")) registerRoot(root, new URL(request.url).origin); // 채팅만 열어 둬도 Ready 카드가 돌게
-  try { return Response.json({ ok: true, msgs: readMsgs(root, Number(sp.get("since")) || 0), answering: answeringRoles(root) }); } // #1139 답 쓰는 중인 역할
+  try { return Response.json({ ok: true, msgs: readMsgs(root, Number(sp.get("since")) || 0, 400, !!sp.get("peek")), answering: answeringRoles(root) }); } // #1139 답 쓰는 중인 역할
   catch (e) { return Response.json({ ok: false, error: String((e as Error)?.message ?? e) }, { status: 500 }); }
 }
 

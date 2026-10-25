@@ -34,7 +34,7 @@ export function appendMsg(root: string, m: Omit<CrewMsg, "id" | "ts"> & { ts?: n
 }
 
 // 최근 limit개(since 이후만). 깨진 줄은 건너뜀.
-export function readMsgs(root: string, since = 0, limit = 400): CrewMsg[] {
+export function readMsgs(root: string, since = 0, limit = 400, oldest = false): CrewMsg[] {
   const f = chatFile(root);
   if (!existsSync(f)) return [];
   const out: CrewMsg[] = [];
@@ -45,7 +45,7 @@ export function readMsgs(root: string, since = 0, limit = 400): CrewMsg[] {
       if (typeof m.id === "string" && typeof m.ts === "number" && typeof m.from === "string" && KINDS.has(m.kind) && typeof m.text === "string" && m.ts >= since) out.push(m); // >= — 같은 ms 메시지 유실 방지(화면이 id로 중복 제거, 리뷰)
     } catch { /* 쓰다 죽은 줄 */ }
   }
-  return out.slice(-limit);
+  return oldest ? out.slice(0, limit) : out.slice(-limit); // #1167 oldest = 알림 확인(since가 한 쪽씩 앞으로 — 400개 넘게 밀려도 안 빠짐)
 }
 
 export const findMsg = (root: string, id: string) => readMsgs(root, 0, 100_000).find((m) => m.id === id);
