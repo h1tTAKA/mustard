@@ -1,6 +1,6 @@
 // diffNotes 점검 — node --experimental-strip-types src/lib/diffNotes.check.ts
 import assert from "node:assert";
-import { addNote, formatNote, formatNotes, markSent, removeNote, unsent } from "./diffNotes.ts";
+import { addNote, formatNote, formatNotes, isFull, markSent, removeNote, unsent, type DiffNote } from "./diffNotes.ts";
 
 let l = addNote([], { path: "src/a.ts", line: 12, body: "  rename x  ", scope: "unstaged" }, "1", 100);
 assert.deepStrictEqual(l, [{ path: "src/a.ts", line: 12, body: "rename x", scope: "unstaged", id: "1", createdAt: 100 }], "앞뒤 공백 정리");
@@ -22,4 +22,17 @@ assert.deepStrictEqual(removeNote(s, "3").map((x) => x.id), ["1"]);
 assert.strictEqual(formatNote({ path: "src/a.ts", line: 12, body: "rename x" }), 'File: src/a.ts\nLine: 12\nUser comment: "rename x"');
 assert.strictEqual(formatNote({ path: "b.ts", line: 9, startLine: 4, body: 'say "hi"\nthen \\n' }), 'File: b.ts\nLines: 4-9\nUser comment: "say \\"hi\\"\\nthen \\\\n"', "따옴표·줄바꿈·역슬래시 이스케이프");
 assert.strictEqual(formatNotes(l), formatNote(l[0]) + "\n\n" + formatNote(l[1]), "메모 사이 빈 줄");
+// 어느 diff 기준인지 — 작업 폴더는 Orca 형식 그대로, staged·커밋은 표시
+assert.ok(formatNote({ path: "a.ts", line: 1, body: "x", scope: "unstaged" }).startsWith("File: a.ts\n"));
+assert.ok(formatNote({ path: "a.ts", line: 1, body: "x", scope: "staged" }).startsWith("File: a.ts (staged)\n"));
+assert.ok(formatNote({ path: "a.ts", line: 1, body: "x", scope: "commit:abcdef1234567" }).startsWith("File: a.ts (commit abcdef1)\n"));
+
+// 200개 — 보낸 것부터 버리고, 전부 안 보낸 거면 거절(조용히 사라지지 않게)
+const mk = (i: number, sent?: number): DiffNote => ({ id: `m${i}`, path: "f", line: i + 1, body: `b${i}`, scope: "unstaged", createdAt: i, ...(sent ? { sentAt: sent } : {}) });
+const full = Array.from({ length: 200 }, (_, i) => mk(i, i === 5 ? 9 : undefined));
+const add1 = addNote(full, { path: "f", line: 999, body: "new", scope: "unstaged" }, "n", 1);
+assert.ok(add1.length === 200 && !add1.some((x) => x.id === "m5") && add1.some((x) => x.id === "n"), "보낸 것(m5)부터 버림");
+const allUnsent = Array.from({ length: 200 }, (_, i) => mk(i));
+assert.strictEqual(addNote(allUnsent, { path: "f", line: 999, body: "new", scope: "unstaged" }, "n", 1), allUnsent, "다 안 보낸 거면 거절(같은 목록 그대로)");
+assert.ok(isFull(allUnsent) && !isFull(full));
 console.log("diffNotes.check ok");

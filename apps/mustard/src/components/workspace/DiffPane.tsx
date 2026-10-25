@@ -10,7 +10,7 @@ import { Markdown } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Thread, type LineComment } from "@/components/workspace/github/PrReviewComments";
 import MarkdownToolbar from "@/components/workspace/github/MarkdownToolbar";
-import { addNote, diffNotesKey, formatNotes, loadNotes as loadDiffNotes, markSent, removeNote, saveNotes as saveDiffNotes, unsent, DIFF_NOTES_EVENT, type DiffNote } from "@/lib/diffNotes";
+import { addNote, diffNotesKey, formatNotes, isFull, loadNotes as loadDiffNotes, markSent, removeNote, saveNotes as saveDiffNotes, unsent, DIFF_NOTES_EVENT, type DiffNote } from "@/lib/diffNotes";
 import { sendToAgent } from "@/lib/browser/sendToAgent";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import { addDraft, loadDrafts, removeDraft, saveDrafts, suggestionBlock, prDraftKey, PR_DRAFT_EVENT, type DraftComment } from "@/lib/prDraft";
@@ -64,7 +64,8 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const [sendingNotes, setSendingNotes] = useState(false);
   const sendNotes = async () => {
     const list = unsent(loadDiffNotes(root));
-    if (!list.length || sendingNotes) return;
+    if (!list.length || sendingNotes || notesInFlight.has(root)) return; // 같은 레포 diff 화면이 둘이어도 한 번만(리뷰)
+    notesInFlight.add(root);
     setSendingNotes(true);
     try {
       const r = await sendToAgent(root, formatNotes(list));
@@ -72,7 +73,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
       if (!saveDiffNotes(root, markSent(loadDiffNotes(root), new Set(list.map((n) => n.id)), Date.now()))) toast(t("prReview.saveFailed"), "error");
       toast(t("diffNotes.sentToast", { n: list.length }));
       requestTerminalFocus(root, r.id); // 보낸 터미널 탭으로 — 에이전트가 받는 걸 보이게(브라우저 보내기와 같음)
-    } finally { setSendingNotes(false); }
+    } finally { notesInFlight.delete(root); setSendingNotes(false); }
   };
   const [posting, setPosting] = useState<Set<string>>(new Set()); // GitHub에 올리는 중인 지적
   const adoptHere = async (f: Finding) => {
@@ -268,7 +269,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const hunkStart = new Map(allHunks.map((h) => [h.startLine, h]));
   const hunkEnd = new Map(allHunks.map((h) => [h.endLine, h]));
   const body = (
-    <div className={`relative bg-white dark:bg-[var(--s-pane)] ${pr || pendingNotes.length ? "min-h-0 flex-1" : "h-full"}`}
+    <div className={`relative bg-white dark:bg-[var(--s-pane)] min-h-0 flex-1`}
       onMouseEnter={() => { if (hideTimer.current) clearTimeout(hideTimer.current); setShowRuler(true); }}
       onMouseLeave={() => { if (hideTimer.current) clearTimeout(hideTimer.current); hideTimer.current = setTimeout(() => setShowRuler(false), 400); }}>
       <div ref={scrollRef} onScroll={() => { syncVp(); reveal(); }} className="h-full overflow-auto pr-3 font-mono text-[11px] leading-[1.55] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -377,6 +378,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
               <div key={`n-${n.id}`} style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-dashed border-mustard-500/50 bg-white px-3 py-2 font-sans dark:bg-[var(--s-pane)]">
                 <div className="flex items-center gap-1.5 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400">
                   <IconClock size={11} stroke={2} aria-hidden />{n.sentAt ? t("diffNotes.sent") : t("diffNotes.pending")}{n.startLine ? ` · ${n.startLine}-${n.line}` : ""}
+                  {n.text !== undefined && n.text !== l.text && <span className="font-medium text-amber-600 dark:text-amber-400">· {t("diffNotes.lineChanged")}</span>}
                   <button type="button" onClick={() => { if (!saveDiffNotes(root, removeNote(loadDiffNotes(root), n.id))) toast(t("prReview.saveFailed"), "error"); }}
                     className="ml-auto inline-flex items-center gap-0.5 rounded px-1 font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"><IconX size={11} aria-hidden />{n.sentAt ? t("diffNotes.resolve") : t("github.delete")}</button>
                 </div>
@@ -385,7 +387,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
             ))}
             {noteHere && sel && (
               <div style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 font-sans">
-                <NoteComposer root={root} file={file} scope={scope} sel={sel} onClose={() => setPick(null)} />
+                <NoteComposer root={root} file={file} scope={scope} sel={sel} lineText={l.text} onClose={() => setPick(null)} />
               </div>
             )}
           </>
@@ -435,16 +437,17 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
     </div>
   );
   // #1169 안 보낸 메모가 있을 때만 위 막대(PR 머리 띠와 같은 모양) — 없으면 예전 그대로
-  if (!pr) return !pendingNotes.length ? body : (
+  // 바깥 틀은 늘 같게 — 막대가 생기고 없어질 때 diff 전체가 다시 그려져 스크롤이 튀지 않게(리뷰)
+  if (!pr) return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-1.5 border-b border-zinc-200 bg-zinc-50 px-3 py-1 text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">
+      {pendingNotes.length > 0 && <div className="flex shrink-0 items-center gap-1.5 border-b border-zinc-200 bg-zinc-50 px-3 py-1 text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">
         <IconRobot size={13} stroke={2} className="shrink-0" aria-hidden />
         <span className="shrink-0 font-medium">{t("diffNotes.bar", { n: pendingNotes.length })}</span>
         <button type="button" onClick={() => void sendNotes()} disabled={sendingNotes}
           className="ml-auto inline-flex items-center gap-1 rounded-md bg-mustard-500/12 px-2 py-0.5 text-[10px] font-semibold text-mustard-700 ring-1 ring-inset ring-mustard-500/35 transition hover:bg-mustard-500/20 disabled:opacity-60 dark:bg-mustard-400/12 dark:text-mustard-400 dark:ring-mustard-400/30 dark:hover:bg-mustard-400/20">
           {sendingNotes ? <IconLoader2 size={11} stroke={2.5} className="animate-spin" aria-hidden /> : <IconRobot size={11} stroke={2.5} aria-hidden />}{t("diffNotes.send")}
         </button>
-      </div>
+      </div>}
       {body}
     </div>
   );
@@ -521,8 +524,10 @@ function LineComposer({ root, pr, file, sel, head, code, onClose, onPosted }: { 
   );
 }
 
+const notesInFlight = new Set<string>(); // #1169 레포별 보내는 중(같은 레포 diff 화면이 여럿이어도 한 묶음은 한 번만)
+
 // #1169 diff 줄 메모 입력칸(PR 아닌 diff) — [취소] [메모 남기기]. ⌘Enter 저장, Esc 취소. 모은 메모는 위 막대에서 에이전트로 한꺼번에. PR LineComposer와 같은 모양.
-function NoteComposer({ root, file, scope, sel, onClose }: { root: string; file: string; scope: string; sel: { line: number; start?: number }; onClose: () => void }) {
+function NoteComposer({ root, file, scope, sel, lineText, onClose }: { root: string; file: string; scope: string; sel: { line: number; start?: number }; lineText: string; onClose: () => void }) {
   const t = useT();
   const toast = useToast();
   const [text, setText] = useState("");
@@ -532,8 +537,8 @@ function NoteComposer({ root, file, scope, sel, onClose }: { root: string; file:
     const body = text.trim();
     if (!body) return;
     const cur = loadDiffNotes(root);
-    const next = addNote(cur, { path: file, line: sel.line, startLine: sel.start, body, scope }, crypto.randomUUID(), Date.now());
-    if (next === cur) { setErr(t("diffNotes.notAdded")); return; } // 같은 자리·같은 글이 이미 있음
+    const next = addNote(cur, { path: file, line: sel.line, startLine: sel.start, body, scope, text: lineText }, crypto.randomUUID(), Date.now());
+    if (next === cur) { setErr(t(isFull(cur) ? "diffNotes.full" : "diffNotes.notAdded")); return; } // 꽉 참 / 같은 자리·같은 글
     if (!saveDiffNotes(root, next)) { toast(t("prReview.saveFailed"), "error"); return; }
     onClose();
   };
