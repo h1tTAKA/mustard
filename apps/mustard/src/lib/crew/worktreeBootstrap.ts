@@ -1,9 +1,11 @@
 // worktree 부트스트랩 설정(#1176) — 새 worktree에 setup 스크립트·Git에 안 올라가는 파일 복사·폴더 공유.
 // Orca(orca.yaml + .worktreeinclude)와 같은 규칙. 설정 파일만 YAML 대신 JSON(.mustard/config.json, 의존성 없이) — 키 이름은 Orca와 같게.
 // 서버 전용.
-import { execFile } from "node:child_process";
-import { constants, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { appendFileSync, constants, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 export const CONFIG_PATH = join(".mustard", "config.json");
@@ -143,4 +145,68 @@ export async function materialize(root: string, dir: string, limits: Limits = CO
     rep.copied.push(p);
   }
   return rep;
+}
+
+// ── setup / archive 스크립트(#1176 커밋 3) ──────────────────────────────────────
+// 레포에 든 스크립트 = 그 레포를 받은 사람의 PC에서 도는 코드 → 내용(sha256)을 사람이 한 번 승인해야 실행(Orca도 명령 승인).
+// 신뢰는 레포별·내용별 — 스크립트가 한 글자라도 바뀌면 다시 승인. 저장: ~/.nunopi/crew/<sha(root)>/setup-trust.json
+// 실행: bash -e(첫 실패에서 멈춤), cwd = worktree, 출력은 worktree/.crew/<kind>.log, 시간 제한 넘으면 프로세스 그룹째 끔.
+// setup은 새 worktree의 설정, archive는 메인 체크아웃의 설정(Orca와 같음).
+const sha = (s: string, n = 64) => createHash("sha256").update(s).digest("hex").slice(0, n);
+const crewBase = () => process.env.MUSTARD_CREW_DIR || join(homedir(), ".nunopi", "crew");
+const trustFile = (root: string) => join(crewBase(), sha(root.replace(/\/+$/, ""), 32), "setup-trust.json");
+export const scriptHash = (script: string) => sha(script);
+
+function readTrust(root: string): string[] {
+  try { const v = JSON.parse(readFileSync(trustFile(root), "utf8")); return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []; } catch { return []; }
+}
+export const isTrusted = (root: string, script: string) => readTrust(root).includes(scriptHash(script));
+export function trustScript(root: string, script: string) {
+  const list = readTrust(root), h = scriptHash(script);
+  if (list.includes(h)) return;
+  mkdirSync(dirname(trustFile(root)), { recursive: true });
+  writeFileSync(trustFile(root), JSON.stringify([...list, h].slice(-200)));
+}
+
+export interface ScriptResult { ok: boolean; code: number | null; timedOut: boolean; tail: string; log: string }
+export function runScript(kind: "setup" | "archive", script: string, root: string, dir: string, timeoutMs: number): Promise<ScriptResult> {
+  const log = join(dir, ".crew", `${kind}.log`);
+  mkdirSync(dirname(log), { recursive: true });
+  writeFileSync(log, `# ${kind} ${new Date().toISOString()}\n`);
+  return new Promise((res) => {
+    const child = spawn("bash", ["-e", "-c", script], {
+      cwd: dir, detached: true, // 새 프로세스 그룹 — 시간 초과면 자식들까지 같이 끔
+      env: { ...process.env, MUSTARD_ROOT_PATH: root, MUSTARD_WORKTREE_PATH: dir, MUSTARD_WORKSPACE_NAME: basename(dir) },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let tail = "", timedOut = false;
+    const take = (b: Buffer) => { appendFileSync(log, b); tail = (tail + b.toString()).slice(-2000); };
+    child.stdout.on("data", take); child.stderr.on("data", take);
+    const timer = setTimeout(() => { timedOut = true; try { process.kill(-child.pid!, "SIGKILL"); } catch { /* 이미 끝남 */ } }, timeoutMs);
+    const done = (code: number | null) => { clearTimeout(timer); res({ ok: code === 0 && !timedOut, code, timedOut, tail: tail.trim().slice(-800), log }); };
+    child.on("error", (e) => { take(Buffer.from(String(e))); done(null); });
+    child.on("close", done);
+  });
+}
+
+export type SetupOutcome =
+  | { status: "none" }
+  | { status: "untrusted"; script: string }
+  | { status: "ok" | "failed"; result: ScriptResult };
+export const SETUP_TIMEOUT = 20 * 60_000, ARCHIVE_TIMEOUT = 5 * 60_000;
+
+// 새 worktree의 setup — 없으면 none, 승인 전이면 untrusted(실행 안 함), 승인됐으면 실행.
+export async function runSetup(root: string, dir: string, timeoutMs = SETUP_TIMEOUT): Promise<SetupOutcome> {
+  const { setup } = readConfig(dir);
+  if (!setup) return { status: "none" };
+  if (!isTrusted(root, setup)) return { status: "untrusted", script: setup };
+  const result = await runScript("setup", setup, root, dir, timeoutMs);
+  return { status: result.ok ? "ok" : "failed", result };
+}
+
+// worktree 지우기 전 archive — 승인된 것만, 실패해도 지우기는 진행(결과만 돌려줌). 메인 체크아웃의 설정.
+export async function runArchive(root: string, dir: string, timeoutMs = ARCHIVE_TIMEOUT): Promise<ScriptResult | null> {
+  const { archive } = readConfig(root);
+  if (!archive || !isTrusted(root, archive) || !existsSync(dir)) return null;
+  return runScript("archive", archive, root, dir, timeoutMs);
 }

@@ -7,7 +7,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
-import { materialize, type MaterializeReport } from "./worktreeBootstrap.ts";
+import { materialize, runArchive, type MaterializeReport } from "./worktreeBootstrap.ts";
 
 const pexec = promisify(execFile);
 const git = async (cwd: string, args: string[]) => (await pexec("git", args, { cwd, timeout: 120_000, maxBuffer: 10_000_000 })).stdout.trim();
@@ -71,6 +71,9 @@ export async function ensureWorktree(root: string, taskId: string, title: string
 // 폴더만 정리 — 브랜치(에이전트가 한 커밋)는 남김. 사람이 머지·삭제를 결정.
 export async function removeWorktree(root: string, taskId: string, title: string): Promise<void> {
   const { dir } = worktreeFor(root, taskId, title);
-  if (await isWorktree(dir)) await git(root, ["worktree", "remove", "--force", dir]);
+  if (await isWorktree(dir)) {
+    await runArchive(root, dir).catch(() => null); // #1176 승인된 archive 스크립트 먼저(실패해도 지우기는 진행)
+    await git(root, ["worktree", "remove", "--force", dir]);
+  }
   await git(root, ["worktree", "prune"]).catch(() => {});
 }

@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { materialize, normRel, parseConfig, parseInclude } from "./worktreeBootstrap.ts";
+import { isTrusted, materialize, normRel, parseConfig, parseInclude, runArchive, runSetup, trustScript } from "./worktreeBootstrap.ts";
 
 // 경로 정리·거부(Orca 규칙)
 assert.strictEqual(normRel("./.env/"), ".env");
@@ -58,4 +58,35 @@ assert.ok(rep.copied.includes("secret-link") && !lstatSync(join(wt, "secret-link
 const rep2 = await materialize(root, wt, { bytes: 10_000, entries: 20 });
 assert.deepStrictEqual([rep2.shared, rep2.copied], [[], []], "두 번째엔 다 이미 있음 — 덮어쓰지 않음");
 assert.strictEqual(readFileSync(join(wt, ".env"), "utf8"), "B=2", "기존 대상 보존");
+
+// ── setup / archive + 신뢰(#1176 커밋 3) — 신뢰 저장소는 MUSTARD_CREW_DIR 임시 폴더 ──
+process.env.MUSTARD_CREW_DIR ??= mkdtempSync(join(tmpdir(), "wtb-crew-"));
+const setCfg = (where: string, scripts: Record<string, string>) => { mkdirSync(join(where, ".mustard"), { recursive: true }); writeFileSync(join(where, ".mustard", "config.json"), JSON.stringify({ scripts })); };
+assert.deepStrictEqual(await runSetup(root, wt), { status: "none" }, "worktree에 setup 없으면 none");
+const script = 'echo "$MUSTARD_WORKSPACE_NAME" > made.txt; test "$MUSTARD_ROOT_PATH" = "' + root + '" && test "$PWD" = "$MUSTARD_WORKTREE_PATH"';
+setCfg(wt, { setup: script });
+const u = await runSetup(root, wt);
+assert.ok(u.status === "untrusted" && u.script === script && !existsSync(join(wt, "made.txt")), "승인 전엔 실행 안 함");
+trustScript(root, script); trustScript(root, script);
+assert.ok(isTrusted(root, script) && !isTrusted(root, script + " "), "내용이 바뀌면 다시 승인");
+const ok = await runSetup(root, wt);
+assert.ok(ok.status === "ok" && readFileSync(join(wt, "made.txt"), "utf8").trim() === wt.split("/").pop(), "승인 후 실행 + 환경변수");
+assert.ok(readFileSync(join(wt, ".crew", "setup.log"), "utf8").startsWith("# setup"), "로그 파일");
+
+const bad = "echo before; false; echo after";
+setCfg(wt, { setup: bad }); trustScript(root, bad);
+const f = await runSetup(root, wt);
+assert.ok(f.status === "failed" && f.result.code !== 0 && f.result.tail.includes("before") && !f.result.tail.includes("after"), "bash -e: 첫 실패에서 멈춤 + 끝부분 로그");
+const slow = "sleep 30 & sleep 30";
+setCfg(wt, { setup: slow }); trustScript(root, slow);
+const t0 = Date.now(); const s2 = await runSetup(root, wt, 300);
+assert.ok(s2.status === "failed" && s2.result.timedOut && Date.now() - t0 < 5000, "시간 초과면 그룹째 끔");
+
+// archive는 메인 체크아웃 설정 + 승인된 것만
+assert.strictEqual(await runArchive(root, wt), null, "archive 없으면 null");
+setCfg(root, { archive: "touch archived.txt" });
+assert.strictEqual(await runArchive(root, wt), null, "승인 전 archive 안 돎");
+trustScript(root, "touch archived.txt");
+const a = await runArchive(root, wt);
+assert.ok(a?.ok && existsSync(join(wt, "archived.txt")), "승인된 archive는 worktree에서 실행");
 console.log("worktreeBootstrap.check ok");
