@@ -29,7 +29,7 @@ function flowFields(t: Record<string, unknown>): Partial<CrewTask> {
   if (int(t.loops) !== undefined) out.loops = int(t.loops);
   if (int(t.fails) !== undefined) out.fails = int(t.fails);
   const gt = t.gate as Record<string, unknown> | undefined;
-  if (gt && typeof gt === "object" && ["spec", "schema", "merge", "question", "blocked"].includes(String(gt.kind)) && int(gt.stage) !== undefined)
+  if (gt && typeof gt === "object" && ["spec", "schema", "merge", "question", "blocked", "setup"].includes(String(gt.kind)) && int(gt.stage) !== undefined)
     out.gate = { kind: gt.kind as CrewGate["kind"], stage: int(gt.stage)!, ...(typeof gt.text === "string" ? { text: gt.text.slice(0, 4000) } : {}) };
   if (typeof t.note === "string" && t.note) out.note = t.note.slice(0, 8000);
   if (int(t.consults) !== undefined) out.consults = int(t.consults);

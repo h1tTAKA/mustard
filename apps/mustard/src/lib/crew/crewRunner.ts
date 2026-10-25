@@ -14,6 +14,7 @@ import { childProgress, decideGate, next, parseHandoff, pickListener, pipelineOf
 import { getRole, listRoles } from "./crewRoleStore";
 import { crewProtocol, type CrewRole } from "./crewRoleDefaults";
 import { ensureWorktree, worktreeFor } from "./crewWorktree";
+import { killSetup, markSetupDone, readConfig, runSetup, trustScript } from "./worktreeBootstrap";
 import { decide, fromAgentRequest } from "./crewPolicy";
 import { narrationLocale } from "@/lib/narrationConfig";
 import { defaultSnaModel } from "@mustard/nunopi/server";
@@ -34,6 +35,7 @@ export interface CrewRun {
   state: RunState; startedAt: number; endedAt?: number;
   lastActivity?: string; toolCount: number; tokens?: { input: number; output: number }; costUsd?: number;
   summary?: string; error?: string; permission?: { request: Record<string, unknown>; at: number };
+  prepAt?: number; // #1176 setup 끝난 때(준비 단계 감시를 여기서부터)
   runningAt?: number; // #1162 SNA에 시작을 맡긴 때(준비 시간은 '안 뜸' 3분에 안 셈)
   lastEventAt?: number; // #1162 에이전트에게서 마지막으로 신호(이벤트·권한 요청)가 온 때 — 멈춤 감시
 }
@@ -240,10 +242,11 @@ const NEVER_STARTED_MS = 10 * 60_000, STALLED_MS = 20 * 60_000;
 function watchStalls(now = Date.now()) {
   for (const run of g.runs.values()) {
     if (run.state !== "running" && run.state !== "starting") continue;
-    const never = !run.lastEventAt && (run.state === "starting" ? now - run.startedAt > STALLED_MS : now - (run.runningAt ?? run.startedAt) > NEVER_STARTED_MS);
+    const never = !run.lastEventAt && (run.state === "starting" ? now - (run.prepAt ?? run.startedAt) > STALLED_MS : now - (run.runningAt ?? run.startedAt) > NEVER_STARTED_MS);
     const stalled = !!run.lastEventAt && now - run.lastEventAt > STALLED_MS;
     if (!never && !stalled) continue;
     const wasStarting = run.state === "starting";
+    if (wasStarting && run.worktree) killSetup(run.root, run.worktree); // #1176 setup 중이었으면 같이 끔
     if (wasStarting) g.starting.delete(`${run.root}\n${run.taskId}`); // 멈춘 startRun이 줄 자리·동시 상한을 계속 쥐지 않게(늦게 풀려도 startRun이 상태 보고 그만둠)
     run.state = "failed"; run.endedAt = now; run.error = tr(never ? "crew.reason.neverStarted" : "crew.reason.stalled");
     persist(run, true);
@@ -401,6 +404,24 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     if (run.state !== "starting") return run;
     const prev = [...g.runs.values(), ...readRuns(root)].filter((r) => r.taskId === taskId && r.id !== run.id && r.startedAt < run.startedAt && r.sessionId).sort((a, b) => b.startedAt - a.startedAt)[0];
     if (prev?.sessionId) await Promise.race([sna.agent.kill(prev.sessionId), new Promise((_, rej) => setTimeout(() => rej(new Error("previous agent did not stop")), 10_000))]);
+    // setup도 옛 에이전트를 끈 뒤에(같은 worktree에 둘이 돌지 않게, 리뷰)
+    // #1176 레포 setup 스크립트 — 이 worktree에서 지금 내용으로 아직 안 했으면 에이전트보다 먼저(완료 표시는 worktree 밖). 승인 전이면 사람에게, 실패면 막힘(다시 실행 = 다시 setup).
+    {
+      if (run.state !== "starting") return run; // 옛 세션 끄는 동안 Stop·감시가 끝냈으면 setup 시작 안 함(리뷰)
+      run.lastActivity = "setup"; run.lastEventAt = Date.now(); persist(run, true); // 감시 시계를 setup 시작부터(setup 15분 < 감시 20분, 리뷰)
+      const out = await runSetup(root, wt.dir);
+      run.lastEventAt = undefined; run.prepAt = Date.now(); // 에이전트의 '안 뜸' 감시는 따로, 준비 단계 감시는 setup 끝부터 다시(리뷰)
+      if (run.state !== "starting") return run; // 감시가 포기함
+      if (out.status === "too-long") throw new Error(tr("crew.reason.setupTooLong"));
+      if (out.status === "untrusted") {
+        run.state = "stopped"; run.endedAt = Date.now(); run.lastActivity = "setup approval needed";
+        patchTask(root, taskId, { gate: { kind: "setup", stage, text: out.script.slice(0, 4000) }, status: "needs-you" });
+        say(root, { from: "board", kind: "gate", taskId, taskTitle: task.title, mentions: ["you"], ...tx("crewchat.gate.setup") });
+        persist(run, true);
+        return run;
+      }
+      if (out.status === "failed") throw new Error(tr("crew.reason.setupFailed", { tail: out.result.timedOut ? "timeout" : out.result.tail.slice(-400) }));
+    }
     const { sessionId } = await sna.sessions.create({ label: `crew:${task.title.slice(0, 60)}`, cwd: wt.dir, meta: { crew: true, root, taskId, runId: run.id, role: role.id } });
     run.sessionId = sessionId;
     g.bySession.set(sessionId, run.id);
@@ -446,6 +467,7 @@ export async function stopRun(root: string, taskId: string): Promise<CrewRun> {
   run.state = "stopped"; run.endedAt = Date.now(); run.error = tr("crew.reason.stopped"); run.permission = undefined;
   g.pending.get(run.id)?.resolve(false); // 기다리던 훅은 거부로 풀기
   if (run.sessionId) await (await getSnaClient()).agent.kill(run.sessionId).catch(() => {});
+  if (run.worktree) killSetup(root, run.worktree); // #1176 setup 단계면 setup도 끔(세션이 아직 없음)
   block(root, taskId, run.stage ?? 0, tr("crew.reason.stopped"));
   persist(run, true);
   return run;
@@ -476,6 +498,18 @@ export function decideCard(root: string, taskId: string, action: "approve" | "re
   if (activeFor(root, taskId)) throw new Error("running");
   const task = readBoard(root).tasks.find((t) => t.id === taskId);
   if (!task) throw new Error("task not found");
+  // #1176 setup 승인 = 지금 worktree 스크립트가 보여 준 것과 **완전히** 같을 때만 신뢰(바뀌었으면 다시), 거절 = 이번 worktree는 setup 없이(표시는 worktree 밖)
+  if (task.gate?.kind === "setup") {
+    const dir = worktreeFor(root, task.id, task.title).dir;
+    if (action === "approve") {
+      const cur = readConfig(dir).setup;
+      if (!cur || cur !== task.gate.text) throw new Error("setup script changed");
+      trustScript(root, cur);
+    } else if (action === "reject") {
+      markSetupDone(root, dir, "skipped");
+      text = text.trim() || "(setup skipped)";
+    } else throw new Error("approve or skip"); // 답변으로 건너뛰기 금지(리뷰)
+  }
   const r = decideGate(task, action, text);
   if (action === "approve" && task.gate?.kind === "spec" && task.split?.length) return splitCard(root, task); // #1114 쪼개기 승인
   const board = patchTask(root, taskId, { ...r.patch, status: r.status });

@@ -6,6 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ensureWorktree, removeWorktree, worktreeFor } from "./crewWorktree.ts";
+import { markSetupDone, setupDone } from "./worktreeBootstrap.ts";
 
 assert.ok(process.env.MUSTARD_WORKTREE_DIR, "임시 디렉터리 필수");
 const root = mkdtempSync(join(tmpdir(), "crew-repo-"));
@@ -46,4 +47,12 @@ assert.ok(kid.created && existsSync(join(kid.dir, "b.txt")), "의존 브랜치 �
 const lone = await ensureWorktree(root, "kid00002", "lone", "crew/nope");
 assert.ok(lone.created && !existsSync(join(lone.dir, "b.txt")), "없는 브랜치 = HEAD");
 
+// #1176 새로 만들 때 부트스트랩 보고가 붙음(설정 없으면 빈 보고), 재사용이면 없음
+assert.deepStrictEqual(lone.bootstrap, { shared: [], copied: [], skipped: [] }, "새 worktree = 부트스트랩 실행");
+assert.strictEqual((await ensureWorktree(root, "kid00002", "lone")).bootstrap, undefined, "재사용엔 안 돎");
+// #1176 지운 뒤 같은 경로에 새로 만들면 setup 완료 표시가 지워짐(새 폴더는 setup 다시)
+markSetupDone(root, lone.dir, "abc");
+await removeWorktree(root, "kid00002", "lone");
+await ensureWorktree(root, "kid00002", "lone");
+assert.strictEqual(setupDone(root, lone.dir), null, "새로 만들면 완료 표시 지움");
 console.log("crewWorktree.check ok");

@@ -235,7 +235,7 @@ function GatePanel({ task, roles, branch, onGate, onPr }: { task: CrewTask; role
   const [prBusy, setPrBusy] = useState(false);
   const g = task.gate!;
   const [text, setText] = useState("");
-  const isQ = g.kind === "question", isBlocked = g.kind === "blocked";
+  const isQ = g.kind === "question", isBlocked = g.kind === "blocked", isSetup = g.kind === "setup"; // #1176 setup = 레포 스크립트 첫 실행 승인
   const tone = isBlocked ? "border-rose-300/60 bg-rose-50 dark:border-rose-500/30 dark:bg-rose-500/[0.07]" : "border-amber-300/60 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/[0.07]";
   return (
     <div className={`mx-5 mb-4 rounded-xl border p-3 ${tone}`}>
@@ -261,6 +261,7 @@ function GatePanel({ task, roles, branch, onGate, onPr }: { task: CrewTask; role
           </ol>
         </div>
       ) : null}
+      {isSetup && <p className="mt-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">{t("crew.gate.setupHint")}</p>}
       {g.kind === "merge" && <p className="mt-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">{t("crew.gate.mergeHint", { branch: branch || "crew/…" })}</p>}
       {!isBlocked && (
         <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder={isQ ? t("crew.gate.answerPlaceholder") : t("crew.gate.commentPlaceholder")}
@@ -280,8 +281,8 @@ function GatePanel({ task, roles, branch, onGate, onPr }: { task: CrewTask; role
               {prBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconGitPullRequest size={13} aria-hidden />}{prBusy ? t("crew.pr.creating") : t("crew.pr.create")}
             </button>
           ))}
-          <button type="button" disabled={!text.trim()} onClick={() => onGate?.("reject", text)} className="rounded-lg px-3 py-1 text-[12px] font-medium text-zinc-600 transition hover:bg-amber-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10">{t("crew.gate.reject")}</button>
-          <button type="button" onClick={() => onGate?.("approve", "")} className="rounded-lg bg-amber-500 px-3 py-1 text-[12px] font-semibold text-white transition hover:bg-amber-600">{g.kind === "spec" && task.split?.length ? t("crewsplit.approve") : t("crew.gate.approve")}</button>
+          <button type="button" disabled={!isSetup && !text.trim()} onClick={() => onGate?.("reject", text)} className="rounded-lg px-3 py-1 text-[12px] font-medium text-zinc-600 transition hover:bg-amber-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10">{isSetup ? t("crew.gate.setupSkip") : t("crew.gate.reject")}</button>
+          <button type="button" onClick={() => onGate?.("approve", "")} className="rounded-lg bg-amber-500 px-3 py-1 text-[12px] font-semibold text-white transition hover:bg-amber-600">{g.kind === "spec" && task.split?.length ? t("crewsplit.approve") : isSetup ? t("crew.gate.setupApprove") : t("crew.gate.approve")}</button>
         </>)}
       </div>
     </div>

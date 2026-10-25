@@ -3,10 +3,11 @@
 // 결과물 폴더 .crew/는 공유 .git/info/exclude에 넣어 커밋에 안 섞이게.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
+import { clearSetupState, materialize, runArchive, type MaterializeReport } from "./worktreeBootstrap.ts";
 
 const pexec = promisify(execFile);
 const git = async (cwd: string, args: string[]) => (await pexec("git", args, { cwd, timeout: 120_000, maxBuffer: 10_000_000 })).stdout.trim();
@@ -47,11 +48,14 @@ async function excludeCrewDir(root: string) {
 
 // 있으면 재사용, 없으면 현재 HEAD에서 새 브랜치로 만듦(브랜치만 남아 있으면 그 브랜치로 다시 붙임).
 // from = 새 브랜치를 만들 때 시작점(#1114 의존 카드의 브랜치 — 앞 작업 위에 쌓기). 없거나 못 찾으면 HEAD.
-export async function ensureWorktree(root: string, taskId: string, title: string, from?: string): Promise<{ dir: string; branch: string; base: string; created: boolean }> {
+export async function ensureWorktree(root: string, taskId: string, title: string, from?: string): Promise<{ dir: string; branch: string; base: string; created: boolean; bootstrap?: MaterializeReport }> {
   const { dir, branch } = worktreeFor(root, taskId, title);
   const base = await git(root, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "HEAD");
   await excludeCrewDir(root);
+  // #1176 .crew가 링크면 거부 — 로그·결과 쓰기가 링크 타고 밖으로 나가지 않게(리뷰)
+  const crewLink = () => { try { return lstatSync(join(dir, ".crew")).isSymbolicLink(); } catch { return false; } };
   if (await isWorktree(dir)) {
+    if (crewLink()) throw new Error(".crew is a symlink");
     mkdirSync(join(dir, ".crew"), { recursive: true });
     const cur = await git(dir, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => branch);
     return { dir, branch: cur === "HEAD" ? branch : cur, base, created: false }; // 분리 HEAD면 계산한 이름(리뷰)
@@ -61,13 +65,20 @@ export async function ensureWorktree(root: string, taskId: string, title: string
   const exists = await git(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).then(() => true, () => false);
   const start = from && (await git(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${from}`]).then(() => true, () => false)) ? from : "HEAD";
   await git(root, exists ? ["worktree", "add", dir, branch] : ["worktree", "add", "-b", branch, dir, start]);
+  if (crewLink()) throw new Error(".crew is a symlink");
   mkdirSync(join(dir, ".crew"), { recursive: true });
-  return { dir, branch, base, created: true };
+  clearSetupState(root, dir); // #1176 같은 경로에 새로 만든 worktree — 예전 setup 완료 표시 지움(새 폴더엔 setup이 안 됐으니)
+  // #1176 새로 만들 때만 — .worktreeinclude 복사·sharedDirectories 공유(실패해도 worktree는 씀, 보고에 남김)
+  const bootstrap = await materialize(root, dir).catch((e): MaterializeReport => ({ shared: [], copied: [], skipped: [{ path: "*", reason: String((e as Error)?.message ?? e).slice(0, 200) }] }));
+  return { dir, branch, base, created: true, bootstrap };
 }
 
 // 폴더만 정리 — 브랜치(에이전트가 한 커밋)는 남김. 사람이 머지·삭제를 결정.
 export async function removeWorktree(root: string, taskId: string, title: string): Promise<void> {
   const { dir } = worktreeFor(root, taskId, title);
-  if (await isWorktree(dir)) await git(root, ["worktree", "remove", "--force", dir]);
+  if (await isWorktree(dir)) {
+    await runArchive(root, dir).catch(() => null); // #1176 승인된 archive 스크립트 먼저(실패해도 지우기는 진행)
+    await git(root, ["worktree", "remove", "--force", dir]);
+  }
   await git(root, ["worktree", "prune"]).catch(() => {});
 }
