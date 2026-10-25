@@ -89,7 +89,7 @@ export function noLinkUnder(base: string, full: string): boolean {
   let cur = b;
   for (const seg of rel) {
     cur = join(cur, seg);
-    try { if (lstatSync(cur).isSymbolicLink()) return false; } catch { return true; }
+    try { if (lstatSync(cur).isSymbolicLink()) return false; } catch (e) { return (e as NodeJS.ErrnoException).code === "ENOENT"; } // 없는 조각만 통과, 권한 오류 등은 거부(리뷰)
   }
   return true;
 }
@@ -182,7 +182,7 @@ export const MAX_REVIEW = 4000; // 관문에 보여 줄 수 있는 길이 — �
 export function setupDone(root: string, dir: string): string | null { try { return readFileSync(stateFile(root, dir, "done"), "utf8"); } catch { return null; } }
 export function markSetupDone(root: string, dir: string, value: string) { mkdirSync(dirname(stateFile(root, dir, "done")), { recursive: true }); writeFileSync(stateFile(root, dir, "done"), value); }
 // 스크립트에 넘기는 환경변수는 허용 목록만 — Mustard 프로세스의 API 키·토큰을 레포 코드에 넘기지 않게(리뷰)
-const ENV_KEEP = ["HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TERM", "SSH_AUTH_SOCK", "NVM_BIN"];
+const ENV_KEEP = ["HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TERM", "NVM_BIN"]; // SSH_AUTH_SOCK은 안 넘김 — 스크립트가 사용자 SSH 키로 push·접속 못 하게(리뷰)
 // Dock으로 켠 앱은 셸 설정을 안 읽어 mise·asdf·volta·bun 경로가 없음 → 있는 것만 PATH 앞에(setup의 npm·pnpm 못 찾음 방지, 리뷰)
 function setupPath(): string {
   const h = homedir();
@@ -241,7 +241,10 @@ export function runScript(kind: "setup" | "archive", script: string, root: strin
       if (finished) return; finished = true;
       clearTimeout(timer); rmSync(pidFile, { force: true });
       try { process.kill(-child.pid!, "SIGKILL"); } catch { /* 그룹 없음 */ }
-      setTimeout(() => res({ ok: code === 0 && !timedOut, code, timedOut, tail: tail.trim().slice(-800), log }), 50);
+      // 남은 출력은 두 통로가 닫힐 때까지(최대 1초) — 마지막 오류 줄을 놓치지 않게(리뷰)
+      const finish = () => res({ ok: code === 0 && !timedOut, code, timedOut, tail: tail.trim().slice(-800), log });
+      const cap = setTimeout(finish, 1000);
+      Promise.all([child.stdout, child.stderr].map((st) => (st.closed ? Promise.resolve() : new Promise((r) => st.once("close", r))))).then(() => { clearTimeout(cap); finish(); });
     };
     child.on("error", (e) => { take(Buffer.from(String(e))); done(null); });
     child.on("exit", (code) => done(code));
