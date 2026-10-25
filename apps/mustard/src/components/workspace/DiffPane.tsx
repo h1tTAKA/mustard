@@ -561,7 +561,7 @@ async function deliverNotes(root: string, t: ReturnType<typeof useT>, toast: Ret
   }
 }
 
-// #1169 diff 줄 메모 입력칸(PR 아닌 diff) — [취소] [바로 보내기] [메모 남기기]. ⌘Enter 저장, Esc 취소. 모은 메모는 위 막대에서 에이전트로 한꺼번에, 바로 보내기는 그 메모만. PR LineComposer와 같은 모양.
+// #1169 diff 줄 메모 입력칸(PR 아닌 diff) — [취소] [바로 보내기] [모아 보내기에 추가]. ⌘Enter 저장, Esc 취소. 모은 메모는 위 막대에서 에이전트로 한꺼번에, 바로 보내기는 그 메모만. PR LineComposer와 같은 모양.
 function NoteComposer({ root, file, scope, sel, lineText, onClose }: { root: string; file: string; scope: string; sel: { line: number; start?: number }; lineText: string; onClose: () => void }) {
   const t = useT();
   const toast = useToast();
@@ -593,7 +593,7 @@ function NoteComposer({ root, file, scope, sel, lineText, onClose }: { root: str
       <div className="mt-1 flex justify-end gap-1">
         <button type="button" onClick={onClose} className={`${btn} text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200`}>{t("github.cancel")}</button>
         <button type="button" onClick={() => save(true)} disabled={!text.trim()} className={`${btn} border border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800`}>{t("diffNotes.sendNow")}</button>
-        <button type="button" onClick={() => save()} disabled={!text.trim()} className={`${btn} bg-zinc-800 text-white hover:bg-zinc-700 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-white`}>{t("diffNotes.save")}</button>
+        <button type="button" onClick={() => save()} disabled={!text.trim()} title={t("diffNotes.saveHint")} className={`${btn} bg-zinc-800 text-white hover:bg-zinc-700 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-white`}>{t("diffNotes.save")}</button>
       </div>
       {err && <p className="mt-1 break-words text-[10.5px] text-rose-500">{err}</p>}
     </div>
