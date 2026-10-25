@@ -532,14 +532,19 @@ function LineComposer({ root, pr, file, sel, head, code, onClose, onPosted }: { 
   );
 }
 
-const notesInFlight = new Set<string>(); // #1169 레포별 보내는 중(같은 레포 diff 화면이 여럿이어도 한 묶음은 한 번만)
+const notesInFlight = new Map<string, Promise<void>>(); // #1169 레포별 보내는 중(같은 레포 diff 화면이 여럿이어도 한 묶음은 한 번만)
 
 // #1169 안 보낸 메모(only면 그 메모 하나만)를 이 레포 에이전트 터미널로 — 위 막대 "에이전트에게 보내기"와 입력칸 "바로 보내기"가 같이 씀
 async function deliverNotes(root: string, t: ReturnType<typeof useT>, toast: ReturnType<typeof useToast>, only?: string) {
+  // 보내는 중이면 끝나길 기다렸다가 아직 안 보낸 것만 다시 셈 — 두 번 보내지도, 조용히 버려지지도 않게(리뷰)
+  while (notesInFlight.has(root)) await notesInFlight.get(root)?.catch(() => {}); // 앞 보내기가 실패해도 이쪽은 계속
   const list = unsent(loadDiffNotes(root)).filter((n) => !only || n.id === only);
-  if (!list.length || notesInFlight.has(root)) return; // 같은 레포 diff 화면이 둘이어도 한 번만(리뷰) — 보내는 중이면 남겨 두고 다음 묶음에
-  notesInFlight.add(root);
-  try {
+  if (!list.length) return;
+  const run = send(list);
+  notesInFlight.set(root, run);
+  try { await run; } finally { notesInFlight.delete(root); }
+
+  async function send(list: DiffNote[]) {
     const r = await sendToAgent(root, formatNotes(list));
     if (!r.ok) { toast(t(r.reason === "no-agent" ? "browser.pickNoAgent" : "github.sendFailed"), "error"); return; }
     // 보냈으니 보냄 표시는 꼭 — 저장 실패면 한 번 더, 그래도 실패면 "보냈지만 표시 못 함"(다시 누르면 또 보내지니까, 리뷰)
@@ -547,7 +552,7 @@ async function deliverNotes(root: string, t: ReturnType<typeof useT>, toast: Ret
     const marked = saveDiffNotes(root, markSent(loadDiffNotes(root), ids, Date.now())) || saveDiffNotes(root, markSent(loadDiffNotes(root), ids, Date.now()));
     toast(marked ? t("diffNotes.sentToast", { n: list.length }) : t("diffNotes.markFailed", { n: list.length }), marked ? undefined : "error");
     requestTerminalFocus(root, r.id); // 보낸 터미널 탭으로 — 에이전트가 받는 걸 보이게(브라우저 보내기와 같음)
-  } finally { notesInFlight.delete(root); }
+  }
 }
 
 // #1169 diff 줄 메모 입력칸(PR 아닌 diff) — [취소] [바로 보내기] [메모 남기기]. ⌘Enter 저장, Esc 취소. 모은 메모는 위 막대에서 에이전트로 한꺼번에, 바로 보내기는 그 메모만. PR LineComposer와 같은 모양.
