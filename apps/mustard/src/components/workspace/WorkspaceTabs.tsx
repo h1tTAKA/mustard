@@ -234,6 +234,8 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   // 처음 본 레포는 기준점만(지금 시각) — 앱 켤 때 옛 글로 알림이 쏟아지지 않게. 같은 ms 글은 id로 한 번만.
   const crewSince = useRef<Record<string, number>>({});
   const crewSeen = useRef<Set<string>>(new Set());
+  const activeRef = useRef(active); // 워크스페이스 화면이 보이는지 — 다른 화면(암기 등)이면 숨겨진 대화방은 '보는 중' 아님(리뷰)
+  useEffect(() => { activeRef.current = active; }, [active]);
   useEffect(() => {
     if (!mounted) return; // 워크스페이스가 아닌 화면(암기 등)에서도 계속 확인 — 그때가 알림이 제일 필요(리뷰)
     const repoPaths = tabs.filter((x): x is { type: "repo"; path: string } => x.type === "repo").map((x) => x.path);
@@ -260,7 +262,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
             // 지금 이 레포의 Crew 대화방을 보고 있으면 생략 — 레포 탭만 보고 대화방은 닫혀 있으면 알림(리뷰: 영영 놓침)
             const focused = typeof document !== "undefined" && document.hasFocus();
             // 방문한 탭은 화면 밖에서도 살아 있음 → 대화방이 열려 있어도 그 레포 탭이 지금 보이는 탭일 때만(리뷰)
-            if (getSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching) && focused && crewRoomOpen.has(p) && activeKeyRef.current === tabKey({ type: "repo", path: p })) continue;
+            if (getSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching) && focused && activeRef.current && crewRoomOpen.has(p) && activeKeyRef.current === tabKey({ type: "repo", path: p })) continue;
             const name = p.split(/[\\/]/).filter(Boolean).pop() || p;
             const said = (m.i18n ? tRef.current(m.i18n.key, m.i18n.vars) : m.text).replace(/\s+/g, " ").trim();
             void desktopNotify({ title: `${head[0]} ${tRef.current(head[1])}`, body: `${name}${m.taskTitle ? ` · ${m.taskTitle}` : ""}\n${said.slice(0, 140)}`, suppressWhileFocused: false, target: { repoPath: p } });
