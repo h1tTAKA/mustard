@@ -516,8 +516,8 @@ function LineComposer({ root, pr, file, sel, head, code, onClose, onPosted }: { 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-[var(--s-pane)]">
       <div className="mb-1 flex items-center gap-1">
-        <span className="font-mono text-[10.5px] text-zinc-400 dark:text-zinc-500">{file}:{sel.start ? `${sel.start}-` : ""}{sel.line}</span>
-        <MarkdownToolbar taRef={taRef} setValue={setText} className="ml-auto" />
+        <span className="min-w-0 break-all font-mono text-[10.5px] text-zinc-400 dark:text-zinc-500">{file}:{sel.start ? `${sel.start}-` : ""}{sel.line}</span>
+        <MarkdownToolbar taRef={taRef} setValue={setText} className="ml-auto shrink-0" />
         {code && <button type="button" onClick={suggest} title={t("github.suggestChange")} aria-label={t("github.suggestChange")} className="rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconPlusMinus size={13} stroke={2} aria-hidden /></button>}
       </div>
       <textarea ref={taRef} value={text} onChange={(e) => setText(e.target.value)} disabled={busy} rows={3} autoFocus placeholder={t("github.lineCommentPlaceholder")}
@@ -557,8 +557,8 @@ function NoteComposer({ root, file, scope, sel, lineText, onClose }: { root: str
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-[var(--s-pane)]">
       <div className="mb-1 flex items-center gap-1">
-        <span className="font-mono text-[10.5px] text-zinc-400 dark:text-zinc-500">{file}:{sel.start ? `${sel.start}-` : ""}{sel.line}</span>
-        <MarkdownToolbar taRef={taRef} setValue={setText} className="ml-auto" />
+        <span className="min-w-0 break-all font-mono text-[10.5px] text-zinc-400 dark:text-zinc-500">{file}:{sel.start ? `${sel.start}-` : ""}{sel.line}</span>
+        <MarkdownToolbar taRef={taRef} setValue={setText} className="ml-auto shrink-0" />
       </div>
       <textarea ref={taRef} value={text} onChange={(e) => setText(e.target.value)} rows={3} autoFocus placeholder={t("diffNotes.placeholder")}
         onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); save(); } else if (e.key === "Escape") onClose(); }}
