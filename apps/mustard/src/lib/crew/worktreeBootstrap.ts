@@ -193,7 +193,7 @@ export type SetupOutcome =
   | { status: "none" }
   | { status: "untrusted"; script: string }
   | { status: "ok" | "failed"; result: ScriptResult };
-export const SETUP_TIMEOUT = 20 * 60_000, ARCHIVE_TIMEOUT = 5 * 60_000;
+export const SETUP_TIMEOUT = 15 * 60_000, ARCHIVE_TIMEOUT = 5 * 60_000; // setup 15분 — Crew 준비 단계 멈춤 감시(20분, #1162)보다 짧게
 
 // 새 worktree의 setup — 없으면 none, 승인 전이면 untrusted(실행 안 함), 승인됐으면 실행.
 export async function runSetup(root: string, dir: string, timeoutMs = SETUP_TIMEOUT): Promise<SetupOutcome> {

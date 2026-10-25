@@ -14,6 +14,7 @@ import { childProgress, decideGate, next, parseHandoff, pickListener, pipelineOf
 import { getRole, listRoles } from "./crewRoleStore";
 import { crewProtocol, type CrewRole } from "./crewRoleDefaults";
 import { ensureWorktree, worktreeFor } from "./crewWorktree";
+import { readConfig, runSetup, trustScript } from "./worktreeBootstrap";
 import { decide, fromAgentRequest } from "./crewPolicy";
 import { narrationLocale } from "@/lib/narrationConfig";
 import { defaultSnaModel } from "@mustard/nunopi/server";
@@ -393,6 +394,22 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     const wt = await ensureWorktree(root, taskId, task.title, dep ? worktreeFor(root, dep.id, dep.title).branch : undefined);
     Object.assign(run, { worktree: wt.dir, branch: wt.branch, base: wt.base });
     rmSync(join(wt.dir, ".crew", "handoff.json"), { force: true }); // 앞 역할 봉투를 이번 결과로 착각하지 않게
+    // #1176 레포 setup 스크립트 — 이 worktree에서 아직 안 했으면(완료 표시 없음) 에이전트보다 먼저. 승인 전이면 사람에게, 실패면 막힘(다시 실행 = 다시 setup).
+    const setupDone = join(wt.dir, ".crew", "setup-done");
+    if (!existsSync(setupDone)) {
+      run.lastActivity = "setup"; persist(run, true);
+      const out = await runSetup(root, wt.dir);
+      if (run.state !== "starting") return run; // 감시가 포기함
+      if (out.status === "untrusted") {
+        run.state = "stopped"; run.endedAt = Date.now(); run.lastActivity = "setup approval needed";
+        patchTask(root, taskId, { gate: { kind: "setup", stage, text: out.script.slice(0, 4000) }, status: "needs-you" });
+        say(root, { from: "board", kind: "gate", taskId, taskTitle: task.title, mentions: ["you"], ...tx("crewchat.gate.setup") });
+        persist(run, true);
+        return run;
+      }
+      if (out.status === "failed") throw new Error(tr("crew.reason.setupFailed", { tail: out.result.timedOut ? "timeout" : out.result.tail.slice(-400) }));
+      writeFileSync(setupDone, out.status);
+    }
     await wire();
     const sna = await getSnaClient();
     // #1162 이 카드의 직전 실행 세션을 먼저 끔 — 감시·Stop이 못 끈 것, 앱 재시작으로 놓친 것까지(SNA는 앱보다 오래 삶).
@@ -476,6 +493,19 @@ export function decideCard(root: string, taskId: string, action: "approve" | "re
   if (activeFor(root, taskId)) throw new Error("running");
   const task = readBoard(root).tasks.find((t) => t.id === taskId);
   if (!task) throw new Error("task not found");
+  // #1176 setup 승인 = 지금 worktree에 있는 스크립트가 보여 준 것과 같을 때만 신뢰(바뀌었으면 다시), 건너뛰기 = 이번 worktree는 setup 없이
+  if (task.gate?.kind === "setup") {
+    const dir = worktreeFor(root, task.id, task.title).dir;
+    if (action === "approve") {
+      const cur = readConfig(dir).setup;
+      if (!cur || cur.slice(0, 4000) !== task.gate.text) throw new Error("setup script changed");
+      trustScript(root, cur);
+    } else {
+      mkdirSync(join(dir, ".crew"), { recursive: true });
+      writeFileSync(join(dir, ".crew", "setup-done"), "skipped");
+      text = text.trim() || "(setup skipped)";
+    }
+  }
   const r = decideGate(task, action, text);
   if (action === "approve" && task.gate?.kind === "spec" && task.split?.length) return splitCard(root, task); // #1114 쪼개기 승인
   const board = patchTask(root, taskId, { ...r.patch, status: r.status });

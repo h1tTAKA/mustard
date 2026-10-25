@@ -5,7 +5,7 @@ export type CrewStatus = (typeof CREW_STATUSES)[number];
 export const CREW_ROLES = ["scope-planner", "screen-designer", "data-architect", "app-builder", "test-engineer", "bug-fixer", "release-checker", "doc-writer"] as const;
 // role 없음 = 자동 배정(범위 기획자가 나눔)
 // 사람 대기 이유(#1102) — spec/schema/merge 관문, question(되묻기). stage = 반려·답 때 다시 돌릴 단계.
-export interface CrewGate { kind: "spec" | "schema" | "merge" | "question" | "blocked"; text?: string; stage: number }
+export interface CrewGate { kind: "spec" | "schema" | "merge" | "question" | "blocked" | "setup"; text?: string; stage: number } // setup = 레포 setup 스크립트 첫 실행 승인(#1176)
 // #1114 범위 기획자가 제안한 하위 작업 — after = 같은 목록 안 앞 번호(그것들이 끝나야 시작)
 export interface CrewSubtask { title: string; body?: string; roles: string[]; after?: number[] }
 export interface CrewTask {
