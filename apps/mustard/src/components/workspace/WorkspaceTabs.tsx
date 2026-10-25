@@ -235,10 +235,10 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   const crewSince = useRef<Record<string, number>>({});
   const crewSeen = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!mounted || !active) return;
+    if (!mounted || !active) { crewSince.current = {}; return; } // 확인 안 하는 동안 글은 돌아와도 안 울림(새 기준점, 리뷰)
     const repoPaths = tabs.filter((x): x is { type: "repo"; path: string } => x.type === "repo").map((x) => x.path);
+    for (const k of Object.keys(crewSince.current)) if (!repoPaths.includes(k)) delete crewSince.current[k]; // 닫은 탭은 잊음 — 다시 열면 새 기준점(닫힌 동안 글 몰아 울림 X, 리뷰). 마지막 탭을 닫아도(아래 return 전)
     if (repoPaths.length === 0) return;
-    for (const k of Object.keys(crewSince.current)) if (!repoPaths.includes(k)) delete crewSince.current[k]; // 닫은 탭은 잊음 — 다시 열면 새 기준점(닫힌 동안 글 몰아 울림 X, 리뷰)
     for (const p of repoPaths) crewSince.current[p] ??= Date.now();
     let alive = true;
     const busy = new Set<string>(); // 레포별 확인 중 — 느린 응답에 요청이 쌓이지 않게(리뷰)
@@ -259,7 +259,8 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
             if (!head || !m.mentions?.includes("you")) continue;
             // 지금 이 레포의 Crew 대화방을 보고 있으면 생략 — 레포 탭만 보고 대화방은 닫혀 있으면 알림(리뷰: 영영 놓침)
             const focused = typeof document !== "undefined" && document.hasFocus();
-            if (getSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching) && focused && crewRoomOpen.has(p)) continue;
+            // 방문한 탭은 화면 밖에서도 살아 있음 → 대화방이 열려 있어도 그 레포 탭이 지금 보이는 탭일 때만(리뷰)
+            if (getSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching) && focused && crewRoomOpen.has(p) && activeKeyRef.current === tabKey({ type: "repo", path: p })) continue;
             const name = p.split(/[\\/]/).filter(Boolean).pop() || p;
             const said = (m.i18n ? tRef.current(m.i18n.key, m.i18n.vars) : m.text).replace(/\s+/g, " ").trim();
             void desktopNotify({ title: `${head[0]} ${tRef.current(head[1])}`, body: `${name}${m.taskTitle ? ` · ${m.taskTitle}` : ""}\n${said.slice(0, 140)}`, suppressWhileFocused: false, target: { repoPath: p } });
