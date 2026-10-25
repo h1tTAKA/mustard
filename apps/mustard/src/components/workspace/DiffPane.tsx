@@ -542,7 +542,8 @@ async function deliverNotes(root: string, t: ReturnType<typeof useT>, toast: Ret
   while (notesInFlight.has(root)) { waited = true; await notesInFlight.get(root)?.catch(() => {}); } // 앞 보내기가 실패해도 이쪽은 계속
   const pending = unsent(loadDiffNotes(root)).filter((n) => !only || n.id === only);
   const list = pending.filter((n) => !(waited && sentUnmarked.has(n.id)));
-  if (!list.length) { if (pending.length) toast(t("diffNotes.markFailed", { n: pending.length }), "error"); return; } // 남은 게 보냈지만 표시 못 한 것뿐 — 조용히 넘기지 않고 다시 누르라고(리뷰)
+  if (pending.length > list.length) toast(t("diffNotes.markFailed", { n: pending.length - list.length }), "error"); // 건너뛴 보냈지만 표시 못 한 것 — 조용히 넘기지 않고 다시 누르라고(리뷰)
+  if (!list.length) return;
   const run = send(list);
   notesInFlight.set(root, run);
   try { await run; } finally { notesInFlight.delete(root); }
