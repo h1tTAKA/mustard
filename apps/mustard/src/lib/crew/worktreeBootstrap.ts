@@ -216,6 +216,8 @@ export function trustScript(root: string, script: string) {
   writeFileSync(trustFile(root), JSON.stringify([...list, h].slice(-200)));
 }
 
+// 돌고 있는 setup 끄기 — Stop·감시가 setup 단계(아직 에이전트 세션 없음)에서 실행을 끝낼 때(리뷰)
+export const killSetup = (root: string, dir: string) => killStale(stateFile(root, dir, "setup.pid"));
 export interface ScriptResult { ok: boolean; code: number | null; timedOut: boolean; tail: string; log: string }
 export function runScript(kind: "setup" | "archive", script: string, root: string, dir: string, timeoutMs: number): Promise<ScriptResult> {
   const log = join(dir, ".crew", `${kind}.log`);

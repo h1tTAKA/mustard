@@ -14,7 +14,7 @@ import { childProgress, decideGate, next, parseHandoff, pickListener, pipelineOf
 import { getRole, listRoles } from "./crewRoleStore";
 import { crewProtocol, type CrewRole } from "./crewRoleDefaults";
 import { ensureWorktree, worktreeFor } from "./crewWorktree";
-import { markSetupDone, readConfig, runSetup, trustScript } from "./worktreeBootstrap";
+import { killSetup, markSetupDone, readConfig, runSetup, trustScript } from "./worktreeBootstrap";
 import { decide, fromAgentRequest } from "./crewPolicy";
 import { narrationLocale } from "@/lib/narrationConfig";
 import { defaultSnaModel } from "@mustard/nunopi/server";
@@ -246,6 +246,7 @@ function watchStalls(now = Date.now()) {
     const stalled = !!run.lastEventAt && now - run.lastEventAt > STALLED_MS;
     if (!never && !stalled) continue;
     const wasStarting = run.state === "starting";
+    if (wasStarting && run.worktree) killSetup(run.root, run.worktree); // #1176 setup 중이었으면 같이 끔
     if (wasStarting) g.starting.delete(`${run.root}\n${run.taskId}`); // 멈춘 startRun이 줄 자리·동시 상한을 계속 쥐지 않게(늦게 풀려도 startRun이 상태 보고 그만둠)
     run.state = "failed"; run.endedAt = now; run.error = tr(never ? "crew.reason.neverStarted" : "crew.reason.stalled");
     persist(run, true);
@@ -465,6 +466,7 @@ export async function stopRun(root: string, taskId: string): Promise<CrewRun> {
   run.state = "stopped"; run.endedAt = Date.now(); run.error = tr("crew.reason.stopped"); run.permission = undefined;
   g.pending.get(run.id)?.resolve(false); // 기다리던 훅은 거부로 풀기
   if (run.sessionId) await (await getSnaClient()).agent.kill(run.sessionId).catch(() => {});
+  if (run.worktree) killSetup(root, run.worktree); // #1176 setup 단계면 setup도 끔(세션이 아직 없음)
   block(root, taskId, run.stage ?? 0, tr("crew.reason.stopped"));
   persist(run, true);
   return run;
