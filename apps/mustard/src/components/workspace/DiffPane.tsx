@@ -10,7 +10,9 @@ import { Markdown } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Thread, type LineComment } from "@/components/workspace/github/PrReviewComments";
 import MarkdownToolbar from "@/components/workspace/github/MarkdownToolbar";
-import { addNote, diffNotesKey, loadNotes as loadDiffNotes, removeNote, saveNotes as saveDiffNotes, DIFF_NOTES_EVENT, type DiffNote } from "@/lib/diffNotes";
+import { addNote, diffNotesKey, formatNotes, loadNotes as loadDiffNotes, markSent, removeNote, saveNotes as saveDiffNotes, unsent, DIFF_NOTES_EVENT, type DiffNote } from "@/lib/diffNotes";
+import { sendToAgent } from "@/lib/browser/sendToAgent";
+import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import { addDraft, loadDrafts, removeDraft, saveDrafts, suggestionBlock, prDraftKey, PR_DRAFT_EVENT, type DraftComment } from "@/lib/prDraft";
 import { type DLine, parseDiff, groupHunks, type Hunk, noteStoreKey, loadNotes, saveNote, explainDiffText, HUNK_NOTES_EVENT } from "@/lib/hunkNotes";
 
@@ -57,6 +59,21 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
     window.addEventListener(DIFF_NOTES_EVENT, on);
     return () => window.removeEventListener(DIFF_NOTES_EVENT, on);
   }, [root, pr]);
+  // #1169 안 보낸 메모(레포 전체 — 여러 파일·diff에 단 것을 한 묶음으로, Orca처럼) → 이 레포 에이전트 터미널로
+  const pendingNotes = pr ? [] : unsent(dnotes);
+  const [sendingNotes, setSendingNotes] = useState(false);
+  const sendNotes = async () => {
+    const list = unsent(loadDiffNotes(root));
+    if (!list.length || sendingNotes) return;
+    setSendingNotes(true);
+    try {
+      const r = await sendToAgent(root, formatNotes(list));
+      if (!r.ok) { toast(t(r.reason === "no-agent" ? "browser.pickNoAgent" : "github.sendFailed"), "error"); return; }
+      if (!saveDiffNotes(root, markSent(loadDiffNotes(root), new Set(list.map((n) => n.id)), Date.now()))) toast(t("prReview.saveFailed"), "error");
+      toast(t("diffNotes.sentToast", { n: list.length }));
+      requestTerminalFocus(root, r.id); // 보낸 터미널 탭으로 — 에이전트가 받는 걸 보이게(브라우저 보내기와 같음)
+    } finally { setSendingNotes(false); }
+  };
   const [posting, setPosting] = useState<Set<string>>(new Set()); // GitHub에 올리는 중인 지적
   const adoptHere = async (f: Finding) => {
     if (!pr || posting.has(f.id)) return;
@@ -251,7 +268,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const hunkStart = new Map(allHunks.map((h) => [h.startLine, h]));
   const hunkEnd = new Map(allHunks.map((h) => [h.endLine, h]));
   const body = (
-    <div className={`relative bg-white dark:bg-[var(--s-pane)] ${pr ? "min-h-0 flex-1" : "h-full"}`}
+    <div className={`relative bg-white dark:bg-[var(--s-pane)] ${pr || pendingNotes.length ? "min-h-0 flex-1" : "h-full"}`}
       onMouseEnter={() => { if (hideTimer.current) clearTimeout(hideTimer.current); setShowRuler(true); }}
       onMouseLeave={() => { if (hideTimer.current) clearTimeout(hideTimer.current); hideTimer.current = setTimeout(() => setShowRuler(false), 400); }}>
       <div ref={scrollRef} onScroll={() => { syncVp(); reveal(); }} className="h-full overflow-auto pr-3 font-mono text-[11px] leading-[1.55] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -417,7 +434,20 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
       </div>
     </div>
   );
-  if (!pr) return body;
+  // #1169 안 보낸 메모가 있을 때만 위 막대(PR 머리 띠와 같은 모양) — 없으면 예전 그대로
+  if (!pr) return !pendingNotes.length ? body : (
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-zinc-200 bg-zinc-50 px-3 py-1 text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">
+        <IconRobot size={13} stroke={2} className="shrink-0" aria-hidden />
+        <span className="shrink-0 font-medium">{t("diffNotes.bar", { n: pendingNotes.length })}</span>
+        <button type="button" onClick={() => void sendNotes()} disabled={sendingNotes}
+          className="ml-auto inline-flex items-center gap-1 rounded-md bg-mustard-500/12 px-2 py-0.5 text-[10px] font-semibold text-mustard-700 ring-1 ring-inset ring-mustard-500/35 transition hover:bg-mustard-500/20 disabled:opacity-60 dark:bg-mustard-400/12 dark:text-mustard-400 dark:ring-mustard-400/30 dark:hover:bg-mustard-400/20">
+          {sendingNotes ? <IconLoader2 size={11} stroke={2.5} className="animate-spin" aria-hidden /> : <IconRobot size={11} stroke={2.5} aria-hidden />}{t("diffNotes.send")}
+        </button>
+      </div>
+      {body}
+    </div>
+  );
   // #1123 PR 리뷰 diff는 내 작업 diff와 구분되게 머리 띠(GitHub 아이콘 + PR 번호 + 파일).
   return (
     <div className="flex h-full flex-col">
