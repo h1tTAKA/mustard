@@ -13,7 +13,7 @@ const { homedir } = require("node:os");
 // install = 공식 설치 명령(Emdash 표·각 공식 문서) — 앱은 복사만(남의 스크립트를 대신 돌리지 않음). 없으면 null.
 // auth = 로그인 확인 인자(Emdash), keys = 있으면 로그인된 걸로 보는 API 키 env.
 const AGENTS = [
-  { id: "claude", label: "Claude Code", bins: ["claude"], install: "curl -fsSL https://claude.ai/install.sh | bash", auth: ["auth", "status"], keys: ["ANTHROPIC_API_KEY"] },
+  { id: "claude", label: "Claude Code", bins: ["claude"], install: "curl -fsSL https://claude.ai/install.sh | bash", auth: ["auth", "status"], keys: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"] },
   { id: "codex", label: "Codex", bins: ["codex"], install: "npm install -g @openai/codex", auth: ["login", "status"], keys: ["OPENAI_API_KEY"] },
   { id: "gemini", label: "Gemini CLI", bins: ["gemini"], install: "npm install -g @google/gemini-cli" },
   { id: "antigravity", label: "Antigravity CLI", bins: ["agy"], install: "curl -fsSL https://antigravity.google/cli/install.sh | bash" },
@@ -45,7 +45,11 @@ function fallbackDirs(home = homedir()) {
 function runCmd(file, args, timeout, env) {
   return new Promise((res) => {
     let out = "", done = false, child;
-    const finish = (code, timedOut = false) => { if (done) return; done = true; clearTimeout(timer); res({ code, out: out.trim(), timedOut }); };
+    const finish = (code, timedOut = false) => {
+      if (done) return; done = true; clearTimeout(timer);
+      child?.stdout?.destroy(); child?.stderr?.destroy(); child?.unref?.(); // 데몬이 물고 있던 파이프도 놓음(fd 안 샘, 리뷰)
+      res({ code, out: out.trim(), timedOut });
+    };
     const timer = setTimeout(() => { try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch { /* 이미 끝남 */ } } finish(-1, true); }, timeout);
     try { child = spawn(file, args, { env, detached: true, stdio: ["ignore", "pipe", "pipe"] }); } catch { return finish(-1); }
     const take = (b) => { if (out.length < 1_000_000) out += b; };
@@ -112,17 +116,19 @@ async function checkAuth(agent, path, { env = process.env, run = runCmd } = {}) 
   if (!agent.auth || !path) return "unknown";
   const r = await run(path, agent.auth, 5000, env);
   const t = r.out;
-  if (agent.id === "opencode") { const m = /(\d+)\s+credentials?/i.exec(t); return m ? (Number(m[1]) > 0 ? "authenticated" : "unauthenticated") : "unknown"; }
+  if (agent.id === "opencode") { const m = /(\d+)\s+credentials?/i.exec(t); return m && Number(m[1]) > 0 ? "authenticated" : "unknown"; } // 0개여도 env 제공자 키로 돌 수 있음 — 로그인 필요로 단정 안 함(리뷰)
   if (/not (authenticated|logged in|signed in)|login required|logged out|not logged/i.test(t)) return "unauthenticated";
+  if (agent.id === "claude" && /"apiProvider"\s*:\s*"(?!firstParty")/.test(t)) return "authenticated"; // Bedrock·Vertex 등 — 로그인 대신 클라우드 자격(리뷰)
   if (agent.id === "claude") { const m = /"loggedIn"\s*:\s*(true|false)/.exec(t); return m ? (m[1] === "true" ? "authenticated" : "unauthenticated") : r.code === 0 ? "authenticated" : "unknown"; } // JSON {"loggedIn": …}
   if (/authenticated|logged in|signed in/i.test(t)) return "authenticated";
   return "unknown";
 }
 
 // 전부 — 에이전트끼리 동시에, 결과 60초 캐시(Superset·Emdash처럼). force면 셸 PATH부터 다시.
-let cache = null;
+let cache = null, gen = 0;
 async function detectAll({ force = false, home = homedir(), env = process.env, run = runCmd, shell } = {}) {
   if (cache && !force && Date.now() - cache.at < 60_000) return cache.list;
+  const my = ++gen;
   const sp = await shellPath({ force, shell });
   const pathStr = mergePath(env.PATH, sp);
   const list = await Promise.all(AGENTS.map(async (a) => {
@@ -130,7 +136,7 @@ async function detectAll({ force = false, home = homedir(), env = process.env, r
     const auth = d.status === "ok" ? await checkAuth(a, d.path, { env: { ...env, PATH: pathStr }, run }) : "unknown";
     return { ...d, label: a.label, install: a.install, auth };
   }));
-  cache = { at: Date.now(), list };
+  if (my === gen) cache = { at: Date.now(), list }; // 늦게 끝난 옛 실행이 새 캐시를 덮지 않게(리뷰)
   return list;
 }
 

@@ -37,7 +37,9 @@ const { AGENTS, mergePath, candidates, detectAgent, checkAuth, shellPath, versio
   assert.strictEqual(await checkAuth(codex, "x", { env: {}, run: fake(0, "Logged in using ChatGPT") }), "authenticated");
   assert.strictEqual(await checkAuth(codex, "x", { env: {}, run: fake(1, "Not logged in") }), "unauthenticated", "부정형을 먼저 봄");
   const oc = AGENTS.find((a) => a.id === "opencode");
-  assert.strictEqual(await checkAuth(oc, "x", { env: {}, run: fake(0, "0 credentials") }), "unauthenticated");
+  assert.strictEqual(await checkAuth(oc, "x", { env: {}, run: fake(0, "0 credentials") }), "unknown", "0개여도 env 키로 돌 수 있음");
+  assert.strictEqual(await checkAuth(claude, good, { env: {}, run: fake(1, '{"loggedIn": false, "apiProvider": "bedrock"}') }), "authenticated", "Bedrock 등");
+  assert.strictEqual(await checkAuth(claude, good, { env: { CLAUDE_CODE_USE_VERTEX: "1" }, run: fake(1, "") }), "authenticated");
   assert.strictEqual(await checkAuth(oc, "x", { env: {}, run: fake(0, "2 credentials") }), "authenticated");
   assert.strictEqual(await checkAuth(AGENTS.find((a) => a.id === "gemini"), "x", { env: {}, run: fake(0, "") }), "unknown", "확인 방법 없는 건 unknown");
   // PATH 합치기·버전

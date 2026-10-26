@@ -107,7 +107,7 @@ function safeResolve(fn) {
 // #1171 에이전트 CLI 찾기·확인 — 로그인 셸 PATH를 합치고, 에이전트마다 --version이 통과한 실제 경로·로그인 상태.
 // 결과는 ~/.nunopi/agent-detect.json에도 남김 — Next 서버(Crew)가 '안 뜸' 실패 이유를 붙일 때 읽음(main IPC를 못 부르니까).
 const agentCli = require("./agent-cli.cjs");
-let lastDetect = null, detecting = null, detectSeq = 0;
+let lastDetect = null, detecting = null, detectSeq = 0, detectTimer = null;
 // 한 번에 하나(진행 중이면 그걸 같이 기다림) — force(다시 확인)는 새로 돌리고, 늦게 끝난 옛 감지가 새 결과를 덮지 않게 순번 확인(리뷰)
 function detectAgents(force = false) {
   if (detecting && !force) return detecting;
@@ -124,7 +124,7 @@ async function runDetect(force, seq) {
   // custom = 사용자가 경로를 직접 지정한 것(설정·env) — SNA는 그 경로를 쓰니 Crew가 감지 결과로 막지 않게
   const saved = loadSavedRuntimePaths(), env = process.env;
   const custom = [["claude", saved.claudeCode || env.NUNOPI_CLAUDE_COMMAND?.trim() || env.SNA_CLAUDE_COMMAND?.trim()], ["codex", saved.codex || env.NUNOPI_CODEX_COMMAND?.trim()], ["opencode", saved.opencode || env.NUNOPI_OPENCODE_COMMAND?.trim()]].filter(([, p]) => p).map(([id]) => id);
-  lastDetect = { at: Date.now(), list, custom };
+  lastDetect = { at: Date.now(), list, custom, shellOk: !!sp }; // shellOk = 로그인 셸 PATH를 받았나 — 못 받았으면 '못 찾음'이 틀릴 수 있어 Crew가 막지 않음
   try {
     const dir = join(require("node:os").homedir(), ".nunopi");
     mkdirSync(dir, { recursive: true });
@@ -331,7 +331,7 @@ function setupClaudeHooks(base, token) {
 }
 
 async function boot() {
-  setInterval(() => void detectAgents().catch(() => {}), 10 * 60_000).unref(); // #1171 설치·로그인이 앱 실행 중에 바뀌어도 기록이 따라가게(Crew는 15분 넘은 기록은 안 믿음)
+  detectTimer ??= setInterval(() => void detectAgents().catch(() => {}), 10 * 60_000).unref(); // #1171 activate로 boot가 다시 불려도 한 번만(리뷰). 설치·로그인이 앱 실행 중에 바뀌어도 기록이 따라가게(Crew는 15분 넘은 기록은 안 믿음)
   migrateUserData(); // #900 리브랜딩 — 옛 nunopi userData 1회 이관(창·서버 뜨기 전)
   try { loadRegistry(); } catch { /* #864 재시작 생존 세션 신원 복원 */ }
   if (DEV_URL) {
