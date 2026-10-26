@@ -192,7 +192,8 @@ function AgentRow({ a, logo, isDefault, path, all, guard }: { a: AgentDetect; lo
     if (args === null) return;
     const v = args.trim(); setArgs(null);
     let r = v ? await window.nunopiDesktop?.liftAgentArgs?.(a.id, v).catch(() => null) : null;
-    if (r && !(await guard(r.choice))) r = null; // 인자로 전체 액세스를 고른 경우도 처음 한 번 확인(리뷰) — 거절하면 인자 그대로 저장(인자가 권한을 정함)
+    // 인자로 전체 액세스를 고른 경우도 처음 한 번 확인(리뷰) — 거절하면 그 플래그만 빼고 저장(권한은 그대로)
+    if (r && !(await guard(r.choice))) { setSetting(AKEYS.args(a.id), r.rest); return; }
     if (r) { setSetting(AKEYS.args(a.id), r.rest); setSetting(AKEYS.permOf(a.id), r.choice); bump(); toast(t("agents.permLifted", { name: a.label, mode: t(`agents.perm.${r.choice}`) })); }
     else setSetting(AKEYS.args(a.id), v);
   };
@@ -212,7 +213,7 @@ function AgentRow({ a, logo, isDefault, path, all, guard }: { a: AgentDetect; lo
             {used > 0 && <span className="hidden truncate text-[11px] text-zinc-400 sm:inline" title={new Date(used).toLocaleString(locale)}>· {t("agents.lastUsed", { when: ago(used, locale) })}</span>}
           </div>
           <p className="truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500" title={lineOf(a, eff, savedArgs, customPath)}>{lineOf(a, eff, savedArgs, customPath)}</p>
-          {eff !== "own" && argsSetPermission(a, savedArgs) && <p className="text-[11px] text-amber-600 dark:text-amber-400">{t("agents.argsOverridePerm")}</p>}
+          {argsSetPermission(a, savedArgs) && <p className="text-[11px] text-amber-600 dark:text-amber-400">{t("agents.argsOverridePerm")}</p>}
         </div>
         {mine && choices.includes(mine) && (
           <button type="button" onClick={() => setOpen(true)} className="hidden shrink-0 rounded-full border border-zinc-300 px-2 py-0.5 text-[11px] text-zinc-600 sm:block dark:border-zinc-600 dark:text-zinc-300">
