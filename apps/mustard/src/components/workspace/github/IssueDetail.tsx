@@ -1,7 +1,7 @@
 "use client";
 // GitHub 패널 이슈 상세(#813) — gh issue view(브릿지 #810) → 본문·코멘트(Markdown 재사용).
 import { useEffect, useRef, useState } from "react";
-import { IconLoader2, IconAlertTriangle, IconArrowLeft, IconExternalLink, IconPencil, IconCircleCheck, IconCircleDot } from "@tabler/icons-react";
+import { IconLoader2, IconGitFork, IconAlertTriangle, IconArrowLeft, IconExternalLink, IconPencil, IconCircleCheck, IconCircleDot } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import { useConfirm } from "@mustard/core";
 import { Markdown } from "@mustard/core";
@@ -10,6 +10,7 @@ import { relTime } from "@/lib/relTime";
 import CommentComposer from "@/components/workspace/github/CommentComposer";
 import CommentItem from "@/components/workspace/github/CommentItem";
 import SendToAgent from "@/components/workspace/github/SendToAgent";
+import { openNewWorkspace } from "@/lib/repo/workspaceEvents";
 import MetaRow from "@/components/workspace/github/MetaRow";
 import GhAvatar from "@/components/workspace/github/GhAvatar";
 import ReactionBar from "@/components/workspace/github/ReactionBar";
@@ -134,6 +135,7 @@ export default function IssueDetail({ root, number, reloadKey, host = "github", 
             {/* 상태 액션(#822) — 닫기/다시 열기. GitLab은 조회 전용(#964)이라 숨김. */}
             {host === "github" && (
             <div className="flex flex-wrap items-center gap-1.5">
+              {d.state.toUpperCase() === "OPEN" && <button type="button" onClick={() => openNewWorkspace(root, { kind: "issue", number })} title={t("newWs.fromIssueTitle")} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"><IconGitFork size={13} stroke={2} className="text-zinc-400" aria-hidden />{t("newWs.fromIssueBtn")}</button>} {/* #1170 이 이슈로 새 worktree 작업공간 */}
               {d.state.toUpperCase() === "OPEN"
                 ? <button type="button" onClick={() => void confirmState("close", t("github.close"), <IconCircleCheck size={15} stroke={2} aria-hidden />)} disabled={actBusy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{actBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconCircleCheck size={13} stroke={2} className="text-purple-500" aria-hidden />}{t("github.close")}</button>
                 : <button type="button" onClick={() => void confirmState("reopen", t("github.reopen"), <IconCircleDot size={15} stroke={2} aria-hidden />)} disabled={actBusy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{actBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconCircleDot size={13} stroke={2} className="text-emerald-500" aria-hidden />}{t("github.reopen")}</button>}
