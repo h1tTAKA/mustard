@@ -1089,7 +1089,7 @@ export default function SettingsDrawer({
 
           {/* 컴퓨터 사용(#1175) — 에이전트의 데스크톱 앱 조작 */}
           {activeSection === "set-computer" && (
-          <section id="set-computer" className="scroll-mt-4 space-y-4 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+          <section id="set-computer" className="scroll-mt-4">
             <ComputerUseSection />
           </section>
           )}
