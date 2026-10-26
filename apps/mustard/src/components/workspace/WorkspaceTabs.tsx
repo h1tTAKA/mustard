@@ -384,7 +384,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   useEffect(() => {
     if (!mounted || !desktop?.onNotifyActivate) return;
     return desktop.onNotifyActivate(({ repoPath, sessionId }) => {
-      // #1170 worktree 알림이면 그 폴더를 보는 레포 탭으로(따로 탭을 만들지 않음)
+      // #1170 worktree 알림이면 그 폴더를 보는 레포 탭으로. 어느 탭도 그 폴더를 안 보고 있으면(드묾) 예전처럼 그 경로를 탭으로 엶 — 여기선 부모 레포를 모름
       const holder = tabsRef.current.find((x) => x.type === "repo" && x.wt === repoPath);
       const key = holder ? tabKey(holder) : tabKey({ type: "repo", path: repoPath });
       if (!holder) setTabs((prev) => (prev.some((x) => tabKey(x) === key) ? prev : [...prev, { type: "repo", path: repoPath }]));

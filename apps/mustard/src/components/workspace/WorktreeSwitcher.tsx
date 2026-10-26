@@ -28,7 +28,7 @@ export default function WorktreeSwitcher({ root, current, onPick }: { root: stri
   };
   useEffect(() => {
     if (!pos) return;
-    const close = (e?: Event) => { if (e && btn.current?.contains(e.target as Node)) return; setPos(null); }; // 칩 자체 누름은 칩 onClick이 토글(리뷰)
+    const close = (e?: Event) => { if (e?.target instanceof Node && btn.current?.contains(e.target)) return; setPos(null); }; // 칩 자체 누름은 칩 onClick이 토글(리뷰)
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
     const id = setTimeout(() => { window.addEventListener("mousedown", close); window.addEventListener("resize", close); }, 0);
     window.addEventListener("keydown", onKey);
