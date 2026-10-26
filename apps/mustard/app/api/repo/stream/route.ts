@@ -16,7 +16,7 @@ export async function GET(request: Request): Promise<Response> {
     const hashes = sp.get("hashes"); // #1081 커밋 해시들(쉼표) → 그 커밋의 diff·세션 카드
     if (hashes) return Response.json({ ok: true, items: itemsForHashes(root, hashes.split(",").slice(0, 20)) });
     const q = sp.get("q");
-    if (q) return Response.json({ ok: true, items: searchItems(root, q.slice(0, 200), 200) });
+    if (q) return Response.json({ ok: true, items: searchItems(root, q.slice(0, 200), 200, all) });
     const day = sp.get("day");
     if (day) return Response.json({ ok: true, items: readDay(root, day, all) });
     const limit = Math.min(500, Math.max(1, Number(sp.get("limit")) || 100));

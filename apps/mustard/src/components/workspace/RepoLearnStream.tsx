@@ -157,18 +157,19 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [q, setQ] = useState("");
   const [searchOpen, setSearchOpen] = useState(false); // #1088 돋보기 버튼 → 입력칸
   const [found, setFound] = useState<Concept[] | null>(null); // null = 검색 중
+  const [allFolders, setAllFolders] = useState(false); // #1181 되돌아보기·검색 — 모든 작업 폴더(worktree·지운 것 포함)
   const query = q.trim();
   useEffect(() => {
     if (!query) return;
     let alive = true;
     const tm = setTimeout(() => {
       setFound(null);
-      fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&q=${encodeURIComponent(query)}`).then((r) => r.json())
+      fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&q=${encodeURIComponent(query)}${allFolders ? "&all=1" : ""}`).then((r) => r.json())
         .then((j) => { if (alive) setFound(j?.ok && Array.isArray(j.items) ? (j.items as Omit<Concept, "status">[]).map((x) => ({ ...x, status: "done" as const })) : []); })
         .catch(() => { if (alive) setFound([]); });
     }, 250);
     return () => { alive = false; clearTimeout(tm); };
-  }, [query, root]);
+  }, [query, root, allFolders]);
   // #1135 Crew 작업(역할 보고·crew/* 브랜치 diff·세션)이 하나라도 있을 때만 Crew 칩
   // tool: diff = "브랜치 · 커밋 제목", 세션 = "에이전트 · 브랜치" — 브랜치 자리만 봄(커밋 제목에 "crew/"가 있어도 안 걸리게, 리뷰)
   const hasCrew = concepts.some((c) => c.tool.startsWith("crew|") || (c.kind === "diff" && c.tool.startsWith("crew/")) || (c.kind === "session" && c.tool.split(" · ")[1]?.startsWith("crew/")));
@@ -302,7 +303,6 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [days, setDays] = useState<Set<string>>(() => new Set());
   const [viewDay, setViewDay] = useState<string | null>(null);
   const [dayItems, setDayItems] = useState<Concept[] | null>(null); // null = 로딩 중
-  const [allFolders, setAllFolders] = useState(false); // #1181 되돌아보기 — 모든 작업 폴더(worktree·지운 것 포함)
   const closeCal = useCallback(() => setCalOpen(false), []);
   const openCal = useCallback(() => {
     if (calOpen) { setCalOpen(false); return; }
@@ -331,6 +331,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&days=1${v ? "&all=1" : ""}`).then((r) => r.json())
       .then((j) => { if (j?.ok && Array.isArray(j.days)) setDays(new Set(j.days as string[])); }).catch(() => {});
     if (viewDay) pickDay(viewDay);
+    else if (v) { const d = new Date(), p2 = (n: number) => String(n).padStart(2, "0"); pickDay(`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`); } // 오늘(실시간) 보던 중 켜면 오늘 하루를 레포 전체로(리뷰) — 서버 dayKey 형식
   }, [root, viewDay, pickDay]);
   // #998 항목 질문 — 💬로 고른 항목 + 항목별 질문 수(배지) + 패널 높이(드래그, 기억).
   const [askItem, setAskItem] = useState<Concept | null>(null);
@@ -638,7 +639,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
                       {/* #1181 모든 작업 폴더 보기 — 어느 worktree(브랜치)에서 쌓인 건지. 메인 것은 표시 없음 */}
-                      {viewDay && allFolders && c.wt && <span title={c.wt} className="mb-0.5 inline-flex max-w-full items-center gap-0.5 truncate rounded-md bg-mustard-500/10 px-1.5 py-0.5 font-mono text-[10px] text-mustard-700 dark:text-mustard-400"><IconGitFork size={10} stroke={2} aria-hidden />{c.br ?? c.wt.split("/").pop()}</span>}
+                      {allFolders && c.wt && <span title={c.wt} className="mb-0.5 inline-flex max-w-full items-center gap-0.5 truncate rounded-md bg-mustard-500/10 px-1.5 py-0.5 font-mono text-[10px] text-mustard-700 dark:text-mustard-400"><IconGitFork size={10} stroke={2} aria-hidden />{c.br ?? c.wt.split("/").pop()}</span>}
                       {c.kind === "session" ? (() => {
                         // #1064 세션 카드 — 커밋 제목 + [에이전트][⎇ 브랜치][커밋] 칩 + 시각. tool = "에이전트 · 브랜치"
                         const m = /^(.*) @([0-9a-f]{4,40})$/i.exec(c.target); const subject = m ? m[1] : c.target; const hash = m?.[2];

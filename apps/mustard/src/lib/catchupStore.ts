@@ -3,8 +3,8 @@
 // 레포 폴더엔 아무것도 안 남김. 하루 단위 파일이라 날짜 되돌아보기(캘린더)는 파일 하나만 읽으면 됨.
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { isFailedNote } from "./failText.ts";
 
@@ -19,23 +19,34 @@ const sha = (s: string) => createHash("sha256").update(s).digest("hex").slice(0,
 // 테스트에서 HOME 바꿔 쓰게 호출 시점 계산.
 const baseDir = () => join(process.env.MUSTARD_STREAM_DIR || join(homedir(), ".nunopi", "stream"));
 // #1181 저장은 레포 하나(메인 worktree) 기준 — worktree에서 쌓인 것도 메인 폴더에 모으고 wt로 구분(지워도 남고, 머지된 커밋 ↔ 대화가 메인에서 이어지게).
-// 메인 = 공용 .git(--git-common-dir)의 부모. git이 아니거나(폴더 없음 등) 서브모듈처럼 .git 폴더가 아니면 그 경로 그대로.
-const mainCache = new Map<string, string>();
-export function mainOf(root: string): string {
+// 판정은 git에 물음: --git-dir ≠ --git-common-dir 이면 linked worktree(→ 메인 = 공용 .git의 부모, wt = 그 worktree 꼭대기). 아니면 연 경로 그대로(하위 폴더·일반 레포는 예전과 같은 자리).
+// 경로는 실제 경로(realpath)로 — 심볼릭 링크·/var↔/private/var로 같은 레포가 두 곳에 나뉘지 않게(리뷰). git이 실패하면 그 경로 그대로, 캐시하지 않음(일시 실패가 굳지 않게).
+const real = (p: string) => { try { return normPath(realpathSync(p)); } catch { return normPath(p); } };
+const whereCache = new Map<string, { main: string; wt?: string }>();
+function where(root: string): { main: string; wt?: string } {
   const r = normPath(root);
-  const hit = mainCache.get(r);
+  const hit = whereCache.get(r);
   if (hit) return hit;
-  let main = r;
+  const rr = real(r);
   try {
-    let c = execFileSync("git", ["rev-parse", "--git-common-dir"], { cwd: r, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim();
-    if (!isAbsolute(c)) c = resolve(r, c);
-    if (basename(c) === ".git") main = normPath(dirname(c));
-  } catch { /* git 아님 — 그 경로 그대로 */ }
-  mainCache.set(r, main);
-  return main;
+    const [gitDir, common, top] = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir", "--show-toplevel"], { cwd: rr, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim().split("\n").map(real);
+    const linked = gitDir !== common && basename(common) === ".git";
+    const w = linked ? { main: real(dirname(common)), wt: top } : { main: rr };
+    whereCache.set(r, w);
+    return w;
+  } catch { return { main: rr }; }
 }
-const where = (root: string) => { const r = normPath(root), main = mainOf(r); return { main, wt: main === r ? undefined : r }; };
-const branchOf = (dir: string) => { try { const b = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: dir, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim(); return b && b !== "HEAD" ? b : undefined; } catch { return undefined; } };
+export const mainOf = (root: string) => where(root).main;
+// 그 worktree의 지금 브랜치 — 쓸 때마다 git을 부르지 않게 30초 캐시(리뷰)
+const brCache = new Map<string, { br?: string; at: number }>();
+function branchOf(dir: string): string | undefined {
+  const hit = brCache.get(dir);
+  if (hit && Date.now() - hit.at < 30_000) return hit.br;
+  let br: string | undefined;
+  try { const b = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: dir, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim(); br = b && b !== "HEAD" ? b : undefined; } catch { /* 모름 */ }
+  brCache.set(dir, { br, at: Date.now() });
+  return br;
+}
 const rawDir = (path: string) => join(baseDir(), sha(normPath(path)));
 const repoDir = (root: string) => rawDir(mainOf(root));
 // 같은 key라도 다른 작업 폴더면 다른 항목
@@ -48,26 +59,35 @@ function tag(root: string, items: CatchupItem[]): CatchupItem[] {
   const br = wt ? branchOf(wt) : undefined;
   return items.map((x) => { const it = { ...x }; delete it.wt; delete it.br; return wt ? { ...it, wt, ...(br ? { br } : {}) } : it; });
 }
-// #1181 옛 기록 옮기기 — worktree 경로로 따로 쌓였던 폴더를 처음 만질 때 메인으로(wt·br 붙여) 옮기고 옛 폴더는 .migrated로. 프로세스당 한 번.
+// #1181 옛 기록 옮기기 — (1) worktree 경로로 따로 쌓였던 폴더는 메인으로(wt·br 붙여) 옮기고 옛 폴더는 .migrated,
+// (2) 실제 경로가 아닌 경로(심볼릭 링크 등)로 쌓였던 메인 폴더는 실제 경로 자리로 이름만 바꿈. 성공해야 "끝남"으로 기억(실패면 다음에 다시, 겹친 건 wt+key로 걸러짐, 리뷰).
+// ponytail: 여러 프로세스가 동시에 옮기면 줄이 빠질 수 있음(appendItems는 잠금 없음) — 한 번뿐인 이관이라 감수.
 const migrated = new Set<string>();
 function migrate(root: string) {
-  const { main, wt } = where(root);
-  if (!wt || migrated.has(wt)) return;
-  migrated.add(wt);
-  const old = rawDir(wt);
-  if (old === rawDir(main) || !existsSync(old)) return;
+  const r = normPath(root);
+  if (migrated.has(r)) return;
+  const { main, wt } = where(r);
   try {
-    for (const f of readdirSync(old)) if (DAY_RE.test(f.replace(/\.jsonl$/, ""))) appendItems(root, readDayFile(join(old, f)));
-    for (const sub of ["sessions", "ask"]) { const s = join(old, sub); if (existsSync(s)) cpSync(s, join(rawDir(main), sub), { recursive: true, force: false }); }
-    renameSync(old, `${old}.migrated`);
-  } catch { /* 다음 실행에 다시 시도하진 않음 — 옛 폴더는 그대로 남음 */ }
+    if (wt) {
+      for (const old of new Set([rawDir(r), rawDir(wt)])) {
+        if (old === rawDir(main) || !existsSync(old)) continue;
+        for (const f of readdirSync(old)) if (DAY_RE.test(f.replace(/\.jsonl$/, ""))) appendItems(wt, readDayFile(join(old, f)));
+        for (const sub of ["sessions", "ask"]) { const s = join(old, sub); if (existsSync(s)) cpSync(s, join(rawDir(main), sub), { recursive: true, force: false }); }
+        renameSync(old, `${old}.migrated`);
+      }
+    } else if (rawDir(r) !== rawDir(main) && existsSync(rawDir(r)) && !existsSync(rawDir(main))) {
+      renameSync(rawDir(r), rawDir(main));
+      writeFileSync(join(rawDir(main), "root.txt"), main);
+    }
+    migrated.add(r);
+  } catch { /* 다음에 다시 */ }
 }
 // #998 캐치업 질문 에이전트가 읽을 기록 폴더(--add-dir).
 export const streamDirFor = (root: string) => repoDir(root);
 // #1068 캐치업을 쓰는 레포들(기록 폴더의 root.txt) + 앱 생존 하트비트 파일 위치
 export function catchupRoots(): string[] {
   let dirs: string[]; try { dirs = readdirSync(baseDir()); } catch { return []; }
-  return dirs.map((d) => { try { return readFileSync(join(baseDir(), d, "root.txt"), "utf8").trim(); } catch { return ""; } }).filter(Boolean);
+  return dirs.filter((d) => !d.endsWith(".migrated")).map((d) => { try { return readFileSync(join(baseDir(), d, "root.txt"), "utf8").trim(); } catch { return ""; } }).filter(Boolean); // #1181 옮기고 남은 옛 폴더는 뺌
 }
 export const aliveFile = () => join(baseDir(), "alive.json");
 
@@ -180,12 +200,12 @@ export function readRecent(root: string, limit: number): CatchupItem[] {
 
 // 검색(#1049) — 전체 날짜를 최신부터 훑어 제목·설명에 검색어(대소문자 무시)가 든 항목 limit개.
 // ponytail: 날짜 파일 전수 스캔 — 기록이 수만 개로 커지면 색인(FTS) 고려.
-export function searchItems(root: string, q: string, limit: number): CatchupItem[] {
+export function searchItems(root: string, q: string, limit: number, all = false): CatchupItem[] {
   const needle = q.trim().toLowerCase();
   if (!needle) return [];
   const out: CatchupItem[] = [];
   for (const day of allDays(root)) {
-    for (const x of readDay(root, day)) if (`${x.target}\n${x.expl}`.toLowerCase().includes(needle)) out.push(x);
+    for (const x of readDay(root, day, all)) if (`${x.target}\n${x.expl}`.toLowerCase().includes(needle)) out.push(x);
     if (out.length >= limit) break;
   }
   return out.slice(0, limit);
@@ -252,7 +272,8 @@ export function askCounts(root: string): Record<string, number> {
 
 // #1081 키로 항목 찾기(최근 날짜부터) — 질문 답변의 catchup: 링크 → 그 카드로 이동할 날짜를 알려고.
 export function findItem(root: string, key: string): CatchupItem | null {
-  for (const day of allDays(root)) { const hit = readDay(root, day).find((x) => x.key === key) ?? readDay(root, day, true).find((x) => x.key === key); if (hit) return hit; } // 지금 폴더 먼저, 없으면 레포 전체(#1181)
+  const mine = inScope(root);
+  for (const day of allDays(root)) { const items = readDay(root, day, true); const hit = items.find((x) => x.key === key && mine(x)) ?? items.find((x) => x.key === key); if (hit) return hit; } // 지금 폴더 먼저, 없으면 레포 전체(#1181)
   return null;
 }
 

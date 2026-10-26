@@ -1,11 +1,11 @@
 // catchupStore 점검 — MUSTARD_STREAM_DIR=<임시> node --experimental-strip-types src/lib/catchupStore.check.ts
 import assert from "node:assert";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appendItems, replaceItems, askCounts, dayKey, findItem, itemsForHashes, listDays, mainOf, readAsk, readDay, readRecent, readSession, searchItems, sanitize, writeAsk, writeSession } from "./catchupStore.ts";
+import { appendItems, replaceItems, askCounts, catchupRoots, dayKey, findItem, itemsForHashes, listDays, mainOf, readAsk, readDay, readRecent, readSession, searchItems, sanitize, writeAsk, writeSession } from "./catchupStore.ts";
 
 assert.ok(process.env.MUSTARD_STREAM_DIR, "임시 디렉터리 필수(실 기록 보호)");
 const root = "/tmp/repo-a";
@@ -86,6 +86,13 @@ console.log("catchupStore ok");
   assert.strictEqual(findItem(main, "w-only")?.wt, wt, "키 찾기는 지금 폴더에 없으면 레포 전체");
   writeSession(wt, "fedcba9", { s: 2 });
   assert.ok(readSession(main, "fedcba9"), "커밋 ↔ 대화 세션은 레포 한 벌 — 메인에서도 이어짐");
+  // 리뷰: 심볼릭 링크로 연 메인도 같은 자리, 레포 안 하위 폴더는 worktree가 아님(예전처럼 그 경로 그대로)
+  const link = join(tmp, "link"); symlinkSync(main, link);
+  assert.strictEqual(mainOf(link), main, "심볼릭 링크 = 실제 경로");
+  mkdirSync(join(main, "sub"));
+  appendItems(join(main, "sub"), [it("sub-item", t)]);
+  assert.ok(readDay(join(main, "sub"), "2026-10-09").every((x) => x.wt === undefined), "하위 폴더는 worktree 표시 없음");
+  assert.ok(!catchupRoots().some((r) => r === wt), "옮기고 남은 옛 폴더(.migrated)는 레포 목록에서 뺌");
   g(main, "worktree", "remove", "--force", wt);
   assert.strictEqual(readDay(main, "2026-10-09", true).filter((x) => x.br === "feat/x").length, 3, "worktree를 지워도 기록과 브랜치 이름은 남음");
 }
