@@ -34,16 +34,16 @@ function openTerminalLink(cwd: string, l: TerminalLink | { kind: "url"; url: str
 }
 // 버퍼 한 줄 → 글자와 "글자 위치 → 화면 칸" 표(한글·이모지는 두 칸이라 문자열 위치와 칸이 다름)
 function lineText(line: import("@xterm/xterm").IBufferLine) {
-  let text = ""; const col: number[] = [];
+  let text = ""; const col: number[] = [], wid: number[] = [];
   for (let x = 0; x < line.length; x++) {
     const c = line.getCell(x);
     if (!c || c.getWidth() === 0) continue; // 넓은 글자의 둘째 칸
     const ch = c.getChars() || " ";
-    for (let i = 0; i < ch.length; i++) col.push(x);
+    for (let i = 0; i < ch.length; i++) { col.push(x); wid.push(c.getWidth()); }
     text += ch;
   }
   col.push(line.length);
-  return { text, col };
+  return { text, col, wid };
 }
 
 // 터미널 팔레트(#914·#956) — 앱 테마와 분리된 자체 색. CLI TUI가 다크 전제.
@@ -104,6 +104,9 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
     let offSettings: (() => void) | null = null;
     let selDisp: { dispose(): void } | null = null;
     let linkDisp: { dispose(): void } | null = null;
+    let oscDisp: { dispose(): void } | null = null;
+    // 셸의 지금 폴더 — 셸이 OSC 7(file://호스트/경로)을 보내면 따라감(cd 뒤 상대 경로 링크용, 리뷰). 안 보내면 터미널을 연 폴더.
+    let shellCwd = cwd;
     // #1027 ⌘K(터미널 포커스) = 화면 지우기 — 포커스가 이 터미널 안일 때만 처리(다른 터미널·탭이면 false로 넘김).
     const offClear = registerShortcut(["term.clear"], () => { if (!term || !host.contains(document.activeElement)) return false; term.clear(); });
     let onCtx: ((e: MouseEvent) => void) | null = null;
@@ -117,22 +120,26 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       ]);
       if (disposed) return;
       // OSC 8 하이퍼링크(요즘 CLI가 찍는 숨은 링크)도 같은 규칙 — http(s)만
-      term = new XTerm({ ...termOptionsFromSettings(), theme: buildTermTheme(), linkHandler: { activate: (ev, uri) => { if (withMod(ev) && /^https?:\/\//i.test(uri)) openTerminalLink(cwd, { kind: "url", url: uri }); } } });
+      term = new XTerm({ ...termOptionsFromSettings(), theme: buildTermTheme(), linkHandler: { activate: (ev, uri) => { if (withMod(ev) && /^https?:\/\//i.test(uri)) openTerminalLink(shellCwd, { kind: "url", url: uri }); } } });
       if (host) host.style.background = buildTermTheme().background;
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.open(host);
+      oscDisp = term.parser.registerOscHandler(7, (data) => {
+        try { const u = new URL(data); if (u.protocol === "file:" && u.pathname) shellCwd = decodeURIComponent(u.pathname); } catch { /* 형식 아님 */ }
+        return false; // 다른 처리기도 받게
+      });
       // 글자 속 링크(주소·파일 경로) — 마우스를 올리면 밑줄, ⌘/Ctrl+클릭으로 엶. 한계: 줄바꿈으로 두 줄에 걸친 링크는 못 찾음.
       linkDisp = term.registerLinkProvider({
         provideLinks(y, cb) {
           const ln = term?.buffer.active.getLine(y - 1);
           if (!ln) return cb(undefined);
-          const { text, col } = lineText(ln);
+          const { text, col, wid } = lineText(ln);
           const links = findLinks(text).map((l) => ({
             text: l.text,
-            range: { start: { x: col[l.start] + 1, y }, end: { x: col[l.start + l.text.length - 1] + 1, y } },
+            range: { start: { x: col[l.start] + 1, y }, end: { x: col[l.start + l.text.length - 1] + wid[l.start + l.text.length - 1], y } }, // 끝 글자가 두 칸이면 둘째 칸까지(리뷰)
             decorations: { underline: true, pointerCursor: true },
-            activate: (ev: MouseEvent) => { if (withMod(ev)) openTerminalLink(cwd, l); },
+            activate: (ev: MouseEvent) => { if (withMod(ev)) openTerminalLink(shellCwd, l); },
           }));
           cb(links.length ? links : undefined);
         },
@@ -258,7 +265,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       fallback = setTimeout(() => { if (!ensured && !disposed && term) { ensured = true; void firstEnsure(); } }, 1500);
     })();
 
-    return () => { offClear(); disposed = true; if (fallback) clearTimeout(fallback); if (onPaste) host.removeEventListener("paste", onPaste, true); offData?.(); offExit?.(); ro?.disconnect(); mo?.disconnect(); offTheme?.(); offSettings?.(); selDisp?.dispose(); linkDisp?.dispose(); if (onCtx) host.removeEventListener("contextmenu", onCtx); if (onEnter) host.removeEventListener("mouseenter", onEnter); term?.dispose(); term = null; };
+    return () => { offClear(); disposed = true; if (fallback) clearTimeout(fallback); if (onPaste) host.removeEventListener("paste", onPaste, true); offData?.(); offExit?.(); ro?.disconnect(); mo?.disconnect(); offTheme?.(); offSettings?.(); selDisp?.dispose(); linkDisp?.dispose(); oscDisp?.dispose(); if (onCtx) host.removeEventListener("contextmenu", onCtx); if (onEnter) host.removeEventListener("mouseenter", onEnter); term?.dispose(); term = null; };
   }, [id, cwd]);
 
   // 초기 배경도 현재 터미널 테마에 맞춰(라이트 앱 첫 프레임 다크 깜빡임 방지). 클라이언트 전용 pane이라 안전.

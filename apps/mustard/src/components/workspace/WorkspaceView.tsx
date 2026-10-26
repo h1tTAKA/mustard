@@ -29,7 +29,8 @@ import { FlyCardProvider } from "@mustard/nunopi";
 import WorkspaceDockLayout, { defaultTree, pruneTree, leavesOf, isDockNode, appendPanel, removePanel, type DockNode, type PanelId } from "@/components/workspace/WorkspaceDockLayout";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { TERMINAL_LINK_EVENT, type TerminalLinkDetail } from "@/components/workspace/Terminal";
-import { resolvePath, repoRelative } from "@/lib/terminalLinks";
+import { findRepoFile } from "@/lib/terminalLinks";
+const OPEN_ROOTS = new Set<string>(); // 지금 열린 레포 화면들(#1193 터미널 링크 — 가장 깊은 레포만 처리)
 // 코드/diff 멀티탭 한 건(#714) — 파일 또는 diff(커밋 diff는 hash, 워킹트리 diff는 worktree).
 type CodeTab = { kind: "file"; file: string } | { kind: "diff"; hash?: string; file: string; worktree?: "staged" | "unstaged" | "untracked"; pr?: number }; // pr = PR 리뷰 diff(#1123)
 // 탭 식별 키(중복 열기 방지·활성 지정). file / diff(hash) / diff(워킹트리) 구분.
@@ -228,21 +229,25 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     return () => { offReq(); offGrant(); };
   }, [path]);
   // 터미널 링크(#1193) — 이 레포 안 터미널에서 ⌘+클릭한 주소는 인앱 브라우저 새 탭, 파일은 레포 안 파일일 때만 코드 탭.
+  // 레포가 겹치면(한 레포 안에 다른 레포) cwd를 품는 가장 깊은 레포 하나만 처리(리뷰).
   const openCodeTabRef = useRef<(tb: CodeTab) => void>(() => {});
   useEffect(() => {
     if (!path) return;
+    const root = path.replace(/\/+$/, "");
+    OPEN_ROOTS.add(root);
+    const inside = (r: string, c: string) => c === r || c.startsWith(`${r}/`);
     const onLink = (e: Event) => {
       const d = (e as CustomEvent<TerminalLinkDetail>).detail;
-      const root = path.replace(/\/+$/, "");
-      if (!d || (d.cwd !== root && !d.cwd.startsWith(`${root}/`))) return; // 다른 레포 터미널
+      if (!d || !inside(root, d.cwd)) return; // 다른 레포 터미널
+      if ([...OPEN_ROOTS].some((r) => r.length > root.length && inside(r, d.cwd))) return; // 더 깊은 레포가 맡음
       if (d.kind === "url") { setBrowserIncoming((prev) => ({ url: d.url, n: (prev?.n ?? 0) + 1 })); setBrowserOpen(true); return; }
-      const abs = resolvePath(d.cwd, d.path);
-      const rel = abs ? repoRelative(root, abs) : null;
-      if (rel && files.includes(rel)) openCodeTabRef.current({ kind: "file", file: rel });
+      const rel = findRepoFile(files, root, d.cwd, d.path);
+      if (rel) openCodeTabRef.current({ kind: "file", file: rel });
+      else toast(t("ws.linkFileMissing", { path: d.path }));
     };
     window.addEventListener(TERMINAL_LINK_EVENT, onLink);
-    return () => window.removeEventListener(TERMINAL_LINK_EVENT, onLink);
-  }, [path, files]);
+    return () => { OPEN_ROOTS.delete(root); window.removeEventListener(TERMINAL_LINK_EVENT, onLink); };
+  }, [path, files, t, toast]);
   // 분리 브라우저 창(#1034)과 같은 origin localStorage로 주고받음 — storage 이벤트는 다른 창에서 쓸 때만 옴.
   // browser-dock {urls,active,devtools,n} = 분리 창의 "앱 안에서 열기" → 그 탭들 전부를 dock 브라우저로(유저 요청: 통째로).
   // 브라우저가 닫혀 있으면 그 탭들로 열고, 열려 있으면 뒤에 붙임.

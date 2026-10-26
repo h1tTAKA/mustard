@@ -1,6 +1,6 @@
 // terminalLinks 점검 — node --experimental-strip-types src/lib/terminalLinks.check.ts
 import assert from "node:assert";
-import { findLinks, resolvePath, repoRelative } from "./terminalLinks.ts";
+import { findLinks, resolvePath, repoRelative, findRepoFile } from "./terminalLinks.ts";
 
 const pick = (s: string) => findLinks(s).map((l) => (l.kind === "url" ? ["url", l.url] : ["file", l.path, l.line ?? null, l.col ?? null]));
 
@@ -32,5 +32,12 @@ assert.strictEqual(resolvePath("/r", "/etc/hosts"), "/etc/hosts");
 assert.strictEqual(resolvePath("/r", "~/a.ts"), null);
 assert.strictEqual(repoRelative("/r/", "/r/src/a.ts"), "src/a.ts");
 assert.strictEqual(repoRelative("/r", "/rr/a.ts"), null, "이름만 같은 옆 폴더는 레포 밖");
+
+// 파일 찾기 — cwd 기준 우선, 낡은 cwd면 끝이 같은 파일이 하나일 때만
+const F = ["apps/web/page.tsx", "apps/admin/page.tsx", "apps/web/lib/x.ts", "README.md"];
+assert.strictEqual(findRepoFile(F, "/r", "/r/apps/web", "./page.tsx"), "apps/web/page.tsx", "셸 지금 폴더 기준");
+assert.strictEqual(findRepoFile(F, "/r", "/r", "./page.tsx"), null, "끝이 같은 게 둘이면 추측 안 함");
+assert.strictEqual(findRepoFile(F, "/r", "/r", "lib/x.ts"), "apps/web/lib/x.ts", "낡은 cwd — 하나면 그것");
+assert.strictEqual(findRepoFile(F, "/r", "/r", "/etc/x.ts"), null, "절대 경로는 추측 안 함");
 
 console.log("terminalLinks ok");

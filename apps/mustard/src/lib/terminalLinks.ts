@@ -55,3 +55,15 @@ export function repoRelative(repo: string, abs: string): string | null {
   const r = repo.replace(/\/+$/, "");
   return abs.startsWith(`${r}/`) ? abs.slice(r.length + 1) : null;
 }
+
+// 터미널 링크의 파일 → 레포 기준 경로. ① cwd 기준으로 푼 경로가 레포 파일이면 그것
+// ② 아니면(셸이 지금 폴더를 안 알려 cwd가 낡았을 때) 레포 파일 중 끝이 같은 것이 딱 하나면 그것. 없거나 여럿이면 null.
+export function findRepoFile(files: readonly string[], repo: string, cwd: string, p: string): string | null {
+  const abs = resolvePath(cwd, p);
+  const rel = abs ? repoRelative(repo, abs) : null;
+  if (rel && files.includes(rel)) return rel;
+  const tail = p.replace(/^(\.{1,2}\/)+/, "").replace(/^\/+/, "");
+  if (!tail || p.startsWith("/") || p.startsWith("~/")) return null; // 절대 경로는 추측 안 함
+  const hits = files.filter((f) => f === tail || f.endsWith(`/${tail}`));
+  return hits.length === 1 ? hits[0] : null;
+}
