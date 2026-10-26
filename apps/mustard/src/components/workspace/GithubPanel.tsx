@@ -9,12 +9,14 @@ import IssueList from "@/components/workspace/github/IssueList";
 import IssueDetail from "@/components/workspace/github/IssueDetail";
 import PrList from "@/components/workspace/github/PrList";
 import PrDetail from "@/components/workspace/github/PrDetail";
+import TrackerIssueList from "@/components/workspace/github/TrackerIssueList";
+import TrackerIssueDetail from "@/components/workspace/github/TrackerIssueDetail";
 import type { CiDot } from "@/components/workspace/github/useBranchCi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 
 type AuthState = "ok" | "not-installed" | "not-authed" | "rate-limited" | "offline" | "error"; // offline = 인터넷 끊김(#1151)
 type Probe = { loading: boolean; state?: AuthState; detail?: string };
-type OpenItem = { kind: "issue" | "pr"; number: number }; // 상세 열림 — 반반 분할(#824)이라 kind로 이슈/PR 구분
+type OpenItem = { kind: "issue" | "pr"; number: number } | { kind: "tracker"; issue: TrackerIssue }; // 상세 열림 — 반반 분할(#824)이라 kind로 이슈/PR 구분, #1172 트래커 이슈
 
 // onOpenPrDiff = PR 변경 파일 클릭 → 가운데 diff 탭(#1123)
 // 진단 안내 중 앱이 낸 문구는 표시 때 번역(언어 바뀌어도 재진단 없이 따라옴, #1125) — gh/glab detail은 원문 그대로.
@@ -27,6 +29,19 @@ export default function GithubPanel({ root, ciDot, onOpenPrDiff, agent }: { root
   const [host, setHost] = useState<"github" | "gitlab" | "other">("github"); // #964 origin 호스트
   const [open, setOpen] = useState<OpenItem | null>(null); // 상세 열림. null=반반 목록(#824).
   const [reload, setReload] = useState(0); // 헤더 새로고침 → 목록 재조회 트리거.
+  // #1172 이슈 출처 — 레포(GitHub·GitLab) 또는 연결된 트래커(Linear·Jira). 연결된 것만 보이고, 고른 건 기억.
+  const [trackers, setTrackers] = useState<TrackerProvider[]>([]);
+  const [source, setSource] = useState<"repo" | TrackerProvider>(() => { try { const v = localStorage.getItem("mustard:issue-source"); return v === "linear" || v === "jira" ? v : "repo"; } catch { return "repo"; } });
+  const pickSource = (v: "repo" | TrackerProvider) => { setSource(v); setOpen(null); try { localStorage.setItem("mustard:issue-source", v); } catch { /* 저장 못 해도 이번엔 됨 */ } };
+  useEffect(() => {
+    const st = window.nunopiDesktop?.trackers?.status;
+    if (!st) return;
+    let alive = true;
+    void Promise.all((["linear", "jira"] as const).map(async (p) => ((await st(p).catch(() => null))?.ok ? p : null)))
+      .then((ps) => { if (alive) setTrackers(ps.filter((p): p is TrackerProvider => !!p)); });
+    return () => { alive = false; };
+  }, [reload]);
+  const src = source !== "repo" && trackers.includes(source) ? source : "repo"; // 연결이 끊겼으면 레포로
   // 토큰(PAT) 폴백(#826) — 미인증 시 토큰 연결. hasToken=저장됨(값 비노출), tokenVal=입력중, tokenBusy=저장중.
   const [hasToken, setHasToken] = useState(false);
   const [tokenVal, setTokenVal] = useState("");
@@ -156,8 +171,20 @@ export default function GithubPanel({ root, ciDot, onOpenPrDiff, agent }: { root
             <section className="flex min-h-0 flex-col" style={{ flex: topRatio }}>
               <div className="flex shrink-0 items-center gap-1.5 bg-zinc-50 px-3 py-1 text-[11px] font-semibold text-zinc-500 dark:bg-zinc-900/40 dark:text-zinc-400">
                 {t("github.issues")}
+                {trackers.length > 0 && (
+                  <span className="ml-auto flex gap-0.5" role="tablist" aria-label={t("trackers.source")}>
+                    {(["repo", ...trackers] as const).map((s) => (
+                      <button key={s} type="button" role="tab" aria-selected={src === s} onClick={() => pickSource(s)}
+                        className={`rounded px-1.5 py-px text-[10px] font-medium transition ${src === s ? "bg-mustard-500/15 text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"}`}>
+                        {s === "repo" ? (host === "gitlab" ? "GitLab" : "GitHub") : s === "linear" ? "Linear" : "Jira"}
+                      </button>
+                    ))}
+                  </span>
+                )}
               </div>
-              <div className="min-h-0 flex-1"><IssueList root={root} reloadKey={reload} host={host} onOpen={(n) => setOpen({ kind: "issue", number: n })} /></div>
+              <div className="min-h-0 flex-1">{src === "repo"
+                ? <IssueList root={root} reloadKey={reload} host={host} onOpen={(n) => setOpen({ kind: "issue", number: n })} />
+                : <TrackerIssueList key={src} provider={src} reloadKey={reload} onOpen={(issue) => setOpen({ kind: "tracker", issue })} />}</div>
             </section>
             {/* 드래그 핸들 — 가운데 선. 잡고 위아래로 끌면 비율 변경. */}
             <div role="separator" aria-orientation="horizontal" onMouseDown={onDragDivider}
@@ -175,7 +202,9 @@ export default function GithubPanel({ root, ciDot, onOpenPrDiff, agent }: { root
         ) : (
           /* 상세 — 전체 차지(#824). 뒤로가기로 반반 목록 복귀. */
           <div className="min-h-0 flex-1">
-            {open.kind === "issue"
+            {open.kind === "tracker"
+              ? <TrackerIssueDetail key={`tracker-${open.issue.provider}-${open.issue.id}`} provider={open.issue.provider} initial={open.issue} reloadKey={reload} onBack={() => setOpen(null)} />
+              : open.kind === "issue"
               ? <IssueDetail key={`issue-${open.number}`} root={root} number={open.number} reloadKey={reload} host={host} onBack={() => setOpen(null)} />
               : <PrDetail key={`pr-${open.number}`} root={root} number={open.number} onOpenFile={onOpenPrDiff ? (file: string) => onOpenPrDiff(open.number, file) : undefined} reloadKey={reload} host={host} agent={agent} onBack={() => setOpen(null)} />}
           </div>
