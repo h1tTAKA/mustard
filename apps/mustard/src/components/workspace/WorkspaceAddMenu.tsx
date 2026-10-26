@@ -1,34 +1,32 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { IconFolderOpen, IconGitFork, IconMessages, IconFileCode, IconFileText, IconCards, IconChevronRight } from "@tabler/icons-react";
+import { IconFolderOpen, IconMessages, IconFileCode, IconFileText, IconCards, IconChevronRight } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import { isNunopiEnabled } from "@/lib/product";
 // "+" 드롭다운 픽커(#769) — 워크스페이스에 새 탭으로 무엇을 열지 고른다(Orca式 컴팩트 메뉴).
 // "+" 버튼 아래에 앵커링(fixed). 레포는 폴더 다이얼로그, 모드는 즉시 빈 탭. 실제 추가는 onPick.
 // 섹션 라벨 + 키보드 네비(↑↓/Enter) + 활성 chevron으로 다듬음.
-export type AddKind = "repo" | "workspace" | "ask" | "code" | "text" | "memorize";
+export type AddKind = "repo" | "ask" | "code" | "text" | "memorize";
 
 type Row = { kind: AddKind; Icon: typeof IconFolderOpen; labelKey: string; group: "ws" | "modes" };
 const ROWS: Row[] = [
   { kind: "repo", Icon: IconFolderOpen, labelKey: "workspace.addRepo", group: "ws" },
-  { kind: "workspace", Icon: IconGitFork, labelKey: "newWs.menu", group: "ws" }, // #1170 지금 레포 탭에서 새 worktree 작업공간(레포 탭일 때만)
   { kind: "ask", Icon: IconMessages, labelKey: "mode.ask", group: "modes" },
   { kind: "code", Icon: IconFileCode, labelKey: "mode.code", group: "modes" },
   { kind: "text", Icon: IconFileText, labelKey: "mode.text", group: "modes" },
   { kind: "memorize", Icon: IconCards, labelKey: "workspace.addMemorize", group: "modes" },
 ];
 
-export default function WorkspaceAddMenu({ anchor, onClose, onPick, canWorkspace }: {
+export default function WorkspaceAddMenu({ anchor, onClose, onPick }: {
   anchor: { left: number; top: number } | null;
-  canWorkspace?: boolean; // 지금 탭이 레포일 때만 "새 작업공간"
   onClose: () => void;
   onPick: (kind: AddKind, target?: "tab" | "window") => void;
 }) {
   const t = useT();
   // nunopi 학습툴 off(Mustard-only, #908)면 학습 모드 탭(ask/code/text/memorize) 숨김 — repo만.
   // 학습스트림·워크스페이스 질문·퀴즈는 레포 뷰 내장이라 여기 무관(존치).
-  const rows = (isNunopiEnabled() ? ROWS : ROWS.filter((r) => r.group !== "modes")).filter((r) => r.kind !== "workspace" || canWorkspace);
+  const rows = isNunopiEnabled() ? ROWS : ROWS.filter((r) => r.group !== "modes");
   // 새 창으로 열기(#789)는 Electron에서만. 메뉴는 클릭 후에만(클라이언트) 렌더돼 window 읽기 안전.
   const canWindow = typeof window !== "undefined" && !!window.nunopiDesktop?.openModeWindow;
   // 서브메뉴 방향(#789) — 우측 공간 부족(탭 많아 +가 우측이면)하면 왼쪽으로 뒤집어 잘림 방지.

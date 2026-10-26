@@ -15,7 +15,7 @@ import RepoTabHoverCard from "@/components/workspace/RepoTabHoverCard";
 import NewWorkspaceDialog from "@/components/workspace/NewWorkspaceDialog";
 import WorktreeSwitcher from "@/components/workspace/WorktreeSwitcher";
 import RemoveWorkspaceDialog from "@/components/workspace/RemoveWorkspaceDialog";
-import { CLOSE_WORKSPACE_EVENT, NEW_WORKSPACE_EVENT, OPEN_REPO_TAB_EVENT, REMOVE_WORKSPACE_EVENT, openNewWorkspace, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
+import { CLOSE_WORKSPACE_EVENT, NEW_WORKSPACE_EVENT, OPEN_REPO_TAB_EVENT, REMOVE_WORKSPACE_EVENT, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
 import DaemonOutdatedNotice from "@/components/workspace/DaemonOutdatedNotice";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
 import { publishRepoSessions } from "@/lib/agentSessionStates";
@@ -520,7 +520,6 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   // 메뉴 선택 → 레포는 폴더 다이얼로그, 모드는 탭 추가 또는 새 창(#789).
   const onPick = (kind: AddKind, target: "tab" | "window" = "tab") => {
     if (kind === "repo") { void addRepoTab(); return; }
-    if (kind === "workspace") { const cur = tabs.find((x) => tabKey(x) === activeKey); if (cur?.type === "repo") openNewWorkspace(cur.path); return; }
     if (target === "window") void openModeInWindow(kind);
     else void addModeTab(kind);
   };
@@ -703,7 +702,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
           </div>
         );
       })()}
-      <WorkspaceAddMenu anchor={addMenu} onClose={closeAddMenu} onPick={onPick} canWorkspace={tabs.find((x) => tabKey(x) === activeKey)?.type === "repo"} />
+      <WorkspaceAddMenu anchor={addMenu} onClose={closeAddMenu} onPick={onPick} />
       {newWs && <NewWorkspaceDialog root={newWs.root} initial={newWs.initial} onClose={() => setNewWs(null)} />}
       {rmWs && <RemoveWorkspaceDialog root={rmWs.root} dir={rmWs.dir} onClose={() => setRmWs(null)} />}
     </div>

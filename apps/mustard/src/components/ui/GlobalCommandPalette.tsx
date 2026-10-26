@@ -6,7 +6,6 @@ import { type RefObject, useEffect, useMemo, useState } from "react";
 import {
   IconCode, IconFileText, IconMessage2, IconLayoutDashboard, IconCards, IconHome, IconSettings,
   IconFiles, IconFileCode, IconMessages,
-  IconGitFork,
 } from "@tabler/icons-react";
 import { useT, useShortcut, useShortcutHint, shortcutHint, installShortcutDispatcher } from "@mustard/core";
 import { CommandPalette, type Command } from "@mustard/nunopi";
@@ -33,7 +32,6 @@ const VIEW_ICON: Record<ViewMode, React.ReactNode> = {
 // 탭 종류별 아이콘 — WorkspaceTabs 탭바(MODE_TAB)·레포(IconFiles)와 동일.
 const TAB_ICON: Record<AddKind, React.ReactNode> = {
   repo: <IconFiles size={16} stroke={2} aria-hidden />,
-  workspace: <IconGitFork size={16} stroke={2} aria-hidden />, // #1170 새 작업공간(지금은 + 메뉴에서만)
   ask: <IconMessages size={16} stroke={2} aria-hidden />,
   code: <IconFileCode size={16} stroke={2} aria-hidden />,
   text: <IconFileText size={16} stroke={2} aria-hidden />,
