@@ -338,8 +338,21 @@ export default function SettingsDrawer({
   // #1171 경로 직접 지정 — CLI 상태 목록 줄 안에서(백그라운드 SNA가 쓰는 3개만). 감지 목록이 없으면(스탠드얼론 웹) 아래 옛 칸.
   const customPath: Record<string, [string, (v: string) => void]> = { claude: [claudeCliPath, setClaudeCliPath], codex: [codexCliPath, setCodexCliPath], opencode: [openCodeCliPath, setOpenCodeCliPath] };
   const [pathOpen, setPathOpen] = useState<string | null>(null);
-  const [openedPaths] = useState(() => ({ claude: claudeCliPath.trim(), codex: codexCliPath.trim(), opencode: openCodeCliPath.trim() } as Record<string, string>)); // 연 때 값 — 실제로 달라졌을 때만 재시작 안내(리뷰)
-  const pathDirty = Object.entries(customPath).some(([id, [v]]) => v.trim() !== openedPaths[id]);
+  const [openedPaths, setOpenedPaths] = useState<Record<string, string>>({}); // 연 때 값 — 실제로 달라졌을 때만 재시작 안내(리뷰)
+  // 열 때마다 저장된 설정으로 칸을 다시 채움(리뷰) — 이 창은 늘 마운트돼 있고 설정은 첫 화면 뒤에 불러와져서, 첫 값("")으로 남아 있다가
+  // 아무 칸이나 blur하면 handleSave가 빈 경로·기본값으로 덮어썼음. 렌더 중 상태 조정(React 권장, effect 안 씀).
+  const [wasOpen, setWasOpen] = useState(false);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
+    if (isOpen) {
+      const oc = settings["openai-compatible"], c = settings["claude-agent"]?.cliPath ?? "", x = settings["codex-agent"]?.cliPath ?? "", o = settings["opencode-agent"]?.cliPath ?? "";
+      setBaseUrl(oc?.baseUrl ?? "http://localhost:11434/v1"); setModel(oc?.model ?? "hermes-3"); setApiKey(oc?.apiKey ?? "");
+      setClaudeCliPath(c); setCodexCliPath(x); setOpenCodeCliPath(o);
+      setOpenedPaths({ claude: c.trim(), codex: x.trim(), opencode: o.trim() });
+      setPathOpen(null);
+    }
+  }
+  const pathDirty = Object.entries(customPath).some(([id, [v]]) => v.trim() !== (openedPaths[id] ?? ""));
   // 데스크톱이면 첫 화면부터 목록(확인 중 표시) — 옛 칸이 잠깐 보였다 바뀌지 않게(리뷰). 감지 실패(빈 목록)면 옛 칸.
   const statusList = !!desktop?.detectAgents && !(agentsDet?.length === 0 && !agentsChecking);
 
