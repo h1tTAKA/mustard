@@ -16,7 +16,10 @@ export async function liftStoredArgs(ids: string[]) {
     const args = getSetting<string>(AKEYS.args(id), "");
     if (!args.trim() || getSetting<string>(AKEYS.permOf(id), "")) continue;
     const r = await lift(id, args).catch(() => { failed = true; return null; });
-    if (r) { setSetting(AKEYS.args(id), r.rest); setSetting(AKEYS.permOf(id), r.choice); }
+    if (r) {
+      setSetting(AKEYS.args(id), r.rest); setSetting(AKEYS.permOf(id), r.choice);
+      if (r.choice === "full-access") setSetting(AKEYS.fullOk, true); // 예전부터 그 플래그로 써 왔음 = 이미 고른 것(확인창 다시 안 띄움)
+    }
   }
   if (!failed) setSetting(AKEYS.argsLifted, true); // 실패가 있으면 다음 실행에 다시(리뷰)
 }

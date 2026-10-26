@@ -191,7 +191,8 @@ function AgentRow({ a, logo, isDefault, path, all, guard }: { a: AgentDetect; lo
   const saveArgs = async () => {
     if (args === null) return;
     const v = args.trim(); setArgs(null);
-    const r = v ? await window.nunopiDesktop?.liftAgentArgs?.(a.id, v).catch(() => null) : null;
+    let r = v ? await window.nunopiDesktop?.liftAgentArgs?.(a.id, v).catch(() => null) : null;
+    if (r && !(await guard(r.choice))) r = null; // 인자로 전체 액세스를 고른 경우도 처음 한 번 확인(리뷰) — 거절하면 인자 그대로 저장(인자가 권한을 정함)
     if (r) { setSetting(AKEYS.args(a.id), r.rest); setSetting(AKEYS.permOf(a.id), r.choice); bump(); toast(t("agents.permLifted", { name: a.label, mode: t(`agents.perm.${r.choice}`) })); }
     else setSetting(AKEYS.args(a.id), v);
   };
