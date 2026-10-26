@@ -1758,6 +1758,19 @@ ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, text } = {})
   return { ok: true, id: target.id };
 });
 
+// #1194 빠른 명령(셸) — 그 터미널의 맨 앞 프로그램이 셸일 때만 입력(에이전트 화면·dev 서버 등에 명령이 새지 않게, 리뷰). 이 레포 터미널만.
+ipcMain.handle("terminal:shell-input", async (_e, { id, cwd, data } = {}) => {
+  const root = String(cwd || "").replace(/\/+$/, "");
+  if (!root || typeof id !== "string" || typeof data !== "string" || !data) return { ok: false, reason: "bad-args" };
+  let s;
+  try { s = (await termClient.list()).find((x) => x.id === id); } catch { return { ok: false, reason: "error" }; }
+  const c = String(s?.cwd || "").replace(/\/+$/, "");
+  if (!s || !(c === root || c.startsWith(root + "/"))) return { ok: false, reason: "no-terminal" };
+  if (s.process === undefined || !isShellProc(s.process)) return { ok: false, reason: "busy" };
+  termClient.input({ id, data });
+  return { ok: true, id };
+});
+
 // ── 포트 패널(#880) — 워크스페이스가 띄운 dev 서버 리스닝 포트 감지. lsof(포트+PID)+세션PID+ps(ppid) 귀속.
 const LOCAL_ADDRS = /^(127\.0\.0\.1|::1|\*|0\.0\.0\.0|localhost)$/i;
 // lsof로 리스닝(LISTEN) TCP 포트+PID 목록. localhost만. 실패 시 [](패널만 비어 안전).

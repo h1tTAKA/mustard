@@ -26,6 +26,8 @@ assert.deepStrictEqual(quickCommandsFor(list, null).map((c) => c.id), ["a", "d"]
 // 터미널 입력 — Enter 설정대로, 여러 줄은 줄마다
 assert.strictEqual(quickShellInput(list[0]), "npm run dev\r");
 assert.strictEqual(quickShellInput(list[2]), "git commit -m ", "입력만(Enter 없음)");
-assert.strictEqual(quickShellInput({ id: "m", name: "m", kind: "shell", text: "a\nb\n\n", enter: true }), "a\rb\r");
+assert.strictEqual(quickShellInput({ id: "m", name: "m", kind: "shell", text: "a\nb\n\n", enter: true }), "\x1b[200~a\nb\x1b[201~\r", "여러 줄 = 한 번에 붙여넣기 + Enter 한 번");
+assert.strictEqual(quickShellInput({ id: "m", name: "m", kind: "shell", text: "a\nb", enter: false }), "\x1b[200~a\nb\x1b[201~", "Enter 끔 = 여러 줄이어도 실행 안 됨(리뷰)");
+assert.strictEqual(quickShellInput({ id: "e", name: "e", kind: "shell", text: "echo \x1b[201~x", enter: false }), "echo [201~x", "ESC 제거 — 붙여넣기 조기 종료 방지");
 
 console.log("quickCommands ok");

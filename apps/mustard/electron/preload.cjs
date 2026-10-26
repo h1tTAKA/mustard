@@ -115,6 +115,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
   terminal: {
     ensure: (opts) => ipcRenderer.invoke("terminal:ensure", opts),
     input: (payload) => ipcRenderer.send("terminal:input", payload),
+    shellInput: (payload) => ipcRenderer.invoke("terminal:shell-input", payload), // #1194 맨 앞이 셸일 때만
     resize: (payload) => ipcRenderer.send("terminal:resize", payload),
     kill: (payload) => ipcRenderer.send("terminal:kill", payload),
     list: () => ipcRenderer.invoke("terminal:list"),

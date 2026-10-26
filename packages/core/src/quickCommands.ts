@@ -38,9 +38,11 @@ export function quickCommandsFor(list: readonly QuickCommand[], repo: string | n
   return [...mine, ...list.filter((c) => !c.repo)];
 }
 
-// 터미널에 보낼 글 — 여러 줄은 그대로(셸이 줄마다 실행), 끝 줄바꿈은 정리하고 Enter는 설정대로 한 번
+// 터미널에 보낼 글 — 여러 줄은 "한 번에 붙여넣기"(bracketed paste)로 감싸 입력칸에만 넣고(줄마다 바로 실행되지 않게, 리뷰),
+// Enter는 설정이 켜졌을 때만 마지막에 한 번. 붙여넣기를 일찍 끝낼 수 있는 ESC·제어문자는 뺌.
 export function quickShellInput(c: QuickCommand): string {
-  const body = c.text.replace(/\r\n/g, "\n").replace(/\n+$/, "").replace(/\n/g, "\r");
-  return c.enter ? `${body}\r` : body;
+  const body = c.text.replace(/\r\n?/g, "\n").replace(/\n+$/, "").replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
+  const typed = body.includes("\n") ? `\x1b[200~${body}\x1b[201~` : body;
+  return c.enter ? `${typed}\r` : typed;
 }
 

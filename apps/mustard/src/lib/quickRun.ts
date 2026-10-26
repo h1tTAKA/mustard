@@ -12,7 +12,7 @@ function activeTerminal(cwd: string): string | null {
   } catch { return null; }
 }
 
-export async function runQuickCommand(cwd: string, c: QuickCommand): Promise<{ ok: true } | { ok: false; reason: "no-terminal" | "no-agent" | "error" }> {
+export async function runQuickCommand(cwd: string, c: QuickCommand): Promise<{ ok: true } | { ok: false; reason: "no-terminal" | "no-agent" | "busy" | "error" }> {
   if (c.kind === "agent") {
     const r = await sendToAgent(cwd, c.text);
     if (!r.ok) return { ok: false, reason: r.reason === "no-agent" ? "no-agent" : "error" };
@@ -20,9 +20,11 @@ export async function runQuickCommand(cwd: string, c: QuickCommand): Promise<{ o
     return { ok: true };
   }
   const id = activeTerminal(cwd);
-  const term = window.nunopiDesktop?.terminal;
-  if (!id || !term) return { ok: false, reason: "no-terminal" };
-  term.input({ id, data: quickShellInput(c) });
+  const shellInput = window.nunopiDesktop?.terminal?.shellInput;
+  if (!id || !shellInput) return { ok: false, reason: "no-terminal" };
+  // 맨 앞이 셸인지는 main이 판단(에이전트·dev 서버가 돌고 있으면 "busy" — 명령이 거기로 새지 않게, 리뷰)
+  const r = await shellInput({ id, cwd, data: quickShellInput(c) });
+  if (!r.ok) return { ok: false, reason: r.reason === "busy" ? "busy" : r.reason === "no-terminal" ? "no-terminal" : "error" };
   requestTerminalFocus(cwd, id);
   return { ok: true };
 }
