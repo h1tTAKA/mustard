@@ -4,7 +4,7 @@
 //  - Orca: 로그인 셸 PATH를 `$SHELL -ilc`로 받아 합침(구분자로 배너 거름, 10초, 세션 캐시, 다시 확인 = 다시 받음) + 설치 폴더 폴백.
 //          git/gh는 후보마다 --version을 돌려 "통과한 실제 경로를 고정"(죽은 shim을 다시 고르지 않게) — 이걸 에이전트에도 씀.
 //  - Emdash: 로그인 = claude auth status · codex login status · opencode auth list(5초), API 키 env 먼저, 모르면 unknown. 설치 명령 표.
-const { execFile } = require("node:child_process");
+const { spawn } = require("node:child_process");
 const { accessSync, constants, existsSync, readdirSync, realpathSync } = require("node:fs");
 const { delimiter, join } = require("node:path");
 const { homedir } = require("node:os");
@@ -31,7 +31,7 @@ const AGENTS = [
 function fallbackDirs(home = homedir()) {
   const h = (...p) => join(home, ...p);
   const dirs = [
-    h(".local", "bin"), h(".claude", "local"), h(".volta", "bin"), h(".asdf", "shims"), h(".fnm", "aliases", "default", "bin"),
+    h(".local", "bin"), h(".claude", "local"), h(".claude", "bin"), h(".volta", "bin"), h(".asdf", "shims"), h(".fnm", "aliases", "default", "bin"),
     h(".local", "share", "mise", "shims"), h("Library", "pnpm"), h(".yarn", "bin"), h(".bun", "bin"), h(".cargo", "bin"),
     h(".npm-global", "bin"), h(".opencode", "bin"), h(".grok", "bin"), h(".codex", "bin"),
     "/opt/homebrew/bin", "/usr/local/bin",
@@ -40,18 +40,34 @@ function fallbackDirs(home = homedir()) {
   return dirs;
 }
 
-// 로그인 셸 PATH(Orca hydrate-shell-path) — 프로필이 찍는 배너를 구분자로 걸러냄. 실패면 null.
+// 실행해서 결과 받기 — execFile은 stdout이 닫혀야(close) 끝나서, 프로필·CLI가 띄운 데몬이 stdout을 물고 있으면 영영 안 끝남(리뷰).
+// 그래서 끝남(exit) 뒤 잠깐 기다려 받은 만큼으로 끝내고, 시간 넘으면 프로세스 그룹째 죽이고 끝냄. 결과 = { code, out, timedOut }.
+function runCmd(file, args, timeout, env) {
+  return new Promise((res) => {
+    let out = "", done = false, child;
+    const finish = (code, timedOut = false) => { if (done) return; done = true; clearTimeout(timer); res({ code, out: out.trim(), timedOut }); };
+    const timer = setTimeout(() => { try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch { /* 이미 끝남 */ } } finish(-1, true); }, timeout);
+    try { child = spawn(file, args, { env, detached: true, stdio: ["ignore", "pipe", "pipe"] }); } catch { return finish(-1); }
+    const take = (b) => { if (out.length < 1_000_000) out += b; };
+    child.stdout.on("data", take); child.stderr.on("data", take);
+    child.on("error", () => finish(-1));
+    child.on("close", (code) => finish(typeof code === "number" ? code : -1));
+    child.on("exit", (code) => setTimeout(() => finish(typeof code === "number" ? code : -1), 300));
+  });
+}
+
+// 로그인 셸 PATH(Orca hydrate-shell-path) — 프로필이 찍는 배너를 구분자로 걸러냄. 실패면 null(실패는 캐시 안 함 — 다음에 다시).
 const DELIM = "__MUSTARD_PATH__";
 let shellPathPromise = null;
 function shellPath({ force = false, timeout = 10_000, shell = process.env.SHELL || "/bin/zsh" } = {}) {
   if (shellPathPromise && !force) return shellPathPromise;
-  shellPathPromise = new Promise((res) => {
-    execFile(shell, ["-ilc", `printf '${DELIM}'; printf '%s' "$PATH"; printf '${DELIM}'`], { timeout, encoding: "utf8", env: process.env }, (_e, out) => {
-      const m = new RegExp(`${DELIM}([\\s\\S]*?)${DELIM}`).exec(String(out ?? ""));
-      res(m && m[1].trim() ? m[1].trim() : null);
-    });
+  const p = runCmd(shell, ["-ilc", `printf '${DELIM}'; printf '%s' "$PATH"; printf '${DELIM}'`], timeout, process.env).then(({ out }) => {
+    const m = new RegExp(`${DELIM}([\\s\\S]*?)${DELIM}`).exec(out);
+    return m && m[1].trim() ? m[1].trim() : null;
   });
-  return shellPathPromise;
+  shellPathPromise = p;
+  p.then((v) => { if (!v && shellPathPromise === p) shellPathPromise = null; });
+  return p;
 }
 // 지금 PATH 뒤에 새 조각만(있는 건 그대로 — 유저 PATH 우선)
 function mergePath(cur, extra) {
@@ -76,14 +92,6 @@ function candidates(bins, pathStr, home) {
   return out;
 }
 
-// 실행해서 결과 받기(테스트에선 바꿔 끼움)
-function runCmd(file, args, timeout, env) {
-  return new Promise((res) => {
-    execFile(file, args, { timeout, encoding: "utf8", env, maxBuffer: 1_000_000 }, (e, stdout, stderr) => {
-      res({ code: e ? (typeof e.code === "number" ? e.code : -1) : 0, out: `${stdout ?? ""}\n${stderr ?? ""}`.trim(), timedOut: !!e?.killed });
-    });
-  });
-}
 const versionOf = (out) => (/\d+\.\d+\.\d+(?:[-+.][\w.]+)?/.exec(out)?.[0] ?? out.split("\n")[0].slice(0, 60)) || null;
 
 // 한 에이전트 — 후보마다 --version(10초 — Superset·Emdash와 같음, 동시에 여럿 돌리면 느린 CLI가 있음), 처음 통과한 경로를 씀. 다 실패면 "경로 깨짐"(찾긴 했는데 안 돎), 후보가 없으면 "설치 안 됨".
@@ -106,7 +114,7 @@ async function checkAuth(agent, path, { env = process.env, run = runCmd } = {}) 
   const t = r.out;
   if (agent.id === "opencode") { const m = /(\d+)\s+credentials?/i.exec(t); return m ? (Number(m[1]) > 0 ? "authenticated" : "unauthenticated") : "unknown"; }
   if (/not (authenticated|logged in|signed in)|login required|logged out|not logged/i.test(t)) return "unauthenticated";
-  if (agent.id === "claude") return r.code === 0 ? "authenticated" : "unknown";
+  if (agent.id === "claude") { const m = /"loggedIn"\s*:\s*(true|false)/.exec(t); return m ? (m[1] === "true" ? "authenticated" : "unauthenticated") : r.code === 0 ? "authenticated" : "unknown"; } // JSON {"loggedIn": …}
   if (/authenticated|logged in|signed in/i.test(t)) return "authenticated";
   return "unknown";
 }

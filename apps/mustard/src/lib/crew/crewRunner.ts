@@ -162,12 +162,13 @@ function block(root: string, taskId: string, stage: number, why: string) {
 // #1104 팀 채팅·캐치업 — 서버 문구는 앱 언어. 실패해도 실행엔 영향 없게 삼킴.
 const tr = (key: string, vars?: Record<string, string | number>) => translate(narrationLocale(), key, vars);
 const PROVIDER: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", grok: "Grok Build", cursor: "Cursor", opencode: "OpenCode" };
-// #1171 감지 결과 → 사람이 읽을 이유. 막을 문제면 block, 아니면 '안 뜸'에 덧붙일 경로·버전(어떤 실행 파일을 띄웠는지)
+// #1171 감지 결과 → 사람이 읽을 이유. 못 찾음·로그인 필요면 block, 아니면 '안 뜸'에 덧붙일 hint(경로 깨짐 이유 또는 띄운 경로·버전).
+// 경로 깨짐은 안 막음 — --version이 느리거나(첫 실행) 0이 아닌 값으로 끝나는 CLI도 실제론 뜰 수 있음(리뷰).
 function agentNote(provider: string): { block?: string; hint?: string } {
   const c = checkAgent(provider);
   if (!c) return {};
   if (c.kind === "missing") return { block: tr("crew.reason.agentMissing", { agent: c.agent }) };
-  if (c.kind === "broken") return { block: tr("crew.reason.agentBroken", { agent: c.agent, path: c.path, err: c.err }) };
+  if (c.kind === "broken") return { hint: tr("crew.reason.agentBroken", { agent: c.agent, path: c.path, err: c.err }) };
   if (c.kind === "login") return { block: tr("crew.reason.agentLogin", { agent: c.agent }) };
   return { hint: tr("crew.reason.agentPath", { agent: c.agent, path: c.path, version: c.version }) };
 }
@@ -403,7 +404,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
   g.runs.set(run.id, run);
   persist(run, true);
   try {
-    const pre = agentNote(role.provider).block; // #1171 실행 파일·로그인 문제면 worktree도 안 만들고 바로 막힘(재시도 안 함 — 사람이 고쳐야)
+    const pre = agentNote(role.provider).block; // #1171 실행 파일 못 찾음·로그인 필요면 worktree도 안 만들고 바로 막힘(재시도 안 함 — 사람이 고쳐야)
     if (pre) throw new Error(pre);
     const dep = board0.find((x) => x.id === task.dependsOn?.[task.dependsOn.length - 1]); // ponytail: 의존 여럿이면 마지막 것 브랜치에서 시작(나머지는 그 안에 없을 수 있음), 필요하면 머지 단계 추가
     const wt = await ensureWorktree(root, taskId, task.title, dep ? worktreeFor(root, dep.id, dep.title).branch : undefined);

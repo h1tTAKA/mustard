@@ -33,6 +33,7 @@ const { AGENTS, mergePath, candidates, detectAgent, checkAuth, shellPath, versio
   assert.strictEqual(await checkAuth(claude, good, { env: {}, run: fake(0, '{"loggedIn":true}') }), "authenticated");
   assert.strictEqual(await checkAuth(claude, good, { env: {}, run: fake(1, "Not logged in. Run claude auth login") }), "unauthenticated");
   assert.strictEqual(await checkAuth(claude, good, { env: {}, run: fake(2, "weird") }), "unknown", "모르면 unknown");
+  assert.strictEqual(await checkAuth(claude, good, { env: {}, run: fake(0, '{"loggedIn": false}') }), "unauthenticated", "exit 0이어도 loggedIn false면 로그인 필요");
   assert.strictEqual(await checkAuth(codex, "x", { env: {}, run: fake(0, "Logged in using ChatGPT") }), "authenticated");
   assert.strictEqual(await checkAuth(codex, "x", { env: {}, run: fake(1, "Not logged in") }), "unauthenticated", "부정형을 먼저 봄");
   const oc = AGENTS.find((a) => a.id === "opencode");
@@ -46,5 +47,13 @@ const { AGENTS, mergePath, candidates, detectAgent, checkAuth, shellPath, versio
   const fakeShell = sh(join(tmp, "bin"), "fsh", 'echo "Welcome banner"; PATH=/x/y:/z; eval "$2"');
   assert.strictEqual(await shellPath({ force: true, shell: fakeShell }), "/x/y:/z");
   assert.strictEqual(await shellPath({ force: true, shell: join(tmp, "no-shell") }), null, "셸 실패면 null");
+  // 프로필이 stdout 물고 있는 데몬을 띄워도 안 멈춤(리뷰) — 셸이 끝나면 바로
+  const daemonShell = sh(join(tmp, "bin"), "dsh", 'sleep 30 & PATH=/d; eval "$2"');
+  const t0 = Date.now();
+  assert.strictEqual(await shellPath({ force: true, shell: daemonShell }), "/d");
+  assert.ok(Date.now() - t0 < 5000, "데몬 기다리지 않음");
+  // 안 끝나는 셸은 시간 넘으면 죽이고 null
+  const hangShell = sh(join(tmp, "bin"), "hsh", "sleep 30");
+  assert.strictEqual(await shellPath({ force: true, shell: hangShell, timeout: 500 }), null, "시간 넘으면 null");
   console.log("agent-cli.test ok");
 })().catch((e) => { console.error(e); process.exit(1); });

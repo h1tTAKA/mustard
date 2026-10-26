@@ -107,14 +107,23 @@ function safeResolve(fn) {
 // #1171 에이전트 CLI 찾기·확인 — 로그인 셸 PATH를 합치고, 에이전트마다 --version이 통과한 실제 경로·로그인 상태.
 // 결과는 ~/.nunopi/agent-detect.json에도 남김 — Next 서버(Crew)가 '안 뜸' 실패 이유를 붙일 때 읽음(main IPC를 못 부르니까).
 const agentCli = require("./agent-cli.cjs");
-let lastDetect = null;
-async function detectAgents(force = false) {
+let lastDetect = null, detecting = null, detectSeq = 0;
+// 한 번에 하나(진행 중이면 그걸 같이 기다림) — force(다시 확인)는 새로 돌리고, 늦게 끝난 옛 감지가 새 결과를 덮지 않게 순번 확인(리뷰)
+function detectAgents(force = false) {
+  if (detecting && !force) return detecting;
+  const p = runDetect(force, ++detectSeq);
+  detecting = p;
+  p.finally(() => { if (detecting === p) detecting = null; }).catch(() => {});
+  return p;
+}
+async function runDetect(force, seq) {
   const list = await agentCli.detectAll({ force });
+  if (seq !== detectSeq) return list;
   const sp = await agentCli.shellPath(); // detectAll이 받아 둔 것(캐시)
   if (sp) process.env.PATH = agentCli.mergePath(process.env.PATH, sp); // 이후 자식(SNA·gh 등)도 로그인 셸 PATH로
   // custom = 사용자가 경로를 직접 지정한 것(설정·env) — SNA는 그 경로를 쓰니 Crew가 감지 결과로 막지 않게
   const saved = loadSavedRuntimePaths(), env = process.env;
-  const custom = [["claude", saved.claudeCode || env.NUNOPI_CLAUDE_COMMAND?.trim()], ["codex", saved.codex || env.NUNOPI_CODEX_COMMAND?.trim()], ["opencode", saved.opencode || env.NUNOPI_OPENCODE_COMMAND?.trim()]].filter(([, p]) => p).map(([id]) => id);
+  const custom = [["claude", saved.claudeCode || env.NUNOPI_CLAUDE_COMMAND?.trim() || env.SNA_CLAUDE_COMMAND?.trim()], ["codex", saved.codex || env.NUNOPI_CODEX_COMMAND?.trim()], ["opencode", saved.opencode || env.NUNOPI_OPENCODE_COMMAND?.trim()]].filter(([, p]) => p).map(([id]) => id);
   lastDetect = { at: Date.now(), list, custom };
   try {
     const dir = join(require("node:os").homedir(), ".nunopi");
@@ -160,8 +169,8 @@ function saveRuntimePaths(paths) {
 async function startRuntimeServer() {
   const saved = loadSavedRuntimePaths();
   // #1171 SNA에 넘길 경로 — 사용자 지정 > env > 감지(--version 통과한 실제 경로, 깨진 shim 건너뜀 #1164) > SNA 자체 찾기.
-  // 감지는 최대 15초까지만 기다림(로그인 셸이 느려도 앱이 안 뜨진 않게) — 못 끝나면 예전처럼 SNA 찾기로.
-  await Promise.race([detectAgents().catch(() => null), new Promise((r) => setTimeout(r, 15_000))]);
+  // 감지는 최대 5초까지만 기다림(창이 SNA 뒤에 뜨므로 로그인 셸이 느려도 창이 늦지 않게, 리뷰) — 못 끝나면 예전처럼 SNA 찾기로(감지는 뒤에서 마저 끝나 기록·화면에 반영).
+  await Promise.race([detectAgents().catch(() => null), new Promise((r) => setTimeout(r, 5000))]);
   const runtimePaths = {
     claudeCode: saved.claudeCode || process.env.NUNOPI_CLAUDE_COMMAND?.trim() || detectedPath("claude") || safeResolve(resolveClaudeCli),
     codex: saved.codex || process.env.NUNOPI_CODEX_COMMAND?.trim() || detectedPath("codex") || safeResolve(resolveCodexCli),
@@ -322,6 +331,7 @@ function setupClaudeHooks(base, token) {
 }
 
 async function boot() {
+  setInterval(() => void detectAgents().catch(() => {}), 10 * 60_000).unref(); // #1171 설치·로그인이 앱 실행 중에 바뀌어도 기록이 따라가게(Crew는 15분 넘은 기록은 안 믿음)
   migrateUserData(); // #900 리브랜딩 — 옛 nunopi userData 1회 이관(창·서버 뜨기 전)
   try { loadRegistry(); } catch { /* #864 재시작 생존 세션 신원 복원 */ }
   if (DEV_URL) {
@@ -525,7 +535,7 @@ ipcMain.handle("mode:list", () => [...openModes.keys()]);
 ipcMain.handle("runtime-paths:get", () => loadSavedRuntimePaths());
 // #1171 에이전트 상태 — force면 로그인 셸 PATH부터 다시(설정의 "다시 확인"). 결과: [{id,label,status,path,version,auth,install,tried}]
 ipcMain.handle("agents:detect", async (_e, force) => { try { return { ok: true, list: await detectAgents(!!force) }; } catch (e) { return { ok: false, error: String(e?.message ?? e) }; } });
-ipcMain.handle("runtime-paths:set", (_e, paths) => ({ ok: true, saved: saveRuntimePaths(paths) }));
+ipcMain.handle("runtime-paths:set", (_e, paths) => { const saved = saveRuntimePaths(paths); void detectAgents(true).catch(() => {}); return { ok: true, saved }; }); // #1171 사용자 지정 경로(custom)가 바로 감지 기록에(Crew가 옛 기록으로 막지 않게)
 // GitHub 패널(#810) — gh 경로는 설정값 우선, 없으면 PATH의 gh. IPC로 인증 상태 진단(서브3~5가 데이터 IPC 추가).
 const ghExe = () => loadSavedRuntimePaths().gh || "gh";
 
