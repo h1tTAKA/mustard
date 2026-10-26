@@ -48,8 +48,10 @@ func findApp(_ a: J) throws -> NSRunningApplication {
   guard let q = str(a, "app")?.lowercased() else { throw fail("invalid_argument", "Pass app (name or bundle id) or pid.") }
   let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy != .prohibited }
   if let r = apps.first(where: { $0.bundleIdentifier?.lowercased() == q }) { return r }
-  if let r = apps.first(where: { $0.localizedName?.lowercased() == q }) { return r }
-  let m = apps.filter { ($0.localizedName ?? "").lowercased().contains(q) }
+  // 이름 = 화면 이름(현지어, 예: 텍스트 편집기) 또는 앱 파일 이름(TextEdit) — 에이전트는 보통 영어 이름을 씀
+  let names = { (r: NSRunningApplication) in [r.localizedName, r.bundleURL?.deletingPathExtension().lastPathComponent].compactMap { $0?.lowercased() } }
+  if let r = apps.first(where: { names($0).contains(q) }) { return r }
+  let m = apps.filter { names($0).contains { $0.contains(q) } }
   if m.count == 1 { return m[0] }
   if m.count > 1 { throw fail("app_ambiguous", "Several apps match \"\(q)\": \(m.compactMap { $0.localizedName }.joined(separator: ", ")). Use the bundle id or pid.") }
   throw fail("app_not_found", "No running app matches \"\(q)\". Use list_apps (open it first if needed).")
@@ -211,6 +213,11 @@ let src = CGEventSource(stateID: .hidSystemState)
 func activate(_ app: NSRunningApplication) {
   if NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier { app.activate(); usleep(300_000) }
 }
+// 키 입력용 — 앞에 와야 하고 열린 창도 있어야 함(창이 없으면 키가 아무 데도 안 들어가는데 성공으로 보임)
+func requireWindow(_ app: NSRunningApplication) throws {
+  try requireFront(app)
+  if elem(attr(AXUIElementCreateApplication(app.processIdentifier), kAXFocusedWindowAttribute)) == nil { throw fail("window_not_found", "The app has no open window to type into. Open one first.") }
+}
 func requireFront(_ app: NSRunningApplication) throws {
   activate(app)
   if NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier { throw fail("window_not_focused", "Could not bring the app to the front, so the input was not sent.") }
@@ -331,7 +338,7 @@ func callTool(_ name: String, _ a: J) throws -> Any {
   case "type_text":
     let r = try resolveApp(a)
     guard let text = a["text"] as? String else { throw fail("invalid_argument", "Pass text.") }
-    try requireFront(r)
+    try requireWindow(r)
     var units = Array(text.utf16)[...]
     while !units.isEmpty {
       var chunk = Array(units.prefix(16))
@@ -349,7 +356,7 @@ func callTool(_ name: String, _ a: J) throws -> Any {
     let r = try resolveApp(a)
     guard let k = str(a, "key") else { throw fail("invalid_argument", "Pass key.") }
     let (code, flags) = try parseKey(k)
-    try requireFront(r)
+    try requireWindow(r)
     for down in [true, false] {
       let e = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: down)
       e?.flags = flags

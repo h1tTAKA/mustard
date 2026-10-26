@@ -17,12 +17,23 @@ rmSync(app, { recursive: true, force: true }); // 빌드 실패 때 옛 .app이 
 run("swift", ["build", "-c", "release"]);
 mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
 copyFileSync(join(here, ".build", "release", BIN), join(app, "Contents", "MacOS", BIN));
+// 아이콘 = Mustard 앱 아이콘(시스템 설정 권한 목록에서 Mustard와 같은 모양으로 보이게)
+const iconset = join(here, ".build", "AppIcon.iconset");
+rmSync(iconset, { recursive: true, force: true });
+mkdirSync(iconset, { recursive: true });
+for (const n of [16, 32, 128, 256, 512]) {
+  run("sips", ["-z", String(n), String(n), join(here, "..", "..", "build", "icon.png"), "--out", join(iconset, `icon_${n}x${n}.png`)]);
+  run("sips", ["-z", String(n * 2), String(n * 2), join(here, "..", "..", "build", "icon.png"), "--out", join(iconset, `icon_${n}x${n}@2x.png`)]);
+}
+mkdirSync(join(app, "Contents", "Resources"), { recursive: true });
+run("iconutil", ["-c", "icns", iconset, "-o", join(app, "Contents", "Resources", "AppIcon.icns")]);
 writeFileSync(join(app, "Contents", "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleIdentifier</key><string>ai.neuradex.mustard.computer-use</string>
   <key>CFBundleName</key><string>${NAME}</string>
   <key>CFBundleDisplayName</key><string>${NAME}</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleExecutable</key><string>${BIN}</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0.0</string>
