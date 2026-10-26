@@ -1,6 +1,6 @@
 // 심볼 추출 — 서버(Node) 전용. tree-sitter AST에서 함수/클래스/메서드/타입 심볼 노드 + contains 엣지.
 // 파일 드릴다운(자식D)의 데이터. 호출(calls) 엣지는 다음 커밋. 범용: grammar별 심볼 노드타입 세트 + "name" 필드.
-// ponytail: 언어별 완벽 규칙 대신 공통 선언노드 집합 + childForFieldName("name") 휴리스틱 —
+// 한계: 언어별 완벽 규칙 대신 공통 선언노드 집합 + childForFieldName("name") 휴리스틱 —
 // tree-sitter grammar 대부분 선언 노드에 name 필드 노출. 특이 케이스(TS arrow-const)만 특례.
 import type Parser from "web-tree-sitter";
 import { parseFile } from "./treesitter.ts";
@@ -104,7 +104,7 @@ export async function extractSymbols(text: string, file: string): Promise<{ symb
     nodeById.set(id, node);
   };
 
-  // 전체 순회 — 심볼 노드면 수집(중첩 메서드·클로저 포함). ponytail: 깊이 제한 없음, 초대형 파일만 주의.
+  // 전체 순회 — 심볼 노드면 수집(중첩 메서드·클로저 포함). 한계: 깊이 제한 없음, 초대형 파일만 주의.
   const walk = (node: Parser.SyntaxNode) => {
     const kind = SYMBOL_KIND[node.type];
     if (kind) {

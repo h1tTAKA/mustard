@@ -31,7 +31,7 @@ const { AGENTS, mergePath, candidates, detectAgent, checkAuth, shellPath, versio
   sh(join(tmp, "only-broken"), "codex", "exit 127");
   assert.strictEqual((await detectAgent(codex, { pathStr: join(tmp, "only-broken"), home })).status, "broken");
   assert.strictEqual((await detectAgent(AGENTS.find((a) => a.id === "gemini"), { pathStr: join(tmp, "nope"), home })).status, "missing");
-  // 로그인(Emdash) — 가짜 실행으로
+  // 로그인 — 가짜 실행으로
   const fake = (code, out) => async () => ({ code, out, timedOut: false });
   assert.strictEqual(await checkAuth(claude, good, { env: { ANTHROPIC_API_KEY: "x" }, run: fake(1, "") }), "authenticated", "API 키 env면 로그인");
   assert.strictEqual(await checkAuth(claude, good, { env: {}, run: fake(0, '{"loggedIn":true}') }), "authenticated");

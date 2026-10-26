@@ -1,5 +1,5 @@
 // 관리형 Claude 훅 수신(#989) — 훅 명령(electron/claude-hooks.cjs)이 ?event=&term=<pty id>로 Claude 훅 JSON 원문을 POST.
-// 훅이 화면 긁기보다 권위(orca 방식): 여기서 쓴 행은 hookAt이 찍혀 status 라우트가 화면 상태로 덮지 않는다.
+// 훅이 화면 긁기보다 권위: 여기서 쓴 행은 hookAt이 찍혀 status 라우트가 화면 상태로 덮지 않는다.
 import { upsert, emit, prune, normPath, findBySession } from "@mustard/nunopi/agent";
 import { emitEdit } from "@/lib/mcpActivity";
 import { listSubagents } from "@/lib/subagents";

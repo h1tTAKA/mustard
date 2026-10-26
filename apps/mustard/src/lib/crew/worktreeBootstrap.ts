@@ -1,5 +1,5 @@
 // worktree 부트스트랩 설정(#1176) — 새 worktree에 setup 스크립트·Git에 안 올라가는 파일 복사·폴더 공유.
-// Orca(orca.yaml + .worktreeinclude)와 같은 규칙. 설정 파일만 YAML 대신 JSON(.mustard/config.json, 의존성 없이) — 키 이름은 Orca와 같게.
+// 설정 파일 = JSON(.mustard/config.json, 의존성 없이) + .worktreeinclude.
 // 서버 전용.
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";

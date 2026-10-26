@@ -13,7 +13,7 @@ const { checkWorkspace, createWorkspace, forceDeleteBranch, removeWorkspace, res
 const { branchFor, issueName, slugName } = await import("./workspaceName.ts");
 const { trustScript } = await import("../crew/worktreeBootstrap.ts");
 
-// 이름 규칙(Orca)
+// 이름 규칙
 assert.strictEqual(slugName("Fix Login Bug!!"), "fix-login-bug");
 assert.strictEqual(slugName("a..b"), "a.b");
 assert.strictEqual(slugName("x".repeat(60)).length, 48);
@@ -113,7 +113,7 @@ assert.ok(!existsSync(join(p1.dir, ".crew")), "사람용 작업공간엔 .crew �
 writeFileSync(join(root, ".mustard", "config.json"), JSON.stringify({ scripts: { archive: "exit 3" } }));
 trustScript(root, "exit 3");
 r = await removeWorkspace(root, p1.dir);
-assert.strictEqual(r.status, "archive-failed", "archive 실패면 안 지움(Orca)");
+assert.strictEqual(r.status, "archive-failed", "archive 실패면 안 지움");
 writeFileSync(join(root, ".mustard", "config.json"), JSON.stringify({ scripts: { archive: "touch left-behind.txt" } }));
 trustScript(root, "touch left-behind.txt");
 assert.deepStrictEqual(await removeWorkspace(root, p1.dir), { status: "dirty", dirty: 1 }, "archive가 untracked를 남겨 git이 거부하면 다시 점검해 보여 줌");

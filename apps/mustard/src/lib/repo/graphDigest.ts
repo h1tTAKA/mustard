@@ -1,6 +1,6 @@
 // 아키텍처 분석용 그래프 다이제스트(#842 서브3) — 코드그래프를 LLM 프롬프트용 "실측 구조 요약"으로 압축.
 // 파일 목록만 주던 분석(카테고리·플로우)에 진짜 모듈 경계·허브·의존을 덧대 정확·완결하게.
-// 순수 로직(fs·파싱 없음). 허브 = degree(연결 수) — PageRank는 검색(서브6)에서. ponytail: degree로 충분.
+// 순수 로직(fs·파싱 없음). 허브 = degree(연결 수) — PageRank는 검색(서브6)에서. 한계: degree로 충분.
 import type { RepoGraph } from "./types";
 
 export interface DigestOpts {
@@ -13,7 +13,7 @@ export interface DigestOpts {
   namesPerAsset?: number; // 씬·프리팹별 스크립트·프리팹 이름 나열 상한
 }
 const DEF: Required<DigestOpts> = { moduleDepth: 3, maxModules: 40, perModuleHubs: 3, topHubs: 15, topModuleEdges: 30, maxGameAssets: 20, namesPerAsset: 8 };
-const SEP = "\u0000"; // 모듈쌍 키 구분자 — 경로에 절대 없는 NUL(공백 포함 경로도 안전, cavecrew 🔴)
+const SEP = "\u0000"; // 모듈쌍 키 구분자 — 경로에 절대 없는 NUL(공백 포함 경로도 안전, 리뷰 🔴)
 
 const fileOf = (id: string) => { const h = id.indexOf("#"); return h < 0 ? id : id.slice(0, h); };
 // 일반명(route/page/layout/index/__init__)은 App Router 등서 충돌 → 부모폴더 포함해 구분.

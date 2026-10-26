@@ -1,7 +1,7 @@
 "use client";
 
 // 첫 실행 온보딩(#902) — nunopi 학습툴 on/off + 언어 + 에이전트 CLI 경로. mustard:onboarded 없을 때만.
-// 디자인(#902 재설계): orca OnboardingFlow 참고 — 화면 정중앙 카드, 중립 zinc 팔레트 + 단일 액센트(mustard),
+// 디자인(#902 재설계): 화면 정중앙 카드, 중립 zinc 팔레트 + 단일 액센트(mustard),
 // gradient 없음, 일관 rounded/보더/틴트. #914서 테마 인식(light/dark 페어링) — 저장 테마 base 따라감.
 // 온보딩 내 테마 선택 스텝은 후속.
 import { useEffect } from "react";

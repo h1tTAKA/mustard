@@ -1,5 +1,5 @@
 // diff 줄 메모 → 에이전트(#1169) — 내 작업 폴더·커밋 diff의 줄에 메모를 달아 두었다가 한 묶음으로 이 레포 에이전트 터미널에 보냄.
-// Orca(Annotate AI Diff)와 같은 규칙: 새 코드 쪽 줄만(범위 가능), 보낸 표시, 안 보낸 것만 다음 묶음. 보낼 글 형식도 Orca와 같게(에이전트와의 약속).
+// 규칙: 새 코드 쪽 줄만(범위 가능), 보낸 표시, 안 보낸 것만 다음 묶음. 보낼 글 형식은 고정(에이전트와의 약속).
 // 저장 = 레포별 localStorage, 같은 창 다른 화면은 이벤트로 동기화(#1145 prDraft와 같은 방식). PR diff 메모는 prDraft(GitHub 리뷰) 그대로.
 
 export interface DiffNote {
@@ -52,8 +52,8 @@ export const markSent = (list: DiffNote[], ids: Set<string>, now: number) => lis
 export const unsent = (list: DiffNote[]) => list.filter((x) => !x.sentAt);
 export const isFull = (list: DiffNote[]) => unsent(list).length >= MAX_NOTES;
 
-// 보낼 글 — Orca diff-comments-format과 같은 형식(파일·줄·따옴표 안 메모, 메모 안 \·"·줄바꿈은 이스케이프 → 한 메모가 한 덩어리).
-// 작업 폴더(unstaged·untracked) 메모는 Orca 형식 그대로, 그 밖(staged·커밋)은 파일 줄에 어느 diff 기준인지 붙임 — 줄 번호가 지금 작업 폴더와 다를 수 있어서(리뷰)
+// 보낼 글 형식(파일·줄·따옴표 안 메모, 메모 안 \·"·줄바꿈은 이스케이프 → 한 메모가 한 덩어리).
+// 작업 폴더(unstaged·untracked) 메모는 기본 형식 그대로, 그 밖(staged·커밋)은 파일 줄에 어느 diff 기준인지 붙임 — 줄 번호가 지금 작업 폴더와 다를 수 있어서(리뷰)
 const scopeTag = (scope?: string) => (!scope || scope === "unstaged" || scope === "untracked" ? "" : scope === "staged" ? " (staged)" : scope.startsWith("commit:") ? ` (commit ${scope.slice(7, 14)})` : "");
 export function formatNote(n: Pick<DiffNote, "path" | "line" | "startLine" | "body"> & { scope?: string }): string {
   const escaped = n.body.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\r/g, "\\r").replace(/\n/g, "\\n");

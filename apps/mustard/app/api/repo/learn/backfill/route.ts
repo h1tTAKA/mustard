@@ -2,7 +2,7 @@
 // 앱이 뜰 때 WorkspaceView가 한 번 부름(해설 설정을 먼저 서버에 알린 뒤). 서버 프로세스당 한 번(takeDownWindow), 백그라운드로 돌고 바로 응답.
 //  - 편집·명령어·katchup 도구 → 실시간과 같은 이벤트 경로(원래 시각) → 캐치업이 지금처럼 설명
 //  - 해설 → 턴 덩어리마다 실시간 해설과 같은 생성(원래 시각으로 저장). 해설 꺼짐이면 생략.
-// ponytail: 이벤트 링(200)·SSE 첫 재생(100)이 상한 — 열려 있지 않은 레포에 아주 많이 쌓였으면 오래된 편집·명령어 카드는 빠짐. 해설은 서버 저장이라 전부.
+// 한계: 이벤트 링(200)·SSE 첫 재생(100)이 상한 — 열려 있지 않은 레포에 아주 많이 쌓였으면 오래된 편집·명령어 카드는 빠짐. 해설은 서버 저장이라 전부.
 import { takeDownWindow } from "@/lib/catchupAlive";
 import { catchupRoots } from "@/lib/catchupStore";
 import { activityForRoot } from "@/lib/agentSessions";

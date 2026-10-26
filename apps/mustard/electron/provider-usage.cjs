@@ -1,4 +1,4 @@
-// Claude·Codex 구독 사용 한도(세션/주간/Fable) 조회(#735) — Orca rate-limits fetcher 방식.
+// Claude·Codex 구독 사용 한도(세션/주간/Fable) 조회(#735).
 // 로컬 크레덴셜(accessToken)을 읽어 각 provider의 usage 엔드포인트를 호출한다.
 // per-request 토큰이 아니라 "한도 윈도우 %·리셋 시간". main에서만(파일 접근·CORS 회피). 토큰은 읽기만.
 const { readFile } = require("node:fs/promises");
@@ -174,7 +174,7 @@ async function fetchCodexUsage() {
   return { provider: "codex", status: "ok", session, weekly };
 }
 
-// ── Grok(#874) — orca grok-fetcher 방식. ~/.grok/auth.json 읽어 xAI billing 조회. 토큰 읽기만(로그인/refresh 안 함).
+// ── Grok(#874). ~/.grok/auth.json 읽어 xAI billing 조회. 토큰 읽기만(로그인/refresh 안 함).
 const GROK_BILLING_BASE = (process.env.GROK_CLI_CHAT_PROXY_BASE_URL?.trim().replace(/\/$/, "")) || "https://cli-chat-proxy.grok.com/v1";
 const GROK_CREDITS_URL = `${GROK_BILLING_BASE}/billing?format=credits`;
 const GROK_DEFAULT_URL = `${GROK_BILLING_BASE}/billing`;
@@ -209,7 +209,7 @@ function grokMoney(v) {
 }
 
 // 주간 크레딧% 우선, 없으면 월간 예산쌍(used/limit)으로 %. 한도(분모)가 없으면 null.
-// percent는 명시적 유한수일 때만 신뢰 — 필드 누락을 0%로 렌더하던 orca 버그(4934920f) 회피.
+// percent는 명시적 유한수일 때만 신뢰 — 필드 누락을 0%로 렌더하지 않게.
 // (무료 계정은 billing에 진짜 한도·사용량이 안 잡힘 — top-level used는 history와 모순돼 신뢰 불가라 안 씀.)
 function mapGrokWindows(cfg) {
   const periodEnd = cfg.currentPeriod?.end ?? cfg.billingPeriodEnd ?? null;

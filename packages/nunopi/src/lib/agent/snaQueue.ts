@@ -22,7 +22,7 @@ export async function acquireSnaSlot(signal?: AbortSignal, priority = false): Pr
 }
 
 // #1162 취소하면 다음 이벤트를 안 기다리고 바로 던짐 → 자리 즉시 반납(SDK runOnceStream엔 signal이 없음, 조용히 멈춘 CLI면 600초 동안 자리 붙잡았음).
-// ponytail: SNA 쪽 실행은 자기 timeout까지 남을 수 있음(SNA 상한 5 중 1개 여유 + 상한 에러 재시도로 버팀) — SDK가 signal 받으면 그걸로.
+// 한계: SNA 쪽 실행은 자기 timeout까지 남을 수 있음(SNA 상한 5 중 1개 여유 + 상한 에러 재시도로 버팀) — SDK가 signal 받으면 그걸로.
 export async function* abortable<T>(src: AsyncIterable<T>, signal?: AbortSignal): AsyncGenerator<T> {
   if (!signal) { yield* src; return; }
   const it = src[Symbol.asyncIterator]();

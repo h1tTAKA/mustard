@@ -7,7 +7,7 @@ import { useT } from "@mustard/core";
 import MarkdownToolbar from "@/components/workspace/github/MarkdownToolbar";
 import { loadDrafts, saveDrafts, removeDraft, reviewRequest, prDraftKey, PR_DRAFT_EVENT, type DraftComment } from "@/lib/prDraft";
 
-// review(#1131) = 남의 PR이면 Send 옆에 [Approve]·[Request changes] — VS Code GitHub PR 확장처럼 입력창 하나(승인은 본문 없어도 됨).
+// review(#1131) = 남의 PR이면 Send 옆에 [Approve]·[Request changes] — 입력창 하나(승인은 본문 없어도 됨).
 // #1145 PR diff에서 "리뷰에 추가"한 보류 줄 댓글 — 입력창 위 띠. 있으면 Send(Comment)·Approve·Request changes가 그 댓글들과 함께 리뷰 하나로(head = 지금 PR head, 댓글들이 본 커밋이 같으면 그 커밋).
 export default function CommentComposer({ root, kind, number, onPosted, review = false, head, onOpenFile }: { root: string; kind: "issue" | "pr"; number: number; onPosted: () => void; review?: boolean; head?: string; onOpenFile?: (file: string) => void }) {
   const t = useT();

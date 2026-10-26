@@ -66,7 +66,7 @@ function stateIcon(st: AgentState) {
 // path별 마지막 스냅샷 캐시 — 재호버 시 즉시 표시(빈 상태 깜빡임·지연 방지, #764).
 interface Snap { statuses: AgentStatus[]; worktrees: Worktree[] | null; ports?: Port[]; }
 const snapCache = new Map<string, Snap>();
-// path 스냅샷 부분 갱신 — 새 path 추가 시 100개 LRU 상한(모든 effect가 이걸 써서 무한 증가 방지, cavecrew).
+// path 스냅샷 부분 갱신 — 새 path 추가 시 100개 LRU 상한(모든 effect가 이걸 써서 무한 증가 방지).
 function cacheMerge(path: string, patch: Partial<Snap>) {
   if (!snapCache.has(path) && snapCache.size >= 100) { const oldest = snapCache.keys().next().value; if (oldest !== undefined) snapCache.delete(oldest); }
   const prev = snapCache.get(path) ?? { statuses: [], worktrees: null };

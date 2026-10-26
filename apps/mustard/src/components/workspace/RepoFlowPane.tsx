@@ -132,7 +132,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       }
     }
     // 2) LLM이 놓친 실측 연결 보강 — 대표 노드끼리, 중복(방향 무관) 아니면 grounded 엣지 추가.
-    // ponytail: 파일당 대표 1노드만 연결(한 파일에 노드 여럿이면 나머진 생략), 필요시 확장.
+    // 한계: 파일당 대표 1노드만 연결(한 파일에 노드 여럿이면 나머진 생략), 필요시 확장.
     if (hasConn) for (const ck of connKeys) {
       const [fa, fb] = ck.split("|");
       const sk = fileToRep.get(fa), tk = fileToRep.get(fb);

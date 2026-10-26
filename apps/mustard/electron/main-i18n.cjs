@@ -1,6 +1,6 @@
 // #1095 Electron main이 렌더러로 돌려주는 사용자 노출 문구(GitHub 연결·토큰·터미널 구분선)의 다국어.
 // 앱 언어는 렌더러 localStorage라 main이 못 읽음 → 캐치업 config가 서버에서 저장하는 ~/.nunopi/narration-locale(#1091)을 읽음.
-// ponytail: 문구 몇 개라 사전을 여기 둠(messages.ts는 TS라 CJS main에서 require 불가) — 늘어나면 빌드 단계에서 JSON으로 뽑기.
+// 한계: 문구 몇 개라 사전을 여기 둠(messages.ts는 TS라 CJS main에서 require 불가) — 늘어나면 빌드 단계에서 JSON으로 뽑기.
 const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
 const { homedir } = require("node:os");

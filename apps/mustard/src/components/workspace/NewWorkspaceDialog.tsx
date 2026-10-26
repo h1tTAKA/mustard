@@ -7,7 +7,7 @@ import { useT, useToast, getSetting, GKEYS, GIT_DEFAULTS } from "@mustard/core";
 import { branchFor, issueName, slugName } from "@/lib/repo/workspaceName";
 import { openRepoTab, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
 
-// "새 작업공간"(#1170) — 메인 폴더는 그대로, 옆에 git worktree를 만들어 레포 탭으로 엶. Orca new-workspace를 따름:
+// "새 작업공간"(#1170) — 메인 폴더는 그대로, 옆에 git worktree를 만들어 레포 탭으로 엶. 흐름:
 // 시작점(브랜치·커밋·이슈·PR) → 이름(이슈면 제목 slug, PR이면 pr-N) → 만들기 → 탭 열기 → setup(승인 안 된 스크립트면 내용 보여 주고 묻기).
 // 창 모양은 Crew TaskDialog와 같은 틀.
 type From = "branch" | "commit" | "issue" | "pr";
@@ -61,7 +61,7 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
   };
   useEffect(() => { if (initial) void lookup(initial.kind, String(initial.number)); }, []); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect -- 처음 열 때 이슈·PR 번호를 받았으면 한 번 불러옴
 
-  // 이름 제안 — 직접 고치기 전까지만(Orca: 이슈 제목 slug / pr-N)
+  // 이름 제안 — 직접 고치기 전까지만(이슈 제목 slug / pr-N)
   const suggested = from === "issue" && ref ? issueName(Number(num), ref.title) : from === "pr" && num ? `pr-${Number(num)}` : "";
   const finalName = nameTouched ? slugName(name) : suggested;
   const branch = from === "pr" ? ref?.headRefName ?? "" : branchFor(prefix, finalName || "workspace");
@@ -107,7 +107,7 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
     setBusy(false);
   };
 
-  // Esc = 닫기(setup 승인 중엔 "이번엔 안 돌림"과 같음 — 닫으면 안 돌림, Orca)
+  // Esc = 닫기(setup 승인 중엔 "이번엔 안 돌림"과 같음 — 닫으면 안 돌림)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) { if (setup) void decide(false); else onClose(); } }; // 만드는 중엔 안 닫음 — setup 승인 묻기가 사라지지 않게(리뷰)
     window.addEventListener("keydown", onKey);

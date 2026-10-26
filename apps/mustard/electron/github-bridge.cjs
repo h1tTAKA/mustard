@@ -1,5 +1,5 @@
 // GitHub 패널(#809) gh CLI 브릿지(#810) — gh를 execFile(no-shell)로 실행하는 단일 창구 + 인증 진단.
-// orca(stablyai/orca) src/main/github(gh-utils·auth-diagnose) 방식 채택: 유저 기존 gh auth 사용, --json 구조화.
+// 유저 기존 gh auth 사용, --json 구조화.
 // 서브3~5(checks/이슈/PR)는 이 헬퍼에 args만 조립해 재사용한다.
 const { execFile } = require("node:child_process");
 const { existsSync, statSync } = require("node:fs");

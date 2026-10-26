@@ -1,5 +1,5 @@
 // 워크스페이스 파일트리 아이콘(#655) — 확장자·파일명·폴더명 → @tabler/icons-react 아이콘 + 언어별 색.
-// VSCode Material Icon Theme 느낌을 신규 dep 없이(이미 쓰는 tabler로) 근사.
+// 확장자별 파일 아이콘을 신규 dep 없이(이미 쓰는 tabler로) 근사.
 // JSX 엘리먼트를 직접 반환 — 렌더 중 컴포넌트 변수 생성 금지(react-hooks/static-components).
 import {
   IconFile, IconFolder, IconFolderOpen, IconFolderFilled,

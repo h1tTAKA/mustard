@@ -31,7 +31,7 @@ export function matchesRoot(eventRoot: string, queryRoot: string): boolean {
 // 공통 push + fan-out.
 function pushEvent(ev: ActivityEvent): void {
   ring.push(ev);
-  if (ring.length > RING_MAX) ring.splice(0, ring.length - RING_MAX); // ponytail: 200번째마다 O(n) splice, 처리량 커지면 Ring 클래스로
+  if (ring.length > RING_MAX) ring.splice(0, ring.length - RING_MAX); // 한계: 200번째마다 O(n) splice, 처리량 커지면 Ring 클래스로
   for (const fn of listeners) { try { fn(ev); } catch { /* 개별 리스너 실패 무시 */ } }
 }
 
@@ -65,7 +65,7 @@ export function emitEdit(root: string, tool: string, target: string, isError: bo
   const t = (target ?? "").trim();
   if (!t || isDocEdit(tool, t)) return;
   const r = normPath(root);
-  const sig = `${tool}|${t}|${isError ? 1 : 0}`; // isError 포함(성공→실패 전환은 새 이벤트, cavecrew 🟡)
+  const sig = `${tool}|${t}|${isError ? 1 : 0}`; // isError 포함(성공→실패 전환은 새 이벤트, 리뷰 🟡)
   if (lastEdit.get(r) === sig) return; // dedup(연속 동일만)
   lastEdit.set(r, sig);
   pushEvent({ root: r, tool, kind: "edit", target: t, isError, ts: now });

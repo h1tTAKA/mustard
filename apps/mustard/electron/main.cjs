@@ -259,7 +259,7 @@ function createWindow(url) {
   win = new BrowserWindow({
     width: 1280,
     height: 860,
-    // 타이틀바 숨기고 신호등만 — 콘텐츠(탭 바)가 최상단까지(#779, Orca·옵시디언式).
+    // 타이틀바 숨기고 신호등만 — 콘텐츠(탭 바)가 최상단까지(#779).
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 14, y: 13 }, // 탭 바 높이 세로 중앙에 신호등
     webPreferences: {
@@ -414,7 +414,7 @@ function ownGuest(sender, id) {
 }
 // 개발자 도구는 창에 붙인 WebContentsView에(#1039 실측) — webview 안에 넣으면 devtools가 "hosted 모드"로 떠서
 // 페이지와 연결이 안 됨(Elements 빈 화면). 렌더러가 자리(CSS px)를 알려주면 창 줌만큼 곱해 겹쳐 그림.
-// ponytail: 네이티브 뷰라 DOM 위에 그려짐 — ⌘K 팔레트 같은 창 전체 모달이 devtools 영역에선 가려짐.
+// 한계: 네이티브 뷰라 DOM 위에 그려짐 — ⌘K 팔레트 같은 창 전체 모달이 devtools 영역에선 가려짐.
 const devtoolsViews = new Map(); // guest id → { view, win }
 // 줌은 preload가 webFrame 줌으로 이미 곱해서 보냄(채널이 달라 main의 줌 값이 한 박자 늦을 수 있어서, #1039 리뷰).
 const dtBounds = (_sender, r) => {
@@ -544,6 +544,8 @@ ipcMain.handle("mode:isOpen", (_e, kind) => openModes.has(kind));
 ipcMain.handle("mode:list", () => [...openModes.keys()]);
 ipcMain.handle("runtime-paths:get", () => loadSavedRuntimePaths());
 // #1171 에이전트 상태 — force면 로그인 셸 PATH부터 다시(설정의 "다시 확인"). 결과: [{id,label,status,path,version,auth,install,tried}]
+// #1184 인자 속 알려진 권한 플래그 → 권한 선택. 렌더러가 옛 추가 인자 옮기기·인자 칸 저장 때 부름.
+ipcMain.handle("agents:lift", (_e, { agent, args }) => (agentCatalog.BY_ID.has(agent) ? agentCatalog.liftPermission(agent, String(args || "")) : null));
 ipcMain.handle("agents:detect", async (_e, force) => { try { return { ok: true, list: await detectAgents(!!force) }; } catch (e) { return { ok: false, error: String(e?.message ?? e) }; } });
 ipcMain.handle("runtime-paths:set", (_e, paths) => { const saved = saveRuntimePaths(paths); if (lastDetect) { lastDetect.custom = customIds(); writeDetect(); } void detectAgents(true).catch(() => {}); return { ok: true, saved }; }); // #1171 사용자 지정 경로(custom)가 바로 감지 기록에(Crew가 옛 기록으로 막지 않게)
 // GitHub 패널(#810) — gh 경로는 설정값 우선, 없으면 PATH의 gh. IPC로 인증 상태 진단(서브3~5가 데이터 IPC 추가).
@@ -671,7 +673,7 @@ ipcMain.handle("github:issue-create", (_e, { cwd, title, body, labels, assignees
   return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args });
 });
 // PR 목록·상세(#814) — gh pr list/view --json. statusCheckRollup=CI 체크(서브3 재사용).
-// #1141 who = 누구 것(VS Code 확장 첫 화면처럼): review = 나에게 리뷰 요청, assigned = 내 담당, mine = 내가 만듦. 그 밖 = 전체.
+// #1141 who = 누구 것: review = 나에게 리뷰 요청, assigned = 내 담당, mine = 내가 만듦. 그 밖 = 전체.
 const PR_WHO = { review: ["--search", "review-requested:@me"], assigned: ["--assignee", "@me"], mine: ["--author", "@me"] };
 ipcMain.handle("github:pr-list", (_e, { cwd, state, limit, who }) => {
   const st = state === "closed" ? "closed" : state === "all" ? "all" : "open";
@@ -862,7 +864,7 @@ ipcMain.handle("github:pr-files", async (_e, { cwd, number }) => {
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
   prDiffCache.delete(`${cwd}#${n}`); prDiffGen.set(`${cwd}#${n}`, (prDiffGen.get(`${cwd}#${n}`) ?? 0) + 1);
   // 목록을 새로 불러오면 diff도 새로(push 직후 옛 diff 방지, 리뷰). 세대 표는 상한 없음(#1149) — 받는 중 지워지면 0으로 돌아가 옛 diff가 캐시됨.
-  // ponytail: PR당 숫자 하나(앱 켜 둔 동안 본 PR 수만큼), 수천 개여도 작음 — 문제 되면 받는 중인 키는 빼고 오래된 것부터 지우기.
+  // 한계: PR당 숫자 하나(앱 켜 둔 동안 본 PR 수만큼), 수천 개여도 작음 — 문제 되면 받는 중인 키는 빼고 오래된 것부터 지우기.
   const files = []; let prId = null; let head = null; let after = null; let truncated = false;
   for (let page = 0; page < 30; page++) { // 최대 3,000개
     const args = ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", `number=${n}`, "-f", `query=${PR_FILES_Q}`];
@@ -915,7 +917,7 @@ ipcMain.handle("github:pr-file-diff", async (_e, { cwd, number, path }) => {
   return { ok: true, data: { diff: hit.files[path], ...(hit.head ? { head: hit.head } : {}) } };
 });
 // 봤음 표시 — GitHub에 저장(웹·다른 기기와 같은 상태).
-// PR 파일 전체 diff(#1133, VS Code 확장처럼) — merge base와 head의 원문을 받아 로컬 git diff -U100000(기존 diff 탭과 같은 모양).
+// PR 파일 전체 diff(#1133) — merge base와 head의 원문을 받아 로컬 git diff -U100000(기존 diff 탭과 같은 모양).
 // 줄 번호는 head 기준이라 지적·줄 댓글 위치 그대로. 바이너리·1MB 넘음·실패면 { fallback: true } → 화면은 기존 바뀐 구간 diff.
 const FULL_MAX = 1_000_000, FULL_LINES = 20_000;
 const prCompareCache = new Map(); // `${cwd}#${n}` → { head, at, mb, files: Map(path → { status, prev }) } — head 바뀌면 새로
@@ -1104,7 +1106,7 @@ ipcMain.handle("notify", (_e, payload) => {
   n.on("click", () => {
     if (!win) return;
     if (win.isMinimized()) win.restore();
-    if (process.platform === "darwin") app.focus({ steal: true }); // orca: 다른 앱 위에 있을 때도 앞으로
+    if (process.platform === "darwin") app.focus({ steal: true }); // 다른 앱 위에 있을 때도 앞으로
     win.show(); win.focus();
     // #989 그 레포·터미널로 이동 — 렌더러(WorkspaceTabs·LearningHome)가 받아 탭 전환.
     if (target && typeof target.repoPath === "string") win.webContents.send("notify:activate", { repoPath: target.repoPath, sessionId: typeof target.sessionId === "string" ? target.sessionId : undefined });
@@ -1159,14 +1161,11 @@ const isShellProc = (p) => SHELLS.has(String(p || "").trim().toLowerCase().repla
 // #864 orca식 신원 확정 — 우리가 탭에서 직접 실행한 에이전트를 기록(tabId→agent). 스크레이프 추측 대신
 // 이 기록이 신원의 진실(오판 원천 소멸). 셸 복귀(종료) 시 해제. 유저가 손으로 실행하면 기록 없음 → 스크레이프 fallback.
 const launchRegistry = new Map(); // id → agent id
-// 에이전트 id → 실행 셸 커맨드. runtime 경로 설정 있으면 그걸, 없으면 기본 커맨드명.
-const AGENT_DEFAULT_CMD = { claude: "claude", codex: "codex", gemini: "gemini", antigravity: "agy", opencode: "opencode", aider: "aider", cursor: "cursor-agent", copilot: "copilot", amp: "amp", grok: "grok", hermes: "hermes", omp: "omp" };
-function agentCommand(agent) {
+// 에이전트 id → 경로 지정(설정, claude·codex·opencode만 — SNA와 같은 값). 없으면 카탈로그 실행 명령(#1184).
+const agentCatalog = require("./agent-catalog.cjs");
+function agentCmdOverride(agent) {
   const rp = loadSavedRuntimePaths();
-  if (agent === "claude") return rp.claudeCode || "claude";
-  if (agent === "codex") return rp.codex || "codex";
-  if (agent === "opencode") return rp.opencode || "opencode";
-  return AGENT_DEFAULT_CMD[agent] || null;
+  return { claude: rp.claudeCode, codex: rp.codex, opencode: rp.opencode }[agent] || undefined;
 }
 // launchRegistry 디스크 영속(#864) — pty는 앱 재시작에도 생존(#682)하는데 registry는 메모리라 재시작 시 날아가
 // 살아남은 세션이 스크레이프 fallback으로 오판된다(codex→claude). {id:agent}를 파일에 저장하고 부팅 시 복원.
@@ -1196,8 +1195,8 @@ function registryAgent(id, proc) {
   return reg.agent;                                              // 부팅 중(미확정 셸) — 신원 유지
 }
 // 커맨드 basename → agent id. 유저가 셸에 직접 친 실행 커맨드도 잡아 신원 확정(피커 안 써도 정확).
-// gemini 제외 — 구글 에이전트는 antigravity(agy)로 통일(#864). agy 커맨드가 antigravity로 매핑.
-const CMD_TO_AGENT = { claude: "claude", codex: "codex", agy: "antigravity", antigravity: "antigravity", opencode: "opencode", grok: "grok", omp: "omp", aider: "aider", amp: "amp", copilot: "copilot", hermes: "hermes", "cursor-agent": "cursor", cursor: "cursor" };
+// 카탈로그의 감지 명령·별칭 전부(#1184) + 옛 별칭. gemini도 이제 따로(#864의 antigravity 통일은 실행 목록이 좁던 때 결정).
+const CMD_TO_AGENT = new Map([...agentCatalog.identityBins(), ["antigravity", "antigravity"], ["cursor", "cursor"]]); // Map — "constructor" 같은 이름이 Object 프로토타입을 집지 않게(리뷰)
 const inputBuf = new Map(); // id → 현재 타이핑 중인 라인(개행 전까지 누적)
 // pty 입력 스트림을 감시해 "에이전트 실행 커맨드 + Enter"를 감지 → launchRegistry 갱신. 수동 실행도 신원 확정(#864).
 // (셸 복귀 시 registry는 이미 해제되므로, 이전 stale 신원이 남아도 새 커맨드가 덮어씀 → codex→claude 오판 소멸.)
@@ -1209,7 +1208,7 @@ function detectLaunchFromInput(id, data) {
       const line = s.trim(); s = "";
       const tok = line.split(/\s+/).filter((tk) => !/^\w+=/.test(tk))[0] || ""; // FOO=bar 같은 env 할당 스킵
       const base = tok.split("/").pop().toLowerCase();
-      const agent = CMD_TO_AGENT[base];
+      const agent = CMD_TO_AGENT.get(base);
       if (agent) launchRegistry.set(id, { agent, confirmed: false, at: Date.now() });
     } else if (code === 0x7f || code === 0x08) { s = s.slice(0, -1); } // backspace
     else if (code === 0x03 || code === 0x15) { s = ""; }               // Ctrl-C / Ctrl-U → 라인 취소
@@ -1230,7 +1229,7 @@ const narrPending = new Map(); // id → 마지막 내레이션 이후 누적된
 const lastNarr = new Map();   // id → 마지막 내레이션 시각
 const lastDiffHash = new Map(); // id → 직전 내레이션에 쓴 git diff 해시(같은 코드 재설명 방지)
 // 실제 코드 변경(git diff HEAD) 확보 — 터미널 산문 대신 진짜 코드로 학습(#870). 캡 6KB, 실패 시 "".
-// 비동기 execFile — main 이벤트루프 안 막음(동기 execFileSync는 타임아웃까지 최대 3s 블록, UI 프리즈)(cavecrew).
+// 비동기 execFile — main 이벤트루프 안 막음(동기 execFileSync는 타임아웃까지 최대 3s 블록, UI 프리즈).
 const execFileP = require("node:util").promisify(require("node:child_process").execFile);
 async function getGitDiff(cwd) {
   try {
@@ -1341,7 +1340,7 @@ async function pushScreenState(id, screen) {
   // 활성=liveBuffers(full/fresh), 비활성=데몬 screen 힌트(#840). liveBuffers는 안 건드림(영속 안전).
   const parsed = shell ? null : parseAgentScreen(liveBuffers.get(id) ?? screen, lastTitleRawById.get(id)); // {agent,state}|null
   const procAgent = shell ? null : agentFromProcess(proc);      // 프로세스명으로 "존재" 판정(버퍼 미판정 대비)
-  // #989 판정 불가 ≠ 완료(orca staleWorkingTitleClear와 같은 원칙) — 상태를 모르면 직전 상태 유지. 예전엔 "done"으로 떨어져
+  // #989 판정 불가 ≠ 완료 — 상태를 모르면 직전 상태 유지. 예전엔 "done"으로 떨어져
   // working→done 가짜 전이 → 알림. 첫 보고(직전 없음)만 done.
   const unknownState = lastScreen.get(id)?.state ?? "done";
   let agent, state;
@@ -1397,7 +1396,7 @@ setInterval(async () => {
 
 // 데몬 소켓 클라이언트 — 죽어있으면 fork(detached,unref)로 스폰. data/exit는 렌더러로 브로드캐스트.
 // 소켓 주소 — Windows는 파일 경로 리슨 불가라 네임드 파이프(net이 자동 인식).
-// ponytail: 파이프명 고정(단일 유저 가정). 멀티유저 격리 필요 시 userData 해시 접미.
+// 한계: 파이프명 고정(단일 유저 가정). 멀티유저 격리 필요 시 userData 해시 접미.
 const termSock = process.platform === "win32"
   ? "\\\\.\\pipe\\nunopi-terminal-daemon"
   : join(app.getPath("userData"), "terminal-daemon.sock");
@@ -1462,9 +1461,9 @@ ipcMain.handle("terminal:ensure", async (_e, { id, cwd, cols, rows, dark }) => {
   ensuredIds.add(id); // #864 pty 준비 완료 — launchAgent가 새 탭에 커맨드 주입 전 이걸 대기
   return { ok: true, buffer };
 });
-// #989 중단 추정(orca inferInterrupt) — Claude는 Ctrl+C 중단에 훅을 안 보냄 → 그대로 두면 영원히 working.
-// Ctrl+C 입력 후 0.5s(orca AGENT_INTERRUPT_SETTLE_MS) 지나 서버에 "그 시각 이후 훅 없으면 중단(알림 없는 done)" 요청.
-// Esc는 증거로 안 씀 — Claude TUI에서 오버레이 닫기 등 이동에도 쓰여 구분 불가(orca isNavigationEscapeIntent).
+// #989 중단 추정 — Claude는 Ctrl+C 중단에 훅을 안 보냄 → 그대로 두면 영원히 working.
+// Ctrl+C 입력 후 0.5s 지나 서버에 "그 시각 이후 훅 없으면 중단(알림 없는 done)" 요청.
+// Esc는 증거로 안 씀 — Claude TUI에서 오버레이 닫기 등 이동에도 쓰여 구분 불가.
 function inferInterrupt(id, data) {
   if (data !== "\x03" || !cwdById.has(id)) return;
   const at = Date.now();
@@ -1474,10 +1473,11 @@ ipcMain.on("terminal:input", (_e, { id, data }) => { termClient.input({ id, data
 // #864 에이전트 직접 실행 — 신원을 실행 기록에 확정하고 pty 셸에 실행 커맨드 주입. 반환 후 탭 아이콘/이름=이 에이전트.
 // 새 탭은 렌더러가 Terminal 마운트→ensure까지 시간차가 있어, pty 준비(ensuredIds)를 최대 3s 대기 후 주입.
 const ensuredIds = new Set(); // ensure 완료된 세션 id
-ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, extraArgs, cwd }) => {
+// #1184 명령 = 카탈로그로 조립 — [env] 실행 명령(경로 지정) + 권한 플래그(permission) + 유저 인자(args). 옛 extraArgs = args.
+ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, permission, args, extraArgs, cwd }) => {
   if (!id || typeof agent !== "string") return { ok: false, reason: "bad args" };
-  let cmd = agentCommand(agent);
-  if (!cmd) return { ok: false, reason: "unknown agent" };
+  if (!agentCatalog.BY_ID.has(agent)) return { ok: false, reason: "unknown agent" };
+  const choice = agentCatalog.CHOICES.includes(permission) ? permission : "own";
   // #1110 Crew 넘겨받기 — 카드 작업 폴더에서 실행(절대 경로·존재하는 폴더만, 작은따옴표 이스케이프)
   let cdPrefix = "";
   if (typeof cwd === "string" && cwd) {
@@ -1487,9 +1487,9 @@ ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, extraArgs, 
   }
   // claude는 자기 theme(settings.json)으로 diff·프롬프트·링크 색을 truecolor로 찍어 터미널 팔레트가 못 이긴다(#922).
   // 터미널 테마에 맞춰 --settings로 세션 theme만 덮어씀(유저 전역 ~/.claude/settings.json은 안 건드림, auth 유지·병합).
-  if (agent === "claude" && typeof dark === "boolean") cmd += ` --settings '{"theme":"${dark ? "dark" : "light"}"}'`;
-  // 유저 지정 per-agent 추가 인자(#927) — 설정서 렌더러가 전달. 로컬 유저 인자라 그대로 append.
-  if (typeof extraArgs === "string" && extraArgs.trim()) cmd += ` ${extraArgs.trim()}`;
+  // 유저 지정 per-agent 추가 인자(#927) — 설정서 렌더러가 전달. 로컬 유저 인자라 그대로(권한 플래그는 카탈로그가 앞에).
+  const user = [agent === "claude" && typeof dark === "boolean" ? `--settings '{"theme":"${dark ? "dark" : "light"}"}'` : "", typeof args === "string" ? args : typeof extraArgs === "string" ? extraArgs : ""].map((x) => x.trim()).filter(Boolean).join(" ");
+  const cmd = agentCatalog.launchLine(agent, { choice, userArgs: user, cmd: agentCmdOverride(agent) });
   launchRegistry.set(id, { agent, confirmed: false, at: Date.now() }); // 즉시 신원(아이콘). 부팅 중 셸이어도 유지.
   let ready = false;
   for (let i = 0; i < 60; i++) { if (ensuredIds.has(id)) { ready = true; break; } await new Promise((r) => setTimeout(r, 50)); } // 최대 3s pty 대기

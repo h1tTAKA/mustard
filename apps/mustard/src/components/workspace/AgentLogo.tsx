@@ -8,10 +8,21 @@ import CursorLogo from "@/components/workspace/CursorLogo";
 import OpenCodeLogo from "@/components/workspace/OpenCodeLogo";
 import OmpLogo from "@/components/workspace/OmpLogo";
 
-export type AgentId = "claude" | "codex" | "gemini" | "antigravity" | "hermes" | "aider" | "opencode" | "cursor" | "copilot" | "amp" | "grok" | "omp" | "other";
+// 에이전트 id = 카탈로그(electron/agent-catalog.cjs) id. 위 12개는 인라인 마크, 나머지는 public/agent-icons/<id>.png(각 사 아이콘, 오프라인용), 둘 다 없으면 모노그램.
+export type AgentId = "claude" | "codex" | "gemini" | "antigravity" | "hermes" | "aider" | "opencode" | "cursor" | "copilot" | "amp" | "grok" | "omp"
+  | "openclaude" | "opencode2" | "mimo-code" | "ante" | "trae" | "muse" | "dsh" | "qoder" | "qoder-cn" | "zcode" | "pi" | "prime-agent" | "goose" | "kilo" | "kiro" | "crush"
+  | "aug" | "autohand" | "cline" | "codebuff" | "freebuff" | "command-code" | "continue" | "droid" | "kimi" | "mistral-vibe" | "qwen-code" | "rovo" | "devin" | "openclaw" | "codebuddy" | "jcode" | "other";
+const PNG = new Set<string>(["openclaude", "mimo-code", "ante", "trae", "muse", "dsh", "qoder", "qoder-cn", "zcode", "prime-agent", "goose", "kilo", "kiro", "crush", "aug", "autohand", "cline", "codebuff", "freebuff", "command-code", "continue", "droid", "kimi", "mistral-vibe", "qwen-code", "rovo", "devin", "openclaw", "codebuddy", "jcode"]);
 
 // 프로세스명 → 에이전트 매칭. foreground 프로세스명(node-pty proc.process)에 대해 검사.
+// 정확한 실행 파일 이름 먼저(electron agent-catalog identityBins와 같은 목록 — 짧은 이름 pi·cn·acli·dst 제외), 그다음 부분 일치.
+// 순서가 중요: openclaude·opencode2가 /claude/·/open-?code/에 먼저 걸리지 않게(리뷰).
+const EXACT: [AgentId, string][] = [["antigravity", "agy"], ["openclaude", "openclaude"], ["opencode2", "opencode2"], ["mimo-code", "mimo"], ["ante", "ante"], ["trae", "traecli"], ["muse", "muse"], ["dsh", "dsh-tui"], ["qoder", "qodercli"], ["qoder", "qoder"],
+    ["qoder-cn", "qoderclicn"], ["qoder-cn", "qodercn"], ["zcode", "zcode"], ["prime-agent", "prime-agent"], ["goose", "goose"], ["kilo", "kilo"], ["kiro", "kiro-cli"], ["crush", "crush"], ["aug", "auggie"],
+    ["autohand", "autohand"], ["cline", "cline"], ["codebuff", "codebuff"], ["freebuff", "freebuff"], ["command-code", "command-code"], ["droid", "droid"], ["kimi", "kimi"], ["kimi", "kimi-code"],
+    ["mistral-vibe", "vibe"], ["mistral-vibe", "mistral-vibe"], ["qwen-code", "qwen"], ["devin", "devin"], ["openclaw", "openclaw"], ["codebuddy", "codebuddy"], ["codebuddy", "cbc"], ["jcode", "jcode"]];
 const MATCH: [AgentId, RegExp][] = [
+  ...EXACT.map(([id, bin]): [AgentId, RegExp] => [id, new RegExp(`^${bin}$`, "i")]),
   ["claude", /claude/i],
   ["codex", /codex/i],
   ["gemini", /gemini/i],
@@ -56,9 +67,19 @@ export const AGENT_META: Record<AgentId, { label: string; color: string }> = {
   opencode: { label: "OpenCode", color: "#F59E0B" },
   cursor: { label: "Cursor", color: "#6B7280" },
   copilot: { label: "Copilot", color: "#8B5CF6" },
-  amp: { label: "Amp", color: "#F34E3F" },   // 로고(lobe-icons)와 같은 색
+  amp: { label: "Amp", color: "#F34E3F" },   // 로고와 같은 색
   grok: { label: "Grok Build", color: "#9CA3AF" },  // 중립 그레이(흑백 브랜드 — 양 테마서 보이게)
   omp: { label: "OMP", color: "#F97316" },          // oh-my-pi — 브랜드 주황
+  // 카탈로그 나머지(#1184) — 로고는 PNG, 색은 모노그램·강조용 중립
+  openclaude: { label: "OpenClaude", color: "#D97757" }, opencode2: { label: "OpenCode 2", color: "#F59E0B" }, "mimo-code": { label: "MiMo Code", color: "#FF6900" },
+  ante: { label: "Ante", color: "#E4572E" }, trae: { label: "Trae", color: "#22C55E" }, muse: { label: "Muse", color: "#0866FF" }, dsh: { label: "DeepSeek Harness", color: "#4D6BFE" },
+  qoder: { label: "Qoder CLI", color: "#22C55E" }, "qoder-cn": { label: "Qoder CLI China", color: "#22C55E" }, zcode: { label: "ZCode", color: "#6B7280" }, pi: { label: "Pi", color: "#6B7280" },
+  "prime-agent": { label: "Prime Agent", color: "#6B7280" }, goose: { label: "Goose", color: "#6B7280" }, kilo: { label: "Kilocode", color: "#F8F675" }, kiro: { label: "Kiro", color: "#9046FF" },
+  crush: { label: "Charm", color: "#FF5FD2" }, aug: { label: "Auggie", color: "#6B7280" }, autohand: { label: "Autohand Code", color: "#6B7280" }, cline: { label: "Cline", color: "#6B7280" },
+  codebuff: { label: "Codebuff", color: "#6B7280" }, freebuff: { label: "Freebuff", color: "#6B7280" }, "command-code": { label: "Command Code", color: "#6B7280" }, continue: { label: "Continue", color: "#6B7280" },
+  droid: { label: "Droid", color: "#EE6018" }, kimi: { label: "Kimi", color: "#6B7280" }, "mistral-vibe": { label: "Mistral Vibe", color: "#FA520F" }, "qwen-code": { label: "Qwen Code", color: "#615CED" },
+  rovo: { label: "Rovo Dev", color: "#1868DB" }, devin: { label: "Devin", color: "#6B7280" }, openclaw: { label: "OpenClaw", color: "#DC2626" }, codebuddy: { label: "CodeBuddy", color: "#6B7280" },
+  jcode: { label: "Jcode", color: "#6B7280" },
   other: { label: "Agent", color: "#6B7280" },
 };
 
@@ -87,24 +108,27 @@ export function AgentLogo({ agent, size = 14 }: { agent: AgentId; size?: number 
   if (agent === "antigravity") return <AntigravityLogo size={size} />;   // 공식 로고(#803)
   if (agent === "hermes") return <HermesLogo size={size} />;   // 공식 로고(#803, currentColor)
   if (agent === "cursor") return <CursorLogo size={size} />;   // 공식 로고(#803, PNG 에셋)
-  if (agent === "opencode") return <OpenCodeLogo size={size} />; // 공식 마크(#864, 유저 SVG)
+  if (agent === "opencode" || agent === "opencode2") return <OpenCodeLogo size={size} />; // 공식 마크(#864, 유저 SVG)
   if (agent === "omp") return <OmpLogo size={size} />;          // oh-my-pi(#864, 레포 SVG)
   if (agent === "grok") {
     // Grok(xAI) 공식 로고 — 단일 path·currentColor(탭 글자색 따라감, 양 테마 가시).
     return <svg {...common} fill="currentColor" style={{ fillRule: "evenodd" }}><path d="M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815" /></svg>;
   }
   if (agent === "copilot") {
-    // GitHub Copilot 공식 아이콘(primer/octicons copilot-24) — currentColor(양 테마 가시).
+    // GitHub Copilot 공식 아이콘 — currentColor(양 테마 가시).
     return <svg {...common} fill="currentColor"><path d="M23.922 16.992c-.861 1.495-5.859 5.023-11.922 5.023-6.063 0-11.061-3.528-11.922-5.023A.641.641 0 0 1 0 16.736v-2.869a.841.841 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.195 10.195 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952 1.399-1.136 3.392-2.093 6.122-2.093 2.731 0 4.767.957 6.166 2.093.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656a.832.832 0 0 1 .053.22v2.869a.641.641 0 0 1-.078.256ZM12.172 11h-.344a4.323 4.323 0 0 1-.355.508C10.703 12.455 9.555 13 7.965 13c-1.725 0-2.989-.359-3.782-1.259a2.005 2.005 0 0 1-.085-.104L4 11.741v6.585c1.435.779 4.514 2.179 8 2.179 3.486 0 6.565-1.4 8-2.179v-6.585l-.098-.104s-.033.045-.085.104c-.793.9-2.057 1.259-3.782 1.259-1.59 0-2.738-.545-3.508-1.492a4.323 4.323 0 0 1-.355-.508h-.016.016Zm.641-2.935c.136 1.057.403 1.913.878 2.497.442.544 1.134.938 2.344.938 1.573 0 2.292-.337 2.657-.751.384-.435.558-1.15.558-2.361 0-1.14-.243-1.847-.705-2.319-.477-.488-1.319-.862-2.824-1.025-1.487-.161-2.192.138-2.533.529-.269.307-.437.808-.438 1.578v.021c0 .265.021.562.063.893Zm-1.626 0c.042-.331.063-.628.063-.894v-.02c-.001-.77-.169-1.271-.438-1.578-.341-.391-1.046-.69-2.533-.529-1.505.163-2.347.537-2.824 1.025-.462.472-.705 1.179-.705 2.319 0 1.211.175 1.926.558 2.361.365.414 1.084.751 2.657.751 1.21 0 1.902-.394 2.344-.938.475-.584.742-1.44.878-2.497Z" /><path d="M14.5 14.25a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0v-2a1 1 0 0 1 1-1Zm-5 0a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0v-2a1 1 0 0 1 1-1Z" /></svg>;
   }
   if (agent === "amp") {
-    // Amp(Sourcegraph) 마크 — lobehub/lobe-icons amp-color(#F34E3F).
+    // Amp 마크(#F34E3F).
     return <svg {...common} fill="#F34E3F"><path d="M15.087 23.18L12.03 24l-2.097-7.823-5.738 5.738-2.251-2.251 5.718-5.719-7.769-2.082.82-3.057 11.294 3.08 3.08 11.295z" /><path d="M19.505 18.762l-3.057.82-2.564-9.573-9.572-2.564.819-3.057 11.295 3.079 3.08 11.295z" /><path d="M23.893 14.374l-3.057.82-2.565-9.572L8.7 3.057 9.52 0l11.295 3.08 3.079 11.294z" /></svg>;
   }
   if (agent === "aider") {
-    // Aider 공식 favicon(aider.chat assets/icons) 픽셀 "a" — 6×5 격자를 그대로 옮김.
+    // Aider 공식 아이콘의 픽셀 "a" — 6×5 격자를 그대로 옮김.
     return <svg {...common}><rect width={24} height={24} rx={4} fill="#013720" /><g fill="#00FFB1"><rect x={6} y={3.0} width={3} height={3.6} /><rect x={9} y={3.0} width={3} height={3.6} /><rect x={12} y={3.0} width={3} height={3.6} /><rect x={15} y={6.6} width={3} height={3.6} /><rect x={6} y={10.2} width={3} height={3.6} /><rect x={9} y={10.2} width={3} height={3.6} /><rect x={12} y={10.2} width={3} height={3.6} /><rect x={15} y={10.2} width={3} height={3.6} /><rect x={3} y={13.8} width={3} height={3.6} /><rect x={15} y={13.8} width={3} height={3.6} /><rect x={6} y={17.4} width={3} height={3.6} /><rect x={9} y={17.4} width={3} height={3.6} /><rect x={12} y={17.4} width={3} height={3.6} /><rect x={18} y={17.4} width={3} height={3.6} /></g></svg>;
   }
+  // 각 사 아이콘 PNG(번들, 오프라인)
+  // eslint-disable-next-line @next/next/no-img-element -- 정적 작은 아이콘(최적화 불필요, 데스크톱 오프라인)
+  if (PNG.has(agent)) return <img src={`/agent-icons/${agent}.png`} width={size} height={size} alt="" aria-hidden draggable={false} className="rounded-[3px]" style={{ width: size, height: size }} />;
   // 그 외 알려진 에이전트 — 브랜드색 원형 + 첫 글자 모노그램.
   const label = AGENT_META[agent]?.label ?? "A";
   return (

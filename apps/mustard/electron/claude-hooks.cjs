@@ -1,4 +1,4 @@
-// 관리형 Claude 훅(#989, orca 방식) — 에이전트 상태의 권위 신호. 화면 긁기는 출력이 많으면 타이틀을 놓쳐
+// 관리형 Claude 훅(#989) — 에이전트 상태의 권위 신호. 화면 긁기는 출력이 많으면 타이틀을 놓쳐
 // 작업 중↔완료가 깜빡였다(가짜 알림). Claude가 직접 "턴 끝(Stop)·권한 필요(PermissionRequest)"를 알려주게 한다.
 // - 위치: <CLAUDE_CONFIG_DIR|~/.claude>/settings.json(유저 전역). #764처럼 레포 파일을 더럽히지 않는다.
 // - Mustard 터미널에서만 동작: 데몬이 pty env에 MUSTARD_TERM_ID를 넣고, 훅 명령은 그 값이 없으면 바로 끝난다.
@@ -10,7 +10,7 @@ const { join, dirname } = require("node:path");
 const { homedir } = require("node:os");
 
 const MARKER = "MUSTARD_TERM_ID"; // 우리 훅 식별(명령 문자열에 포함) — 이걸 가진 엔트리만 넣고 뺀다
-// 이벤트별 최초 지원 버전(orca claude-hook-event-versions.ts 기준).
+// 이벤트별 최초 지원 버전.
 const EVENTS = [
   { name: "UserPromptSubmit", since: "1.0.53" },
   { name: "PostToolUse", since: "1.0.23", matcher: "" },

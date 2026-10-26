@@ -1,4 +1,4 @@
-// 단축키 레지스트리(#1027) — 순수 모듈(import 없음, check 가능). 기본값은 Orca·Ghostty/iTerm2·IDE 관례를 따름(유저 결정).
+// 단축키 레지스트리(#1027) — 순수 모듈(import 없음, check 가능). 기본값은 흔한 터미널·IDE 관례를 따름(유저 결정).
 // 원칙: ⌃+글자·⌥ 단독은 셸·에이전트 TUI 몫이라 기본값에 안 씀, 앱 동작은 ⌘(Mod) 조합.
 // 조합 문자열: "Mod+Shift+]"처럼 수식키(Mod·Ctrl·Alt·Shift) + 키 토큰. Mod = mac ⌘ / 그 외 Ctrl.
 // 키 토큰은 e.code(물리 키)에서 뽑음 — ⌥·⇧가 e.key를 바꿔도(⌥] → ‘) 같은 키로 인식, 한글 자판에서도 동작.
@@ -18,7 +18,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "term.close", group: "tabs", labelKey: "shortcut.termClose", defaults: ["Mod+W"], scope: "global" },
   { id: "term.next", group: "tabs", labelKey: "shortcut.termNext", defaults: ["Mod+Shift+]"], scope: "global" },
   { id: "term.prev", group: "tabs", labelKey: "shortcut.termPrev", defaults: ["Mod+Shift+["], scope: "global" },
-  ...goto("term.goto", "tabs", "Mod", "shortcut.termGoto"), // term.goto9 = 마지막 탭(Ghostty·Warp 관례)
+  ...goto("term.goto", "tabs", "Mod", "shortcut.termGoto"), // term.goto9 = 마지막 탭(터미널 관례)
   { id: "repo.next", group: "repos", labelKey: "shortcut.repoNext", defaults: ["Mod+Alt+]"], scope: "global" },
   { id: "repo.prev", group: "repos", labelKey: "shortcut.repoPrev", defaults: ["Mod+Alt+["], scope: "global" },
   ...goto("repo.goto", "repos", "Mod+Alt", "shortcut.repoGoto"),
@@ -102,7 +102,7 @@ export function matchShortcut(chord: string, inTerminal: boolean, overrides: Sho
   return fallback;
 }
 
-// 충돌 — 같은 조합이 겹치는 범위의 두 동작 이상에 걸림. 기본값끼리(⌘K 팔레트↔화면 지우기처럼 의도된 것)는 경고 안 함(Orca 방식).
+// 충돌 — 같은 조합이 겹치는 범위의 두 동작 이상에 걸림. 기본값끼리(⌘K 팔레트↔화면 지우기처럼 의도된 것)는 경고 안 함.
 export function findConflicts(overrides: ShortcutOverrides): { chord: string; ids: string[] }[] {
   // terminal↔outsideTerminal만 서로 배타(동시에 성립 불가). terminal↔global은 터미널에서 global을 가리므로 충돌로 봄.
   const overlap = (a: ShortcutScope, b: ShortcutScope) => !((a === "terminal" && b === "outsideTerminal") || (a === "outsideTerminal" && b === "terminal"));

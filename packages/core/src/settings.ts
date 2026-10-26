@@ -46,21 +46,48 @@ export const TKEYS = {
   focusFollowsMouse: "terminal.focusFollowsMouse",
 } as const;
 
-// 에이전트 런치(#927) — 기본 에이전트 + per-agent 추가 인자. 키는 agent.args.<id> 동적.
-export const AGENT_DEFAULTS = { default: "claude" };
+// 에이전트 런치(#927, #1184 Orca식) — 기본 에이전트("auto" = 감지되고 켜진 첫 에이전트, "blank" = 셸만, 아니면 id) + per-agent 유저 인자·권한·켜기.
+// 권한 = 전체(perm) + 에이전트별 덮어쓰기(perm.<id>, ""·없음 = 전체 따름). 값: own·ask·accept-edits·auto·full-access. 기본 own(플래그 안 붙임).
+// 키를 에이전트마다 따로 둠(객체 하나로 두면 useSetting 스냅샷이 매번 새 객체 — 무한 렌더).
+export const AGENT_DEFAULTS = { default: "auto", perm: "own" };
 export const AKEYS = {
   default: "agent.default",
   args: (agentId: string) => `agent.args.${agentId}`,
+  perm: "agent.perm",
+  permOf: (agentId: string) => `agent.perm.${agentId}`,
+  off: (agentId: string) => `agent.off.${agentId}`,
+  argsLifted: "agent.argsLifted",
+  usedAt: (agentId: string) => `agent.used.${agentId}`, // 마지막으로 띄운 시각(ms) — 우리 규칙: 최근 쓴 순서·자동 = 마지막에 쓴 것
+  fullOk: "agent.fullAccessOk", // 전체 액세스 처음 고를 때 확인 — 한 번 확인하면 다시 안 물음
 } as const;
-// 실행할 수 있는 에이전트(터미널 + 메뉴·기본 에이전트·추가 인자 한 곳, #1171) — main AGENT_DEFAULT_CMD에 있는 것. gemini 제외(구글=antigravity, #864).
-export const LAUNCH_AGENTS = [
-  { id: "claude", label: "Claude Code", ph: "--dangerously-skip-permissions" }, { id: "codex", label: "Codex", ph: "--sandbox workspace-write" },
-  // ph = 예시(각 CLI --help에서 확인한 실제 플래그 — copilot·amp·aider는 공식 문서)
-  { id: "grok", label: "Grok", ph: "--always-approve" }, { id: "opencode", label: "OpenCode", ph: "--continue" },
-  { id: "omp", label: "OMP", ph: "--thinking high" }, { id: "antigravity", label: "Antigravity", ph: "--dangerously-skip-permissions" },
-  { id: "cursor", label: "Cursor", ph: "--force" }, { id: "hermes", label: "Hermes", ph: "--yolo" }, { id: "copilot", label: "Copilot", ph: "--allow-all-tools" },
-  { id: "amp", label: "Amp", ph: "--dangerously-allow-all" }, { id: "aider", label: "Aider", ph: "--no-auto-commits" },
-] as const;
+export type AgentPermission = "own" | "ask" | "accept-edits" | "auto" | "full-access";
+// 이 에이전트의 권한 — 덮어쓰기 > 전체 > own. choices = 그 에이전트가 고를 수 있는 것(카탈로그), 못 고르는 건 own.
+export function agentPermission(agentId: string, choices?: string[]): { choice: AgentPermission; own: boolean } {
+  const mine = getSetting<string>(AKEYS.permOf(agentId), "");
+  const choice = (mine || getSetting<string>(AKEYS.perm, AGENT_DEFAULTS.perm)) as AgentPermission;
+  return { choice: !choices || choices.includes(choice) ? choice : "own", own: !!mine };
+}
+export const agentEnabled = (agentId: string) => !getSetting<boolean>(AKEYS.off(agentId), false);
+export const agentUsedAt = (agentId: string) => getSetting<number>(AKEYS.usedAt(agentId), 0);
+export const markAgentUsed = (agentId: string) => setSetting(AKEYS.usedAt(agentId), Date.now());
+// 우리 순서(#1184, Orca는 카탈로그 고정 순서) — 기본 에이전트 → 최근 쓴 순 → 안 쓴 것(받은 순서 = 카탈로그) → 꺼진 것.
+export function sortAgents<T extends { id: string }>(list: T[]): T[] {
+  const d = getSetting<string>(AKEYS.default, AGENT_DEFAULTS.default);
+  const rank = (a: T) => (!agentEnabled(a.id) ? 3 : a.id === d ? 0 : agentUsedAt(a.id) ? 1 : 2);
+  return list.map((a, i) => ({ a, i })).sort((x, y) => rank(x.a) - rank(y.a) || agentUsedAt(y.a.id) - agentUsedAt(x.a.id) || x.i - y.i).map((x) => x.a);
+}
+// 기본 에이전트 고르기 — detected = 감지된 id(카탈로그 순서). null = 셸만.
+// 자동 = 켜진 것 중 마지막에 쓴 에이전트(우리 규칙 — Orca는 카탈로그 첫 번째), 한 번도 안 썼으면 카탈로그 순서 첫 번째.
+// weak = 짧은 이름으로만 감지돼 다른 도구일 수 있는 것 — 자동에선 한 번이라도 띄운 적 있을 때만 후보(직접 기본으로 고른 건 그대로).
+export function pickDefaultAgent(detected: string[], weak: string[] = []): string | null {
+  const d = getSetting<string>(AKEYS.default, AGENT_DEFAULTS.default);
+  if (d === "blank") return null;
+  const ok = detected.filter(agentEnabled);
+  if (d !== "auto" && ok.includes(d)) return d;
+  const auto = ok.filter((id) => !weak.includes(id) || agentUsedAt(id) > 0);
+  const last = auto.reduce<string | null>((best, id) => (agentUsedAt(id) > (best ? agentUsedAt(best) : 0) ? id : best), null);
+  return last ?? auto[0] ?? null;
+}
 
 // 알림(#928)
 // suppressWhileWatching(#1021, 옛 suppressWhileFocused): "지금 보고 있는 레포 탭"의 에이전트 완료 알림만 억제(#973~). 다른 레포는 포커스여도 알림.

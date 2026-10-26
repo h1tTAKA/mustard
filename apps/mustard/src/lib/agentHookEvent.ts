@@ -17,7 +17,7 @@ export function shortToolInput(input: unknown): string | undefined {
   return String(input).slice(0, 120);
 }
 
-// Claude 훅 이벤트 → 상태(orca claude-events.ts 기준). 모르는 이벤트는 null(상태 변경 안 함).
+// Claude 훅 이벤트 → 상태. 모르는 이벤트는 null(상태 변경 안 함).
 // PostCompact(manual)은 done이지만 알림 없음(세션 경계) — silent. auto는 턴 안이라 무시.
 export function hookState(event: string, payload: Record<string, unknown>): { state: AgentState; silent?: boolean } | null {
   switch (event) {

@@ -411,7 +411,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
       if (pre) throw new Error(pre);
       if (run.state !== "starting") return run; // 기다리는 동안 Stop — worktree 안 만듦(리뷰)
     }
-    const dep = board0.find((x) => x.id === task.dependsOn?.[task.dependsOn.length - 1]); // ponytail: 의존 여럿이면 마지막 것 브랜치에서 시작(나머지는 그 안에 없을 수 있음), 필요하면 머지 단계 추가
+    const dep = board0.find((x) => x.id === task.dependsOn?.[task.dependsOn.length - 1]); // 한계: 의존 여럿이면 마지막 것 브랜치에서 시작(나머지는 그 안에 없을 수 있음), 필요하면 머지 단계 추가
     const wt = await ensureWorktree(root, taskId, task.title, dep ? worktreeFor(root, dep.id, dep.title).branch : undefined);
     Object.assign(run, { worktree: wt.dir, branch: wt.branch, base: wt.base });
     rmSync(join(wt.dir, ".crew", "handoff.json"), { force: true }); // 앞 역할 봉투를 이번 결과로 착각하지 않게
@@ -446,7 +446,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     g.bySession.set(sessionId, run.id);
     if (run.state !== "starting") { void sna.agent.kill(sessionId).catch(() => {}); return run; } // #1162 준비 중에 감시가 실패 처리 — 시작하지 않음
     persist(run, true); // 세션 번호를 바로 기록 — agent.start 도중 앱이 꺼져도 다음 시작이 이 세션을 끔(리뷰)
-    // ponytail: agent.start가 20분 넘게 걸렸다가 사람이 다시 실행한 뒤에야 풀리면, 아래 상태 확인이 끌 때까지 잠깐 둘이 겹칠 수 있음 — 실제로 보이면 옛 startRun을 기다렸다 시작
+    // 한계: agent.start가 20분 넘게 걸렸다가 사람이 다시 실행한 뒤에야 풀리면, 아래 상태 확인이 끌 때까지 잠깐 둘이 겹칠 수 있음 — 실제로 보이면 옛 startRun을 기다렸다 시작
     await sna.agent.subscribe(sessionId);
     const isClaude = role.provider === "claude-code";
     const token = randomUUID();

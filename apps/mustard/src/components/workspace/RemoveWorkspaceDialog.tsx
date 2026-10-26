@@ -6,8 +6,8 @@ import { IconGitBranch, IconLoader2, IconAlertTriangle, IconTrash } from "@table
 import { useT, useToast, useConfirm } from "@mustard/core";
 import { closeWorkspace } from "@/lib/repo/workspaceEvents";
 
-// 작업공간 지우기(#1170) — Orca 삭제 흐름: 점검(미커밋·미푸시) → archive(승인 필요, 실패면 멈춤) → worktree remove → 로컬 브랜치 -d(실패면 남김).
-// 미커밋이 있으면 "그래도 지우기"(= git --force). 미푸시는 경고만(Superset). 원격 브랜치는 안 지움.
+// 작업공간 지우기(#1170) — 삭제 흐름: 점검(미커밋·미푸시) → archive(승인 필요, 실패면 멈춤) → worktree remove → 로컬 브랜치 -d(실패면 남김).
+// 미커밋이 있으면 "그래도 지우기"(= git --force). 미푸시는 경고만. 원격 브랜치는 안 지움.
 type Check = { branch: string | null; dirty: number; ignored: string[]; ignoredCount: number; unpushed: number | null; archive: { script: string; trusted: boolean; tooLong: boolean } | null };
 const post = async (body: Record<string, unknown>) => (await fetch("/api/repo/workspace", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
 const base = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
