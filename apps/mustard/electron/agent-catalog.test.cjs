@@ -45,5 +45,9 @@ assert.strictEqual(liftPermission("claude", "--permission-mode=bypassPermissions
 assert.strictEqual(liftPermission("codex", "--yolo").choice, "full-access");
 assert.strictEqual(liftPermission("gemini", "-y").choice, "full-access");
 assert.strictEqual(liftPermission("claude", "\\--dangerously-skip-permissions").choice, "full-access", "\\ 이스케이프");
+assert.deepStrictEqual(liftPermission("grok", "--permission-mode default --yolo"), { choice: "full-access", rest: "" }, "넓은 권한이 이김·전부 뺌");
+assert.deepStrictEqual(liftPermission("claude", "--dangerously-skip-permissions --permission-mode bypassPermissions --model x"), { choice: "full-access", rest: "--model x" }, "같은 뜻 두 번도 다 뺌");
+assert.deepStrictEqual(liftPermission("claude", "--permission-mode acceptEdits --permission-mode bypassPermissions"), { choice: "full-access", rest: "" });
+assert.deepStrictEqual(liftPermission("gemini", "--yolo -y"), { choice: "full-access", rest: "" });
 assert.ok(weakDetect("pi") && weakDetect("continue") && weakDetect("rovo") && !weakDetect("claude") && !weakDetect("dsh"), "짧은 이름으로만 감지");
 console.log("agent-catalog.test ok");

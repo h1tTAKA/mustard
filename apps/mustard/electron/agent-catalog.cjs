@@ -110,22 +110,25 @@ function launchLine(id, { choice = "own", userArgs = "", cmd } = {}) {
 // 유저가 인자에 알려진 권한 플래그를 쓰면 빼서 그 에이전트의 권한 선택으로 — { choice, rest } 또는 null
 // 같은 뜻의 다른 표기(전체 액세스) — 인자로 넣어도 권한 선택으로 옮겨 확인창을 거치게(리뷰)
 const FULL_ALIAS = { claude: ["--permission-mode bypassPermissions"], codex: ["--yolo"], gemini: ["-y", "--approval-mode yolo"], grok: ["--yolo", "--always-approve", "--dangerously-skip-permissions"] };
+// 알려진 권한 표기를 전부 빼고, 그중 가장 넓은 권한을 고름(전체 > 대신 승인 > 편집 수락 > 승인 요청) — 하나만 빼면 남은 표기로 확인창을 우회(리뷰)
 function liftPermission(id, userArgs) {
-  // --opt=값도 --opt 값처럼 비교하되, 나머지는 원래 토큰 그대로 돌려줌(유저가 쓴 형태·따옴표 유지, 리뷰)
   const raw = tokens(userArgs);
   const t = raw.map(unq).flatMap((x, ri) => (/^--[^=]+=/.test(x) ? [[x.slice(0, x.indexOf("=")), ri], [x.slice(x.indexOf("=") + 1), ri]] : [[x, ri]]));
-  const recipes = [...["full-access", "auto", "accept-edits", "ask"].map((c) => [c, flagOf(id, c)]), ...(FULL_ALIAS[id] || []).map((f) => ["full-access", f])];
+  const recipes = [["full-access", flagOf(id, "full-access")], ...(FULL_ALIAS[id] || []).map((f) => ["full-access", f]), ...["auto", "accept-edits", "ask"].map((c) => [c, flagOf(id, c)])];
+  const used = new Set();
+  let choice = null;
   for (const [c, flag] of recipes) {
     const f = tokens(flag).map(unq);
     if (!f.length) continue;
     for (let i = 0; i + f.length <= t.length; i++) {
       if (!f.every((x, k) => t[i + k][0] === x)) continue;
-      const used = new Set(t.slice(i, i + f.length).map(([, ri]) => ri));
-      if (t.some(([, ri], k) => used.has(ri) && (k < i || k >= i + f.length))) continue; // --opt=값의 반쪽만 맞으면 건너뜀
-      return { choice: c, rest: raw.filter((_, ri) => !used.has(ri)).join(" ") };
+      const hit = new Set(t.slice(i, i + f.length).map(([, ri]) => ri));
+      if ([...hit].some((ri) => used.has(ri)) || t.some(([, ri], k) => hit.has(ri) && (k < i || k >= i + f.length))) continue; // 이미 쓴 토큰·--opt=값 반쪽만
+      for (const ri of hit) used.add(ri);
+      choice ??= c; // recipes가 넓은 순이라 처음 맞은 게 가장 넓음
     }
   }
-  return null;
+  return choice ? { choice, rest: raw.filter((_, ri) => !used.has(ri)).join(" ") } : null;
 }
 
 // 신원(셸에 친 명령·포그라운드 프로세스 이름 → 에이전트)에 쓰는 이름 — 다른 도구와 겹치기 쉬운 짧은 이름은 뺌(리뷰: pi·cn·acli·dst)
