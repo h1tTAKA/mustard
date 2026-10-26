@@ -19,3 +19,4 @@ export * from "./appearance";
 export * from "./notify";
 export * from "./shortcuts";
 export * from "./shortcutRuntime";
+export * from "./quickCommands";
