@@ -1,5 +1,5 @@
 // GitHub gh CLI 브릿지 결과·엔티티(#813~). ghJson 반환 형태.
-interface AgentDetect { id: string; label: string; status: "ok" | "broken" | "missing"; path?: string; version?: string | null; auth: "authenticated" | "unauthenticated" | "unknown"; install: string | null; tried: { path: string; error: string }[] }
+interface AgentDetect { id: string; label: string; status: "ok" | "broken" | "missing"; path?: string; version?: string | null; auth: "authenticated" | "unauthenticated" | "unknown"; install: string | null; tried: { path: string; error: string }[]; url?: string; cmd?: string; choices?: string[] }
 type GhResult<T> = { ok: true; data: T } | { ok: false; kind: string; detail?: string };
 interface GhLabel { name: string; color: string }
 type GhMetaField = "reviewer" | "assignee" | "label" | "milestone"; // #1131 사이드바 항목
@@ -28,6 +28,7 @@ interface NunopiDesktopApi {
   setRuntimePaths(paths: { claudeCode?: string; codex?: string; opencode?: string }): Promise<{ ok: boolean; saved: Record<string, string> }>;
   // #1171 에이전트 CLI 상태 — status: ok(설치·실행됨) / broken(찾았는데 실행 실패) / missing, auth: authenticated / unauthenticated / unknown
   detectAgents?(force?: boolean): Promise<{ ok: true; list: AgentDetect[] } | { ok: false; error: string }>;
+  liftAgentArgs?(agent: string, args: string): Promise<{ choice: string; rest: string } | null>; // #1184
   relaunch(): Promise<void>;
   // 데스크톱 네이티브 알림. 창 포커스 중이면 스킵(reason:"focused").
   notify(payload: { title: string; body?: string; suppressWhileFocused?: boolean; silent?: boolean; target?: { repoPath: string; sessionId?: string } }): Promise<{ ok: boolean; reason?: string }>;
@@ -120,7 +121,7 @@ interface NunopiDesktopApi {
     // sessionTitle(#970)=세션 작업 제목(OSC 타이틀 요약) | ""(셸·미판정). 탭 라벨·호버 이름용.
     list(): Promise<{ id: string; cwd: string; process: string; pid: number; agent: string | null; sessionTitle: string }[]>;
     // 에이전트 직접 실행(#864) — 신원을 실행 기록에 확정 + pty에 실행 커맨드 주입. 이후 탭 아이콘/이름=이 에이전트.
-    launchAgent(payload: { id: string; agent: string; dark?: boolean; extraArgs?: string; cwd?: string }): Promise<{ ok: boolean; reason?: string }>; // cwd = #1110 Crew 넘겨받기
+    launchAgent(payload: { id: string; agent: string; dark?: boolean; permission?: string; args?: string; extraArgs?: string; cwd?: string }): Promise<{ ok: boolean; reason?: string }>; // cwd = #1110 Crew 넘겨받기
     onData(cb: (p: { id: string; data: string }) => void): () => void;
     onExit(cb: (p: { id: string }) => void): () => void;
   };

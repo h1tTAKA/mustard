@@ -46,12 +46,33 @@ export const TKEYS = {
   focusFollowsMouse: "terminal.focusFollowsMouse",
 } as const;
 
-// 에이전트 런치(#927) — 기본 에이전트 + per-agent 추가 인자. 키는 agent.args.<id> 동적.
-export const AGENT_DEFAULTS = { default: "claude" };
+// 에이전트 런치(#927, #1184 Orca식) — 기본 에이전트("auto" = 감지되고 켜진 첫 에이전트, "blank" = 셸만, 아니면 id) + per-agent 유저 인자·권한·켜기.
+// 권한 = 전체(perm) + 에이전트별 덮어쓰기(perm.<id>, ""·없음 = 전체 따름). 값: own·ask·accept-edits·auto·full-access. 기본 own(플래그 안 붙임).
+// 키를 에이전트마다 따로 둠(객체 하나로 두면 useSetting 스냅샷이 매번 새 객체 — 무한 렌더).
+export const AGENT_DEFAULTS = { default: "auto", perm: "own" };
 export const AKEYS = {
   default: "agent.default",
   args: (agentId: string) => `agent.args.${agentId}`,
+  perm: "agent.perm",
+  permOf: (agentId: string) => `agent.perm.${agentId}`,
+  off: (agentId: string) => `agent.off.${agentId}`,
+  argsLifted: "agent.argsLifted",
 } as const;
+export type AgentPermission = "own" | "ask" | "accept-edits" | "auto" | "full-access";
+// 이 에이전트의 권한 — 덮어쓰기 > 전체 > own(Orca resolveAgentPermission). choices = 그 에이전트가 고를 수 있는 것(카탈로그), 못 고르는 건 own.
+export function agentPermission(agentId: string, choices?: string[]): { choice: AgentPermission; own: boolean } {
+  const mine = getSetting<string>(AKEYS.permOf(agentId), "");
+  const choice = (mine || getSetting<string>(AKEYS.perm, AGENT_DEFAULTS.perm)) as AgentPermission;
+  return { choice: !choices || choices.includes(choice) ? choice : "own", own: !!mine };
+}
+export const agentEnabled = (agentId: string) => !getSetting<boolean>(AKEYS.off(agentId), false);
+// 기본 에이전트 고르기 — detected = 감지된 id(카탈로그 순서). null = 셸만.
+export function pickDefaultAgent(detected: string[]): string | null {
+  const d = getSetting<string>(AKEYS.default, AGENT_DEFAULTS.default);
+  if (d === "blank") return null;
+  const ok = detected.filter(agentEnabled);
+  return d !== "auto" && ok.includes(d) ? d : (ok[0] ?? null);
+}
 // 실행할 수 있는 에이전트(터미널 + 메뉴·기본 에이전트·추가 인자 한 곳, #1171) — main AGENT_DEFAULT_CMD에 있는 것. gemini 제외(구글=antigravity, #864).
 export const LAUNCH_AGENTS = [
   { id: "claude", label: "Claude Code", ph: "--dangerously-skip-permissions" }, { id: "codex", label: "Codex", ph: "--sandbox workspace-write" },

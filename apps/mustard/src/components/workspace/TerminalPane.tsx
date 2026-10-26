@@ -1,9 +1,10 @@
 "use client";
 // 워크스페이스 터미널 멀티탭(#678) — 탭 바 + 활성 터미널. pty는 메인서 id별로 생존(#647 A안).
 // 활성 탭만 렌더(전환 시 remount → scrollback 재생). 탭 목록은 레포별 localStorage 영속.
+import { launchOpts, liftStoredArgs } from "@/lib/agentLaunch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
-import { useShortcut, useT, useToast, getTerminalThemePref, isTerminalDark, getSetting, AKEYS, AGENT_DEFAULTS, LAUNCH_AGENTS, CKEYS, useConfirm } from "@mustard/core";
+import { useShortcut, useT, useToast, getTerminalThemePref, isTerminalDark, getSetting, AKEYS, AGENT_DEFAULTS, LAUNCH_AGENTS, CKEYS, useConfirm, pickDefaultAgent } from "@mustard/core";
 import Terminal from "@/components/workspace/Terminal";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
@@ -169,6 +170,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   // #1171 에이전트 설치 상태 — 메뉴 열 때 받음(main이 60초 캐시). 안 깔린 건 흐리게, 눌러도 실행은 지금처럼(경고만)
   const toast = useToast();
   const [agentState, setAgentState] = useState<Record<string, AgentDetect["status"]>>({});
+  useEffect(() => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) void liftStoredArgs(r.list.map((a) => a.id)); }).catch(() => {}); }, []); // #1184 옛 추가 인자 → 권한(한 번)
   const loadAgentState = () => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) setAgentState(Object.fromEntries(r.list.map((a) => [a.id, a.status]))); }).catch(() => {}); };
   const toggleMenu = () => {
     if (menuOpen) { setMenuOpen(false); return; }
@@ -193,7 +195,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
       const id = genId();
       setTabs((prev) => [...prev, { id, title: t("workspace.terminalTab", { n: nextNum(prev) }) }]);
       setActiveId(id);
-      void window.nunopiDesktop?.terminal?.launchAgent?.({ id, agent, dark: isTerminalDark(getTerminalThemePref()), extraArgs: [getSetting<string>(AKEYS.args(agent), ""), args].filter(Boolean).join(" "), cwd: d.worktree });
+      void window.nunopiDesktop?.terminal?.launchAgent?.({ id, agent, dark: isTerminalDark(getTerminalThemePref()), ...launchOpts(agent, args), cwd: d.worktree });
     };
     window.addEventListener("mustard:crew-takeover", on);
     return () => window.removeEventListener("mustard:crew-takeover", on);
@@ -205,12 +207,17 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
     const id = genId();
     setTabs((prev) => [...prev, { id, title: t("workspace.terminalTab", { n: nextNum(prev) }) }]);
     setActiveId(id);
-    // 터미널 테마(#922) + 에이전트 추가 인자(#927) 전달. main이 cmd에 반영.
-    const extraArgs = getSetting<string>(AKEYS.args(agent), "");
-    void window.nunopiDesktop?.terminal?.launchAgent?.({ id, agent, dark: isTerminalDark(getTerminalThemePref()), extraArgs }); // main이 pty ensure 대기 후 커맨드 주입
+    // 터미널 테마(#922) + 권한·유저 인자(#927, #1184) 전달. main이 카탈로그로 명령 조립.
+    void window.nunopiDesktop?.terminal?.launchAgent?.({ id, agent, dark: isTerminalDark(getTerminalThemePref()), ...launchOpts(agent) }); // main이 pty ensure 대기 후 커맨드 주입
   };
   // 기본 에이전트(#927) 빠른 실행 — 설정의 agent.default.
-  const launchDefaultAgent = () => launchInNewTab(getSetting<string>(AKEYS.default, AGENT_DEFAULTS.default) as AgentId);
+  // #1184 자동 = 감지되고 켜진 첫 에이전트(카탈로그 순서), 셸만(blank) = 새 터미널
+  const launchDefaultAgent = () => {
+    void (window.nunopiDesktop?.detectAgents?.(false) ?? Promise.resolve(null)).then((r) => {
+      const pick = pickDefaultAgent(r && r.ok ? r.list.filter((a) => a.status === "ok").map((a) => a.id) : []);
+      if (pick) launchInNewTab(pick as AgentId); else newTerminal();
+    }).catch(() => newTerminal());
+  };
 
   // #1027 터미널 탭 단축키 — 보이는(활성) 레포의 터미널 패널만 처리, 아니면 false로 다른 레포에 넘김.
   useShortcut(["term.new", "term.newAgent", "term.close", "term.next", "term.prev", ...Array.from({ length: 9 }, (_, i) => `term.goto${i + 1}`)], (d) => {

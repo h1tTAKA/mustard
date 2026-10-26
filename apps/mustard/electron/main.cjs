@@ -544,6 +544,8 @@ ipcMain.handle("mode:isOpen", (_e, kind) => openModes.has(kind));
 ipcMain.handle("mode:list", () => [...openModes.keys()]);
 ipcMain.handle("runtime-paths:get", () => loadSavedRuntimePaths());
 // #1171 에이전트 상태 — force면 로그인 셸 PATH부터 다시(설정의 "다시 확인"). 결과: [{id,label,status,path,version,auth,install,tried}]
+// #1184 인자 속 알려진 권한 플래그 → 권한 선택(Orca lift). 렌더러가 옛 추가 인자 옮기기·인자 칸 저장 때 부름.
+ipcMain.handle("agents:lift", (_e, { agent, args }) => (agentCatalog.BY_ID.has(agent) ? agentCatalog.liftPermission(agent, String(args || "")) : null));
 ipcMain.handle("agents:detect", async (_e, force) => { try { return { ok: true, list: await detectAgents(!!force) }; } catch (e) { return { ok: false, error: String(e?.message ?? e) }; } });
 ipcMain.handle("runtime-paths:set", (_e, paths) => { const saved = saveRuntimePaths(paths); if (lastDetect) { lastDetect.custom = customIds(); writeDetect(); } void detectAgents(true).catch(() => {}); return { ok: true, saved }; }); // #1171 사용자 지정 경로(custom)가 바로 감지 기록에(Crew가 옛 기록으로 막지 않게)
 // GitHub 패널(#810) — gh 경로는 설정값 우선, 없으면 PATH의 gh. IPC로 인증 상태 진단(서브3~5가 데이터 IPC 추가).
@@ -1159,14 +1161,11 @@ const isShellProc = (p) => SHELLS.has(String(p || "").trim().toLowerCase().repla
 // #864 orca식 신원 확정 — 우리가 탭에서 직접 실행한 에이전트를 기록(tabId→agent). 스크레이프 추측 대신
 // 이 기록이 신원의 진실(오판 원천 소멸). 셸 복귀(종료) 시 해제. 유저가 손으로 실행하면 기록 없음 → 스크레이프 fallback.
 const launchRegistry = new Map(); // id → agent id
-// 에이전트 id → 실행 셸 커맨드. runtime 경로 설정 있으면 그걸, 없으면 기본 커맨드명.
-const AGENT_DEFAULT_CMD = { claude: "claude", codex: "codex", gemini: "gemini", antigravity: "agy", opencode: "opencode", aider: "aider", cursor: "cursor-agent", copilot: "copilot", amp: "amp", grok: "grok", hermes: "hermes", omp: "omp" };
-function agentCommand(agent) {
+// 에이전트 id → 경로 지정(설정, claude·codex·opencode만 — SNA와 같은 값). 없으면 카탈로그 실행 명령(#1184).
+const agentCatalog = require("./agent-catalog.cjs");
+function agentCmdOverride(agent) {
   const rp = loadSavedRuntimePaths();
-  if (agent === "claude") return rp.claudeCode || "claude";
-  if (agent === "codex") return rp.codex || "codex";
-  if (agent === "opencode") return rp.opencode || "opencode";
-  return AGENT_DEFAULT_CMD[agent] || null;
+  return { claude: rp.claudeCode, codex: rp.codex, opencode: rp.opencode }[agent] || undefined;
 }
 // launchRegistry 디스크 영속(#864) — pty는 앱 재시작에도 생존(#682)하는데 registry는 메모리라 재시작 시 날아가
 // 살아남은 세션이 스크레이프 fallback으로 오판된다(codex→claude). {id:agent}를 파일에 저장하고 부팅 시 복원.
@@ -1196,8 +1195,8 @@ function registryAgent(id, proc) {
   return reg.agent;                                              // 부팅 중(미확정 셸) — 신원 유지
 }
 // 커맨드 basename → agent id. 유저가 셸에 직접 친 실행 커맨드도 잡아 신원 확정(피커 안 써도 정확).
-// gemini 제외 — 구글 에이전트는 antigravity(agy)로 통일(#864). agy 커맨드가 antigravity로 매핑.
-const CMD_TO_AGENT = { claude: "claude", codex: "codex", agy: "antigravity", antigravity: "antigravity", opencode: "opencode", grok: "grok", omp: "omp", aider: "aider", amp: "amp", copilot: "copilot", hermes: "hermes", "cursor-agent": "cursor", cursor: "cursor" };
+// 카탈로그의 감지 명령·별칭 전부(#1184) + 옛 별칭. gemini도 이제 따로(카탈로그 = Orca, #864의 antigravity 통일은 실행 목록이 좁던 때 결정).
+const CMD_TO_AGENT = { ...Object.fromEntries(agentCatalog.AGENTS.flatMap((a) => a.bins.map((b) => [b, a.id]))), antigravity: "antigravity", cursor: "cursor" };
 const inputBuf = new Map(); // id → 현재 타이핑 중인 라인(개행 전까지 누적)
 // pty 입력 스트림을 감시해 "에이전트 실행 커맨드 + Enter"를 감지 → launchRegistry 갱신. 수동 실행도 신원 확정(#864).
 // (셸 복귀 시 registry는 이미 해제되므로, 이전 stale 신원이 남아도 새 커맨드가 덮어씀 → codex→claude 오판 소멸.)
@@ -1474,10 +1473,11 @@ ipcMain.on("terminal:input", (_e, { id, data }) => { termClient.input({ id, data
 // #864 에이전트 직접 실행 — 신원을 실행 기록에 확정하고 pty 셸에 실행 커맨드 주입. 반환 후 탭 아이콘/이름=이 에이전트.
 // 새 탭은 렌더러가 Terminal 마운트→ensure까지 시간차가 있어, pty 준비(ensuredIds)를 최대 3s 대기 후 주입.
 const ensuredIds = new Set(); // ensure 완료된 세션 id
-ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, extraArgs, cwd }) => {
+// #1184 명령 = 카탈로그로 조립 — [env] 실행 명령(경로 지정) + 권한 플래그(permission) + 유저 인자(args). 옛 extraArgs = args.
+ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, permission, args, extraArgs, cwd }) => {
   if (!id || typeof agent !== "string") return { ok: false, reason: "bad args" };
-  let cmd = agentCommand(agent);
-  if (!cmd) return { ok: false, reason: "unknown agent" };
+  if (!agentCatalog.BY_ID.has(agent)) return { ok: false, reason: "unknown agent" };
+  const choice = agentCatalog.CHOICES.includes(permission) ? permission : "own";
   // #1110 Crew 넘겨받기 — 카드 작업 폴더에서 실행(절대 경로·존재하는 폴더만, 작은따옴표 이스케이프)
   let cdPrefix = "";
   if (typeof cwd === "string" && cwd) {
@@ -1487,9 +1487,9 @@ ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, extraArgs, 
   }
   // claude는 자기 theme(settings.json)으로 diff·프롬프트·링크 색을 truecolor로 찍어 터미널 팔레트가 못 이긴다(#922).
   // 터미널 테마에 맞춰 --settings로 세션 theme만 덮어씀(유저 전역 ~/.claude/settings.json은 안 건드림, auth 유지·병합).
-  if (agent === "claude" && typeof dark === "boolean") cmd += ` --settings '{"theme":"${dark ? "dark" : "light"}"}'`;
-  // 유저 지정 per-agent 추가 인자(#927) — 설정서 렌더러가 전달. 로컬 유저 인자라 그대로 append.
-  if (typeof extraArgs === "string" && extraArgs.trim()) cmd += ` ${extraArgs.trim()}`;
+  // 유저 지정 per-agent 추가 인자(#927) — 설정서 렌더러가 전달. 로컬 유저 인자라 그대로(권한 플래그는 카탈로그가 앞에).
+  const user = [agent === "claude" && typeof dark === "boolean" ? `--settings '{"theme":"${dark ? "dark" : "light"}"}'` : "", typeof args === "string" ? args : typeof extraArgs === "string" ? extraArgs : ""].map((x) => x.trim()).filter(Boolean).join(" ");
+  const cmd = agentCatalog.launchLine(agent, { choice, userArgs: user, cmd: agentCmdOverride(agent) });
   launchRegistry.set(id, { agent, confirmed: false, at: Date.now() }); // 즉시 신원(아이콘). 부팅 중 셸이어도 유지.
   let ready = false;
   for (let i = 0; i < 60; i++) { if (ensuredIds.has(id)) { ready = true; break; } await new Promise((r) => setTimeout(r, 50)); } // 최대 3s pty 대기

@@ -2,13 +2,14 @@
 // nunopi 스탠드얼론 학습앱(#894 서브5) — preload.cjs가 실제 노출하는 학습 표면만 선언.
 // 워크스페이스 전용(terminal·ports·repo watch·provider-usage)은 없음. 공유 설정 창이 ?.로 확인하는 github·integrations·pickRepoFolder는
 // 타입만 선택(optional)으로 둠 — 스탠드얼론 런타임엔 없어서 그 설정 칸은 동작 안 함.
-interface AgentDetect { id: string; label: string; status: "ok" | "broken" | "missing"; path?: string; version?: string | null; auth: "authenticated" | "unauthenticated" | "unknown"; install: string | null; tried: { path: string; error: string }[] }
+interface AgentDetect { id: string; label: string; status: "ok" | "broken" | "missing"; path?: string; version?: string | null; auth: "authenticated" | "unauthenticated" | "unknown"; install: string | null; tried: { path: string; error: string }[]; url?: string; cmd?: string; choices?: string[] }
 interface NunopiDesktopApi {
   isDesktop: true;
   getRuntimePaths(): Promise<{ claudeCode?: string; codex?: string; opencode?: string }>;
   setRuntimePaths(paths: { claudeCode?: string; codex?: string; opencode?: string }): Promise<{ ok: boolean; saved: Record<string, string> }>;
   // #1171 에이전트 CLI 상태(Mustard main — nunopi 단독 앱엔 없을 수 있음)
   detectAgents?(force?: boolean): Promise<{ ok: true; list: AgentDetect[] } | { ok: false; error: string }>;
+  liftAgentArgs?(agent: string, args: string): Promise<{ choice: string; rest: string } | null>; // #1184
   relaunch(): Promise<void>;
   // 데스크톱 네이티브 알림. 창 포커스 중이면 스킵(reason:"focused").
   notify(payload: { title: string; body?: string; suppressWhileFocused?: boolean }): Promise<{ ok: boolean; reason?: string }>;
