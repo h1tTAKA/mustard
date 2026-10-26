@@ -36,6 +36,8 @@ function flowFields(t: Record<string, unknown>): Partial<CrewTask> {
   if (int(t.reviews) !== undefined) out.reviews = int(t.reviews);
   const pr = t.pr as Record<string, unknown> | undefined;
   if (pr && typeof pr.url === "string" && /^https?:\/\//.test(pr.url)) out.pr = { url: pr.url.slice(0, 500) };
+  const iss = cleanIssue(t.issue);
+  if (iss) out.issue = iss;
   const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && /^[\w-]{1,64}$/.test(x)).slice(0, 20) : []);
   if (Array.isArray(t.split)) {
     const sp = t.split.flatMap((x, i) => {
@@ -54,6 +56,15 @@ function flowFields(t: Record<string, unknown>): Partial<CrewTask> {
   if (c && typeof c === "object" && int(c.stage) !== undefined && cleanRole(c.from) && typeof c.question === "string")
     out.consult = { stage: int(c.stage)!, from: cleanRole(c.from)!, question: c.question.slice(0, 4000) };
   return out;
+}
+
+// #1172 트래커 이슈 연결 — 공급자·키(ENG-12)·https 주소만
+function cleanIssue(v: unknown): CrewTask["issue"] | undefined {
+  const x = v as Record<string, unknown> | undefined;
+  if (!x || typeof x !== "object" || (x.provider !== "linear" && x.provider !== "jira")) return undefined;
+  const key = String(x.key ?? "").toUpperCase();
+  if (!/^[A-Z][A-Z0-9_]{0,9}-\d{1,9}$/.test(key) || typeof x.url !== "string" || !/^https:\/\//.test(x.url)) return undefined;
+  return { provider: x.provider, key, url: x.url.slice(0, 500) };
 }
 
 export function sanitizeTask(x: unknown): CrewTask | null {
@@ -109,7 +120,9 @@ export function applyOp(root: string, op: CrewOp, now = Date.now()): CrewBoard {
     const order = tasks.filter((t) => t.status === status).length; // 칸 맨 아래
     const role = cleanRole(op.role);
     const pipeline = (Array.isArray(op.pipeline) ? op.pipeline : []).map(cleanRole).filter((r): r is string => !!r).slice(0, 30);
-    tasks.push({ id: randomUUID(), title: title.slice(0, TITLE_MAX), body: String(op.body ?? "").slice(0, BODY_MAX), status, order, createdAt: now, updatedAt: now, ...(role ? { role } : {}), ...(pipeline.length ? { pipeline, stage: 0 } : {}) });
+    const issue = cleanIssue(op.issue);
+    if (issue && tasks.some((t) => t.issue?.provider === issue.provider && t.issue.key === issue.key && t.status !== "done")) throw new Error("issue card exists"); // 같은 이슈 카드 두 번 안 만듦(리뷰)
+    tasks.push({ id: randomUUID(), title: title.slice(0, TITLE_MAX), body: String(op.body ?? "").slice(0, BODY_MAX), status, order, createdAt: now, updatedAt: now, ...(role ? { role } : {}), ...(pipeline.length ? { pipeline, stage: 0 } : {}), ...(issue ? { issue } : {}) });
   } else if (op.op === "update") {
     const t = find(op.id);
     if (op.title !== undefined) { const title = String(op.title).trim(); if (!title) throw new Error("title required"); t.title = title.slice(0, TITLE_MAX); }

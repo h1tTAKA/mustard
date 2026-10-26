@@ -26,6 +26,8 @@ import { isFailedNote } from "@/lib/failText";
 import { freshIds, hasTriggers, readTriggers, scheduleDue, writeTriggers, type CrewTrigger } from "./crewTriggers";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems } from "@/lib/catchupStore";
+import { readTrackerAssigned, requestTrackerSync } from "@/lib/trackerSync";
+import { formatGithubHandoff } from "@/lib/githubHandoff";
 import { checkAgent, recheck } from "./agentDetect";
 import type { CrewStatus, CrewTask } from "./crewTypes";
 
@@ -467,6 +469,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     });
     if (run.state !== "starting") { void sna.agent.kill(sessionId).catch(() => {}); return run; } // #1162 준비가 너무 길어 감시가 이미 실패 처리 — 늦게 뜬 에이전트는 끔
     run.state = "running"; run.lastActivity = "started"; run.runningAt = Date.now();
+    requestTrackerSync("start", task.issue); // #1172 이슈 연결 카드 → 트래커 "진행 중"(설정 켜진 때, main이 처리)
     persist(run, true);
     say(root, { from: role.id, provider: role.provider, kind: "start", taskId, taskTitle: task.title, ...tx(note ? "crewchat.restart" : "crewchat.start", { card: task.title }) });
   } catch (e) {
@@ -781,6 +784,7 @@ async function createPrOnce(root: string, taskId: string): Promise<{ url: string
     .then((r) => r.stdout.trim()).catch((e) => { throw new Error(String((e as { stderr?: string }).stderr || (e as Error).message).trim().slice(0, 300) || "gh failed"); });
   const url = out.split("\n").map((l) => l.trim()).find((l) => /^https?:\/\//.test(l)) ?? out;
   patchTask(root, taskId, { pr: { url } });
+  requestTrackerSync("pr", task.issue, url); // #1172 이슈에 PR 링크 댓글
   say(root, { from: "board", kind: "gate", taskId, taskTitle: task.title, ...tx("crewchat.prCreated", { url }) });
   return { url };
 }
@@ -802,8 +806,9 @@ async function baseBranch(root: string): Promise<string> {
   if (head) return head.replace(/^origin\//, "");
   return sh("git", ["rev-parse", "--abbrev-ref", "HEAD"], root).catch(() => "main");
 }
-function triggerCard(root: string, t: CrewTrigger, title: string, body: string, chat: { key: string; vars?: Record<string, string | number> }) {
-  const b = applyOp(root, { op: "create", title: title.slice(0, 200), body: body.slice(0, 20_000), status: "ready", ...(t.pipeline[0] ? { role: t.pipeline[0] } : {}), ...(t.pipeline.length ? { pipeline: t.pipeline } : {}) });
+function triggerCard(root: string, t: CrewTrigger, title: string, body: string, chat: { key: string; vars?: Record<string, string | number> }, issue?: CrewTask["issue"]) {
+  if (issue && readBoard(root).tasks.some((x) => x.issue?.provider === issue.provider && x.issue.key === issue.key && x.status !== "done")) return; // 이미 그 이슈 카드가 있음(직접 만든 것 포함, 리뷰)
+  const b = applyOp(root, { op: "create", title: title.slice(0, 200), body: body.slice(0, 20_000), status: "ready", ...(t.pipeline[0] ? { role: t.pipeline[0] } : {}), ...(t.pipeline.length ? { pipeline: t.pipeline } : {}), ...(issue ? { issue } : {}) });
   const card = b.tasks[b.tasks.length - 1];
   say(root, { from: "board", kind: "gate", taskId: card.id, taskTitle: card.title, ...(() => { const suffix = t.pipeline[0] ? ` @${t.pipeline[0]}` : ""; const c = tx(chat.key, chat.vars); return { text: c.text + suffix, i18n: { ...c.i18n, ...(suffix ? { suffix } : {}) } }; })(), ...(t.pipeline[0] ? { mentions: [t.pipeline[0]] } : {}) });
 }
@@ -820,11 +825,17 @@ export async function checkTriggers(root: string, now = Date.now()): Promise<voi
         continue;
       }
       // CI 실패·이슈 — 새로 나타난 것만, 처음엔 지금 있는 것을 본 것으로만(켜자마자 폭주 방지), 한 번에 최대 2장
-      let items: { id: string; title: string; body: string; chat: { key: string; vars?: Record<string, string | number> } }[] = [];
+      let items: { id: string; title: string; body: string; chat: { key: string; vars?: Record<string, string | number> }; issue?: CrewTask["issue"] }[] = [];
       if (t.kind === "ci-failed") {
         const branch = t.branch || (await baseBranch(root));
         const runs = JSON.parse(await sh("gh", ["run", "list", "--branch", branch, "--limit", "10", "--json", "databaseId,conclusion,name,displayTitle,url"], root) || "[]") as { databaseId: number; conclusion: string; name: string; displayTitle: string; url: string }[];
         items = runs.filter((r) => r.conclusion === "failure").map((r) => ({ id: String(r.databaseId), title: tr("crewtrig.ciTitle", { name: r.name, branch }), body: `${r.displayTitle}\n${r.url}`, chat: { key: "crewtrig.ciChat" } }));
+      } else if (t.kind === "tracker-assigned" && t.provider) {
+        // #1172 main이 1분마다 남기는 "나에게 배정된 이슈" 목록(토큰은 main에만) — 10분 넘게 안 바뀌었으면 앱이 확인 못 하는 중
+        const snap = readTrackerAssigned(t.provider);
+        if (!snap) throw new Error(tr("crewtrig.trackerStale"));
+        items = snap.map((i) => ({ id: i.key, title: `${i.key} ${i.title}`, body: formatGithubHandoff({ kind: "tracker", provider: t.provider, key: i.key, number: 0, title: i.title, part: "body", url: i.url, body: i.body ?? "" }),
+          chat: { key: "crewtrig.trackerChat", vars: { key: i.key } }, issue: { provider: t.provider!, key: i.key, url: i.url } }));
       } else if (t.kind === "issue-label" && t.label) {
         const issues = JSON.parse(await sh("gh", ["issue", "list", "--label", t.label, "--state", "open", "--limit", "30", "--json", "number,title,body,url"], root) || "[]") as { number: number; title: string; body: string; url: string }[];
         items = issues.map((i) => ({ id: String(i.number), title: `#${i.number} ${i.title}`, body: `${i.body ?? ""}\n\n${i.url}`, chat: { key: "crewtrig.issueChat", vars: { label: t.label! } } }));
@@ -838,7 +849,7 @@ export async function checkTriggers(root: string, now = Date.now()): Promise<voi
           const log = await sh("gh", ["run", "view", id, "--log-failed"], root, 60_000).catch(() => "");
           body = `${tr("crewtrig.ciBody")}\n\n${it.body}${log ? `\n\n\`\`\`\n${log.split("\n").slice(-120).join("\n").slice(-6000)}\n\`\`\`` : ""}`;
         }
-        triggerCard(root, t, it.title, body, it.chat);
+        triggerCard(root, t, it.title, body, it.chat, it.issue);
         t.seen = [...t.seen, id].slice(-500); t.lastFired = now; changed = true;
       }
       if (t.lastError) { delete t.lastError; changed = true; }

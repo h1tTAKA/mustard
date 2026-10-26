@@ -161,7 +161,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
     setEditingId(null);
   };
 
-  // ＋ 메뉴(#864) — orca식. 새 터미널 또는 에이전트 선택. 에이전트는 새 탭 생성 후 그 탭에 직접 실행(신원 확정).
+  // ＋ 메뉴(#864) — 새 터미널 또는 에이전트 선택. 에이전트는 새 탭 생성 후 그 탭에 직접 실행(신원 확정).
   // ＋는 탭 옆(스크롤 안)에 두되, 드롭다운은 position:fixed로 띄워 overflow-x-auto 클리핑을 피한다(버튼 rect 기준 좌표).
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -256,7 +256,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
               onClick={() => setActiveId(tab.id)}>
               {on && <span className="absolute inset-x-0 top-0 h-0.5 bg-mustard-500" aria-hidden />}
               {overId === tab.id && <span className="absolute inset-y-0 left-0 w-0.5 bg-mustard-500" aria-hidden />}
-              {agent && <AgentStateIcon state={sessionState(tab.id)} />}{/* #1036 orca처럼 에이전트 아이콘 왼쪽에 상태 */}
+              {agent && <AgentStateIcon state={sessionState(tab.id)} />}{/* #1036 에이전트 아이콘 왼쪽에 상태 */}
               {agent
                 ? <span className="shrink-0"><AgentLogo agent={agent} size={13} /></span>
                 : <IconTerminal2 size={13} stroke={2} className={`shrink-0 ${on ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400"}`} aria-hidden />}

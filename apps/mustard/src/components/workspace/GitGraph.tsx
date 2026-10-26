@@ -16,13 +16,13 @@ function refBadge(ref: string, curBranch: string) {
 
 const ROW_H = 24, FILE_H = 20, LANE_W = 16;
 const HOVER_DELAY_MS = 1000; // 커밋 호버 툴팁 dwell — 훑을 땐 안 뜨고 머물러야 뜸
-// 색(#707, orca식) — 트렁크(lane 0)는 브랜드 인디고 고정, 브랜치는 커밋마다 다른 accent 순환.
+// 색(#707) — 트렁크(lane 0)는 브랜드 인디고 고정, 브랜치는 커밋마다 다른 accent 순환.
 // 레인이 아니라 "커밋별"로 색을 매김 → 같은 레인(1)을 재사용하는 단발 브랜치들도 서로 다른 색(무지개).
 const TRUNK_COLOR = "#6366f1";
 const BRANCH_COLORS = ["#f59e0b", "#ec4899", "#14b8a6", "#a855f7", "#0ea5e9", "#f43f5e", "#84cc16", "#f97316"];
 const cx = (lane: number) => lane * LANE_W + LANE_W / 2;
 // 점→부모점 연결선(#707). 대각 스윕(엉킴) 방지 위해 레인 따라 직진, "전환은 한 행만" 곡선.
-// roundApex(한 행 전환): 트렁크(안쪽) 끝은 "수평 접선"으로 뻗어 둥근 꼭지점, 브랜치 레인(바깥) 끝은 "수직 접선"으로 레인과 블렌드(orca식).
+// roundApex(한 행 전환): 트렁크(안쪽) 끝은 "수평 접선"으로 뻗어 둥근 꼭지점, 브랜치 레인(바깥) 끝은 "수직 접선"으로 레인과 블렌드.
 // CURVE_F = 베지어 핸들 길이 비율. 0.5523이 사분원 근사(가장 둥글면서 좌우 균형). 그보다 크면 제어점이 한 모서리로 몰려 굴곡이 한쪽만 부푼다(#707).
 const CURVE_F = 0.55;
 const roundApex = (x1: number, ya: number, x2: number, yb: number) =>
@@ -72,7 +72,7 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
   const [changesOpen, setChangesOpen] = useState(true);
   const [untrackedOpen, setUntrackedOpen] = useState(false); // 미추적 하위그룹(기본 접힘, #699)
   // 커밋 호버 팝오버(#685) — 전체 메세지(제목+본문). fixed라 스크롤 컨테이너 잘림 회피.
-  // dwell 지연: 그래프를 훑으며 지나갈 땐 안 뜨고, 머물러야(HOVER_DELAY_MS) 뜬다(orca식).
+  // dwell 지연: 그래프를 훑으며 지나갈 땐 안 뜨고, 머물러야(HOVER_DELAY_MS) 뜬다.
   // #1064 캐치업 세션 카드 "그래프에서 보기" — 그 커밋 행으로 스크롤 + 잠깐 강조.
   const [flash, setFlash] = useState<string | null>(null);
   const [flashFile, setFlashFile] = useState<{ hash: string; file: string; n: number } | null>(null); // #1074 펼친 커밋 안 그 파일 강조(n = 요청 번호)
@@ -400,7 +400,7 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
                   )}
                   {untracked.length > 0 && (
                     <>
-                      {/* 미추적(gitignore 아님·git이 처음 보는) 파일 — 도배 방지 위해 기본 접힘(orca식). 헤더=div(버튼 중첩 회피). */}
+                      {/* 미추적(gitignore 아님·git이 처음 보는) 파일 — 도배 방지 위해 기본 접힘. 헤더=div(버튼 중첩 회피). */}
                       <div className="flex items-center gap-1 pl-4 pr-2 text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
                         <button type="button" onClick={() => setUntrackedOpen((v) => !v)} className="flex flex-1 items-center gap-1 py-0.5 text-left transition hover:text-zinc-600 dark:hover:text-zinc-300">
                           {untrackedOpen ? <IconChevronDown size={11} stroke={2} className="shrink-0" aria-hidden /> : <IconChevronRight size={11} stroke={2} className="shrink-0" aria-hidden />}
@@ -439,7 +439,7 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
           <div ref={graphScrollRef} className="nunopi-scroll h-full overflow-auto" style={{ containerType: "inline-size" }}>
           {model?.rows.map((row, idx) => {
             const dotY = ROW_H / 2;
-            // 각 부모로 향하는 선을 "점→점" 곡선으로(#707) — 반행 stub 없이 점에서 점까지 한 번에 부드럽게(orca식).
+            // 각 부모로 향하는 선을 "점→점" 곡선으로(#707) — 반행 stub 없이 점에서 점까지 한 번에 부드럽게.
             // 세로거리는 누적 top(rowTop)으로 재 펼친 파일 높이까지 반영. 같은 레인이면 직선, 아니면 부드러운 S곡선.
             const edges = row.commit.parents.map((p) => {
               const x1 = cx(row.lane);

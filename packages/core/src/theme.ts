@@ -1,4 +1,4 @@
-// 멀티 테마(#914) — orca식 토큰 블록 방식. 각 테마는 name + base(light/dark)를 가진다.
+// 멀티 테마(#914) — 토큰 블록 방식. 각 테마는 name + base(light/dark)를 가진다.
 // base=dark면 <html>.dark 세팅(기존 dark: 유틸·.dark .nunopi-* 규칙 그대로 작동),
 // data-theme=<id>가 globals.css의 [data-theme] 블록을 골라 팔레트(zinc/white/bg/fg)를 재색조.
 // Dark/Light는 기존 두 팔레트라 CSS 블록 없이 .dark 유무로만 갈린다.

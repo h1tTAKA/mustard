@@ -10,7 +10,7 @@ import { RoleIcon, roleName, useCrewRoles } from "@/components/workspace/crew/cr
 import { formatGithubHandoff, type GhHandoff } from "@/lib/githubHandoff";
 
 // className = 바깥(제목 줄 mt-0.5 등 옆 아이콘과 줄 맞춤용). 버튼 모양은 기존 GitHub 아이콘 버튼과 같음(배경 없이 색만).
-export default function SendToAgent({ root, item, size = 12, className = "" }: { root: string; item: GhHandoff; size?: number; className?: string }) {
+export default function SendToAgent({ root, item, size = 12, className = "", label, buttonClass }: { root: string; item: GhHandoff; size?: number; className?: string; label?: string; buttonClass?: string }) {
   const t = useT();
   const toast = useToast();
   const [open, setOpen] = useState(false);
@@ -52,8 +52,8 @@ export default function SendToAgent({ root, item, size = 12, className = "" }: {
   return (
     <div ref={box} className={`relative inline-flex shrink-0 ${className}`}>
       <button type="button" onClick={() => setOpen((v) => !v)} title={t("github.sendToAgent")} aria-label={t("github.sendToAgent")} aria-expanded={open}
-        className="text-zinc-400 transition hover:text-zinc-600 dark:hover:text-zinc-200">
-        <IconSend size={size} stroke={2} aria-hidden />
+        className={buttonClass ?? "text-zinc-400 transition hover:text-zinc-600 dark:hover:text-zinc-200"}>
+        <IconSend size={size} stroke={2} aria-hidden />{label}
       </button>
       {open && (
         <div className="absolute right-0 top-full z-30 mt-1 w-64 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">

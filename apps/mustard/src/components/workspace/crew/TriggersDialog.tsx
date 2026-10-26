@@ -11,7 +11,7 @@ import { relTime } from "@/lib/relTime";
 import { RoleIcon, roleName } from "./crewUi";
 
 const NEW = "__new__";
-const KINDS: TriggerKind[] = ["ci-failed", "issue-label", "schedule"];
+const KINDS: TriggerKind[] = ["ci-failed", "issue-label", "schedule", "tracker-assigned"];
 type Draft = Partial<CrewTrigger> & { kind: TriggerKind; pipeline: string[] };
 const blank = (kind: TriggerKind = "ci-failed"): Draft => ({ kind, enabled: true, pipeline: kind === "ci-failed" ? ["bug-fixer", "test-engineer"] : [] });
 
@@ -43,7 +43,7 @@ export default function TriggersDialog({ root, roles, onClose }: { root: string;
       setList(j.triggers); return j.triggers;
     } catch { toast(t("crew.saveFailed"), "error"); return null; }
   };
-  const valid = draft.kind === "ci-failed" || (draft.kind === "issue-label" ? !!draft.label?.trim() : !!draft.title?.trim() && (!!draft.at || !!draft.everyHours));
+  const valid = draft.kind === "ci-failed" || (draft.kind === "tracker-assigned" ? !!draft.provider : draft.kind === "issue-label" ? !!draft.label?.trim() : !!draft.title?.trim() && (!!draft.at || !!draft.everyHours));
   const save = async (d: Draft = draft) => {
     const next = await post({ op: "save", trigger: { ...d, id: sel === NEW ? undefined : d.id } });
     if (!next) return;
@@ -52,6 +52,7 @@ export default function TriggersDialog({ root, roles, onClose }: { root: string;
   };
 
   const summary = (x: Draft) => x.kind === "ci-failed" ? x.branch || t("crewtrig.defaultBranch")
+    : x.kind === "tracker-assigned" ? (x.provider === "jira" ? "Jira" : x.provider === "linear" ? "Linear" : "")
     : x.kind === "issue-label" ? (x.label ? `#${x.label}` : "") : x.everyHours ? t("crewtrig.everyN", { n: x.everyHours }) : x.at ? t("crewtrig.dailyAt", { at: x.at }) : "";
   const field = "w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[12.5px] text-zinc-800 outline-none transition focus:border-zinc-400 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-100 dark:focus:border-white/25";
   const label = "mb-1 block text-[11px] font-medium text-zinc-500 dark:text-zinc-400";
@@ -112,7 +113,7 @@ export default function TriggersDialog({ root, roles, onClose }: { root: string;
             )}
             <div>
               <label className={label}>{t("crewtrig.when")}</label>
-              <div className="grid grid-cols-3 gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-white/[0.05]">
+              <div className="grid grid-cols-2 gap-0.5 rounded-lg bg-zinc-100 p-0.5 sm:grid-cols-4 dark:bg-white/[0.05]">
                 {KINDS.map((k) => (
                   <button key={k} type="button" onClick={() => setDraft(sel === NEW ? blank(k) : { ...draft, kind: k })} className={seg(draft.kind === k)}>{t(`crewtrig.kind.${k}`)}</button>
                 ))}
@@ -122,6 +123,12 @@ export default function TriggersDialog({ root, roles, onClose }: { root: string;
 
             {draft.kind === "ci-failed" && (
               <div><label className={label}>{t("crewtrig.branch")}</label><input className={field} value={draft.branch ?? ""} placeholder={t("crewtrig.defaultBranch")} maxLength={200} onChange={(e) => setDraft({ ...draft, branch: e.target.value })} /></div>
+            )}
+            {draft.kind === "tracker-assigned" && (
+              <div><label className={label}>{t("crewtrig.provider")}</label>
+                <div className="grid w-44 grid-cols-2 gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-white/[0.05]">
+                  {(["linear", "jira"] as const).map((p) => <button key={p} type="button" onClick={() => setDraft({ ...draft, provider: p })} className={seg(draft.provider === p)}>{p === "linear" ? "Linear" : "Jira"}</button>)}
+                </div></div>
             )}
             {draft.kind === "issue-label" && (
               <div><label className={label}>{t("crewtrig.label")}</label><input className={field} value={draft.label ?? ""} placeholder="crew" maxLength={100} onChange={(e) => setDraft({ ...draft, label: e.target.value })} /></div>

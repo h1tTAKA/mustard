@@ -2,12 +2,28 @@
 // nunopi 스탠드얼론 학습앱(#894 서브5) — preload.cjs가 실제 노출하는 학습 표면만 선언.
 // 워크스페이스 전용(terminal·ports·repo watch·provider-usage)은 없음. 공유 설정 창이 ?.로 확인하는 github·integrations·pickRepoFolder는
 // 타입만 선택(optional)으로 둠 — 스탠드얼론 런타임엔 없어서 그 설정 칸은 동작 안 함.
+// #1172 이슈 트래커(Linear·Jira) — main이 같은 모양으로 바꿔 줌
+type TrackerProvider = "linear" | "jira";
+interface TrackerIssue { provider: TrackerProvider; id: string; key: string; title: string; state: string; stateType: string; url: string; updatedAt: string; branchName: string; assignee: string; team?: { id: string; key: string }; body?: string; comments?: { author: string; body: string; at: string }[] }
+type TrackerResult<T> = { ok: true; data: T } | { ok: false; state: "not-connected" | "not-authed" | "forbidden" | "rate-limited" | "offline" | "error"; detail?: string };
 interface AgentDetect { id: string; label: string; status: "ok" | "broken" | "missing"; path?: string; version?: string | null; auth: "authenticated" | "unauthenticated" | "unknown"; install: string | null; tried: { path: string; error: string }[]; url?: string; cmd?: string; choices?: string[]; carriers?: string[]; weak?: boolean; flags?: { ask?: string; edits?: string; auto?: string; full?: string }; env?: Record<string, string> | null }
 interface NunopiDesktopApi {
   isDesktop: true;
   getRuntimePaths(): Promise<{ claudeCode?: string; codex?: string; opencode?: string }>;
   setRuntimePaths(paths: { claudeCode?: string; codex?: string; opencode?: string }): Promise<{ ok: boolean; saved: Record<string, string> }>;
   // #1171 에이전트 CLI 상태(Mustard main — nunopi 단독 앱엔 없을 수 있음)
+  trackers?: {
+    connect(provider: TrackerProvider, payload: { token: string; site?: string; email?: string }): Promise<TrackerResult<{ name: string; account: string }>>;
+    disconnect(provider: TrackerProvider): Promise<{ ok: boolean }>;
+    status(provider: TrackerProvider): Promise<TrackerResult<{ name: string; account: string }> & { site?: string; email?: string }>;
+    list(provider: TrackerProvider, query?: string): Promise<TrackerResult<TrackerIssue[]>>;
+    view(provider: TrackerProvider, id: string): Promise<TrackerResult<TrackerIssue>>;
+    states(provider: TrackerProvider, issue: TrackerIssue): Promise<TrackerResult<{ id: string; name: string; type: string }[]>>;
+    setState(provider: TrackerProvider, issue: TrackerIssue, stateId: string): Promise<TrackerResult<boolean>>;
+    comment(provider: TrackerProvider, issue: TrackerIssue, body: string): Promise<TrackerResult<boolean>>;
+    syncGet(): Promise<{ start: boolean; pr: boolean; done: boolean }>;
+    syncSet(cfg: Partial<{ start: boolean; pr: boolean; done: boolean }>): Promise<{ start: boolean; pr: boolean; done: boolean }>;
+  };
   detectAgents?(force?: boolean): Promise<{ ok: true; list: AgentDetect[] } | { ok: false; error: string }>;
   liftAgentArgs?(agent: string, args: string): Promise<{ choice: string; rest: string } | null>; // #1184
   relaunch(): Promise<void>;
@@ -60,7 +76,7 @@ interface NunopiDesktopApi {
     glabMrView(cwd: string, number: number): Promise<GhResult<GhPrDetail>>;
     glabIssueList(cwd: string, state?: "open" | "closed" | "all", limit?: number): Promise<GhResult<GhIssue[]>>;
     glabIssueView(cwd: string, number: number): Promise<GhResult<GhIssueDetail>>;
-    setToken(host: "bitbucket" | "azure" | "vercel" | "supabase", token: string): Promise<{ ok: boolean; detail?: string }>;
+    setToken(host: "bitbucket" | "azure" | "vercel" | "supabase" | "linear" | "jira", token: string): Promise<{ ok: boolean; detail?: string }>;
     tokenStatus(host: "bitbucket" | "azure" | "vercel" | "supabase"): Promise<{ hasToken: boolean }>;
     clearToken(host: "bitbucket" | "azure" | "vercel" | "supabase"): Promise<{ ok: boolean }>;
   };

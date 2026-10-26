@@ -1,4 +1,8 @@
 // GitHub gh CLI 브릿지 결과·엔티티(#813~). ghJson 반환 형태.
+// #1172 이슈 트래커(Linear·Jira) — main이 같은 모양으로 바꿔 줌
+type TrackerProvider = "linear" | "jira";
+interface TrackerIssue { provider: TrackerProvider; id: string; key: string; title: string; state: string; stateType: string; url: string; updatedAt: string; branchName: string; assignee: string; team?: { id: string; key: string }; body?: string; comments?: { author: string; body: string; at: string }[] }
+type TrackerResult<T> = { ok: true; data: T } | { ok: false; state: "not-connected" | "not-authed" | "forbidden" | "rate-limited" | "offline" | "error"; detail?: string };
 interface AgentDetect { id: string; label: string; status: "ok" | "broken" | "missing"; path?: string; version?: string | null; auth: "authenticated" | "unauthenticated" | "unknown"; install: string | null; tried: { path: string; error: string }[]; url?: string; cmd?: string; choices?: string[]; carriers?: string[]; weak?: boolean; flags?: { ask?: string; edits?: string; auto?: string; full?: string }; env?: Record<string, string> | null }
 type GhResult<T> = { ok: true; data: T } | { ok: false; kind: string; detail?: string };
 interface GhLabel { name: string; color: string }
@@ -27,6 +31,18 @@ interface NunopiDesktopApi {
   getRuntimePaths(): Promise<{ claudeCode?: string; codex?: string; opencode?: string }>;
   setRuntimePaths(paths: { claudeCode?: string; codex?: string; opencode?: string }): Promise<{ ok: boolean; saved: Record<string, string> }>;
   // #1171 에이전트 CLI 상태 — status: ok(설치·실행됨) / broken(찾았는데 실행 실패) / missing, auth: authenticated / unauthenticated / unknown
+  trackers?: {
+    connect(provider: TrackerProvider, payload: { token: string; site?: string; email?: string }): Promise<TrackerResult<{ name: string; account: string }>>;
+    disconnect(provider: TrackerProvider): Promise<{ ok: boolean }>;
+    status(provider: TrackerProvider): Promise<TrackerResult<{ name: string; account: string }> & { site?: string; email?: string }>;
+    list(provider: TrackerProvider, query?: string): Promise<TrackerResult<TrackerIssue[]>>;
+    view(provider: TrackerProvider, id: string): Promise<TrackerResult<TrackerIssue>>;
+    states(provider: TrackerProvider, issue: TrackerIssue): Promise<TrackerResult<{ id: string; name: string; type: string }[]>>;
+    setState(provider: TrackerProvider, issue: TrackerIssue, stateId: string): Promise<TrackerResult<boolean>>;
+    comment(provider: TrackerProvider, issue: TrackerIssue, body: string): Promise<TrackerResult<boolean>>;
+    syncGet(): Promise<{ start: boolean; pr: boolean; done: boolean }>;
+    syncSet(cfg: Partial<{ start: boolean; pr: boolean; done: boolean }>): Promise<{ start: boolean; pr: boolean; done: boolean }>;
+  };
   detectAgents?(force?: boolean): Promise<{ ok: true; list: AgentDetect[] } | { ok: false; error: string }>;
   liftAgentArgs?(agent: string, args: string): Promise<{ choice: string; rest: string } | null>; // #1184
   relaunch(): Promise<void>;
@@ -106,7 +122,7 @@ interface NunopiDesktopApi {
     glabMrView(cwd: string, number: number): Promise<GhResult<GhPrDetail>>;
     glabIssueList(cwd: string, state?: "open" | "closed" | "all", limit?: number): Promise<GhResult<GhIssue[]>>;
     glabIssueView(cwd: string, number: number): Promise<GhResult<GhIssueDetail>>;
-    setToken(host: "bitbucket" | "azure" | "vercel" | "supabase", token: string): Promise<{ ok: boolean; detail?: string }>;
+    setToken(host: "bitbucket" | "azure" | "vercel" | "supabase" | "linear" | "jira", token: string): Promise<{ ok: boolean; detail?: string }>;
     tokenStatus(host: "bitbucket" | "azure" | "vercel" | "supabase"): Promise<{ hasToken: boolean }>;
     clearToken(host: "bitbucket" | "azure" | "vercel" | "supabase"): Promise<{ ok: boolean }>;
   };

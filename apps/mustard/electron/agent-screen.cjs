@@ -38,7 +38,7 @@ function lastTitle(rawTail) {
   return m.length ? m[m.length - 1][1] : "";
 }
 function firstCode(s) { return s ? s.codePointAt(0) : 0; }
-// 타이틀에서 상태 글리프를 뗀 작업 설명 — Orca처럼 "지금 뭐 하는지" 서브라인용. 예: "⠐ Review notes" → "Review notes".
+// 타이틀에서 상태 글리프를 뗀 작업 설명 — "지금 뭐 하는지" 서브라인용. 예: "⠐ Review notes" → "Review notes".
 function titleTask(title) {
   const t = String(title).trim();
   const c = firstCode(t);

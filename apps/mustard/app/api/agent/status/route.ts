@@ -58,7 +58,7 @@ export async function POST(request: Request): Promise<Response> {
   // #989 훅 권위 — 이 세션에 신선한 Claude 훅이 있으면 화면 상태로 덮지 않는다(제목 등만 갱신).
   // 예외: 화면 waiting(권한/선택 박스는 화면이 정확 — AskUserQuestion 등 훅 미등록 경로), 그리고 훅이 waiting인 동안은
   //       화면이 바꿀 수 있음(권한 박스를 Esc로 거절하면 훅이 안 옴 → 박스가 사라진 걸 화면이 정확히 봄).
-  // 중단(Ctrl+C)은 위 interruptAt 경로가 처리. Esc 중단은 orca처럼 다음 훅(새 프롬프트·Stop)까지 working 유지.
+  // 중단(Ctrl+C)은 위 interruptAt 경로가 처리. Esc 중단은 다음 훅(새 프롬프트·Stop)까지 working 유지.
   const sid = typeof body.sessionId === "string" ? body.sessionId : "";
   const prevEntry = !event ? get(cwd, sid) : undefined;
   if (prevEntry?.hookAt && now - prevEntry.hookAt < HOOK_FRESH_MS && state !== "waiting" && prevEntry.state !== "waiting") state = prevEntry.state;

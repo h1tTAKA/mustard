@@ -19,7 +19,7 @@ assert.deepStrictEqual(unsent(s).map((x) => x.id), ["3"]);
 assert.strictEqual(addNote(s, { path: "src/a.ts", line: 12, body: "rename x", scope: "unstaged" }, "8", 201).length, 3, "보낸 메모와 같은 글은 새로 달 수 있음(다시 지적)");
 assert.deepStrictEqual(removeNote(s, "3").map((x) => x.id), ["1"]);
 
-// Orca와 같은 보낼 글 형식
+// 보낼 글 형식
 assert.strictEqual(formatNote({ path: "src/a.ts", line: 12, body: "rename x" }), 'File: src/a.ts\nLine: 12\nUser comment: "rename x"');
 assert.strictEqual(formatNote({ path: "b.ts", line: 9, startLine: 4, body: 'say "hi"\nthen \\n' }), 'File: b.ts\nLines: 4-9\nUser comment: "say \\"hi\\"\\nthen \\\\n"', "따옴표·줄바꿈·역슬래시 이스케이프");
 assert.strictEqual(formatNotes(l), formatNote(l[0]) + "\n\n" + formatNote(l[1]), "메모 사이 빈 줄");

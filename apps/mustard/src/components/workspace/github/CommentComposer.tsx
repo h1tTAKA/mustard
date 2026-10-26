@@ -1,5 +1,5 @@
 "use client";
-// 이슈·PR 코멘트 작성 컴포저(#820) — orca식 카드(textarea + 서식 툴바 + 취소/Send).
+// 이슈·PR 코멘트 작성 컴포저(#820) — 카드(textarea + 서식 툴바 + 취소/Send).
 // 서식 버튼은 선택영역에 Markdown 삽입. Cmd/Ctrl+Enter 전송. write라 명시적 Send만.
 import { useEffect, useRef, useState } from "react";
 import { IconLoader2, IconClock, IconX } from "@tabler/icons-react";

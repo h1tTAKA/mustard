@@ -1,6 +1,6 @@
 "use client";
 // CI 체크 뷰(#812, 서브3 재사용) — statusCheckRollup 정규화 결과를 통과/실패/진행 아이콘 목록으로.
-// 항목 클릭 시 orca식 상세(상태·시작/완료 시각·체크#·작업흐름#·주석) 펼침. 주석은 펼칠 때 lazy 조회.
+// 항목 클릭 시 상세(상태·시작/완료 시각·체크#·작업흐름#·주석) 펼침. 주석은 펼칠 때 lazy 조회.
 import { useEffect, useState } from "react";
 import { IconCircleCheck, IconCircleX, IconLoader2, IconCircle, IconExternalLink, IconChevronRight } from "@tabler/icons-react";
 import { useT } from "@mustard/core";

@@ -17,9 +17,9 @@ const EVENTS = [
   { name: "Stop", since: "1.0.31" },
   { name: "PermissionRequest", since: "2.0.45" },
   { name: "StopFailure", since: "2.1.78" },
-  { name: "PostCompact", since: "2.1.76" }, // 수동 /compact 종료 = 알림 없는 done(Stop 안 옴). PreCompact는 orca처럼 미등록
+  { name: "PostCompact", since: "2.1.76" }, // 수동 /compact 종료 = 알림 없는 done(Stop 안 옴). PreCompact는 미등록
 ];
-const UNRESOLVED_VERSION = "1.0.64"; // 버전 확인 실패 시 가정(orca와 동일) — 최신 이벤트는 안 넣음
+const UNRESOLVED_VERSION = "1.0.64"; // 버전 확인 실패 시 가정 — 최신 이벤트는 안 넣음
 
 function cmpVersion(a, b) {
   const pa = a.split(".").map(Number), pb = b.split(".").map(Number);

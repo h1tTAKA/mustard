@@ -341,6 +341,7 @@ function setupClaudeHooks(base, token) {
 async function boot() {
   // Crew가 막기 직전 ~/.nunopi/agent-detect.request를 건드리면 바로 다시 감지(새 결과로만 막게, 리뷰). 1초 폴링.
   if (!detectTimer) require("node:fs").watchFile(join(require("node:os").homedir(), ".nunopi", "agent-detect.request"), { interval: 1000 }, (cur, prev) => { if (cur.mtimeMs > prev.mtimeMs) void detectAgents(true).catch(() => {}); });
+  if (!detectTimer) { setInterval(() => void drainTrackerSync(), 2000).unref(); setInterval(() => void snapshotAssigned().catch(() => {}), 60_000).unref(); } // #1172 Crew의 트래커 동기화 요청·배정 이슈 목록
   detectTimer ??= setInterval(() => void detectAgents().catch(() => {}), 10 * 60_000).unref(); // #1171 activate로 boot가 다시 불려도 한 번만(리뷰). 설치·로그인이 앱 실행 중에 바뀌어도 기록이 따라가게(Crew는 15분 넘은 기록은 안 믿음)
   migrateUserData(); // #900 리브랜딩 — 옛 nunopi userData 1회 이관(창·서버 뜨기 전)
   try { loadRegistry(); } catch { /* #864 재시작 생존 세션 신원 복원 */ }
@@ -577,7 +578,7 @@ function clearGhToken() { try { rmSync(ghTokenFile()); } catch { /* 없으면 �
 function ghEnv() { const tok = loadGhToken(); return tok ? { ...process.env, GH_TOKEN: tok } : undefined; }
 
 // 연동 확장(#960) — 호스트별 토큰(safeStorage). gh(github)는 위 전용 함수, 여기선 bitbucket/azure.
-const TOKEN_HOSTS = ["bitbucket", "azure", "vercel", "supabase"];
+const TOKEN_HOSTS = ["bitbucket", "azure", "vercel", "supabase", "linear", "jira"];
 const glabExe = () => loadSavedRuntimePaths().glab || "glab";
 function hostTokenFile(host) { return join(app.getPath("userData"), `token-${host}.json`); }
 function loadHostToken(host) {
@@ -650,6 +651,113 @@ ipcMain.handle("integrations:set-token", (_e, { host, token }) => {
 });
 ipcMain.handle("integrations:token-status", (_e, { host }) => ({ hasToken: TOKEN_HOSTS.includes(host) && loadHostToken(host) != null }));
 ipcMain.handle("integrations:clear-token", (_e, { host }) => { if (TOKEN_HOSTS.includes(host)) clearHostToken(host); return { ok: true }; });
+
+// #1172 이슈 트래커(Linear·Jira) — 호출은 여기서만(토큰은 화면으로 안 감). Jira 사이트·이메일은 비밀이 아니라 일반 파일.
+const trackers = require("./trackers.cjs");
+const jiraCfgFile = () => join(app.getPath("userData"), "jira.json");
+function loadJiraCfg() { try { const j = JSON.parse(readFileSync(jiraCfgFile(), "utf8")); return { site: String(j.site || ""), email: String(j.email || "") }; } catch { return { site: "", email: "" }; } }
+function trackerClient(provider) {
+  if (provider === "linear") { const token = loadHostToken("linear"); return token ? trackers.linear({ token }) : null; }
+  if (provider === "jira") { const token = loadHostToken("jira"), cfg = loadJiraCfg(); if (!token || !cfg.site) return null; try { return trackers.jira({ ...cfg, site: trackers.siteOf(cfg.site), token }); } catch { return null; } } // https 아니면 연결 안 됨
+  return null;
+}
+const notConnected = { ok: false, state: "not-connected", detail: "" };
+const withClient = (provider, fn) => { const c = trackerClient(provider); return c ? trackers.run(() => fn(c)) : notConnected; };
+// 연결 저장 — 저장 전에 확인(틀린 키면 저장 안 함). Jira는 사이트·이메일 함께.
+ipcMain.handle("trackers:connect", async (_e, { provider, token, site, email }) => {
+  if (!["linear", "jira"].includes(provider) || typeof token !== "string" || !token.trim()) return { ok: false, state: "error", detail: tm("token.empty") };
+  if (provider === "jira" && !String(site || "").trim()) return { ok: false, state: "error", detail: "site" };
+  let cfg = null;
+  try { cfg = provider === "jira" ? { site: trackers.siteOf(site), email: String(email || "").trim() } : null; new URL(cfg?.site || "https://x"); } catch { return { ok: false, state: "error", detail: "site" }; }
+  const client = provider === "linear" ? trackers.linear({ token: token.trim() }) : trackers.jira({ ...cfg, token: token.trim() });
+  const r = await trackers.run(() => client.check());
+  if (!r.ok) return r;
+  const saved = saveHostToken(provider, token.trim());
+  if (!saved.ok) return { ...saved, state: "error" };
+  if (cfg) { mkdirSync(app.getPath("userData"), { recursive: true }); writeFileSync(jiraCfgFile(), JSON.stringify(cfg)); }
+  return r;
+});
+ipcMain.handle("trackers:disconnect", (_e, { provider }) => { if (["linear", "jira"].includes(provider)) { clearHostToken(provider); if (provider === "jira") rmSync(jiraCfgFile(), { force: true }); } return { ok: true }; });
+// 상태 — 연결 안 됨이면 not-connected, 됐으면 실제 확인(이름·조직)
+ipcMain.handle("trackers:status", async (_e, { provider }) => {
+  const r = await withClient(provider, (c) => c.check());
+  return provider === "jira" ? { ...r, ...loadJiraCfg() } : r;
+});
+ipcMain.handle("trackers:list", (_e, { provider, query }) => withClient(provider, (c) => c.list({ query: String(query || "").slice(0, 200) })));
+ipcMain.handle("trackers:view", (_e, { provider, id }) => withClient(provider, (c) => c.view(String(id))));
+ipcMain.handle("trackers:states", (_e, { provider, issue }) => withClient(provider, (c) => c.states(issue)));
+ipcMain.handle("trackers:set-state", (_e, { provider, issue, stateId }) => withClient(provider, (c) => c.setState(issue, String(stateId))));
+ipcMain.handle("trackers:comment", (_e, { provider, issue, body }) => withClient(provider, (c) => c.comment(issue, String(body || "").slice(0, 20000))));
+
+// ── 상태 동기화(#1172) — 시작 → 진행 중, PR → 이슈에 링크 댓글, (선택) 머지 → 완료. 설정은 main 파일(Crew·main 둘 다 여기서 판단).
+const SYNC_DEFAULTS = { start: true, pr: true, done: false };
+const syncCfgFile = () => join(app.getPath("userData"), "tracker-sync.json");
+function loadSyncCfg() { try { return { ...SYNC_DEFAULTS, ...JSON.parse(readFileSync(syncCfgFile(), "utf8")) }; } catch { return { ...SYNC_DEFAULTS }; } }
+ipcMain.handle("trackers:sync-get", () => loadSyncCfg());
+ipcMain.handle("trackers:sync-set", (_e, cfg) => {
+  const next = { ...loadSyncCfg() };
+  for (const k of Object.keys(SYNC_DEFAULTS)) if (typeof cfg?.[k] === "boolean") next[k] = cfg[k];
+  try { mkdirSync(app.getPath("userData"), { recursive: true }); writeFileSync(syncCfgFile(), JSON.stringify(next)); } catch { /* 다음에 다시 */ }
+  return next;
+});
+// 브랜치·PR 제목에서 키(ENG-12) — 작업공간 이름에 키가 들어감(#1172)
+const trackerKeyIn = (s) => /(?:^|[^A-Za-z0-9])([A-Za-z][A-Za-z0-9_]{1,9}-\d+)(?![A-Za-z0-9])/.exec(String(s || ""))?.[1]?.toUpperCase() ?? null;
+// 키만 알면 연결된 트래커에서 찾기(Linear 먼저 — 키로 바로 조회됨)
+// 둘 다 연결됐는데 같은 키가 양쪽에 있으면 어느 건지 모르니 건너뜀(엉뚱한 이슈를 안 건드리게, 리뷰)
+async function findTrackerIssue(key, provider) {
+  const hits = [];
+  for (const p of provider ? [provider] : ["linear", "jira"]) {
+    const c = (() => { try { return trackerClient(p); } catch { return null; } })();
+    if (!c) continue;
+    const r = await trackers.run(() => c.view(key));
+    if (r.ok && r.data?.key?.toUpperCase() === key) hits.push({ client: c, issue: r.data });
+  }
+  return hits.length === 1 ? hits[0] : null;
+}
+async function trackerSync(event, { provider, key, url }) {
+  const cfg = loadSyncCfg();
+  if (!key || !cfg[event]) return;
+  const hit = await findTrackerIssue(String(key).toUpperCase(), provider);
+  if (!hit) return;
+  const { client, issue } = hit;
+  if (event === "pr") { if (url) await trackers.run(() => client.comment(issue, `PR: ${url}`)); return; } // url 없으면 아무것도 안 함(완료로 새지 않게, 리뷰)
+  const want = event === "start" ? "started" : "done";
+  // 이미 그 단계거나 더 나간 이슈는 안 건드림(완료된 걸 진행 중으로 되돌리지 않게)
+  if (["completed", "canceled", "done"].includes(issue.stateType) || (want === "started" && ["started", "indeterminate"].includes(issue.stateType))) return;
+  const st = await trackers.run(() => client.states(issue));
+  const to = st.ok ? trackers.pickState(st.data, want) : null;
+  if (to) await trackers.run(() => client.setState(issue, to.id));
+}
+// Crew 트리거 "나에게 배정된 새 이슈"(#1172) — 그 트리거가 어느 레포에든 있으면 1분마다 목록을 파일로(Next 서버가 읽음)
+async function snapshotAssigned() {
+  const nunopi = join(require("node:os").homedir(), ".nunopi");
+  let want = new Set();
+  try {
+    for (const d of require("node:fs").readdirSync(join(nunopi, "crew"))) {
+      try { const list = JSON.parse(readFileSync(join(nunopi, "crew", d, "triggers.json"), "utf8")); for (const t of list) if (t?.kind === "tracker-assigned" && t.enabled !== false) want.add(t.provider); } catch { /* 트리거 없는 레포 */ }
+    }
+  } catch { return; }
+  for (const p of want) {
+    const c = trackerClient(p);
+    if (!c) continue;
+    const r = await trackers.run(() => c.list({}));
+    if (r.ok) { try { writeFileSync(join(nunopi, `tracker-assigned-${p}.json`), JSON.stringify({ at: Date.now(), issues: r.data.map((i) => ({ key: i.key, title: i.title, url: i.url, body: String(i.body || "").slice(0, 6000) })) })); } catch { /* 다음 분에 */ } }
+  }
+}
+// Crew(Next 서버)가 남긴 요청 파일 — 2초마다 보고, 읽은 만큼 지우고 처리
+const syncReqFile = () => join(require("node:os").homedir(), ".nunopi", "tracker-sync.jsonl");
+let syncBusy = false;
+async function drainTrackerSync() {
+  if (syncBusy) return;
+  syncBusy = true;
+  try {
+    const f = syncReqFile(), tmp = `${f}.${process.pid}`;
+    try { require("node:fs").renameSync(f, tmp); } catch { return; } // 없으면 할 일 없음(옮겨 놓고 읽어 새 줄과 안 섞이게)
+    const lines = readFileSync(tmp, "utf8").split("\n").filter(Boolean);
+    rmSync(tmp, { force: true });
+    for (const l of lines.slice(-50)) { try { const j = JSON.parse(l); if (["start", "pr", "done"].includes(j.event)) await trackerSync(j.event, j); } catch { /* 깨진 줄 무시 */ } }
+  } finally { syncBusy = false; }
+}
 
 ipcMain.handle("github:auth", (_e, { cwd }) => githubBridge.authDiagnose({ gh: ghExe(), cwd, env: ghEnv(), probe: ["api", "rate_limit"] })); // #1151 로그인 필요면 API로 한 번 더(오프라인 구분)
 // 이슈 목록·상세(#813) — gh issue list/view --json. state=open|closed|all(기본 open).
@@ -849,11 +957,16 @@ ipcMain.handle("github:set-state", (_e, { cwd, kind, number, action }) => {
   return Promise.resolve({ ok: false, kind: "error", detail: "invalid action" });
 });
 // PR 머지(#822 추가) — method별 플래그 + 병합 후 브랜치 삭제. 되돌릴 수 없음(렌더러서 확인).
-ipcMain.handle("github:merge", (_e, { cwd, number, method }) => {
+ipcMain.handle("github:merge", async (_e, { cwd, number, method }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid number" };
   const flag = { merge: "--merge", squash: "--squash", rebase: "--rebase" }[method] || "--merge";
-  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "merge", String(n), flag, "--delete-branch"] });
+  // #1172 머지 → 트래커 "완료"(설정 켜진 때만) — 브랜치가 지워지기 전에 이름·제목을 받아 둠
+  const info = loadSyncCfg().done ? await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "headRefName,title"] }).catch(() => null) : null;
+  const r = await githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "merge", String(n), flag, "--delete-branch"] });
+  const key = info?.ok ? trackerKeyIn(info.data?.headRefName) || trackerKeyIn(info.data?.title) : null;
+  if (r?.ok && key) void trackerSync("done", { key }).catch(() => {});
+  return r;
 });
 // PR 리뷰 1(#1123) — 변경 파일(봤음 상태 포함)·파일별 diff·봤음 표시. GraphQL은 gh api가 {owner}/{repo}를 현재 레포로 치환.
 const prDiffCache = new Map(); // `${cwd}#${n}` → { at, files }
@@ -1067,14 +1180,23 @@ ipcMain.handle("github:pr-line-comments", async (_e, { cwd, number }) => {
   // #1145 side·startLine = diff 안 줄 위치(LEFT = 지운 줄)
   return { ok: true, data: all.map((c) => ({ id: c.id, mine: !!me && c.user?.login === me, reactionGroups: groups(c.reactions), ...(threads.get(c.id) ?? {}), path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, side: c.side ?? "RIGHT", startLine: c.start_line ?? c.original_start_line ?? null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
 });
-ipcMain.handle("github:pr-create", (_e, { cwd, base, head, title, body, draft, reviewers, assignees, labels, milestone }) => {
+ipcMain.handle("github:pr-create", async (_e, { cwd, base, head, title, body, draft, reviewers, assignees, labels, milestone }) => {
   if (!title || typeof title !== "string" || !title.trim()) return { ok: false, kind: "error", detail: "title required" };
   const args = ["pr", "create", "--title", title.trim(), "--body", typeof body === "string" ? body : ""];
   if (base && typeof base === "string" && base.trim()) args.push("--base", base.trim());
   if (head && typeof head === "string" && head.trim()) args.push("--head", head.trim());
   if (draft) args.push("--draft");
   args.push(...metaCreateArgs({ reviewers, assignees, labels, milestone })); // #1131 사이드바 항목
-  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args });
+  const r = await githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args });
+  // #1172 브랜치·제목에 트래커 키가 있으면 그 이슈에 PR 링크 댓글(설정 켜진 때, 실패해도 PR은 그대로)
+  if (r?.ok) {
+    const url = String(r.data ?? r.stdout ?? "").split("\n").map((x) => x.trim()).find((x) => /^https?:\/\//.test(x));
+    let branch = typeof head === "string" ? head : "";
+    if (!branch) branch = await new Promise((res) => require("node:child_process").execFile("git", ["branch", "--show-current"], { cwd, timeout: 5000 }, (_err, out) => res(String(out || "").trim())));
+    const key = trackerKeyIn(branch) || trackerKeyIn(title);
+    if (url && key) void trackerSync("pr", { key, url }).catch(() => {});
+  }
+  return r;
 });
 ipcMain.handle("app:relaunch", () => { app.relaunch(); app.quit(); });
 // Claude·Codex 구독 사용 한도 조회(#735) — 로컬 크레덴셜로 각 provider usage 엔드포인트 호출.
@@ -1154,11 +1276,11 @@ const screenTimers = new Map();  // id → 디바운스 타이머
 const lastTitleRawById = new Map(); // #989 id → 마지막 OSC 타이틀 원문(스트림 전체 추적 — 16KB tail서 밀려도 상태 판정 유지)
 const lastTaskById = new Map();  // #970 id → 현재 세션 제목(onData 라이브 추적, 셸 복귀/종료 시 리셋 — 이전 세션 제목 누출 방지)
 const mapScreenState = (s) => (s === "idle" ? "done" : s); // 파서 idle → 스토어 done(present/ready)
-// 포그라운드가 셸이면 에이전트 종료로 간주(버퍼에 옛 화면이 남아도 무시). herdr도 포그라운드 프로세스로 게이트.
+// 포그라운드가 셸이면 에이전트 종료로 간주(버퍼에 옛 화면이 남아도 무시). 포그라운드 프로세스로 게이트.
 const SHELLS = new Set(["zsh", "bash", "sh", "fish", "dash", "ksh", "pwsh", "powershell", "cmd", "login", "screen", "tmux"]);
 const isShellProc = (p) => SHELLS.has(String(p || "").trim().toLowerCase().replace(/^-+/, ""));
 
-// #864 orca식 신원 확정 — 우리가 탭에서 직접 실행한 에이전트를 기록(tabId→agent). 스크레이프 추측 대신
+// #864 신원 확정 — 우리가 탭에서 직접 실행한 에이전트를 기록(tabId→agent). 스크레이프 추측 대신
 // 이 기록이 신원의 진실(오판 원천 소멸). 셸 복귀(종료) 시 해제. 유저가 손으로 실행하면 기록 없음 → 스크레이프 fallback.
 const launchRegistry = new Map(); // id → agent id
 // 에이전트 id → 경로 지정(설정, claude·codex·opencode만 — SNA와 같은 값). 없으면 카탈로그 실행 명령(#1184).

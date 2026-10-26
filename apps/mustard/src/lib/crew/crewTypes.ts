@@ -15,12 +15,13 @@ export interface CrewTask {
   // 에이전트 토론(#1108) — 지금 단계가 동료 질문에 답하기면 consult, 묻기 횟수·리뷰 왕복 횟수
   consult?: { stage: number; from: string; question: string }; consults?: number; reviews?: number;
   pr?: { url: string }; // #1110 사람이 만든 draft PR
+  issue?: { provider: "linear" | "jira"; key: string; url: string }; // #1172 트래커 이슈에서 만든 카드 — 칩·상태 동기화
   // #1114 쪼개기 — split = spec 관문에 올라온 제안, children = 승인 후 만든 하위 카드, parentId·dependsOn = 하위 카드 쪽
   split?: CrewSubtask[]; children?: string[]; parentId?: string; dependsOn?: string[];
 }
 export interface CrewBoard { version: 1; tasks: CrewTask[]; }
 export type CrewOp =
-  | { op: "create"; title: string; body?: string; status?: CrewStatus; role?: string; pipeline?: string[] }
+  | { op: "create"; title: string; body?: string; status?: CrewStatus; role?: string; pipeline?: string[]; issue?: CrewTask["issue"] }
   | { op: "update"; id: string; title?: string; body?: string; role?: string; pipeline?: string[] } // pipeline [] = 지움(담당 하나·자동)
   | { op: "move"; id: string; status: CrewStatus; index: number }
   | { op: "delete"; id: string };

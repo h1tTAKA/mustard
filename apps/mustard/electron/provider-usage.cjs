@@ -13,7 +13,7 @@ const CLAUDE_OAUTH_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const TIMEOUT_MS = 10_000;
 
-// resets_at 단위 판별: >1e10이면 이미 ms epoch, 아니면 초 epoch(×1000). (Orca와 동일 휴리스틱)
+// resets_at 단위 판별: >1e10이면 이미 ms epoch, 아니면 초 epoch(×1000).
 function parseResetTs(v) {
   if (typeof v === "number") return Number.isFinite(v) ? (v > 1e10 ? v : v * 1000) : null;
   if (!v) return null;
@@ -147,7 +147,7 @@ async function readCodexAuth() {
 async function fetchCodexUsage() {
   const auth = await readCodexAuth();
   if (!auth) return { provider: "codex", status: "unavailable" };
-  // Codex 백엔드가 요구하는 헤더(Orca와 동일) — 없으면 인증돼도 거부될 수 있음.
+  // Codex 백엔드가 요구하는 헤더 — 없으면 인증돼도 거부될 수 있음.
   const headers = {
     Authorization: `Bearer ${auth.token}`,
     "User-Agent": "codex-cli",
