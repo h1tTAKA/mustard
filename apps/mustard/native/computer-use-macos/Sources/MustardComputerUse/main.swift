@@ -32,7 +32,15 @@ func clip(_ s: String, _ n: Int) -> String {
 }
 
 // ── 앱 찾기 ──────────────────────────────────────────────────────────────
-func resolveApp(_ a: J) throws -> NSRunningApplication {
+// 막는 앱(Mustard가 요청마다 보냄) — 이름을 대충 줘도("1pass") 실제로 찾은 앱으로 다시 확인
+var blocked: [String] = []
+func checkBlocked(_ r: NSRunningApplication) throws -> NSRunningApplication {
+  let labels = [r.localizedName, r.bundleIdentifier, r.bundleURL?.path].compactMap { $0?.lowercased() }
+  if let b = blocked.first(where: { b in labels.contains { $0.contains(b.lowercased()) } }) { throw fail("app_blocked", "Mustard blocks \(b). Do not operate it; tell the user.") }
+  return r
+}
+func resolveApp(_ a: J) throws -> NSRunningApplication { try checkBlocked(findApp(a)) }
+func findApp(_ a: J) throws -> NSRunningApplication {
   if let pid = int(a, "pid") {
     if let r = NSRunningApplication(processIdentifier: pid_t(pid)) { return r }
     throw fail("app_not_found", "No running app with pid \(pid). Use list_apps.")
@@ -386,7 +394,9 @@ func dispatch(_ method: String, _ p: J) throws -> Any {
   case "describe":
     guard let t = TOOLS.first(where: { ($0["name"] as? String) == str(p, "tool") }) else { throw fail("unknown_tool", "Unknown tool.") }
     return t
-  case "call": return try callTool(str(p, "tool") ?? "", (p["args"] as? J) ?? [:])
+  case "call":
+    blocked = (p["blocked"] as? [String]) ?? []
+    return try callTool(str(p, "tool") ?? "", (p["args"] as? J) ?? [:])
   default: throw fail("unknown_method", method)
   }
 }
