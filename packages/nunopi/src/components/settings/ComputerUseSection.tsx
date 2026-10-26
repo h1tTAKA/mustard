@@ -60,9 +60,10 @@ function ActivityLog({ log }: { log: LogRow[] }) {
       {log.length === 0 ? <p className="mt-2 text-[12px] text-zinc-400 dark:text-zinc-500">{t("computer.logEmpty")}</p> : (
         <ul className="mt-3 space-y-1">
           {rows.map((l, i) => {
-            const Icon = ACT[l.tool] ?? IconPointer;
+            const known = Object.hasOwn(ACT, l.tool); // constructor 같은 이름이 기록돼도 안 깨지게(리뷰)
+            const Icon = known ? ACT[l.tool] : IconPointer;
             const bad = l.result === "ok" ? null : l.result === "blocked" ? "blocked" : l.result === "stopped" ? "stopped" : "other";
-            const verb = ACT[l.tool] ? t(`computer.act.${l.tool === "(stop)" ? "stop" : l.tool}`) : l.tool;
+            const verb = known ? t(`computer.act.${l.tool === "(stop)" ? "stop" : l.tool}`) : l.tool;
             return (
               <li key={`${l.at}-${i}`} title={`${l.tool}${l.cwd ? ` · ${l.cwd}` : ""}`} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
                 <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${bad === "blocked" || bad === "stopped" ? "bg-rose-500/10 text-rose-500" : bad ? "bg-amber-500/10 text-amber-500" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"}`}><Icon size={13} aria-hidden /></span>
