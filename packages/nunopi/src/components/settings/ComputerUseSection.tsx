@@ -1,7 +1,7 @@
 "use client";
 // 컴퓨터 사용(#1175) — 에이전트의 데스크톱 앱 조작. 켜기(기본 끔)·비상 정지 단축키·드라이버(설치는 유저가 터미널에서)·권한·막는 앱·최근 기록.
 // 조작 자체는 Mustard MCP의 computer_* → main → 드라이버. 이 화면은 main 설정 파일만 바꿈.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { IconLoader2, IconCopy, IconX } from "@tabler/icons-react";
 import { useT, useToast } from "@mustard/core";
 
@@ -22,15 +22,17 @@ export default function ComputerUseSection() {
   const [st, setSt] = useState<ComputerStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [add, setAdd] = useState("");
+  const seq = useRef(0); // 늦게 온 옛 응답이 새 값을 덮지 않게 — 마지막 요청 응답만 반영(리뷰)
   const refresh = useCallback(async (force = false) => {
     if (!api) return;
+    const my = ++seq.current;
     setBusy(true);
-    try { setSt(await api.status(force)); } catch { /* 다음 확인 때 */ } finally { setBusy(false); }
+    try { const r = await api.status(force); if (my === seq.current) setSt(r); } catch { /* 다음 확인 때 */ } finally { if (my === seq.current) setBusy(false); }
   }, [api]);
   // 뜰 때 + 창에 돌아올 때(시스템 설정·터미널에서 설치 후) + 비상 정지 때
   useEffect(() => {
     void refresh(); // eslint-disable-line react-hooks/set-state-in-effect -- 뜰 때 한 번 확인
-    const onFocus = () => void refresh(true);
+    const onFocus = () => void refresh(); // 창에 돌아올 땐 저장된 드라이버로 빠르게(셸 다시 읽기는 "다시 확인"만, 리뷰)
     window.addEventListener("focus", onFocus);
     const off = api?.onChanged(() => void refresh());
     return () => { window.removeEventListener("focus", onFocus); off?.(); };
@@ -39,7 +41,7 @@ export default function ComputerUseSection() {
   if (!st) return <div className="flex items-center gap-2 p-2 text-[12px] text-zinc-400"><IconLoader2 size={14} className="animate-spin" aria-hidden />{t("computer.checking")}</div>;
 
   const mac = st.platform === "darwin";
-  const set = async (patch: { enabled?: boolean; blocked?: string[] }) => setSt(await api.set(patch));
+  const set = async (patch: { enabled?: boolean; blocked?: string[] }) => { const my = ++seq.current; const r = await api.set(patch); if (my === seq.current) setSt(r); };
   const copy = (s: string) => { void navigator.clipboard.writeText(s).then(() => toast(t("computer.copied"), "success")); };
   const grant = async () => { setBusy(true); try { const r = await api.grant(); toast(t(r.ok ? "computer.grantOpened" : "computer.grantFailed"), r.ok ? "success" : "error"); } finally { setBusy(false); void refresh(true); } };
   const addBlocked = () => { const v = add.trim(); if (!v || st.blocked.some((b) => b.toLowerCase() === v.toLowerCase())) return; void set({ blocked: [...st.blocked, v] }); setAdd(""); };
@@ -70,6 +72,7 @@ export default function ComputerUseSection() {
         </label>
         <p className={hint}>{t("computer.enableHint")}</p>
         <p className="text-[12px] text-zinc-600 dark:text-zinc-300">{t("computer.stopKey")} <kbd className="rounded border border-zinc-300 px-1.5 py-0.5 font-mono text-[11px] dark:border-zinc-600">{keyLabel(st.stopKey, mac)}</kbd></p>
+        {st.enabled && !st.stopKeyOk && <p className="text-[11px] text-amber-600 dark:text-amber-400">{t("computer.stopKeyTaken")}</p>}
       </div>
 
       {/* 드라이버 */}

@@ -9,7 +9,7 @@ type TrackerResult<T> = { ok: true; data: T } | { ok: false; state: "not-connect
 interface AgentDetect { id: string; label: string; status: "ok" | "broken" | "missing"; path?: string; version?: string | null; auth: "authenticated" | "unauthenticated" | "unknown"; install: string | null; tried: { path: string; error: string }[]; url?: string; cmd?: string; choices?: string[]; carriers?: string[]; weak?: boolean; flags?: { ask?: string; edits?: string; auto?: string; full?: string }; env?: Record<string, string> | null }
 type ComputerPerm = "granted" | "missing" | "unknown";
 type ComputerStatus = {
-  enabled: boolean; blocked: string[]; defaults: string[]; stopKey: string; platform: string;
+  enabled: boolean; blocked: string[]; defaults: string[]; stopKey: string; stopKeyOk: boolean; platform: string;
   driver: { path: string; version: string } | null;
   permissions: { accessibility: ComputerPerm; screen: ComputerPerm } | null;
   log: { at: string; tool: string; app: string; cwd: string; result: string }[];

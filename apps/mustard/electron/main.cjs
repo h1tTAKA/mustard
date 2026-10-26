@@ -508,13 +508,14 @@ function stopComputerUse() {
   for (const w of BrowserWindow.getAllWindows()) { try { w.webContents.send("computer:changed"); } catch { /* 닫히는 중 */ } }
   try { new Notification({ title: "Mustard", body: tm("computer.stopped") }).show(); } catch { /* 알림 불가 */ }
 }
+let stopKeyOk = true;
 function syncComputerShortcut() {
   const on = computerUse.readConfig().enabled;
-  if (on && !globalShortcut.isRegistered(STOP_KEY)) globalShortcut.register(STOP_KEY, stopComputerUse);
+  if (on && !globalShortcut.isRegistered(STOP_KEY)) stopKeyOk = globalShortcut.register(STOP_KEY, stopComputerUse); // 다른 앱이 쓰는 중이면 false → 설정에 경고(리뷰)
   else if (!on && globalShortcut.isRegistered(STOP_KEY)) globalShortcut.unregister(STOP_KEY);
 }
 app.whenReady().then(syncComputerShortcut);
-const computerStatus = async (force) => ({ ...(await computerUse.status({ force })), defaults: computerUse.DEFAULT_BLOCKED, stopKey: STOP_KEY, platform: process.platform, log: computerUse.readLog(undefined, 30) });
+const computerStatus = async (force) => ({ ...(await computerUse.status({ force })), defaults: computerUse.DEFAULT_BLOCKED, stopKey: STOP_KEY, stopKeyOk, platform: process.platform, log: computerUse.readLog(undefined, 30) });
 ipcMain.handle("computer:status", (_e, { force } = {}) => computerStatus(!!force));
 ipcMain.handle("computer:set", (_e, patch = {}) => {
   const p = {};
