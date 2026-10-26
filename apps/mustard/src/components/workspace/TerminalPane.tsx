@@ -3,7 +3,7 @@
 // 활성 탭만 렌더(전환 시 remount → scrollback 재생). 탭 목록은 레포별 localStorage 영속.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
-import { useShortcut, useT, useToast, getTerminalThemePref, isTerminalDark, getSetting, AKEYS, AGENT_DEFAULTS, CKEYS, useConfirm } from "@mustard/core";
+import { useShortcut, useT, useToast, getTerminalThemePref, isTerminalDark, getSetting, AKEYS, AGENT_DEFAULTS, LAUNCH_AGENTS, CKEYS, useConfirm } from "@mustard/core";
 import Terminal from "@/components/workspace/Terminal";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
@@ -181,7 +181,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
     }
     setMenuOpen(true);
   };
-  const LAUNCHABLE: AgentId[] = ["claude", "codex", "grok", "opencode", "omp", "antigravity", "cursor", "hermes"]; // gemini 제외(구글=antigravity)
+  const LAUNCHABLE = LAUNCH_AGENTS.map((a) => a.id as AgentId); // 설정 기본 에이전트와 같은 목록(core, #1171) — gemini 제외(구글=antigravity)
   const newTerminal = () => { setMenuOpen(false); addTab(); };
   // #1110 Crew 카드 넘겨받기 — 이 레포 카드면 새 탭에서 카드 작업 폴더로 이동해 그 에이전트 대화를 이어받음
   useEffect(() => {

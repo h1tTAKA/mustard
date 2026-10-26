@@ -5,10 +5,7 @@ import { type LearnProviderMode, type ModeModels, type ModeProviders, LEARN_PROV
 import { XIcon } from "../learning/icons";
 import ShortcutsSection from "./ShortcutsSection";
 import { IconKeyboard, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity } from "@tabler/icons-react";
-import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, AKEYS, AGENT_DEFAULTS, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
-// 에이전트 런치(#927) — 기본 에이전트 후보. AGENT_META/AgentLogo는 apps 소유(패키지 경계)라 여기선 id 목록만.
-const LAUNCH_AGENTS = ["claude", "codex", "grok", "opencode", "omp", "antigravity", "cursor", "hermes"];
-const AGENT_LABEL: Record<string, string> = { claude: "Claude Code", codex: "Codex", grok: "Grok", opencode: "OpenCode", omp: "OMP", antigravity: "Antigravity", cursor: "Cursor", hermes: "Hermes" };
+import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, AKEYS, AGENT_DEFAULTS, LAUNCH_AGENTS, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import { useLocale, useT, useToast } from "@mustard/core";
 import { LOCALES, type Locale } from "@mustard/core";
 import { THEMES, type ThemeId } from "@mustard/core";
@@ -110,6 +107,18 @@ function ExclusionGroup({
   );
 }
 
+// 에이전트별 추가 인자 한 줄(#927, #1171 모든 실행 에이전트로) — 줄마다 useSetting이라 컴포넌트로.
+function AgentArgsRow({ id, label, ph, logo, suffix, optional }: { id: string; label: string; ph: string; logo?: ReactNode; suffix: string; optional: string }) {
+  const val = useSetting<string>(AKEYS.args(id), "");
+  return (
+    <label className="block space-y-1.5">
+      <span className="flex items-center gap-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300">{logo && <span className="flex size-4 shrink-0 items-center justify-center">{logo}</span>}{label} {suffix} <span className="text-zinc-400 dark:text-zinc-500">{optional}</span></span>
+      <input type="text" value={val} onChange={(e) => setSetting(AKEYS.args(id), e.target.value)} placeholder={ph}
+        className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+    </label>
+  );
+}
+
 export default function SettingsDrawer({
   isOpen,
   onClose,
@@ -183,9 +192,6 @@ export default function SettingsDrawer({
   const tFocusFollowsMouse = useSetting<boolean>(TKEYS.focusFollowsMouse, TERMINAL_DEFAULTS.focusFollowsMouse);
   // 에이전트 런치(#927)
   const aDefault = useSetting<string>(AKEYS.default, AGENT_DEFAULTS.default);
-  const aArgsClaude = useSetting<string>(AKEYS.args("claude"), "");
-  const aArgsCodex = useSetting<string>(AKEYS.args("codex"), "");
-  const aArgsOpencode = useSetting<string>(AKEYS.args("opencode"), "");
   // 알림(#928)
   const nAgentDone = useSetting<boolean>(NKEYS.agentDone, NOTIF_DEFAULTS.agentDone);
   const nSuppress = useSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching);
@@ -714,22 +720,12 @@ export default function SettingsDrawer({
                 <div className="relative">
                   <select value={aDefault} onChange={(e) => setSetting(AKEYS.default, e.target.value)} aria-label={t("settings.defaultAgent")}
                     className="w-full appearance-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 pr-9 text-sm text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50">
-                    {LAUNCH_AGENTS.map((a) => <option key={a} value={a}>{AGENT_LABEL[a] || a}</option>)}
+                    {LAUNCH_AGENTS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
                   </select>
                   <IconChevronDown size={16} stroke={2} aria-hidden className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
                 </div>
               </div>
-              {([
-                { id: "claude", label: "Claude Code", val: aArgsClaude, ph: "--dangerously-skip-permissions" },
-                { id: "codex", label: "Codex", val: aArgsCodex, ph: "--model gpt-5" },
-                { id: "opencode", label: "OpenCode", val: aArgsOpencode, ph: "" },
-              ]).map((row) => (
-                <label key={row.id} className="block space-y-1.5">
-                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{row.label} {t("settings.agentExtraArgs")} <span className="text-zinc-400 dark:text-zinc-500">{t("settings.optional")}</span></span>
-                  <input type="text" value={row.val} onChange={(e) => setSetting(AKEYS.args(row.id), e.target.value)} placeholder={row.ph}
-                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
-                </label>
-              ))}
+              {LAUNCH_AGENTS.map((row) => <AgentArgsRow key={row.id} id={row.id} label={row.label} ph={"ph" in row ? row.ph : ""} logo={agentLogo?.(row.id)} suffix={t("settings.agentExtraArgs")} optional={t("settings.optional")} />)}
               <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.agentExtraArgsHint")}</p>
             </div>
 

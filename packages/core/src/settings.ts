@@ -52,6 +52,12 @@ export const AKEYS = {
   default: "agent.default",
   args: (agentId: string) => `agent.args.${agentId}`,
 } as const;
+// 실행할 수 있는 에이전트(터미널 + 메뉴·기본 에이전트·추가 인자 한 곳, #1171) — main AGENT_DEFAULT_CMD에 있는 것. gemini 제외(구글=antigravity, #864).
+export const LAUNCH_AGENTS = [
+  { id: "claude", label: "Claude Code", ph: "--dangerously-skip-permissions" }, { id: "codex", label: "Codex", ph: "--model gpt-5" },
+  { id: "grok", label: "Grok" }, { id: "opencode", label: "OpenCode" }, { id: "omp", label: "OMP" }, { id: "antigravity", label: "Antigravity" },
+  { id: "cursor", label: "Cursor" }, { id: "hermes", label: "Hermes" }, { id: "copilot", label: "Copilot" }, { id: "amp", label: "Amp" }, { id: "aider", label: "Aider" },
+] as const;
 
 // 알림(#928)
 // suppressWhileWatching(#1021, 옛 suppressWhileFocused): "지금 보고 있는 레포 탭"의 에이전트 완료 알림만 억제(#973~). 다른 레포는 포커스여도 알림.
