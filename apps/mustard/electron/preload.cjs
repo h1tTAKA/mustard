@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
   setZoomFactor: (factor) => webFrame.setZoomFactor(factor),
   getRuntimePaths: () => ipcRenderer.invoke("runtime-paths:get"),
   setRuntimePaths: (paths) => ipcRenderer.invoke("runtime-paths:set", paths),
+  detectAgents: (force) => ipcRenderer.invoke("agents:detect", !!force), // #1171 에이전트 CLI 설치·경로·로그인 상태
   relaunch: () => ipcRenderer.invoke("app:relaunch"),
   notify: (payload) => ipcRenderer.invoke("notify", payload),
   // #989 알림 클릭 → {repoPath, sessionId}. 해제 함수 반환.

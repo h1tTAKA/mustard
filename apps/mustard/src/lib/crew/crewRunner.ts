@@ -26,6 +26,7 @@ import { isFailedNote } from "@/lib/failText";
 import { freshIds, hasTriggers, readTriggers, scheduleDue, writeTriggers, type CrewTrigger } from "./crewTriggers";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems } from "@/lib/catchupStore";
+import { checkAgent, recheck } from "./agentDetect";
 import type { CrewStatus, CrewTask } from "./crewTypes";
 
 export type RunState = "starting" | "running" | "needs-permission" | "done" | "failed" | "stopped";
@@ -36,7 +37,7 @@ export interface CrewRun {
   lastActivity?: string; toolCount: number; tokens?: { input: number; output: number }; costUsd?: number;
   summary?: string; error?: string; permission?: { request: Record<string, unknown>; at: number };
   prepAt?: number; // #1176 setup 끝난 때(준비 단계 감시를 여기서부터)
-  runningAt?: number; // #1162 SNA에 시작을 맡긴 때(준비 시간은 '안 뜸' 3분에 안 셈)
+  runningAt?: number; // #1162 SNA에 시작을 맡긴 때(준비 시간은 '안 뜸' 10분에 안 셈)
   lastEventAt?: number; // #1162 에이전트에게서 마지막으로 신호(이벤트·권한 요청)가 온 때 — 멈춤 감시
 }
 
@@ -161,6 +162,15 @@ function block(root: string, taskId: string, stage: number, why: string) {
 // #1104 팀 채팅·캐치업 — 서버 문구는 앱 언어. 실패해도 실행엔 영향 없게 삼킴.
 const tr = (key: string, vars?: Record<string, string | number>) => translate(narrationLocale(), key, vars);
 const PROVIDER: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", grok: "Grok Build", cursor: "Cursor", opencode: "OpenCode" };
+// #1171 감지 결과 → 사람이 읽을 이유. since(다시 감지 부탁한 때) 뒤 기록으로 확실하면(sure, agentDetect.ts) block, 아니면 '안 뜸'에 덧붙일 hint(문제 이유 또는 띄운 경로·버전).
+function agentNote(provider: string, since = 0): { block?: string; hint?: string } {
+  const c = checkAgent(provider, undefined, Date.now(), since);
+  if (!c) return {};
+  if (c.kind === "missing") { const why = tr("crew.reason.agentMissing", { agent: c.agent }); return c.sure ? { block: why } : { hint: why }; }
+  if (c.kind === "broken") { const why = tr("crew.reason.agentBroken", { agent: c.agent, path: c.path, err: c.err }); return c.sure ? { block: why } : { hint: why }; }
+  if (c.kind === "login") { const why = tr("crew.reason.agentLogin", { agent: c.agent }); return c.sure ? { block: why } : { hint: why }; }
+  return { hint: tr("crew.reason.agentPath", { agent: c.agent, path: c.path, version: c.version }) };
+}
 function roleLabel(id: string): string {
   const r = getRole(id);
   return r && !r.builtin ? r.name : tr(`crew.role.${id}`);
@@ -235,7 +245,7 @@ function ensureTicker() {
   }, 2000);
 }
 // #1162 멈춘 실행 감시 — SNA에 시작을 맡겼는데 에이전트가 아예 안 뜨거나(10-23 실제: 대화 기록 없이 2시간 'started') 도중에 소식이 끊김.
-// 시작 후 3분 동안 신호가 한 번도 없거나, 신호가 오다가 20분 끊기면 실패로 → 기존 흐름이 다시 시도(3번이면 막힘). 사람 답 기다리는 중(needs-permission)은 제외.
+// 시작 후 10분 동안 신호가 한 번도 없거나, 신호가 오다가 20분 끊기면 실패로 → 기존 흐름이 다시 시도(3번이면 막힘). 사람 답 기다리는 중(needs-permission)은 제외.
 // 준비(worktree·세션 만들기)가 20분 넘게 안 끝나도 같은 처리. 20분 = Claude 도구 하나의 상한(Bash 최대 10분)보다 넉넉히 — 조용한 긴 도구는 안 죽임.
 // '안 뜸' 10분 = 첫 턴에 도구·글자 없이 오래 생각하는 경우도 넉넉히(오판 3번이면 카드가 막힘, 리뷰).
 const NEVER_STARTED_MS = 10 * 60_000, STALLED_MS = 20 * 60_000;
@@ -249,6 +259,7 @@ function watchStalls(now = Date.now()) {
     if (wasStarting && run.worktree) killSetup(run.root, run.worktree); // #1176 setup 중이었으면 같이 끔
     if (wasStarting) g.starting.delete(`${run.root}\n${run.taskId}`); // 멈춘 startRun이 줄 자리·동시 상한을 계속 쥐지 않게(늦게 풀려도 startRun이 상태 보고 그만둠)
     run.state = "failed"; run.endedAt = now; run.error = tr(never ? "crew.reason.neverStarted" : "crew.reason.stalled");
+    if (never) { const n = agentNote(run.provider); const why = n.block ?? n.hint; if (why) run.error = tr("crew.reason.neverStartedWhy", { why }); } // #1171 왜 안 떴는지(감지 이유, 아니면 띄운 경로) — 한 키로 저장해 언어 바꿔도 다시 번역됨
     persist(run, true);
     // 옛 에이전트를 확실히 끈 뒤에만 재시도 — 10초 안에 못 끄면 사람에게(같은 worktree에서 둘이 돌지 않게, 리뷰)
     const sid = run.sessionId;
@@ -392,6 +403,14 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
   g.runs.set(run.id, run);
   persist(run, true);
   try {
+    // #1171 실행 파일·로그인 문제가 보이면 main에 바로 다시 감지를 부탁하고 그 새 결과로 확실할 때만 worktree도 안 만들고 막힘(재시도 안 함 — 사람이 고쳐야)
+    const seen = checkAgent(role.provider);
+    if (seen && seen.kind !== "ok") {
+      const since = await recheck();
+      const pre = since ? agentNote(role.provider, since).block : undefined;
+      if (pre) throw new Error(pre);
+      if (run.state !== "starting") return run; // 기다리는 동안 Stop — worktree 안 만듦(리뷰)
+    }
     const dep = board0.find((x) => x.id === task.dependsOn?.[task.dependsOn.length - 1]); // ponytail: 의존 여럿이면 마지막 것 브랜치에서 시작(나머지는 그 안에 없을 수 있음), 필요하면 머지 단계 추가
     const wt = await ensureWorktree(root, taskId, task.title, dep ? worktreeFor(root, dep.id, dep.title).branch : undefined);
     Object.assign(run, { worktree: wt.dir, branch: wt.branch, base: wt.base });

@@ -5,6 +5,7 @@ import { AppShell } from "@mustard/nunopi";
 import { QASubToggle } from "@mustard/nunopi";
 import ModeSwapToggle from "@/components/brand/ModeSwapToggle";
 import { LearningPanel } from "@mustard/nunopi";
+import { AgentLogo, type AgentId } from "@/components/workspace/AgentLogo";
 import { SettingsDrawer } from "@mustard/nunopi";
 import { ConfirmProvider } from "@mustard/core";
 import { ToastProvider } from "@mustard/core";
@@ -421,6 +422,7 @@ export default function LearningHome() {
         }
       />
       <SettingsDrawer
+        agentLogo={(id) => <AgentLogo agent={id as AgentId} size={16} />}
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         variant={viewMode === "workspace" ? "modal" : "drawer"}

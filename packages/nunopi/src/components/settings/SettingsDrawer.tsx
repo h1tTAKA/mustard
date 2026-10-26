@@ -1,14 +1,11 @@
-import { Fragment, useState, useEffect, useCallback } from "react";
+import { Fragment, useState, useEffect, useCallback, type ReactNode } from "react";
 import type { AgentProviderKind, AnalyzeMode, ProviderSettings } from "@mustard/core";
 import { PROVIDER_CATALOG } from "../../lib/agent/catalog";
 import { type LearnProviderMode, type ModeModels, type ModeProviders, LEARN_PROVIDER_MODES, resolveModeModel, resolveModeProvider } from "../../lib/modeProviders";
 import { XIcon } from "../learning/icons";
 import ShortcutsSection from "./ShortcutsSection";
 import { IconKeyboard, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity } from "@tabler/icons-react";
-import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, AKEYS, AGENT_DEFAULTS, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
-// 에이전트 런치(#927) — 기본 에이전트 후보. AGENT_META/AgentLogo는 apps 소유(패키지 경계)라 여기선 id 목록만.
-const LAUNCH_AGENTS = ["claude", "codex", "grok", "opencode", "omp", "antigravity", "cursor", "hermes"];
-const AGENT_LABEL: Record<string, string> = { claude: "Claude Code", codex: "Codex", grok: "Grok", opencode: "OpenCode", omp: "OMP", antigravity: "Antigravity", cursor: "Cursor", hermes: "Hermes" };
+import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, AKEYS, AGENT_DEFAULTS, LAUNCH_AGENTS, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import { useLocale, useT, useToast } from "@mustard/core";
 import { LOCALES, type Locale } from "@mustard/core";
 import { THEMES, type ThemeId } from "@mustard/core";
@@ -50,6 +47,8 @@ interface SettingsDrawerProps {
   onNunopiEnabledChange?: (on: boolean) => void;
   // 머스타드 전용 섹션(터미널·워크스페이스·Git·캐치업·연동) 표시(#1116). apps/nunopi 스탠드얼론은 false.
   workspaceSettings?: boolean;
+  // 에이전트 CLI 상태 목록의 브랜드 로고(#1171) — AgentLogo는 apps 소유(패키지 경계)라 주입. 없으면 이름만.
+  agentLogo?: (id: string) => ReactNode;
 }
 
 // 연동(#960) 브랜드 로고 — tabler 부실해 공식 로고 SVG 인라인(CSP상 외부 로드 불가). tabler 아이콘과 동일 시그니처(size/className).
@@ -108,6 +107,18 @@ function ExclusionGroup({
   );
 }
 
+// 에이전트별 추가 인자 한 줄(#927, #1171 모든 실행 에이전트로) — 줄마다 useSetting이라 컴포넌트로.
+function AgentArgsRow({ id, label, ph, logo, optional }: { id: string; label: string; ph: string; logo?: ReactNode; optional: string }) {
+  const val = useSetting<string>(AKEYS.args(id), "");
+  return (
+    <label className="block space-y-1.5">
+      <span className="flex items-center gap-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300">{logo && <span className="flex size-4 shrink-0 items-center justify-center">{logo}</span>}{label} <span className="text-zinc-400 dark:text-zinc-500">{optional}</span></span>
+      <input type="text" value={val} onChange={(e) => setSetting(AKEYS.args(id), e.target.value)} placeholder={ph}
+        className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+    </label>
+  );
+}
+
 export default function SettingsDrawer({
   isOpen,
   onClose,
@@ -128,6 +139,7 @@ export default function SettingsDrawer({
   nunopiEnabled,
   onNunopiEnabledChange,
   workspaceSettings = true,
+  agentLogo,
 }: SettingsDrawerProps) {
   const { locale, setLocale } = useLocale();
   const t = useT();
@@ -180,9 +192,6 @@ export default function SettingsDrawer({
   const tFocusFollowsMouse = useSetting<boolean>(TKEYS.focusFollowsMouse, TERMINAL_DEFAULTS.focusFollowsMouse);
   // 에이전트 런치(#927)
   const aDefault = useSetting<string>(AKEYS.default, AGENT_DEFAULTS.default);
-  const aArgsClaude = useSetting<string>(AKEYS.args("claude"), "");
-  const aArgsCodex = useSetting<string>(AKEYS.args("codex"), "");
-  const aArgsOpencode = useSetting<string>(AKEYS.args("opencode"), "");
   // 알림(#928)
   const nAgentDone = useSetting<boolean>(NKEYS.agentDone, NOTIF_DEFAULTS.agentDone);
   const nSuppress = useSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching);
@@ -270,6 +279,16 @@ export default function SettingsDrawer({
   const [vcHasToken, setVcHasToken] = useState(false);
   const [sbToken, setSbToken] = useState("");
   const [sbHasToken, setSbHasToken] = useState(false);
+  // #1171 에이전트 CLI 설치·경로·로그인 상태 — 에이전트 칸 열 때 한 번(main이 60초 캐시), "다시 확인" = 셸 PATH부터 다시
+  const [agentsDet, setAgentsDet] = useState<AgentDetect[] | null>(null);
+  const [agentsChecking, setAgentsChecking] = useState(false);
+  const refreshAgents = useCallback(async (force: boolean) => {
+    const fn = typeof window !== "undefined" ? window.nunopiDesktop?.detectAgents : undefined;
+    if (!fn) return;
+    setAgentsChecking(true);
+    try { const r = await fn(force); setAgentsDet(r.ok ? r.list : []); } catch { setAgentsDet([]); } finally { setAgentsChecking(false); } // 실패 = 빈 목록 → 아래 옛 경로 칸으로
+  }, []);
+  useEffect(() => { if (activeSection === "set-agents" && !agentsDet) void refreshAgents(false); }, [activeSection, agentsDet, refreshAgents]); // eslint-disable-line react-hooks/set-state-in-effect -- 칸 열 때 한 번 불러옴
   const refreshGh = useCallback(async () => {
     const nd = typeof window !== "undefined" ? window.nunopiDesktop : undefined;
     const gh = nd?.github; const int = nd?.integrations;
@@ -316,6 +335,27 @@ export default function SettingsDrawer({
     settings["opencode-agent"]?.cliPath ?? "",
   );
   const desktop = typeof window !== "undefined" ? window.nunopiDesktop : undefined;
+  // #1171 경로 직접 지정 — CLI 상태 목록 줄 안에서(백그라운드 SNA가 쓰는 3개만). 감지 목록이 없으면(스탠드얼론 웹) 아래 옛 칸.
+  const customPath: Record<string, [string, (v: string) => void]> = { claude: [claudeCliPath, setClaudeCliPath], codex: [codexCliPath, setCodexCliPath], opencode: [openCodeCliPath, setOpenCodeCliPath] };
+  const [pathOpen, setPathOpen] = useState<string | null>(null);
+  const [openedPaths, setOpenedPaths] = useState<Record<string, string>>({}); // 처음 연 때 값(= 앱 켤 때 경로) — 실제로 달라졌을 때만 재시작 안내(리뷰)
+  // 열 때마다 저장된 설정으로 칸을 다시 채움(리뷰) — 이 창은 늘 마운트돼 있고 설정은 첫 화면 뒤에 불러와져서, 첫 값("")으로 남아 있다가
+  // 아무 칸이나 blur하면 handleSave가 빈 경로·기본값으로 덮어썼음. 렌더 중 상태 조정(React 권장, effect 안 씀).
+  const [wasOpen, setWasOpen] = useState(false);
+  const [baselined, setBaselined] = useState(false);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
+    if (isOpen) {
+      const oc = settings["openai-compatible"], c = settings["claude-agent"]?.cliPath ?? "", x = settings["codex-agent"]?.cliPath ?? "", o = settings["opencode-agent"]?.cliPath ?? "";
+      setBaseUrl(oc?.baseUrl ?? "http://localhost:11434/v1"); setModel(oc?.model ?? "hermes-3"); setApiKey(oc?.apiKey ?? "");
+      setClaudeCliPath(c); setCodexCliPath(x); setOpenCodeCliPath(o);
+      if (!baselined) { setBaselined(true); setOpenedPaths({ claude: c.trim(), codex: x.trim(), opencode: o.trim() }); } // 기준 = 앱이 켜질 때 값(실행 중인 경로) — 저장 후 다시 열어도 재시작 전엔 안내 유지(리뷰)
+      setPathOpen(null);
+    }
+  }
+  const pathDirty = Object.entries(customPath).some(([id, [v]]) => v.trim() !== (openedPaths[id] ?? ""));
+  // 데스크톱이면 첫 화면부터 목록(확인 중 표시) — 옛 칸이 잠깐 보였다 바뀌지 않게(리뷰). 감지 실패(빈 목록)면 옛 칸.
+  const statusList = !!desktop?.detectAgents && !(agentsDet?.length === 0 && !agentsChecking);
 
   if (!isOpen) return null;
 
@@ -650,6 +690,73 @@ export default function SettingsDrawer({
           {activeSection === "set-agents" && (
           <section id="set-agents" className="scroll-mt-4 space-y-5 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
 
+            {/* #1171 에이전트 CLI 상태 — 설치·실행되는 경로·버전·로그인. GitHub 연동 카드와 같은 배지·다시 확인 */}
+            {statusList ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t("agents.status")}</h4>
+                  <button type="button" onClick={() => void refreshAgents(true)} disabled={agentsChecking} title={t("agents.recheck")} aria-label={t("agents.recheck")}
+                    className="ml-auto shrink-0 rounded p-1 text-zinc-400 transition hover:bg-zinc-100 disabled:opacity-50 dark:hover:bg-zinc-800">
+                    <IconLoader2 size={13} stroke={2} className={agentsChecking ? "animate-spin" : ""} aria-hidden />
+                  </button>
+                </div>
+                <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("agents.statusHint")}</p>
+                <div className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-700">
+                  {(agentsDet ?? []).map((a) => {
+                    const badge = a.status === "missing" ? { txt: t("agents.missing"), cls: "bg-zinc-500/15 text-zinc-500 dark:text-zinc-400" }
+                      : a.status === "broken" ? { txt: t("agents.broken"), cls: "bg-rose-500/15 text-rose-600 dark:text-rose-400" }
+                      : a.auth === "unauthenticated" ? { txt: t("agents.loginNeeded"), cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400" }
+                      : { txt: a.auth === "authenticated" ? t("agents.okAuthed") : t("agents.ok"), cls: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" };
+                    return (
+                      <div key={a.id} className="space-y-1 px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          {agentLogo && <span className="flex size-4 shrink-0 items-center justify-center">{agentLogo(a.id)}</span>}
+                          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-100">{a.label}</span>
+                          {a.version && <span className="font-mono text-[11px] text-zinc-400">v{a.version}</span>}
+                          <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.cls}`}>{badge.txt}</span>
+                        </div>
+                        {(a.path || customPath[a.id]) && (
+                          <div className="flex items-center gap-2">
+                            <p className={`min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500 ${customPath[a.id]?.[0].trim() ? "line-through" : ""}`} title={a.path}>{a.path}</p>
+                            {customPath[a.id] && (
+                              <button type="button" onClick={() => setPathOpen(pathOpen === a.id ? null : a.id)}
+                                className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-zinc-500 transition hover:bg-zinc-100 dark:hover:bg-zinc-800">{t("agents.setPath")}</button>
+                            )}
+                          </div>
+                        )}
+                        {customPath[a.id]?.[0].trim() && pathOpen !== a.id && <p className="truncate font-mono text-[11px] text-amber-600 dark:text-amber-400" title={customPath[a.id][0]}>{t("agents.customPath", { path: customPath[a.id][0].trim() })}</p>}
+                        {customPath[a.id] && pathOpen === a.id && (
+                          <div className="space-y-1">
+                            <input type="text" autoFocus value={customPath[a.id][0]} onChange={(e) => customPath[a.id][1](e.target.value)} onBlur={handleSave}
+                              placeholder={a.path || ""} aria-label={`${a.label} ${t("settings.cliPath")}`}
+                              className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-[12px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+                            <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("agents.setPathHint")}</p>
+                          </div>
+                        )}
+                        {a.status === "broken" && a.tried[0] && <p className="break-all text-[11px] text-rose-500">{a.tried[0].error || t("agents.brokenHint")}</p>}
+                        {a.status === "ok" && a.tried.length > 0 && <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("agents.skipped", { n: a.tried.length })}</p>}
+                        {a.status !== "ok" && a.install && (
+                          <div className="flex items-center gap-1.5">
+                            <code className="min-w-0 flex-1 truncate rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[11px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300" title={a.install}>{a.install}</code>
+                            <button type="button" onClick={() => { void navigator.clipboard.writeText(a.install!).then(() => toast(t("agents.copied"))); }}
+                              className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-zinc-500 transition hover:bg-zinc-100 dark:hover:bg-zinc-800">{t("agents.copy")}</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {agentsDet === null && <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-zinc-400"><IconLoader2 size={12} className="animate-spin" aria-hidden />{t("agents.checking")}</div>}
+                </div>
+                {pathDirty && desktop && (
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/20">
+                    <p className="text-xs text-amber-700 dark:text-amber-300">{t("settings.cliPathRestartHint")}</p>
+                    <button type="button" onClick={() => { void desktop.relaunch(); }}
+                      className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-amber-700">{t("settings.relaunchNow")}</button>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             {/* 에이전트 런치(#927) — 기본 에이전트 + per-agent 추가 인자 */}
             <div className="space-y-4">
               <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t("settings.agentLaunch")}</h4>
@@ -658,23 +765,21 @@ export default function SettingsDrawer({
                 <div className="relative">
                   <select value={aDefault} onChange={(e) => setSetting(AKEYS.default, e.target.value)} aria-label={t("settings.defaultAgent")}
                     className="w-full appearance-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 pr-9 text-sm text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50">
-                    {LAUNCH_AGENTS.map((a) => <option key={a} value={a}>{AGENT_LABEL[a] || a}</option>)}
+                    {LAUNCH_AGENTS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
                   </select>
                   <IconChevronDown size={16} stroke={2} aria-hidden className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
                 </div>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.defaultAgentHint")}</p>
               </div>
-              {([
-                { id: "claude", label: "Claude Code", val: aArgsClaude, ph: "--dangerously-skip-permissions" },
-                { id: "codex", label: "Codex", val: aArgsCodex, ph: "--model gpt-5" },
-                { id: "opencode", label: "OpenCode", val: aArgsOpencode, ph: "" },
-              ]).map((row) => (
-                <label key={row.id} className="block space-y-1.5">
-                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{row.label} {t("settings.agentExtraArgs")} <span className="text-zinc-400 dark:text-zinc-500">{t("settings.optional")}</span></span>
-                  <input type="text" value={row.val} onChange={(e) => setSetting(AKEYS.args(row.id), e.target.value)} placeholder={row.ph}
-                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
-                </label>
-              ))}
+            </div>
+
+            <div className="border-t border-zinc-200 dark:border-zinc-800" />
+
+            {/* 에이전트별 추가 인자(#927, #1171 모든 실행 에이전트) — 따로 섹션 */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t("settings.agentExtraArgs")}</h4>
               <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.agentExtraArgsHint")}</p>
+              {LAUNCH_AGENTS.map((row) => <AgentArgsRow key={row.id} id={row.id} label={row.label} ph={row.ph} logo={agentLogo?.(row.id)} optional={t("settings.optional")} />)}
             </div>
 
             <div className="border-t border-zinc-200 dark:border-zinc-800" />
@@ -729,6 +834,7 @@ export default function SettingsDrawer({
             </label>
             </div>
 
+            {!statusList && (<>
             <div className="border-t border-zinc-200 dark:border-zinc-800" />
 
             <div className="space-y-4">
@@ -816,6 +922,7 @@ export default function SettingsDrawer({
                 </button>
               </div>
             )}
+            </>)}
           </section>
           )}
 

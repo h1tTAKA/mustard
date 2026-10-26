@@ -960,8 +960,26 @@ const ko: Dict = {
   "workspace.closeTermRunningMsg": "이 터미널에서 에이전트가 실행 중입니다. 닫을까요?",
   "settings.agentLaunch": "에이전트 실행",
   "settings.defaultAgent": "기본 에이전트",
+  "settings.defaultAgentHint": "터미널 '+' 메뉴 맨 위 '기본 에이전트 실행'과 새 에이전트 단축키(기본 ⌘⌥T)가 새 탭에 띄우는 에이전트예요. Crew 역할의 에이전트는 역할마다 따로 정해요.",
+  "agents.status": "에이전트 CLI 상태",
+  "agents.recheck": "다시 확인 (셸 PATH부터 다시 읽음)",
+  "agents.setPath": "경로 지정",
+  "agents.customPath": "지정한 경로 사용: {path}",
+  "agents.setPathHint": "Crew·채팅(백그라운드)이 쓸 실행 파일을 직접 지정. 비워 두면 위에서 찾은 경로를 씀.",
+  "agents.statusHint": "설치 여부·실제로 실행되는 경로·버전·로그인을 확인합니다. 터미널에서 실행하는 방식은 그대로이고, Crew·채팅이 백그라운드에서 쓸 경로를 이걸로 정합니다.",
+  "agents.missing": "설치 안 됨",
+  "agents.broken": "경로 깨짐",
+  "agents.brokenHint": "찾았지만 실행되지 않습니다",
+  "agents.loginNeeded": "로그인 필요",
+  "agents.okAuthed": "설치됨 · 로그인됨",
+  "agents.ok": "설치됨",
+  "agents.skipped": "앞에 있던 깨진 경로 {n}개를 건너뛰었습니다",
+  "agents.copy": "복사",
+  "agents.copied": "설치 명령을 복사했습니다",
+  "agents.checking": "확인하는 중…",
+  "agents.notInstalled": "{name}이(가) 설치되어 있지 않거나 실행되지 않습니다 — 설정 > 에이전트에서 확인하세요",
   "settings.agentExtraArgs": "추가 인자",
-  "settings.agentExtraArgsHint": "실행 시 명령 뒤에 붙는 인자. 로컬 CLI 플래그.",
+  "settings.agentExtraArgsHint": "터미널에서 그 에이전트를 띄울 때 명령 뒤에 붙는 옵션(예: claude --dangerously-skip-permissions). 비워 두면 기본 명령만.",
   "settings.learnProviders": "학습 provider",
   "settings.learnProvidersHint": "모드마다 다른 에이전트를 쓸 수 있어요. 따로 안 고르면 기본을 따라가요. 코드·글 분석은 입력창에서 바꿔도 여기에 저장돼요.",
   "settings.learnProviderDefault": "기본",
@@ -1651,6 +1669,11 @@ const ko: Dict = {
   "crew.reason.stopped": "사용자가 멈춤",
   "crew.reason.neverStarted": "에이전트가 시작되지 않았어요(10분 동안 아무 신호 없음)",
   "crew.reason.stalled": "에이전트 소식이 20분 동안 끊겼어요",
+  "crew.reason.agentMissing": "{agent} 실행 파일을 못 찾았어요 — 설정 > 에이전트에서 설치 명령을 확인한 뒤 '다시 확인'을 누르세요",
+  "crew.reason.agentBroken": "{agent} 실행 파일이 실행되지 않아요(경로: {path}) — {err}. 설정 > 에이전트에서 확인하세요",
+  "crew.reason.agentLogin": "{agent} 로그인이 필요해요 — 터미널에서 로그인한 뒤 설정 > 에이전트에서 '다시 확인'을 누르세요",
+  "crew.reason.agentPath": "띄운 경로: {path} ({agent} {version})",
+  "crew.reason.neverStartedWhy": "에이전트가 시작되지 않았어요(10분 동안 아무 신호 없음) — {why}",
   "crew.reason.flowError": "흐름 오류: {err}",
   "crew.scheduledTask": "예약 작업",
 };
@@ -2597,8 +2620,26 @@ const ja: Dict = {
   "workspace.closeTermRunningMsg": "このターミナルでエージェントが実行中です。閉じますか？",
   "settings.agentLaunch": "エージェント起動",
   "settings.defaultAgent": "既定のエージェント",
+  "settings.defaultAgentHint": "ターミナルの「+」メニュー先頭「既定のエージェントを起動」と新規エージェントのショートカット(既定 ⌘⌥T)で新しいタブに起動するエージェントです。Crew の役割のエージェントは役割ごとに設定します。",
+  "agents.status": "エージェント CLI の状態",
+  "agents.recheck": "再確認（シェルの PATH から読み直す）",
+  "agents.setPath": "パス指定",
+  "agents.customPath": "指定したパスを使用: {path}",
+  "agents.setPathHint": "Crew・チャット(バックグラウンド)が使う実行ファイルを直接指定。空欄なら上で見つけたパスを使います。",
+  "agents.statusHint": "インストール・実際に動くパス・バージョン・ログインを確認します。ターミナルでの起動方法はそのままで、Crew・チャットがバックグラウンドで使うパスをこれで決めます。",
+  "agents.missing": "未インストール",
+  "agents.broken": "パスが壊れています",
+  "agents.brokenHint": "見つかりましたが実行できません",
+  "agents.loginNeeded": "ログインが必要",
+  "agents.okAuthed": "インストール済み · ログイン済み",
+  "agents.ok": "インストール済み",
+  "agents.skipped": "先にあった壊れたパス {n} 件を飛ばしました",
+  "agents.copy": "コピー",
+  "agents.copied": "インストールコマンドをコピーしました",
+  "agents.checking": "確認中…",
+  "agents.notInstalled": "{name} がインストールされていないか実行できません — 設定 > エージェントで確認してください",
   "settings.agentExtraArgs": "追加引数",
-  "settings.agentExtraArgsHint": "起動時にコマンド末尾へ付く引数。ローカルCLIフラグ。",
+  "settings.agentExtraArgsHint": "ターミナルでそのエージェントを起動するときコマンドの後ろに付くオプション(例: claude --dangerously-skip-permissions)。空欄なら既定コマンドのみ。",
   "settings.learnProviders": "学習 provider",
   "settings.learnProvidersHint": "モードごとに別のエージェントを使えます。未選択なら基本に従います。コード・文章分析は入力欄で変えてもここに保存されます。",
   "settings.learnProviderDefault": "基本",
@@ -3288,6 +3329,11 @@ const ja: Dict = {
   "crew.reason.stopped": "ユーザーが停止",
   "crew.reason.neverStarted": "エージェントが起動しませんでした(10分間応答なし)",
   "crew.reason.stalled": "エージェントからの応答が20分途絶えました",
+  "crew.reason.agentMissing": "{agent} の実行ファイルが見つかりません — 設定 > エージェントでインストールコマンドを確認し、「再確認」を押してください",
+  "crew.reason.agentBroken": "{agent} の実行ファイルが起動しません(パス: {path}) — {err}。設定 > エージェントで確認してください",
+  "crew.reason.agentLogin": "{agent} のログインが必要です — ターミナルでログインしてから設定 > エージェントで「再確認」を押してください",
+  "crew.reason.agentPath": "起動したパス: {path} ({agent} {version})",
+  "crew.reason.neverStartedWhy": "エージェントが起動しませんでした(10分間応答なし) — {why}",
   "crew.reason.flowError": "フローエラー: {err}",
   "crew.scheduledTask": "予約タスク",
 };
@@ -4234,8 +4280,26 @@ const en: Dict = {
   "workspace.closeTermRunningMsg": "An agent is running in this terminal. Close it?",
   "settings.agentLaunch": "Agent launch",
   "settings.defaultAgent": "Default agent",
+  "settings.defaultAgentHint": "The agent opened in a new tab by 'Launch default agent' at the top of the terminal '+' menu and by the new-agent shortcut (⌘⌥T by default). Crew roles pick their own agent per role.",
+  "agents.status": "Agent CLI status",
+  "agents.recheck": "Recheck (re-read your shell PATH)",
+  "agents.setPath": "Set path",
+  "agents.customPath": "Using custom path: {path}",
+  "agents.setPathHint": "Pin the executable Crew and chat (background) use. Leave empty to use the detected path above.",
+  "agents.statusHint": "Checks install, the path that actually runs, version and sign-in. Terminal launching is unchanged; Crew and chat use these paths in the background.",
+  "agents.missing": "Not installed",
+  "agents.broken": "Broken path",
+  "agents.brokenHint": "Found but doesn't run",
+  "agents.loginNeeded": "Sign-in needed",
+  "agents.okAuthed": "Installed · Signed in",
+  "agents.ok": "Installed",
+  "agents.skipped": "Skipped {n} broken path(s) found earlier on PATH",
+  "agents.copy": "Copy",
+  "agents.copied": "Install command copied",
+  "agents.checking": "Checking…",
+  "agents.notInstalled": "{name} isn't installed or doesn't run — check Settings > Agents",
   "settings.agentExtraArgs": "extra args",
-  "settings.agentExtraArgsHint": "Appended after the launch command. Local CLI flags.",
+  "settings.agentExtraArgsHint": "Options appended when the terminal launches that agent (e.g. claude --dangerously-skip-permissions). Leave empty for the plain command.",
   "settings.learnProviders": "Learning providers",
   "settings.learnProvidersHint": "Use a different agent per mode. Modes without a choice follow the default. Changing code/text analysis from its input box is saved here too.",
   "settings.learnProviderDefault": "Default",
@@ -4925,6 +4989,11 @@ const en: Dict = {
   "crew.reason.stopped": "Stopped by user",
   "crew.reason.neverStarted": "The agent never started (no signal for 10 minutes)",
   "crew.reason.stalled": "No word from the agent for 20 minutes",
+  "crew.reason.agentMissing": "Couldn't find the {agent} executable — check the install command in Settings > Agents, then press Recheck",
+  "crew.reason.agentBroken": "The {agent} executable doesn't run (path: {path}) — {err}. Check Settings > Agents",
+  "crew.reason.agentLogin": "{agent} needs a login — log in from a terminal, then press Recheck in Settings > Agents",
+  "crew.reason.agentPath": "Launched: {path} ({agent} {version})",
+  "crew.reason.neverStartedWhy": "The agent never started (no signal for 10 minutes) — {why}",
   "crew.reason.flowError": "Flow error: {err}",
   "crew.scheduledTask": "Scheduled task",
 };
@@ -4955,11 +5024,12 @@ function tplsOf(key: string) {
   }
   return v;
 }
-export function relocalize(text: string, keys: string[], t: (key: string, vars?: Record<string, string | number>) => string): string {
+// 변수 값도 한 단계 다시 번역(#1171 '안 뜸 — {why}'의 why가 다른 키 문구)
+export function relocalize(text: string, keys: string[], t: (key: string, vars?: Record<string, string | number>) => string, depth = 0): string {
   for (const key of keys) {
     for (const { re, names } of tplsOf(key)) {
       const m = text.match(re);
-      if (m) return t(key, Object.fromEntries(names.map((n, i) => [n, m[i + 1]])));
+      if (m) return t(key, Object.fromEntries(names.map((n, i) => [n, depth ? m[i + 1] : relocalize(m[i + 1], keys, t, 1)])));
     }
   }
   return text;
@@ -4968,7 +5038,7 @@ export function relocalize(text: string, keys: string[], t: (key: string, vars?:
 export const CARD_SOURCE_KEYS = ["card.workspaceSource", "mem.chatSource"];
 // Crew 보드·시스템이 저장한 문구(채팅·관문 사유·실행 오류)의 키 — 옛 메시지(키 없이 text만)를 지금 언어로(#1125).
 // 저장되는 키만(화면 버튼·라벨 키를 넣으면 넓은 틀이 사람 말을 번역해 버림 — 리뷰).
-export const CREW_TEXT_KEYS = ["crewchat.permission", "crewchat.answerFailed", "crewchat.meetingStopped", "crewchat.fallback", "crewchat.retrying", "crewchat.skipped", "crewchat.gate.merge", "crewchat.gate.blocked", "crewchat.gate.schema", "crewchat.gate.spec", "crewchat.start", "crewchat.restart", "crewchat.decision.approve", "crewchat.decision.retry", "crewchat.prCreated", "crewsplit.created", "crewsplit.parentDone", "crewtrig.ciChat", "crewtrig.issueChat", "crewtrig.scheduleChat", "crew.reason.interrupted", "crew.reason.stopped", "crew.reason.flowError", "crew.reason.neverStarted", "crew.reason.stalled", "crew.reason.setupFailed", "crew.reason.setupTooLong"];
+export const CREW_TEXT_KEYS = ["crewchat.permission", "crewchat.answerFailed", "crewchat.meetingStopped", "crewchat.fallback", "crewchat.retrying", "crewchat.skipped", "crewchat.gate.merge", "crewchat.gate.blocked", "crewchat.gate.schema", "crewchat.gate.spec", "crewchat.start", "crewchat.restart", "crewchat.decision.approve", "crewchat.decision.retry", "crewchat.prCreated", "crewsplit.created", "crewsplit.parentDone", "crewtrig.ciChat", "crewtrig.issueChat", "crewtrig.scheduleChat", "crew.reason.interrupted", "crew.reason.stopped", "crew.reason.flowError", "crew.reason.neverStarted", "crew.reason.stalled", "crew.reason.setupFailed", "crew.reason.setupTooLong", "crew.reason.agentMissing", "crew.reason.agentBroken", "crew.reason.agentLogin", "crew.reason.agentPath", "crew.reason.neverStartedWhy"];
 // 답변·분석 실패 문구(#1125, ko가 같은 chat.reply*가 먼저 — 옛 fallback.chat* 저장분도 같은 뜻으로) — 실패 순간의 언어로 저장되므로(채팅 기록·분석 요약·경고·캐치업 설명) 보여 줄 때 지금 언어로.
 export const FAILURE_TEXT_KEYS = ["fallback.emptyResponse", "fallback.error", "fallback.requestFailed", "fallback.summaryFailed", "chat.replyFailed", "chat.replyError", "fallback.chatRequestFailed", "fallback.chatError", "analyze.cancelled", "provider.runtimeFailed", "provider.runtimeConnectFailed", "provider.httpError", "provider.connectFailed", "analyze.partialParse", "explain.conceptParseFailed", "explain.tokenParseFailed", "text.parseFailed", "text.summaryFailed"];
 // ponytail: 실패 문구는 짧음 — 긴 정상 답변은 비교 안 하고 통과(런타임 오류 원문이 이보다 길면 원문 그대로)
