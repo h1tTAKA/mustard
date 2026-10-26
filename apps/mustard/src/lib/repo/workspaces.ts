@@ -112,16 +112,18 @@ export async function findWorktree(root: string, dir: string): Promise<{ branch:
 }
 
 // 지우기 전 점검 — 미커밋(Orca preflight와 같은 status)·미푸시(upstream 있으면 앞선 수, 없으면 어느 원격에도 없는 커밋 수). 경고용.
-export interface Check { branch: string | null; dirty: number; ignored: string[]; unpushed: number | null; archive: { script: string; trusted: boolean; tooLong: boolean } | null }
+export interface Check { branch: string | null; dirty: number; ignored: string[]; ignoredCount: number; unpushed: number | null; archive: { script: string; trusted: boolean; tooLong: boolean } | null }
 export async function checkWorkspace(root: string, dir: string): Promise<Check> {
   const { branch } = await findWorktree(root, dir);
-  const st = existsSync(dir) ? await git(dir, ["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"]).catch(() => "") : "";
+  // 점검이 실패하면 0개로 치지 않고 에러 — 모른 채 지우지 않게(리뷰)
+  const st = existsSync(dir) ? await git(dir, ["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"]) : "";
   const dirty = st ? st.split("\n").filter(Boolean).length : 0;
   // gitignore된 것도 같이 지워짐(worktree remove는 ignored를 깨끗하다고 봄, 리뷰) — 메인에서 복사·공유해 온 것(.worktreeinclude·sharedDirectories)은 메인에 원본이 있으니 뺌
   const fromMain = new Set([...readInclude(root), ...readConfig(root).sharedDirectories].map((p) => p.replace(/\/+$/, "")));
   // ls-files --directory = 통째로 무시된 폴더(node_modules 등)는 한 줄로, 안까지 안 훑음(큰 레포에서 느려지지 않게, 리뷰)
-  const ign = existsSync(dir) ? await git(dir, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory"]).catch(() => "") : "";
-  const ignored = ign.split("\n").filter(Boolean).map((l) => l.replace(/\/+$/, "")).filter((p) => !fromMain.has(p)).slice(0, 50);
+  const ign = existsSync(dir) ? await git(dir, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory"]) : "";
+  const all = ign.split("\n").filter(Boolean).map((l) => l.replace(/\/+$/, "")).filter((p) => !fromMain.has(p));
+  const ignored = all.slice(0, 50), ignoredCount = all.length; // 화면엔 50개까지, 비교는 전체 수로(리뷰)
   let unpushed: number | null = null;
   if (existsSync(dir)) {
     const hasUp = await ok(git(dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]));
@@ -129,7 +131,7 @@ export async function checkWorkspace(root: string, dir: string): Promise<Check> 
     if (!Number.isFinite(unpushed)) unpushed = null; // 모름(원격 없음 등)
   }
   const { archive } = readConfig(root);
-  return { branch, dirty, ignored, unpushed, archive: archive ? { script: archive, trusted: isTrusted(root, archive), tooLong: archive.length > MAX_REVIEW } : null };
+  return { branch, dirty, ignored, ignoredCount, unpushed, archive: archive ? { script: archive, trusted: isTrusted(root, archive), tooLong: archive.length > MAX_REVIEW } : null };
 }
 
 export type RemoveResult =
@@ -144,21 +146,17 @@ export async function removeWorkspace(root: string, dir: string, o: RemoveOpts =
   const { branch, locked } = await findWorktree(root, dir);
   if (locked) throw new Error("locked");
   const present = existsSync(dir);
+  // 사람이 본 것보다 늘었으면 멈추고 다시 보여 줌 — 미커밋은 force여도 본 개수까지만, gitignore된 것도 본 개수까지만(리뷰).
+  // archive 앞에서만 셈: archive는 사람이 승인한 정리 스크립트라 그게 만든 건 스크립트 몫(뒤에서 세면 매번 늘어 끝없이 다시 묻게 됨, 리뷰)
   if (present) {
-    const { dirty } = await checkWorkspace(root, dir);
-    // force는 사람이 본 개수까지만 — 경고 뒤에 더 바뀌었으면 다시 보여 줌(못 본 파일을 --force로 지우지 않게, 리뷰)
-    if (dirty && (!o.force || dirty > (o.expectDirty ?? 0))) return { status: "dirty", dirty };
+    const c = await checkWorkspace(root, dir);
+    if ((c.dirty && (!o.force || c.dirty > (o.expectDirty ?? 0))) || c.ignoredCount > (o.expectIgnored ?? 0)) return { status: "dirty", dirty: c.dirty };
   }
   if (present && !o.skipArchive) {
     const { archive } = readConfig(root);
     if (archive && (archive.length > MAX_REVIEW || !isTrusted(root, archive))) return { status: "archive-untrusted", script: archive };
     const r = await runArchive(root, dir, undefined, "state");
     if (r && !r.ok && !o.allowFailedArchive) return { status: "archive-failed", result: r };
-  }
-  // 지우기 직전 다시 셈 — archive가 만든 파일·그 사이 생긴 .env 같은 걸 사람이 못 본 채 지우지 않게(리뷰)
-  if (present) {
-    const c = await checkWorkspace(root, dir);
-    if ((c.dirty && (!o.force || c.dirty > (o.expectDirty ?? 0))) || c.ignored.length > (o.expectIgnored ?? 0)) return { status: "dirty", dirty: c.dirty };
   }
   if (present) await git(root, ["worktree", "remove", ...(o.force ? ["--force"] : []), dir]);
   await git(root, ["worktree", "prune"]).catch(() => {});

@@ -8,7 +8,7 @@ import { closeWorkspace } from "@/lib/repo/workspaceEvents";
 
 // 작업공간 지우기(#1170) — Orca 삭제 흐름: 점검(미커밋·미푸시) → archive(승인 필요, 실패면 멈춤) → worktree remove → 로컬 브랜치 -d(실패면 남김).
 // 미커밋이 있으면 "그래도 지우기"(= git --force). 미푸시는 경고만(Superset). 원격 브랜치는 안 지움.
-type Check = { branch: string | null; dirty: number; ignored: string[]; unpushed: number | null; archive: { script: string; trusted: boolean; tooLong: boolean } | null };
+type Check = { branch: string | null; dirty: number; ignored: string[]; ignoredCount: number; unpushed: number | null; archive: { script: string; trusted: boolean; tooLong: boolean } | null };
 const post = async (body: Record<string, unknown>) => (await fetch("/api/repo/workspace", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
 const base = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
 
@@ -26,7 +26,7 @@ export default function RemoveWorkspaceDialog({ root, dir, onClose }: { root: st
   const load = useCallback(async () => {
     const r = await post({ action: "check", path: root, dir }).catch(() => null);
     if (!r?.ok) { setErr(String(r?.error ?? "")); return; }
-    setCheck({ branch: r.branch, dirty: r.dirty, ignored: r.ignored ?? [], unpushed: r.unpushed, archive: r.archive });
+    setCheck({ branch: r.branch, dirty: r.dirty, ignored: r.ignored ?? [], ignoredCount: r.ignoredCount ?? 0, unpushed: r.unpushed, archive: r.archive });
   }, [root, dir]);
   useEffect(() => { void load(); }, [load]); // eslint-disable-line react-hooks/set-state-in-effect -- 열 때 한 번 점검
 
@@ -46,7 +46,7 @@ export default function RemoveWorkspaceDialog({ root, dir, onClose }: { root: st
         const tr = await post({ action: "trust", kind: "archive", path: root, script: a.script }).catch(() => null);
         if (!tr?.ok) { toast(t("newWs.setupChanged"), "error"); await load(); return; }
       }
-      const r = await post({ action: "remove", path: root, dir, force: check.dirty > 0, expectDirty: check.dirty, expectIgnored: check.ignored.length, deleteBranch, skipArchive, allowFailedArchive }).catch((e) => ({ ok: false, error: String(e) }));
+      const r = await post({ action: "remove", path: root, dir, force: check.dirty > 0, expectDirty: check.dirty, expectIgnored: check.ignoredCount, deleteBranch, skipArchive, allowFailedArchive }).catch((e) => ({ ok: false, error: String(e) }));
       if (!r.ok) { toast(t("rmWs.failed", { error: String(r.error ?? "") }), "error"); return; }
       if (r.status === "archive-failed") { setFailed(String(r.result?.tail ?? "")); return; }
       if (r.status === "archive-untrusted" || r.status === "dirty") { await load(); return; } // 그 사이 바뀜 — 다시 보여 줌
@@ -86,7 +86,7 @@ export default function RemoveWorkspaceDialog({ root, dir, onClose }: { root: st
                 <div className="flex items-center gap-1.5 font-semibold"><IconAlertTriangle size={14} aria-hidden />{t("rmWs.warnTitle")}</div>
                 {check.dirty > 0 && <p className="mt-1">{t("rmWs.dirty", { n: check.dirty })}</p>}
                 {(check.unpushed ?? 0) > 0 && <p className="mt-1">{t("rmWs.unpushed", { n: check.unpushed ?? 0 })}</p>}
-                {check.ignored.length > 0 && <p className="mt-1 break-all">{t("rmWs.ignored", { n: check.ignored.length, list: check.ignored.slice(0, 5).join(", ") + (check.ignored.length > 5 ? " …" : "") })}</p>}
+                {check.ignored.length > 0 && <p className="mt-1 break-all">{t("rmWs.ignored", { n: check.ignoredCount, list: check.ignored.slice(0, 5).join(", ") + (check.ignoredCount > 5 ? " …" : "") })}</p>}
               </div>
             )}
             {check.branch && (
