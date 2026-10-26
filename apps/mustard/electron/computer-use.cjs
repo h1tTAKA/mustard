@@ -98,8 +98,12 @@ let helperApp = null;
 function setHelperApp(p) { helperApp = p && process.platform === "darwin" && Number(release().split(".")[0]) >= 23 && existsSync(p) ? p : null; }
 let conn = null;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function helper() {
-  if (conn && !conn.sock.destroyed) return conn;
+let starting = null; // 띄우는 중 — 동시에 온 요청이 도우미를 둘 띄우지 않게 같은 약속을 기다림
+function helper() {
+  if (conn && !conn.sock.destroyed) return Promise.resolve(conn);
+  return (starting ||= startHelper().finally(() => { starting = null; }));
+}
+async function startHelper() {
   const dir = mkdtempSync(join(tmpdir(), "mcu-"));
   const sockPath = join(dir, "s"), tokenFile = join(dir, "t"), token = randomBytes(24).toString("hex");
   writeFileSync(tokenFile, token, { mode: 0o600 });
@@ -124,6 +128,11 @@ async function helper() {
     if (conn === c) conn = null;
   });
   conn = c;
+  // 도우미 pid — 비상 정지 때 이미 받은 동작까지 멈추려고 프로세스째 끝냄(리뷰)
+  const id = ++c.id;
+  const hs = await new Promise((res) => { const t = setTimeout(() => res(null), 10_000); c.pending.set(id, (m) => { clearTimeout(t); res(m); }); sock.write(JSON.stringify({ id, token, method: "handshake", params: {} }) + "\n"); });
+  c.pid = Number(hs?.result?.pid) || 0;
+  c.version = hs?.result?.version || "";
   return c;
 }
 async function helperReq(method, params = {}, timeout = 60_000) {
@@ -137,6 +146,7 @@ async function helperReq(method, params = {}, timeout = 60_000) {
   });
 }
 const restartHelper = () => { conn?.sock.destroy(); conn = null; };
+const killHelper = () => { const pid = conn?.pid; restartHelper(); if (pid) { try { process.kill(pid, "SIGKILL"); } catch { /* 이미 끝남 */ } } };
 // 도우미 답 → { ok, text } | { ok:false, error, text }. 트리는 JSON 밖에 그대로 붙여 읽기 쉽게.
 function helperOut(m) {
   if (m.ok) {
@@ -200,7 +210,7 @@ function stop(home) {
   generation++;
   for (const c of live) { try { process.kill(-c.pid, "SIGKILL"); } catch { try { c.kill("SIGKILL"); } catch { /* 이미 끝남 */ } } }
   live.clear();
-  restartHelper(); // 도우미 연결을 끊음 — 진행 중 답은 버려지고, 도우미는 주인이 없으면 스스로 끝남
+  killHelper(); // 도우미를 프로세스째 끝냄 — 이미 받아 둔 입력·클릭도 실행되지 않게(리뷰)
   writeConfig({ enabled: false }, home); log({ at: new Date().toISOString(), tool: "(stop)", app: "", cwd: "", result: "stopped" }, home);
 }
 
@@ -211,7 +221,7 @@ async function status({ force = false, home } = {}) {
     const ask = () => helperReq("permissions", {}, 15_000);
     let m = force ? (restartHelper(), await ask()) : await ask();
     if (m.ok && (!m.result.accessibility || !m.result.screen)) { restartHelper(); m = await ask(); }
-    const v = m.ok ? (await helperReq("handshake")).result?.version || "" : "";
+    const v = m.ok ? conn?.version || "" : "";
     const g = (b) => (m.ok ? (b ? "granted" : "missing") : "unknown");
     return { ...readConfig(home), driver: { path: helperApp, version: v, builtin: true }, permissions: { accessibility: g(m.result?.accessibility), screen: g(m.result?.screen) } };
   }

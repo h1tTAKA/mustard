@@ -178,10 +178,13 @@ func windowID(_ pid: pid_t, _ f: CGRect) -> CGWindowID? {
 func screenshot(_ pid: pid_t, _ f: CGRect) -> J {
   if !CGPreflightScreenCaptureAccess() { return ["error": "Screen Recording permission is off for Mustard Computer Use. Ask the user to allow it in Mustard (Settings > Computer use)."] }
   guard let wid = windowID(pid, f) else { return ["error": "Window is not on screen (minimized or on another Space)."] }
-  var out: J = ["error": "Screenshot timed out."]
+  // 결과는 잠금 상자에 — 시간 초과 뒤에도 작업이 쓰고 있을 수 있어서(리뷰)
+  final class Box: @unchecked Sendable { let lock = NSLock(); var v: J? }
+  let box = Box()
   let sem = DispatchSemaphore(value: 0)
-  Task {
-    defer { sem.signal() }
+  let task = Task {
+    var out: J = ["error": "Screenshot failed."]
+    defer { box.lock.lock(); box.v = out; box.lock.unlock(); sem.signal() }
     do {
       let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
       guard let w = content.windows.first(where: { $0.windowID == wid }) else { out = ["error": "Window not capturable."]; return }
@@ -198,8 +201,9 @@ func screenshot(_ pid: pid_t, _ f: CGRect) -> J {
       out = ["path": url.path, "width": img.width, "height": img.height, "scale": Double(scale)]
     } catch { out = ["error": "Screenshot failed: \(error.localizedDescription)"] }
   }
-  _ = sem.wait(timeout: .now() + 5)
-  return out
+  if sem.wait(timeout: .now() + 5) == .timedOut { task.cancel(); return ["error": "Screenshot timed out."] }
+  box.lock.lock(); defer { box.lock.unlock() }
+  return box.v ?? ["error": "Screenshot failed."]
 }
 
 // ── 합성 입력(CGEvent) ───────────────────────────────────────────────────
@@ -209,10 +213,11 @@ func activate(_ app: NSRunningApplication) {
 }
 func requireFront(_ app: NSRunningApplication) throws {
   activate(app)
-  if NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier { throw fail("window_not_focused", "Could not bring the app to the front, so keystrokes were not sent.") }
+  if NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier { throw fail("window_not_focused", "Could not bring the app to the front, so the input was not sent.") }
 }
-func syntheticClick(_ app: NSRunningApplication, _ p: CGPoint, right: Bool, count: Int) {
-  activate(app)
+// 앞에 못 오면 클릭 안 함 — 그 자리의 다른 앱(막는 앱 창 포함)을 누르지 않게(리뷰)
+func syntheticClick(_ app: NSRunningApplication, _ p: CGPoint, right: Bool, count: Int) throws {
+  try requireFront(app)
   let (down, up, btn): (CGEventType, CGEventType, CGMouseButton) = right ? (.rightMouseDown, .rightMouseUp, .right) : (.leftMouseDown, .leftMouseUp, .left)
   CGEvent(mouseEventSource: src, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: btn)?.post(tap: .cghidEventTap)
   usleep(30_000)
@@ -307,13 +312,13 @@ func callTool(_ name: String, _ a: J) throws -> Any {
         }
       }
       guard let f = frame(e) else { throw fail("element_not_clickable", "Element \(i) has no position. Try another element or x,y.") }
-      syntheticClick(r, CGPoint(x: f.midX, y: f.midY), right: right, count: count)
+      try syntheticClick(r, CGPoint(x: f.midX, y: f.midY), right: right, count: count)
       return ["done": true, "via": "mouse"]
     }
     guard let x = dbl(a, "x"), let y = dbl(a, "y") else { throw fail("invalid_argument", "Pass element, or x and y.") }
     let ax = AXUIElementCreateApplication(pid)
     guard let wf = frame(try pickWindow(ax, int(a, "window"))) else { throw fail("window_not_found", "Window has no position.") }
-    syntheticClick(r, CGPoint(x: wf.minX + x, y: wf.minY + y), right: right, count: count)
+    try syntheticClick(r, CGPoint(x: wf.minX + x, y: wf.minY + y), right: right, count: count)
     return ["done": true, "via": "mouse"]
   case "set_value":
     try needAX()
@@ -329,7 +334,9 @@ func callTool(_ name: String, _ a: J) throws -> Any {
     try requireFront(r)
     var units = Array(text.utf16)[...]
     while !units.isEmpty {
-      var chunk = Array(units.prefix(16)); units = units.dropFirst(chunk.count)
+      var chunk = Array(units.prefix(16))
+      if chunk.count == 16, let last = chunk.last, (0xD800...0xDBFF).contains(last) { chunk.removeLast() } // 이모지 등 두 칸짜리 글자를 반으로 자르지 않게(리뷰)
+      units = units.dropFirst(chunk.count)
       for down in [true, false] {
         let e = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: down)
         e?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
@@ -363,6 +370,7 @@ func callTool(_ name: String, _ a: J) throws -> Any {
     }
     let (dy, dx): (Int32, Int32) = switch str(a, "direction") { case "up": (n, 0); case "down": (-n, 0); case "left": (0, n); case "right": (0, -n); default: (0, 0) }
     if dy == 0 && dx == 0 { throw fail("invalid_argument", "direction must be up, down, left or right.") }
+    try requireFront(r) // 휠은 그 자리 창으로 감 — 대상 앱이 앞일 때만(리뷰)
     let e = CGEvent(scrollWheelEvent2Source: src, units: .line, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0)
     e?.location = p
     e?.post(tap: .cghidEventTap)
@@ -387,7 +395,7 @@ func requestPermission(_ kind: String) -> J {
 
 func dispatch(_ method: String, _ p: J) throws -> Any {
   switch method {
-  case "handshake": return ["protocol": 1, "version": VERSION]
+  case "handshake": return ["protocol": 1, "version": VERSION, "pid": Int(getpid())]
   case "permissions": return permissions()
   case "request_permission": return requestPermission(str(p, "kind") ?? "accessibility")
   case "list_tools": return TOOLS
@@ -448,6 +456,7 @@ func handleConn(_ fd: Int32, _ token: String) {
 }
 
 func serve(_ path: String, _ tokenFile: String) {
+  signal(SIGPIPE, SIG_IGN) // 이미 끊긴 연결에 답을 쓰다 죽지 않게(리뷰)
   guard let raw = try? String(contentsOfFile: tokenFile, encoding: .utf8) else { exit(2) }
   try? FileManager.default.removeItem(atPath: tokenFile)
   let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)

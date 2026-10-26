@@ -12,9 +12,9 @@ const NAME = "Mustard Computer Use";
 const BIN = "MustardComputerUse";
 const run = (cmd, args) => { const r = spawnSync(cmd, args, { cwd: here, stdio: "inherit" }); if (r.status !== 0) process.exit(r.status ?? 1); };
 
-run("swift", ["build", "-c", "release"]);
 const app = join(here, "dist", `${NAME}.app`);
-rmSync(app, { recursive: true, force: true });
+rmSync(app, { recursive: true, force: true }); // 빌드 실패 때 옛 .app이 패키징되지 않게 먼저 지움(리뷰)
+run("swift", ["build", "-c", "release"]);
 mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
 copyFileSync(join(here, ".build", "release", BIN), join(app, "Contents", "MacOS", BIN));
 writeFileSync(join(app, "Contents", "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>
