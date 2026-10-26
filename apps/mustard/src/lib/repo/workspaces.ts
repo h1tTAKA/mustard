@@ -161,7 +161,7 @@ export async function removeWorkspace(root: string, dir: string, o: RemoveOpts =
   if (present) {
     // force 아닌데 git이 거부(archive가 untracked를 남김 등) → 다시 점검해 보여 줌(일반 실패 안내로 끝나지 않게, 리뷰)
     try { await git(root, ["worktree", "remove", ...(o.force ? ["--force"] : []), dir]); }
-    catch (e) { if (o.force) throw e; const n = (await checkWorkspace(root, dir)).dirty; if (!n) throw e; return { status: "dirty", dirty: n }; } // 변경 때문이 아니면(잠금·권한 등) 진짜 오류를 보여 줌(리뷰)
+    catch (e) { if (o.force) throw e; const n = await checkWorkspace(root, dir).then((c) => c.dirty, () => 0); if (!n) throw e; return { status: "dirty", dirty: n }; } // 변경 때문이 아니면(잠금·권한 등) 진짜 오류를 보여 줌(리뷰)
   }
   await git(root, ["worktree", "prune"]).catch(() => {});
   let branchKept = !!branch;
