@@ -25,6 +25,7 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
   const [name, setName] = useState("");
   const [nameTouched, setNameTouched] = useState(false);
   const [branches, setBranches] = useState<string[]>([]);
+  const [items, setItems] = useState<{ issue: { number: number; title: string }[]; pr: { number: number; title: string }[] }>({ issue: [], pr: [] }); // 열린 이슈·PR(번호 칸 목록)
   const [busy, setBusy] = useState(false);
   const [setup, setSetup] = useState<{ dir: string; script: string } | null>(null); // 승인 기다리는 setup
   const prefix = getSetting<string>(GKEYS.branchPrefix, GIT_DEFAULTS.branchPrefix);
@@ -33,6 +34,15 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
   useEffect(() => {
     void fetch("/api/repo/git-branches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root }) })
       .then((r) => r.json()).then((d) => { if (d.ok) setBranches([...(d.local ?? []), ...(d.remote ?? [])]); }).catch(() => {});
+  }, [root]);
+
+  // 열린 이슈·PR 목록 — 번호 칸에서 골라 넣기(유저 요청). 각 50개
+  useEffect(() => {
+    const gh = window.nunopiDesktop?.github;
+    if (!gh) return;
+    const pick = (r: GhResult<{ number: number; title: string }[]> | null) => (r?.ok ? r.data.map(({ number, title }) => ({ number, title })) : []);
+    void Promise.all([gh.issueList(root, "open", 50).catch(() => null), gh.prList(root, "open", 50).catch(() => null)])
+      .then(([i, p]) => setItems({ issue: pick(i), pr: pick(p) }));
   }, [root]);
 
   // 이슈·PR 번호 → 제목(이름 제안)·PR head
@@ -151,8 +161,10 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
               </div>
             ) : (
               <div>
-                <input value={num} onChange={(e) => { reqRef.current++; setNum(e.target.value.replace(/\D/g, "")); setRef(null); setRefErr(false); }} onBlur={() => void lookup(from, num)}
+                <input value={num} onChange={(e) => { reqRef.current++; const n = e.target.value.replace(/\D/g, ""); setNum(n); setRef(null); setRefErr(false); if ((from === "pr" ? items.pr : items.issue).some((x) => String(x.number) === n)) void lookup(from, n); }}
+                  list="new-ws-items" onBlur={() => void lookup(from, num)}
                   onKeyDown={(e) => { if (e.key === "Enter") void lookup(from, num); }} inputMode="numeric" autoFocus placeholder={t(from === "pr" ? "newWs.prPlaceholder" : "newWs.issuePlaceholder")} className={input} />
+                <datalist id="new-ws-items">{(from === "pr" ? items.pr : items.issue).map((x) => <option key={x.number} value={x.number}>{`#${x.number} ${x.title}`}</option>)}</datalist>
                 {ref && <p className="mt-1 truncate text-[12px] text-zinc-700 dark:text-zinc-200">#{num} {ref.title}</p>}
                 {refErr && <p className="mt-1 text-[11.5px] text-rose-500">{t("newWs.notFound")}</p>}
                 {from === "pr" && ref?.cross && <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">{t("newWs.forkNote")}</p>}
