@@ -159,7 +159,7 @@ export default function ComputerUseSection() {
           ))}
           {adding ? (
             <input autoFocus value={add} onChange={(e) => setAdd(e.target.value)} onBlur={() => addBlocked()}
-              onKeyDown={(e) => { if (e.nativeEvent.isComposing) return; /* 한글·일본어 조합 중 Enter는 글자 확정용(리뷰) */ if (e.key === "Enter") addBlocked(); if (e.key === "Escape") addBlocked(true); }}
+              onKeyDown={(e) => { if (e.nativeEvent.isComposing || e.keyCode === 229) return; /* 한글·일본어 조합 중 Enter는 글자 확정용(리뷰) */ if (e.key === "Enter") addBlocked(); if (e.key === "Escape") addBlocked(true); }}
               placeholder={t("computer.blockedPh")} aria-label={t("computer.blocked")}
               className="w-40 rounded-full border border-mustard-400 bg-transparent px-2.5 py-0.5 text-[12px] text-zinc-800 outline-none dark:text-zinc-100" />
           ) : (
