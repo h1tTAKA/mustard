@@ -73,6 +73,27 @@ function Card({ provider }: { provider: TrackerProvider }) {
   );
 }
 
+// 상태 동기화 켜기/끄기(#1172) — 이슈가 연결된 Crew 카드·키가 든 브랜치(작업공간)의 PR에 적용. 값은 main 파일(Crew도 main이 처리).
+function SyncToggles() {
+  const t = useT();
+  const api = typeof window !== "undefined" ? window.nunopiDesktop?.trackers : undefined;
+  const [cfg, setCfg] = useState<{ start: boolean; pr: boolean; done: boolean } | null>(null);
+  useEffect(() => { void api?.syncGet().then(setCfg).catch(() => {}); }, [api]);
+  if (!api || !cfg) return null;
+  const set = (k: "start" | "pr" | "done", v: boolean) => { setCfg({ ...cfg, [k]: v }); void api.syncSet({ [k]: v }).then(setCfg).catch(() => {}); };
+  return (
+    <div className="space-y-1.5 rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
+      <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{t("trackers.syncTitle")}</p>
+      <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("trackers.syncHint")}</p>
+      {(["start", "pr", "done"] as const).map((k) => (
+        <label key={k} className="flex items-center gap-2 text-[12px] text-zinc-700 dark:text-zinc-200">
+          <input type="checkbox" checked={cfg[k]} onChange={(e) => set(k, e.target.checked)} className="accent-mustard-500" />{t(`trackers.sync.${k}`)}
+        </label>
+      ))}
+    </div>
+  );
+}
+
 export default function TrackerCards() {
-  return <><Card provider="linear" /><Card provider="jira" /></>;
+  return <><Card provider="linear" /><Card provider="jira" /><SyncToggles /></>;
 }

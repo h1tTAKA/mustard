@@ -21,6 +21,8 @@ interface NunopiDesktopApi {
     states(provider: TrackerProvider, issue: TrackerIssue): Promise<TrackerResult<{ id: string; name: string; type: string }[]>>;
     setState(provider: TrackerProvider, issue: TrackerIssue, stateId: string): Promise<TrackerResult<boolean>>;
     comment(provider: TrackerProvider, issue: TrackerIssue, body: string): Promise<TrackerResult<boolean>>;
+    syncGet(): Promise<{ start: boolean; pr: boolean; done: boolean }>;
+    syncSet(cfg: Partial<{ start: boolean; pr: boolean; done: boolean }>): Promise<{ start: boolean; pr: boolean; done: boolean }>;
   };
   detectAgents?(force?: boolean): Promise<{ ok: true; list: AgentDetect[] } | { ok: false; error: string }>;
   liftAgentArgs?(agent: string, args: string): Promise<{ choice: string; rest: string } | null>; // #1184

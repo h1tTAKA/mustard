@@ -98,6 +98,8 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     states: (provider, issue) => ipcRenderer.invoke("trackers:states", { provider, issue }),
     setState: (provider, issue, stateId) => ipcRenderer.invoke("trackers:set-state", { provider, issue, stateId }),
     comment: (provider, issue, body) => ipcRenderer.invoke("trackers:comment", { provider, issue, body }),
+    syncGet: () => ipcRenderer.invoke("trackers:sync-get"),
+    syncSet: (cfg) => ipcRenderer.invoke("trackers:sync-set", cfg),
   },
   // 터미널(pty) 브릿지 — 레포별 세션(#647).
   terminal: {

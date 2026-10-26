@@ -341,6 +341,7 @@ function setupClaudeHooks(base, token) {
 async function boot() {
   // Crew가 막기 직전 ~/.nunopi/agent-detect.request를 건드리면 바로 다시 감지(새 결과로만 막게, 리뷰). 1초 폴링.
   if (!detectTimer) require("node:fs").watchFile(join(require("node:os").homedir(), ".nunopi", "agent-detect.request"), { interval: 1000 }, (cur, prev) => { if (cur.mtimeMs > prev.mtimeMs) void detectAgents(true).catch(() => {}); });
+  if (!detectTimer) setInterval(() => void drainTrackerSync(), 2000).unref(); // #1172 Crew의 트래커 동기화 요청
   detectTimer ??= setInterval(() => void detectAgents().catch(() => {}), 10 * 60_000).unref(); // #1171 activate로 boot가 다시 불려도 한 번만(리뷰). 설치·로그인이 앱 실행 중에 바뀌어도 기록이 따라가게(Crew는 15분 넘은 기록은 안 믿음)
   migrateUserData(); // #900 리브랜딩 — 옛 nunopi userData 1회 이관(창·서버 뜨기 전)
   try { loadRegistry(); } catch { /* #864 재시작 생존 세션 신원 복원 */ }
@@ -688,6 +689,58 @@ ipcMain.handle("trackers:states", (_e, { provider, issue }) => withClient(provid
 ipcMain.handle("trackers:set-state", (_e, { provider, issue, stateId }) => withClient(provider, (c) => c.setState(issue, String(stateId))));
 ipcMain.handle("trackers:comment", (_e, { provider, issue, body }) => withClient(provider, (c) => c.comment(issue, String(body || "").slice(0, 20000))));
 
+// ── 상태 동기화(#1172) — 시작 → 진행 중, PR → 이슈에 링크 댓글, (선택) 머지 → 완료. 설정은 main 파일(Crew·main 둘 다 여기서 판단).
+const SYNC_DEFAULTS = { start: true, pr: true, done: false };
+const syncCfgFile = () => join(app.getPath("userData"), "tracker-sync.json");
+function loadSyncCfg() { try { return { ...SYNC_DEFAULTS, ...JSON.parse(readFileSync(syncCfgFile(), "utf8")) }; } catch { return { ...SYNC_DEFAULTS }; } }
+ipcMain.handle("trackers:sync-get", () => loadSyncCfg());
+ipcMain.handle("trackers:sync-set", (_e, cfg) => {
+  const next = { ...loadSyncCfg() };
+  for (const k of Object.keys(SYNC_DEFAULTS)) if (typeof cfg?.[k] === "boolean") next[k] = cfg[k];
+  try { mkdirSync(app.getPath("userData"), { recursive: true }); writeFileSync(syncCfgFile(), JSON.stringify(next)); } catch { /* 다음에 다시 */ }
+  return next;
+});
+// 브랜치·PR 제목에서 키(ENG-12) — 작업공간 이름에 키가 들어감(#1172)
+const trackerKeyIn = (s) => /(?:^|[^A-Za-z0-9])([A-Za-z][A-Za-z0-9_]{1,9}-\d+)(?![A-Za-z0-9])/.exec(String(s || ""))?.[1]?.toUpperCase() ?? null;
+// 키만 알면 연결된 트래커에서 찾기(Linear 먼저 — 키로 바로 조회됨)
+async function findTrackerIssue(key, provider) {
+  for (const p of provider ? [provider] : ["linear", "jira"]) {
+    const c = trackerClient(p);
+    if (!c) continue;
+    const r = await trackers.run(() => c.view(key));
+    if (r.ok && r.data?.key?.toUpperCase() === key) return { client: c, issue: r.data };
+  }
+  return null;
+}
+async function trackerSync(event, { provider, key, url }) {
+  const cfg = loadSyncCfg();
+  if (!key || !cfg[event]) return;
+  const hit = await findTrackerIssue(String(key).toUpperCase(), provider);
+  if (!hit) return;
+  const { client, issue } = hit;
+  if (event === "pr" && url) { await trackers.run(() => client.comment(issue, `PR: ${url}`)); return; }
+  const want = event === "start" ? "started" : "done";
+  // 이미 그 단계거나 더 나간 이슈는 안 건드림(완료된 걸 진행 중으로 되돌리지 않게)
+  if (["completed", "canceled", "done"].includes(issue.stateType) || (want === "started" && ["started", "indeterminate"].includes(issue.stateType))) return;
+  const st = await trackers.run(() => client.states(issue));
+  const to = st.ok ? trackers.pickState(st.data, want) : null;
+  if (to) await trackers.run(() => client.setState(issue, to.id));
+}
+// Crew(Next 서버)가 남긴 요청 파일 — 2초마다 보고, 읽은 만큼 지우고 처리
+const syncReqFile = () => join(require("node:os").homedir(), ".nunopi", "tracker-sync.jsonl");
+let syncBusy = false;
+async function drainTrackerSync() {
+  if (syncBusy) return;
+  syncBusy = true;
+  try {
+    const f = syncReqFile(), tmp = `${f}.${process.pid}`;
+    try { require("node:fs").renameSync(f, tmp); } catch { return; } // 없으면 할 일 없음(옮겨 놓고 읽어 새 줄과 안 섞이게)
+    const lines = readFileSync(tmp, "utf8").split("\n").filter(Boolean);
+    rmSync(tmp, { force: true });
+    for (const l of lines.slice(-50)) { try { const j = JSON.parse(l); if (["start", "pr", "done"].includes(j.event)) await trackerSync(j.event, j); } catch { /* 깨진 줄 무시 */ } }
+  } finally { syncBusy = false; }
+}
+
 ipcMain.handle("github:auth", (_e, { cwd }) => githubBridge.authDiagnose({ gh: ghExe(), cwd, env: ghEnv(), probe: ["api", "rate_limit"] })); // #1151 로그인 필요면 API로 한 번 더(오프라인 구분)
 // 이슈 목록·상세(#813) — gh issue list/view --json. state=open|closed|all(기본 open).
 ipcMain.handle("github:issue-list", (_e, { cwd, state, limit }) => {
@@ -886,11 +939,16 @@ ipcMain.handle("github:set-state", (_e, { cwd, kind, number, action }) => {
   return Promise.resolve({ ok: false, kind: "error", detail: "invalid action" });
 });
 // PR 머지(#822 추가) — method별 플래그 + 병합 후 브랜치 삭제. 되돌릴 수 없음(렌더러서 확인).
-ipcMain.handle("github:merge", (_e, { cwd, number, method }) => {
+ipcMain.handle("github:merge", async (_e, { cwd, number, method }) => {
   const n = Number(number);
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid number" };
   const flag = { merge: "--merge", squash: "--squash", rebase: "--rebase" }[method] || "--merge";
-  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "merge", String(n), flag, "--delete-branch"] });
+  // #1172 머지 → 트래커 "완료"(설정 켜진 때만) — 브랜치가 지워지기 전에 이름·제목을 받아 둠
+  const info = loadSyncCfg().done ? await githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "headRefName,title"] }).catch(() => null) : null;
+  const r = await githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "merge", String(n), flag, "--delete-branch"] });
+  const key = info?.ok ? trackerKeyIn(info.data?.headRefName) || trackerKeyIn(info.data?.title) : null;
+  if (r?.ok && key) void trackerSync("done", { key }).catch(() => {});
+  return r;
 });
 // PR 리뷰 1(#1123) — 변경 파일(봤음 상태 포함)·파일별 diff·봤음 표시. GraphQL은 gh api가 {owner}/{repo}를 현재 레포로 치환.
 const prDiffCache = new Map(); // `${cwd}#${n}` → { at, files }
@@ -1104,14 +1162,23 @@ ipcMain.handle("github:pr-line-comments", async (_e, { cwd, number }) => {
   // #1145 side·startLine = diff 안 줄 위치(LEFT = 지운 줄)
   return { ok: true, data: all.map((c) => ({ id: c.id, mine: !!me && c.user?.login === me, reactionGroups: groups(c.reactions), ...(threads.get(c.id) ?? {}), path: c.path, line: c.line ?? c.original_line ?? null, outdated: c.line == null, side: c.side ?? "RIGHT", startLine: c.start_line ?? c.original_start_line ?? null, body: String(c.body ?? ""), author: c.user?.login ?? "", createdAt: c.created_at, url: c.html_url, inReplyTo: c.in_reply_to_id ?? null })) };
 });
-ipcMain.handle("github:pr-create", (_e, { cwd, base, head, title, body, draft, reviewers, assignees, labels, milestone }) => {
+ipcMain.handle("github:pr-create", async (_e, { cwd, base, head, title, body, draft, reviewers, assignees, labels, milestone }) => {
   if (!title || typeof title !== "string" || !title.trim()) return { ok: false, kind: "error", detail: "title required" };
   const args = ["pr", "create", "--title", title.trim(), "--body", typeof body === "string" ? body : ""];
   if (base && typeof base === "string" && base.trim()) args.push("--base", base.trim());
   if (head && typeof head === "string" && head.trim()) args.push("--head", head.trim());
   if (draft) args.push("--draft");
   args.push(...metaCreateArgs({ reviewers, assignees, labels, milestone })); // #1131 사이드바 항목
-  return githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args });
+  const r = await githubBridge.ghRun({ gh: ghExe(), cwd, env: ghEnv(), args });
+  // #1172 브랜치·제목에 트래커 키가 있으면 그 이슈에 PR 링크 댓글(설정 켜진 때, 실패해도 PR은 그대로)
+  if (r?.ok) {
+    const url = String(r.data ?? r.stdout ?? "").split("\n").map((x) => x.trim()).find((x) => /^https?:\/\//.test(x));
+    let branch = typeof head === "string" ? head : "";
+    if (!branch) branch = await new Promise((res) => require("node:child_process").execFile("git", ["branch", "--show-current"], { cwd, timeout: 5000 }, (_err, out) => res(String(out || "").trim())));
+    const key = trackerKeyIn(branch) || trackerKeyIn(title);
+    if (url && key) void trackerSync("pr", { key, url }).catch(() => {});
+  }
+  return r;
 });
 ipcMain.handle("app:relaunch", () => { app.relaunch(); app.quit(); });
 // Claude·Codex 구독 사용 한도 조회(#735) — 로컬 크레덴셜로 각 provider usage 엔드포인트 호출.

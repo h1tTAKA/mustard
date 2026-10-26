@@ -26,6 +26,7 @@ import { isFailedNote } from "@/lib/failText";
 import { freshIds, hasTriggers, readTriggers, scheduleDue, writeTriggers, type CrewTrigger } from "./crewTriggers";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems } from "@/lib/catchupStore";
+import { requestTrackerSync } from "@/lib/trackerSync";
 import { checkAgent, recheck } from "./agentDetect";
 import type { CrewStatus, CrewTask } from "./crewTypes";
 
@@ -467,6 +468,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     });
     if (run.state !== "starting") { void sna.agent.kill(sessionId).catch(() => {}); return run; } // #1162 준비가 너무 길어 감시가 이미 실패 처리 — 늦게 뜬 에이전트는 끔
     run.state = "running"; run.lastActivity = "started"; run.runningAt = Date.now();
+    requestTrackerSync("start", task.issue); // #1172 이슈 연결 카드 → 트래커 "진행 중"(설정 켜진 때, main이 처리)
     persist(run, true);
     say(root, { from: role.id, provider: role.provider, kind: "start", taskId, taskTitle: task.title, ...tx(note ? "crewchat.restart" : "crewchat.start", { card: task.title }) });
   } catch (e) {
@@ -781,6 +783,7 @@ async function createPrOnce(root: string, taskId: string): Promise<{ url: string
     .then((r) => r.stdout.trim()).catch((e) => { throw new Error(String((e as { stderr?: string }).stderr || (e as Error).message).trim().slice(0, 300) || "gh failed"); });
   const url = out.split("\n").map((l) => l.trim()).find((l) => /^https?:\/\//.test(l)) ?? out;
   patchTask(root, taskId, { pr: { url } });
+  requestTrackerSync("pr", task.issue, url); // #1172 이슈에 PR 링크 댓글
   say(root, { from: "board", kind: "gate", taskId, taskTitle: task.title, ...tx("crewchat.prCreated", { url }) });
   return { url };
 }
