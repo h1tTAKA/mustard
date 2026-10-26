@@ -2,13 +2,15 @@
 // ~/.nunopi/stream/<sha(root)>/<YYYY-MM-DD>.jsonl(로컬 날짜). 코드그래프 캐시(~/.nunopi/codegraph)와 같은 루트.
 // 레포 폴더엔 아무것도 안 남김. 하루 단위 파일이라 날짜 되돌아보기(캘린더)는 파일 하나만 읽으면 됨.
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { isFailedNote } from "./failText.ts";
 
 export type CatchupKind = "symbol" | "file" | "query" | "repo" | "edit" | "narration" | "diff" | "session"; // session = 커밋을 만든 에이전트 세션(#1064) // diff = 커밋 변경 자동 설명(#1056)
-export interface CatchupItem { key: string; kind: CatchupKind; target: string; tool: string; ts: number; expl: string }
+// #1181 wt·br = 메인이 아닌 작업 폴더(git worktree)에서 쌓인 항목 — 그 폴더 경로와 그때 브랜치(폴더를 지워도 브랜치 이름으로 보이게). 메인 항목엔 없음.
+export interface CatchupItem { key: string; kind: CatchupKind; target: string; tool: string; ts: number; expl: string; wt?: string; br?: string }
 
 const KINDS = new Set<CatchupKind>(["symbol", "file", "query", "repo", "edit", "narration", "diff", "session"]);
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -16,7 +18,50 @@ const normPath = (p: string) => p.replace(/\/+$/, "");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 32);
 // 테스트에서 HOME 바꿔 쓰게 호출 시점 계산.
 const baseDir = () => join(process.env.MUSTARD_STREAM_DIR || join(homedir(), ".nunopi", "stream"));
-const repoDir = (root: string) => join(baseDir(), sha(normPath(root)));
+// #1181 저장은 레포 하나(메인 worktree) 기준 — worktree에서 쌓인 것도 메인 폴더에 모으고 wt로 구분(지워도 남고, 머지된 커밋 ↔ 대화가 메인에서 이어지게).
+// 메인 = 공용 .git(--git-common-dir)의 부모. git이 아니거나(폴더 없음 등) 서브모듈처럼 .git 폴더가 아니면 그 경로 그대로.
+const mainCache = new Map<string, string>();
+export function mainOf(root: string): string {
+  const r = normPath(root);
+  const hit = mainCache.get(r);
+  if (hit) return hit;
+  let main = r;
+  try {
+    let c = execFileSync("git", ["rev-parse", "--git-common-dir"], { cwd: r, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (!isAbsolute(c)) c = resolve(r, c);
+    if (basename(c) === ".git") main = normPath(dirname(c));
+  } catch { /* git 아님 — 그 경로 그대로 */ }
+  mainCache.set(r, main);
+  return main;
+}
+const where = (root: string) => { const r = normPath(root), main = mainOf(r); return { main, wt: main === r ? undefined : r }; };
+const branchOf = (dir: string) => { try { const b = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: dir, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim(); return b && b !== "HEAD" ? b : undefined; } catch { return undefined; } };
+const rawDir = (path: string) => join(baseDir(), sha(normPath(path)));
+const repoDir = (root: string) => rawDir(mainOf(root));
+// 같은 key라도 다른 작업 폴더면 다른 항목
+const idOf = (x: { key: string; wt?: string }) => `${x.wt ?? ""}\0${x.key}`;
+// 지금 폴더 것만(기본) — 메인 = wt 없는 것, worktree = 그 wt
+const inScope = (root: string) => { const { wt } = where(root); return (x: CatchupItem) => x.wt === wt; };
+// 그 폴더에서 쓴 항목에 표시 붙이기(클라가 보낸 wt·br은 믿지 않고 서버가 정함)
+function tag(root: string, items: CatchupItem[]): CatchupItem[] {
+  const { wt } = where(root);
+  const br = wt ? branchOf(wt) : undefined;
+  return items.map((x) => { const it = { ...x }; delete it.wt; delete it.br; return wt ? { ...it, wt, ...(br ? { br } : {}) } : it; });
+}
+// #1181 옛 기록 옮기기 — worktree 경로로 따로 쌓였던 폴더를 처음 만질 때 메인으로(wt·br 붙여) 옮기고 옛 폴더는 .migrated로. 프로세스당 한 번.
+const migrated = new Set<string>();
+function migrate(root: string) {
+  const { main, wt } = where(root);
+  if (!wt || migrated.has(wt)) return;
+  migrated.add(wt);
+  const old = rawDir(wt);
+  if (old === rawDir(main) || !existsSync(old)) return;
+  try {
+    for (const f of readdirSync(old)) if (DAY_RE.test(f.replace(/\.jsonl$/, ""))) appendItems(root, readDayFile(join(old, f)));
+    for (const sub of ["sessions", "ask"]) { const s = join(old, sub); if (existsSync(s)) cpSync(s, join(rawDir(main), sub), { recursive: true, force: false }); }
+    renameSync(old, `${old}.migrated`);
+  } catch { /* 다음 실행에 다시 시도하진 않음 — 옛 폴더는 그대로 남음 */ }
+}
 // #998 캐치업 질문 에이전트가 읽을 기록 폴더(--add-dir).
 export const streamDirFor = (root: string) => repoDir(root);
 // #1068 캐치업을 쓰는 레포들(기록 폴더의 root.txt) + 앱 생존 하트비트 파일 위치
@@ -43,7 +88,8 @@ export function sanitize(x: unknown): CatchupItem | null {
   if (typeof o.ts !== "number" || !Number.isFinite(o.ts) || o.ts <= 0) return null;
   const kind = KINDS.has(o.kind as CatchupKind) ? (o.kind as CatchupKind) : null;
   if (!kind) return null;
-  return { key: o.key.slice(0, 300), kind, target: o.target.slice(0, 300), tool: typeof o.tool === "string" ? o.tool.slice(0, 200) : "", ts: o.ts, expl: o.expl.slice(0, EXPL_MAX) };
+  return { key: o.key.slice(0, 300), kind, target: o.target.slice(0, 300), tool: typeof o.tool === "string" ? o.tool.slice(0, 200) : "", ts: o.ts, expl: o.expl.slice(0, EXPL_MAX),
+    ...(typeof o.wt === "string" && o.wt ? { wt: o.wt.slice(0, 1000) } : {}), ...(typeof o.br === "string" && o.br ? { br: o.br.slice(0, 300) } : {}) };
 }
 
 function readDayFile(file: string): CatchupItem[] {
@@ -55,7 +101,7 @@ function readDayFile(file: string): CatchupItem[] {
     try {
       const it = sanitize(JSON.parse(line));
       if (it?.kind === "narration" && isFailedNote(it.expl)) continue; // #1093 실패 문구가 해설로 저장된 옛 카드 — 숨김(재료가 없어 복구 불가)
-      if (it && !keys.has(it.key)) { keys.add(it.key); out.push(it); }
+      if (it && !keys.has(idOf(it))) { keys.add(idOf(it)); out.push(it); }
     } catch { /* 깨진 줄(쓰다 죽음) 스킵 */ }
   }
   return out;
@@ -65,13 +111,15 @@ function readDayFile(file: string): CatchupItem[] {
 // 임시 파일에 쓰고 rename(쓰다 죽어도 원본 유지). appendItems와 같은 이유로 동기 = 프로세스 안 경합 없음.
 export function replaceItems(root: string, items: CatchupItem[]): number {
   if (!root || !items.length) return 0;
+  migrate(root);
+  items = tag(root, items);
   const dir = repoDir(root);
   mkdirSync(dir, { recursive: true });
   for (const it of items) {
     const file = join(dir, `${dayKey(it.ts)}.jsonl`);
     const lines = existsSync(file) ? readFileSync(file, "utf8").split("\n").filter((l) => {
       if (!l.trim()) return false;
-      try { return (JSON.parse(l) as { key?: string }).key !== it.key; } catch { return true; }
+      try { const o = JSON.parse(l) as { key?: string; wt?: string }; return !(o.key === it.key && o.wt === it.wt); } catch { return true; }
     }) : [];
     const tmp = `${file}.tmp`;
     writeFileSync(tmp, [...lines, JSON.stringify(it)].join("\n") + "\n");
@@ -86,17 +134,19 @@ export function replaceItems(root: string, items: CatchupItem[]): number {
 // ponytail: append마다 그날 파일 전체를 읽음(하루 수백 건 수준 OK) — 커지면 파일별 key 캐시.
 export function appendItems(root: string, items: CatchupItem[]): number {
   if (!root || !items.length) return 0;
+  migrate(root);
+  items = tag(root, items);
   const dir = repoDir(root);
   mkdirSync(dir, { recursive: true });
   const rootFile = join(dir, "root.txt");
-  if (!existsSync(rootFile)) writeFileSync(rootFile, normPath(root)); // 어느 레포 폴더인지(디버깅·정리용)
+  if (!existsSync(rootFile)) writeFileSync(rootFile, mainOf(root)); // 어느 레포 폴더인지(디버깅·정리용) — #1181 메인 경로
   const byDay = new Map<string, CatchupItem[]>();
   for (const it of items) { const d = dayKey(it.ts); byDay.set(d, [...(byDay.get(d) ?? []), it]); }
   let added = 0;
   for (const [day, list] of byDay) {
     const file = join(dir, `${day}.jsonl`);
-    const seen = new Set(readDayFile(file).map((x) => x.key));
-    const fresh = list.filter((x) => (seen.has(x.key) ? false : (seen.add(x.key), true)));
+    const seen = new Set(readDayFile(file).map(idOf));
+    const fresh = list.filter((x) => (seen.has(idOf(x)) ? false : (seen.add(idOf(x)), true)));
     if (!fresh.length) continue;
     appendFileSync(file, fresh.map((x) => JSON.stringify(x)).join("\n") + "\n");
     added += fresh.length;
@@ -104,22 +154,24 @@ export function appendItems(root: string, items: CatchupItem[]): number {
   return added;
 }
 
-// 기록 있는 날짜(최신 먼저) — 서브 C 캘린더용.
-export function listDays(root: string): string[] {
-  const dir = repoDir(root);
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).map((f) => f.replace(/\.jsonl$/, "")).filter((d) => DAY_RE.test(d)).sort().reverse();
+// 기록 있는 날짜(최신 먼저) — 서브 C 캘린더용. #1181 기본은 지금 작업 폴더 항목이 있는 날만, all이면 레포 전체.
+const allDays = (root: string) => { const dir = repoDir(root); return existsSync(dir) ? readdirSync(dir).map((f) => f.replace(/\.jsonl$/, "")).filter((d) => DAY_RE.test(d)).sort().reverse() : []; };
+export function listDays(root: string, all = false): string[] {
+  migrate(root);
+  return all ? allDays(root) : allDays(root).filter((d) => readDay(root, d).length > 0); // ponytail: 날짜 파일을 다 읽음 — 기록이 아주 많아지면 날짜별 폴더 표시 캐시
 }
 
-export function readDay(root: string, day: string): CatchupItem[] {
+export function readDay(root: string, day: string, all = false): CatchupItem[] {
   if (!DAY_RE.test(day)) return [];
-  return readDayFile(join(repoDir(root), `${day}.jsonl`)).sort((a, b) => b.ts - a.ts);
+  migrate(root);
+  const items = readDayFile(join(repoDir(root), `${day}.jsonl`));
+  return (all ? items : items.filter(inScope(root))).sort((a, b) => b.ts - a.ts);
 }
 
 // 최근 limit개(최신 날짜 파일부터) — 패널 첫 로드.
 export function readRecent(root: string, limit: number): CatchupItem[] {
   const out: CatchupItem[] = [];
-  for (const day of listDays(root)) {
+  for (const day of allDays(root)) {
     out.push(...readDay(root, day));
     if (out.length >= limit) break;
   }
@@ -132,7 +184,7 @@ export function searchItems(root: string, q: string, limit: number): CatchupItem
   const needle = q.trim().toLowerCase();
   if (!needle) return [];
   const out: CatchupItem[] = [];
-  for (const day of listDays(root)) {
+  for (const day of allDays(root)) {
     for (const x of readDay(root, day)) if (`${x.target}\n${x.expl}`.toLowerCase().includes(needle)) out.push(x);
     if (out.length >= limit) break;
   }
@@ -200,7 +252,7 @@ export function askCounts(root: string): Record<string, number> {
 
 // #1081 키로 항목 찾기(최근 날짜부터) — 질문 답변의 catchup: 링크 → 그 카드로 이동할 날짜를 알려고.
 export function findItem(root: string, key: string): CatchupItem | null {
-  for (const day of listDays(root)) { const hit = readDay(root, day).find((x) => x.key === key); if (hit) return hit; }
+  for (const day of allDays(root)) { const hit = readDay(root, day).find((x) => x.key === key) ?? readDay(root, day, true).find((x) => x.key === key); if (hit) return hit; } // 지금 폴더 먼저, 없으면 레포 전체(#1181)
   return null;
 }
 
@@ -209,7 +261,7 @@ export function itemsForHashes(root: string, hashes: string[], limit = 30): Catc
   const hs = hashes.map((h) => h.toLowerCase()).filter((h) => /^[0-9a-f]{7,40}$/.test(h));
   if (!hs.length) return [];
   const out: CatchupItem[] = [];
-  for (const day of listDays(root)) for (const x of readDay(root, day)) {
+  for (const day of allDays(root)) for (const x of readDay(root, day, true)) { // #1181 커밋 카드는 레포 전체에서(worktree에서 만든 커밋이 머지된 뒤에도)
     const m = /^(?:diff|session)\|([0-9a-f]{7,40})/i.exec(x.key);
     if (m && hs.some((h) => m[1].toLowerCase().startsWith(h) || h.startsWith(m[1].toLowerCase()))) { out.push(x); if (out.length >= limit) return out; }
   }
