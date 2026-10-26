@@ -9,7 +9,8 @@ const tmp = realpathSync(mkdtempSync(join(tmpdir(), "ws-")));
 process.env.MUSTARD_WORKSPACES_DIR = join(tmp, "workspaces");
 process.env.MUSTARD_CREW_DIR = join(tmp, "crew");
 process.env.MUSTARD_WORKTREE_DIR = join(tmp, "crew-wt");
-const { checkWorkspace, createWorkspace, forceDeleteBranch, issueName, removeWorkspace, resolveBase, slugName } = await import("./workspaces.ts");
+const { checkWorkspace, createWorkspace, forceDeleteBranch, removeWorkspace, resolveBase } = await import("./workspaces.ts");
+const { branchFor, issueName, slugName } = await import("./workspaceName.ts");
 const { trustScript } = await import("../crew/worktreeBootstrap.ts");
 
 // 이름 규칙(Orca)
@@ -19,6 +20,7 @@ assert.strictEqual(slugName("x".repeat(60)).length, 48);
 assert.strictEqual(slugName("한글만"), "");
 assert.strictEqual(issueName(12, "Issue #12: Add dark mode"), "add-dark-mode", "앞머리 떼기");
 assert.strictEqual(issueName(7, "한글 제목"), "issue-7", "slug가 비면 issue-N");
+assert.strictEqual(branchFor(" a//b ", "x"), "a/b/x"); assert.strictEqual(branchFor("", "x"), "x");
 
 // 임시 레포 + 원격(bare)
 const g = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, encoding: "utf8" }).trim();

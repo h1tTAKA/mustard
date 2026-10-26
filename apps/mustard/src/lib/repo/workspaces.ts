@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { basename, join, relative, resolve, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
+import { branchFor, slugName, sanitizeSegment } from "./workspaceName.ts";
 import { clearSetupState, materialize, MAX_REVIEW, readConfig, isTrusted, runArchive, type MaterializeReport, type ScriptResult } from "../crew/worktreeBootstrap.ts";
 
 const pexec = promisify(execFile);
@@ -14,15 +15,6 @@ const ok = (p: Promise<unknown>) => p.then(() => true, () => false);
 
 export const workspacesDir = () => process.env.MUSTARD_WORKSPACES_DIR || join(homedir(), "mustard", "workspaces"); // Orca ~/orca/workspaces/<레포>/<이름>
 const crewDir = () => process.env.MUSTARD_WORKTREE_DIR || join(homedir(), ".nunopi", "worktrees"); // Crew worktree — Crew가 관리, 여기서 안 지움
-
-// 이름 slug — Orca slugifyForWorkspaceName: 소문자, [^a-z0-9._-] → -, .. → ., 앞뒤 - 정리, 48자
-export function slugName(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/\.{2,}/g, ".").replace(/-{2,}/g, "-").replace(/^[-.]+|[-.]+$/g, "").slice(0, 48).replace(/[-.]+$/, "");
-}
-// 이슈 제목 → 이름(Orca getLinkedWorkItemWorkspaceName: "Issue #12: " 같은 앞머리 떼고 slug), 비면 issue-<N>
-export const issueName = (n: number, title: string) => slugName(title.replace(/^\s*(issue|pr|pull request)?\s*#?\d+\s*[:\-–]\s*/i, "")) || `issue-${n}`;
-// 브랜치 조각 — Orca sanitizeWorktreeName: 글자·숫자·._- 말고는 -
-export const sanitizeSegment = (s: string) => s.replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^[-.]+|[-.]+$/g, "");
 
 async function validBranch(root: string, b: string): Promise<boolean> {
   return !!b && !b.startsWith("-") && ok(git(root, ["check-ref-format", "--branch", b]));
@@ -44,7 +36,8 @@ export interface PrStart { number: number; headRefName: string; headRefOid?: str
 export interface CreateOpts { name: string; base?: string; prefix?: string; pr?: PrStart }
 export interface Created { dir: string; branch: string; base: string; bootstrap: MaterializeReport }
 
-const remoteOf = async (root: string) => { const rs = (await git(root, ["remote"]).catch(() => "")).split("\n").filter(Boolean); return rs.includes("origin") ? "origin" : rs[0] ?? ""; };
+// PR을 받을 원격 — upstream(포크해서 작업할 때 원본) → origin → 첫 원격(Orca 배포본 1.4.240과 같은 순서)
+const remoteOf = async (root: string) => { const rs = (await git(root, ["remote"]).catch(() => "")).split("\n").filter(Boolean); return ["upstream", "origin"].find((r) => rs.includes(r)) ?? rs[0] ?? ""; };
 
 // PR head를 받아 SHA로(메인 체크아웃은 안 건드림, Orca pr-start-point). 같은 레포 = 그 브랜치를 원격 추적 ref로, fork = refs/pull/N/head를 전용 ref로.
 // 받은 SHA가 GitHub가 알려 준 headRefOid와 다르면 거부(Superset — 그 사이 push됐거나 다른 걸 받음).
@@ -72,7 +65,6 @@ const branchExists = async (root: string, b: string, withRemote: boolean) => {
 export async function createWorkspace(root: string, o: CreateOpts): Promise<Created> {
   const repo = sanitizeSegment(basename(root)) || "repo";
   const name = slugName(o.name) || (o.pr ? `pr-${o.pr.number}` : "workspace");
-  const prefix = (o.prefix ?? "").split("/").map(sanitizeSegment).filter(Boolean).join("/");
   let start: { sha: string; ref: string }, upstream: string | null = null;
   if (o.pr) {
     const { sha, remote } = await fetchPr(root, o.pr);
@@ -84,7 +76,7 @@ export async function createWorkspace(root: string, o: CreateOpts): Promise<Crea
   await git(root, ["worktree", "prune"]).catch(() => {}); // 지워진 폴더의 옛 등록 정리
   for (let i = 1; i <= 100; i++) {
     const n = i === 1 ? name : `${name}-${i}`;
-    const branch = o.pr ? (i === 1 ? o.pr.headRefName : `${o.pr.headRefName}-${i}`) : prefix ? `${prefix}/${n}` : n;
+    const branch = o.pr ? (i === 1 ? o.pr.headRefName : `${o.pr.headRefName}-${i}`) : branchFor(o.prefix ?? "", n);
     const dir = join(workspacesDir(), repo, n);
     if (!isUnder(workspacesDir(), dir)) throw new Error("bad path");
     if (existsSync(dir) || !(await validBranch(root, branch)) || (await branchExists(root, branch, !o.pr))) continue;

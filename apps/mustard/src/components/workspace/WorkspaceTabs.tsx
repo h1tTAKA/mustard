@@ -12,6 +12,8 @@ import WorkspaceModePane from "@/components/workspace/WorkspaceModePane";
 import RepoAvatar from "@/components/workspace/RepoAvatar";
 import WorkspaceAddMenu, { type AddKind } from "@/components/workspace/WorkspaceAddMenu";
 import RepoTabHoverCard from "@/components/workspace/RepoTabHoverCard";
+import NewWorkspaceDialog from "@/components/workspace/NewWorkspaceDialog";
+import { NEW_WORKSPACE_EVENT, OPEN_REPO_TAB_EVENT, openNewWorkspace, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
 import DaemonOutdatedNotice from "@/components/workspace/DaemonOutdatedNotice";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
 import { publishRepoSessions } from "@/lib/agentSessionStates";
@@ -104,6 +106,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   const modeSeq = useRef(0); // 모드 탭 id 세션 카운터(같은 ms 충돌 방지, #769)
   const [addMenu, setAddMenu] = useState<{ left: number; top: number } | null>(null); // "+" 드롭다운 픽커(#769)
   const closeAddMenu = useCallback(() => setAddMenu(null), []); // 안정 참조 — 메뉴 effect 재부착 최소화
+  const [newWs, setNewWs] = useState<{ root: string; initial?: NewWorkspaceInitial } | null>(null); // #1170 "새 작업공간" 창
   // "+" 버튼 아래로 드롭다운 앵커링. 화면 오른쪽 넘침 방지.
   const openAddMenu = (el: HTMLElement) => {
     const r = el.getBoundingClientRect();
@@ -323,6 +326,21 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
+  // #1170 작업공간 — 어디서든 "새 작업공간" 창 열기 + 만든 worktree를 레포 탭으로(이미 열려 있으면 그 탭으로)
+  useEffect(() => {
+    const onNew = (e: Event) => { const d = (e as CustomEvent<{ root: string; initial?: NewWorkspaceInitial }>).detail; if (d?.root) setNewWs(d); };
+    const onOpen = (e: Event) => {
+      const path = (e as CustomEvent<string>).detail;
+      if (!path) return;
+      const key = tabKey({ type: "repo", path });
+      setTabs((prev) => (prev.some((x) => tabKey(x) === key) ? prev : [...prev, { type: "repo", path }]));
+      activate(key);
+    };
+    window.addEventListener(NEW_WORKSPACE_EVENT, onNew);
+    window.addEventListener(OPEN_REPO_TAB_EVENT, onOpen);
+    return () => { window.removeEventListener(NEW_WORKSPACE_EVENT, onNew); window.removeEventListener(OPEN_REPO_TAB_EVENT, onOpen); };
+  }, []); // activate는 setter만 씀 — 한 번만 걸면 됨
+
   // #989 알림 클릭 → 그 레포 탭 활성(닫혀 있으면 다시 열기) + 그 터미널 탭 포커스.
   useEffect(() => {
     if (!mounted || !desktop?.onNotifyActivate) return;
@@ -461,6 +479,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   // 메뉴 선택 → 레포는 폴더 다이얼로그, 모드는 탭 추가 또는 새 창(#789).
   const onPick = (kind: AddKind, target: "tab" | "window" = "tab") => {
     if (kind === "repo") { void addRepoTab(); return; }
+    if (kind === "workspace") { const cur = tabs.find((x) => tabKey(x) === activeKey); if (cur?.type === "repo") openNewWorkspace(cur.path); return; }
     if (target === "window") void openModeInWindow(kind);
     else void addModeTab(kind);
   };
@@ -640,7 +659,8 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
           </div>
         );
       })()}
-      <WorkspaceAddMenu anchor={addMenu} onClose={closeAddMenu} onPick={onPick} />
+      <WorkspaceAddMenu anchor={addMenu} onClose={closeAddMenu} onPick={onPick} canWorkspace={tabs.find((x) => tabKey(x) === activeKey)?.type === "repo"} />
+      {newWs && <NewWorkspaceDialog root={newWs.root} initial={newWs.initial} onClose={() => setNewWs(null)} />}
     </div>
   );
 });

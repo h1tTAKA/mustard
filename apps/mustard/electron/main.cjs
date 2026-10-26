@@ -646,7 +646,7 @@ ipcMain.handle("github:pr-view", async (_e, { cwd, number }) => {
   if (!Number.isInteger(n) || n <= 0) return { ok: false, kind: "error", detail: "invalid pr number" };
   // #1131 reviews(판정 기록) + 내 로그인(내 PR이면 승인·변경 요청 숨김) — 로그인은 실패해도 상세는 보임
   const [r, me] = await Promise.all([
-    githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "number,title,state,isDraft,author,createdAt,assignees,body,comments,statusCheckRollup,mergeStateStatus,url,reactionGroups,reviews,reviewRequests,labels,milestone,headRefOid"] }),
+    githubBridge.ghJson({ gh: ghExe(), cwd, env: ghEnv(), args: ["pr", "view", String(n), "--json", "number,title,state,isDraft,author,createdAt,assignees,body,comments,statusCheckRollup,mergeStateStatus,url,reactionGroups,reviews,reviewRequests,labels,milestone,headRefOid,headRefName,isCrossRepository"] }), // #1170 headRefName·isCrossRepository = PR을 작업공간(worktree)으로 받을 때
     viewerLogin(cwd).catch(() => null),
   ]);
   return r.ok && r.data ? { ok: true, data: { ...r.data, viewerLogin: me } } : r;
