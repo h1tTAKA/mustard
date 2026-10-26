@@ -67,7 +67,7 @@ const envOf = (id, choice) => (choice === "full-access" ? BY_ID.get(id)?.env ?? 
 const choicesOf = (id) => CHOICES.filter((c) => c === "own" || flagOf(id, c) || envOf(id, c));
 
 // 따옴표를 한 덩어리로 보는 간단한 토큰 나누기(명령 줄은 셸이 다시 해석 — 여기선 옵션 이름만 봄)
-const tokens = (s) => String(s || "").match(/"[^"]*"|'[^']*'|\S+/g) || [];
+const tokens = (s) => String(s || "").match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || []; // 단어 중간 따옴표(--opt="a  b")도 한 덩어리
 const CLAUDE_OPTS = ["--permission-mode", "--dangerously-skip-permissions", "--allow-dangerously-skip-permissions", "--permission-prompt-tool", "--permission-prompts", "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools"];
 const EXTRA = { claude: CLAUDE_OPTS, codex: ["-a", "--ask-for-approval", "-s", "--sandbox", "--yolo", "--not-so-yolo", "--full-auto"], grok: ["--permission-mode", "--always-approve", "--yolo", "--dangerously-skip-permissions"], gemini: ["--approval-mode", "-y"] };
 const CODEX_CFG = ["approval_policy", "sandbox_mode", "approvals_reviewer", "sandbox_workspace_write"];
@@ -105,12 +105,17 @@ function launchLine(id, { choice = "own", userArgs = "", cmd } = {}) {
 
 // 유저가 인자에 알려진 권한 플래그를 쓰면 빼서 그 에이전트의 권한 선택으로 — { choice, rest } 또는 null
 function liftPermission(id, userArgs) {
-  const t = tokens(userArgs).flatMap((x) => (/^--[^=]+=/.test(x) ? [x.slice(0, x.indexOf("=")), x.slice(x.indexOf("=") + 1)] : [x])); // --opt=값도 --opt 값처럼(리뷰)
+  // --opt=값도 --opt 값처럼 비교하되, 나머지는 원래 토큰 그대로 돌려줌(유저가 쓴 형태·따옴표 유지, 리뷰)
+  const raw = tokens(userArgs);
+  const t = raw.flatMap((x, ri) => (/^--[^=]+=/.test(x) ? [[x.slice(0, x.indexOf("=")), ri], [x.slice(x.indexOf("=") + 1), ri]] : [[x, ri]]));
   for (const c of ["full-access", "auto", "accept-edits", "ask"]) {
     const f = tokens(flagOf(id, c));
     if (!f.length) continue;
     for (let i = 0; i + f.length <= t.length; i++) {
-      if (f.every((x, k) => t[i + k] === x)) return { choice: c, rest: [...t.slice(0, i), ...t.slice(i + f.length)].join(" ") };
+      if (!f.every((x, k) => t[i + k][0] === x)) continue;
+      const used = new Set(t.slice(i, i + f.length).map(([, ri]) => ri));
+      if (t.some(([, ri], k) => used.has(ri) && (k < i || k >= i + f.length))) continue; // --opt=값의 반쪽만 맞으면 건너뜀
+      return { choice: c, rest: raw.filter((_, ri) => !used.has(ri)).join(" ") };
     }
   }
   return null;
@@ -119,5 +124,7 @@ function liftPermission(id, userArgs) {
 // 신원(셸에 친 명령·포그라운드 프로세스 이름 → 에이전트)에 쓰는 이름 — 다른 도구와 겹치기 쉬운 짧은 이름은 뺌(리뷰: pi·cn·acli·dst)
 const GENERIC = new Set(["pi", "cn", "acli", "dst"]);
 const identityBins = () => AGENTS.flatMap((a) => a.bins.filter((b) => !GENERIC.has(b)).map((b) => [b, a.id]));
+// 짧은 이름으로만 감지되는 에이전트 — 다른 도구일 수 있어 "자동" 고르기에선 뺌(직접 기본으로 고르거나 한 번 띄우면 OK, 리뷰)
+const weakDetect = (id) => (BY_ID.get(id)?.bins ?? []).every((b) => GENERIC.has(b));
 
-module.exports = { AGENTS, BY_ID, CHOICES, flagOf, envOf, choicesOf, carriersOf, hasPermissionOption, launchLine, liftPermission, identityBins };
+module.exports = { AGENTS, BY_ID, CHOICES, flagOf, envOf, choicesOf, carriersOf, hasPermissionOption, launchLine, liftPermission, identityBins, weakDetect };

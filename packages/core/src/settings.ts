@@ -78,13 +78,15 @@ export function sortAgents<T extends { id: string }>(list: T[]): T[] {
 }
 // 기본 에이전트 고르기 — detected = 감지된 id(카탈로그 순서). null = 셸만.
 // 자동 = 켜진 것 중 마지막에 쓴 에이전트(우리 규칙 — Orca는 카탈로그 첫 번째), 한 번도 안 썼으면 카탈로그 순서 첫 번째.
-export function pickDefaultAgent(detected: string[]): string | null {
+// weak = 짧은 이름으로만 감지돼 다른 도구일 수 있는 것 — 자동에선 한 번이라도 띄운 적 있을 때만 후보(직접 기본으로 고른 건 그대로).
+export function pickDefaultAgent(detected: string[], weak: string[] = []): string | null {
   const d = getSetting<string>(AKEYS.default, AGENT_DEFAULTS.default);
   if (d === "blank") return null;
   const ok = detected.filter(agentEnabled);
   if (d !== "auto" && ok.includes(d)) return d;
-  const last = ok.reduce<string | null>((best, id) => (agentUsedAt(id) > (best ? agentUsedAt(best) : 0) ? id : best), null);
-  return last ?? ok[0] ?? null;
+  const auto = ok.filter((id) => !weak.includes(id) || agentUsedAt(id) > 0);
+  const last = auto.reduce<string | null>((best, id) => (agentUsedAt(id) > (best ? agentUsedAt(best) : 0) ? id : best), null);
+  return last ?? auto[0] ?? null;
 }
 
 // 알림(#928)

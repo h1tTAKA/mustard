@@ -35,7 +35,7 @@ function ago(ms: number, locale: string) {
 // 유저 인자에 이 에이전트의 권한 옵션이 있으면 플래그를 안 붙임(main과 같은 판단 — carriers는 main 카탈로그가 줌)
 const CODEX_CFG = ["approval_policy", "sandbox_mode", "approvals_reviewer", "sandbox_workspace_write"];
 const argsSetPermission = (a: AgentDetect, args: string) => {
-  const t = args.match(/"[^"]*"|'[^']*'|\S+/g) || [];
+  const t = args.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || []; // main 카탈로그 tokens와 같게
   return t.some((tok, i) => (a.carriers ?? []).includes(a.id === "codex" && /^-[as].+/.test(tok) ? tok.slice(0, 2) : tok.split("=")[0])
     || (a.id === "codex" && (tok === "-c" || tok === "--config") && CODEX_CFG.includes(String(t[i + 1] || "").split("=")[0].split(".")[0].trim())));
 };

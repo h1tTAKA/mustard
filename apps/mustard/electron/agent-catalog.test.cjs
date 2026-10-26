@@ -1,6 +1,6 @@
 // agent-catalog 점검 — node electron/agent-catalog.test.cjs
 const assert = require("node:assert");
-const { AGENTS, BY_ID, choicesOf, launchLine, liftPermission, hasPermissionOption, identityBins, carriersOf } = require("./agent-catalog.cjs");
+const { AGENTS, BY_ID, choicesOf, launchLine, liftPermission, hasPermissionOption, identityBins, carriersOf, weakDetect } = require("./agent-catalog.cjs");
 
 assert.strictEqual(AGENTS.length, 44, "카탈로그 44개(claude-agent-teams 제외)");
 assert.strictEqual(new Set(AGENTS.map((a) => a.id)).size, AGENTS.length, "id 겹침 없음");
@@ -35,4 +35,6 @@ assert.deepStrictEqual(liftPermission("claude", "--permission-mode=acceptEdits -
 const ids = new Map(identityBins());
 assert.ok(!ids.has("pi") && !ids.has("cn") && !ids.has("acli") && ids.get("goose") === "goose", "짧은 이름은 신원에서 뺌");
 assert.ok(carriersOf("claude").includes("--permission-mode"));
+assert.deepStrictEqual(liftPermission("claude", '--append-system-prompt="a  b" --dangerously-skip-permissions'), { choice: "full-access", rest: '--append-system-prompt="a  b"' }, "나머지는 원래 형태 그대로");
+assert.ok(weakDetect("pi") && weakDetect("continue") && weakDetect("rovo") && !weakDetect("claude") && !weakDetect("dsh"), "짧은 이름으로만 감지");
 console.log("agent-catalog.test ok");

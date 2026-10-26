@@ -172,7 +172,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   const loadAgentState = () => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) setAgents(r.list); }).catch(() => {}); };
   useEffect(() => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) { setAgents(r.list); void liftStoredArgs(r.list.map((a) => a.id)); } }).catch(() => {}); }, []); // + 옛 추가 인자 → 권한(한 번)
   const menuAgents = sortAgents(agents.filter((a) => a.status === "ok" && agentEnabled(a.id))); // 기본 → 최근 쓴 순(우리 규칙)
-  const defaultPick = pickDefaultAgent(menuAgents.map((a) => a.id)); // null = 셸만(또는 깔린 게 없음)
+  const defaultPick = pickDefaultAgent(menuAgents.map((a) => a.id), menuAgents.filter((a) => a.weak).map((a) => a.id)); // null = 셸만(또는 깔린 게 없음)
   const toggleMenu = () => {
     if (menuOpen) { setMenuOpen(false); return; }
     loadAgentState();
@@ -214,7 +214,8 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   // #1184 자동 = 감지되고 켜진 첫 에이전트(카탈로그 순서), 셸만(blank) = 새 터미널
   const launchDefaultAgent = () => {
     void (window.nunopiDesktop?.detectAgents?.(false) ?? Promise.resolve(null)).then((r) => {
-      const pick = pickDefaultAgent(r && r.ok ? r.list.filter((a) => a.status === "ok" && agentEnabled(a.id)).map((a) => a.id) : []);
+      const ok = r && r.ok ? r.list.filter((a) => a.status === "ok" && agentEnabled(a.id)) : [];
+      const pick = pickDefaultAgent(ok.map((a) => a.id), ok.filter((a) => a.weak).map((a) => a.id));
       if (pick) launchInNewTab(pick); else newTerminal();
     }).catch(() => newTerminal());
   };
