@@ -827,8 +827,8 @@ export default function SettingsDrawer({
           </section>
           )}
 
-          {/* 제외 목록 — 프로바이더 섹션 안(학습 전용, Mustard-only서 숨김). 암기 provider는 nunopi 섹션으로(#985). */}
-          {showLearning && activeSection === "set-agents" && (<>
+          {/* 제외 목록 — 학습 기능이라 nunopi 학습 모듈 탭에(그 탭이 없는 단독 앱은 프로바이더 탭에). Mustard-only서 숨김. */}
+          {showLearning && activeSection === (onNunopiEnabledChange ? "set-nunopi" : "set-agents") && (<>
           {/* 제외 목록 카드 */}
           <section className="space-y-3 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
             <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
