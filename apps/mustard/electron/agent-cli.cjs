@@ -13,7 +13,7 @@ const { homedir } = require("node:os");
 // install = 공식 설치 명령(Emdash 표·각 공식 문서) — 앱은 복사만(남의 스크립트를 대신 돌리지 않음). 없으면 null.
 // auth = 로그인 확인 인자(Emdash), keys = 있으면 로그인된 걸로 보는 API 키 env.
 const AGENTS = [
-  { id: "claude", label: "Claude Code", bins: ["claude"], install: "curl -fsSL https://claude.ai/install.sh | bash", auth: ["auth", "status"], keys: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"] },
+  { id: "claude", label: "Claude Code", bins: ["claude"], install: "curl -fsSL https://claude.ai/install.sh | bash", auth: ["auth", "status"], keys: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"] },
   { id: "codex", label: "Codex", bins: ["codex"], install: "npm install -g @openai/codex", auth: ["login", "status"], keys: ["OPENAI_API_KEY"] },
   { id: "gemini", label: "Gemini CLI", bins: ["gemini"], install: "npm install -g @google/gemini-cli" },
   { id: "antigravity", label: "Antigravity CLI", bins: ["agy"], install: "curl -fsSL https://antigravity.google/cli/install.sh | bash" },

@@ -409,6 +409,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
       const since = await recheck();
       const pre = since ? agentNote(role.provider, since).block : undefined;
       if (pre) throw new Error(pre);
+      if (run.state !== "starting") return run; // 기다리는 동안 Stop — worktree 안 만듦(리뷰)
     }
     const dep = board0.find((x) => x.id === task.dependsOn?.[task.dependsOn.length - 1]); // ponytail: 의존 여럿이면 마지막 것 브랜치에서 시작(나머지는 그 안에 없을 수 있음), 필요하면 머지 단계 추가
     const wt = await ensureWorktree(root, taskId, task.title, dep ? worktreeFor(root, dep.id, dep.title).branch : undefined);
