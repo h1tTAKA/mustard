@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { IconGitBranch, IconArrowUp, IconArrowDown, IconPencil, IconLoader2, IconCircleCheck, IconQuestionMark, IconAlertTriangle, IconPlugConnected, IconExternalLink } from "@tabler/icons-react";
+import { IconGitBranch, IconPlus, IconTrash, IconArrowUp, IconArrowDown, IconPencil, IconLoader2, IconCircleCheck, IconQuestionMark, IconAlertTriangle, IconPlugConnected, IconExternalLink } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import RepoAvatar from "@/components/workspace/RepoAvatar";
+import { openNewWorkspace, openRemoveWorkspace, openRepoTab } from "@/lib/repo/workspaceEvents";
 
 // 레포 탭 호버 카드(#764/#765) — 그 레포에서 도는 에이전트 상태 + git 워크트리를 실시간으로.
 // 에이전트 상태는 pty 버퍼 스크레이핑(#765)으로 판정된 것을 /api/agent/status(스토어)에서 읽는다(SSE 푸시 + 폴백 폴링).
@@ -209,23 +210,31 @@ export default function RepoTabHoverCard({ path, left, top, onMouseEnter, onMous
       )}
 
       {/* 워크트리 */}
-      <div className="mb-1 mt-2.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">{t("workspace.worktrees")}</div>
+      <div className="mb-1 mt-2.5 flex items-center text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+        <span className="flex-1">{t("workspace.worktrees")}</span>
+        {/* #1170 새 작업공간 */}
+        <button type="button" onClick={() => openNewWorkspace(path)} title={t("newWs.title")} aria-label={t("newWs.title")} className="rounded p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconPlus size={12} stroke={2} aria-hidden /></button>
+      </div>
       {worktrees === null ? (
         <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500"><IconLoader2 size={12} stroke={2} className="animate-spin" aria-hidden /></div>
       ) : worktrees.length === 0 ? (
         <div className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("workspace.noWorktrees")}</div>
       ) : (
         <div className="flex flex-col gap-1.5">
-          {worktrees.map((w) => {
+          {worktrees.map((w, i) => {
             const age = rel(w.committedAt);
+            const main = i === 0, crew = w.path.includes("/.nunopi/worktrees/"); // #1170 메인·Crew worktree는 여기서 안 지움(Crew가 관리)
             return (
-              <div key={w.path}>
+              <div key={w.path} className="group">
                 <div className="flex items-center gap-1.5 text-[11px] text-zinc-600 dark:text-zinc-300">
                   <IconGitBranch size={12} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
-                  <span className="min-w-0 flex-1 truncate" title={w.path}>{w.detached ? `${w.head} (detached)` : (w.branch ?? basename(w.path))}</span>
+                  {/* #1170 줄 누르면 그 worktree를 탭으로(메인은 이미 이 탭) */}
+                  {main ? <span className="min-w-0 flex-1 truncate" title={w.path}>{w.detached ? `${w.head} (detached)` : (w.branch ?? basename(w.path))}</span>
+                    : <button type="button" onClick={() => openRepoTab(w.path)} title={t("rmWs.openTab", { path: w.path })} className="min-w-0 flex-1 truncate text-left hover:underline">{w.detached ? `${w.head} (detached)` : (w.branch ?? basename(w.path))}</button>}
                   {w.ahead > 0 && <span className="flex shrink-0 items-center text-emerald-500"><IconArrowUp size={11} stroke={2.5} aria-hidden />{w.ahead}</span>}
                   {w.behind > 0 && <span className="flex shrink-0 items-center text-amber-500"><IconArrowDown size={11} stroke={2.5} aria-hidden />{w.behind}</span>}
                   {w.dirty > 0 && <span className="flex shrink-0 items-center gap-0.5 text-zinc-400" title={t("workspace.dirtyFiles", { n: w.dirty })}><IconPencil size={10} stroke={2} aria-hidden />{w.dirty}</span>}
+                  {!main && !crew && <button type="button" onClick={() => openRemoveWorkspace(path, w.path)} title={t("rmWs.title")} aria-label={t("rmWs.title")} className="shrink-0 rounded p-0.5 text-zinc-300 opacity-0 transition hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-rose-500/10"><IconTrash size={11} stroke={2} aria-hidden /></button>}
                 </div>
                 {w.subject && (
                   <div className="ml-[18px] flex items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500">

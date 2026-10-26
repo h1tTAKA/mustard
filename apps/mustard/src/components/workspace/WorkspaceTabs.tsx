@@ -13,7 +13,8 @@ import RepoAvatar from "@/components/workspace/RepoAvatar";
 import WorkspaceAddMenu, { type AddKind } from "@/components/workspace/WorkspaceAddMenu";
 import RepoTabHoverCard from "@/components/workspace/RepoTabHoverCard";
 import NewWorkspaceDialog from "@/components/workspace/NewWorkspaceDialog";
-import { NEW_WORKSPACE_EVENT, OPEN_REPO_TAB_EVENT, openNewWorkspace, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
+import RemoveWorkspaceDialog from "@/components/workspace/RemoveWorkspaceDialog";
+import { CLOSE_WORKSPACE_EVENT, NEW_WORKSPACE_EVENT, OPEN_REPO_TAB_EVENT, REMOVE_WORKSPACE_EVENT, openNewWorkspace, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
 import DaemonOutdatedNotice from "@/components/workspace/DaemonOutdatedNotice";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
 import { publishRepoSessions } from "@/lib/agentSessionStates";
@@ -107,6 +108,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   const [addMenu, setAddMenu] = useState<{ left: number; top: number } | null>(null); // "+" 드롭다운 픽커(#769)
   const closeAddMenu = useCallback(() => setAddMenu(null), []); // 안정 참조 — 메뉴 effect 재부착 최소화
   const [newWs, setNewWs] = useState<{ root: string; initial?: NewWorkspaceInitial } | null>(null); // #1170 "새 작업공간" 창
+  const [rmWs, setRmWs] = useState<{ root: string; dir: string } | null>(null); // #1170 지우기 창
   // "+" 버튼 아래로 드롭다운 앵커링. 화면 오른쪽 넘침 방지.
   const openAddMenu = (el: HTMLElement) => {
     const r = el.getBoundingClientRect();
@@ -336,10 +338,24 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
       setTabs((prev) => (prev.some((x) => tabKey(x) === key) ? prev : [...prev, { type: "repo", path }]));
       activate(key);
     };
+    const onRm = (e: Event) => { const d = (e as CustomEvent<{ root: string; dir: string }>).detail; if (d?.root && d.dir) setRmWs(d); };
+    window.addEventListener(REMOVE_WORKSPACE_EVENT, onRm);
     window.addEventListener(NEW_WORKSPACE_EVENT, onNew);
     window.addEventListener(OPEN_REPO_TAB_EVENT, onOpen);
-    return () => { window.removeEventListener(NEW_WORKSPACE_EVENT, onNew); window.removeEventListener(OPEN_REPO_TAB_EVENT, onOpen); };
+    return () => { window.removeEventListener(REMOVE_WORKSPACE_EVENT, onRm); window.removeEventListener(NEW_WORKSPACE_EVENT, onNew); window.removeEventListener(OPEN_REPO_TAB_EVENT, onOpen); };
   }, []); // activate는 setter만 씀 — 한 번만 걸면 됨
+  // #1170 지우기 직전 — 그 작업공간 탭이 열려 있으면 닫고(터미널도 끔), 안 열려 있어도 그 폴더에서 도는 터미널은 끔
+  useEffect(() => {
+    const onClose = (e: Event) => {
+      const dir = String((e as CustomEvent<string>).detail || "").replace(/\/+$/, "");
+      if (!dir) return;
+      const key = tabKey({ type: "repo", path: dir });
+      if (tabs.some((x) => tabKey(x) === key)) { closeTab(key); return; }
+      desktop?.terminal?.list?.().then((ss) => { for (const s of ss) { const c = (s.cwd ?? "").replace(/\/+$/, ""); if (c === dir || c.startsWith(dir + "/")) desktop.terminal!.kill({ id: s.id }); } }).catch(() => {});
+    };
+    window.addEventListener(CLOSE_WORKSPACE_EVENT, onClose);
+    return () => window.removeEventListener(CLOSE_WORKSPACE_EVENT, onClose);
+  });
 
   // #989 알림 클릭 → 그 레포 탭 활성(닫혀 있으면 다시 열기) + 그 터미널 탭 포커스.
   useEffect(() => {
@@ -661,6 +677,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
       })()}
       <WorkspaceAddMenu anchor={addMenu} onClose={closeAddMenu} onPick={onPick} canWorkspace={tabs.find((x) => tabKey(x) === activeKey)?.type === "repo"} />
       {newWs && <NewWorkspaceDialog root={newWs.root} initial={newWs.initial} onClose={() => setNewWs(null)} />}
+      {rmWs && <RemoveWorkspaceDialog root={rmWs.root} dir={rmWs.dir} onClose={() => setRmWs(null)} />}
     </div>
   );
 });
