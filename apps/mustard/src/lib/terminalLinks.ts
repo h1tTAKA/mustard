@@ -39,3 +39,19 @@ export function findLinks(line: string): TerminalLink[] {
   }
   return out.sort((a, b) => a.start - b.start);
 }
+
+// 터미널 폴더(cwd) 기준 경로 → 절대 경로(posix, `.`·`..` 정리). `~/`는 화면에서 홈을 모르니 null.
+export function resolvePath(cwd: string, p: string): string | null {
+  if (p.startsWith("~/")) return null;
+  const parts: string[] = [];
+  for (const seg of (p.startsWith("/") ? p : `${cwd}/${p}`).split("/")) {
+    if (!seg || seg === ".") continue;
+    if (seg === "..") parts.pop(); else parts.push(seg);
+  }
+  return `/${parts.join("/")}`;
+}
+// 레포 안 파일이면 레포 기준 경로, 아니면 null
+export function repoRelative(repo: string, abs: string): string | null {
+  const r = repo.replace(/\/+$/, "");
+  return abs.startsWith(`${r}/`) ? abs.slice(r.length + 1) : null;
+}

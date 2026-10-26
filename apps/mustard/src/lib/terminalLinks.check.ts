@@ -1,6 +1,6 @@
 // terminalLinks 점검 — node --experimental-strip-types src/lib/terminalLinks.check.ts
 import assert from "node:assert";
-import { findLinks } from "./terminalLinks.ts";
+import { findLinks, resolvePath, repoRelative } from "./terminalLinks.ts";
 
 const pick = (s: string) => findLinks(s).map((l) => (l.kind === "url" ? ["url", l.url] : ["file", l.path, l.line ?? null, l.col ?? null]));
 
@@ -24,5 +24,13 @@ assert.deepStrictEqual(pick("https://x.dev/a/b.js and src/c.ts:1"), [["url", "ht
 const [l] = findLinks("  → src/a.ts:9");
 assert.strictEqual(l.start, 4);
 assert.strictEqual(l.text, "src/a.ts:9");
+
+// 경로 풀기 — cwd 기준, . .. 정리, ~ 는 모름
+assert.strictEqual(resolvePath("/r/apps/web", "../../lib/x.ts"), "/r/lib/x.ts");
+assert.strictEqual(resolvePath("/r", "./src/a.ts"), "/r/src/a.ts");
+assert.strictEqual(resolvePath("/r", "/etc/hosts"), "/etc/hosts");
+assert.strictEqual(resolvePath("/r", "~/a.ts"), null);
+assert.strictEqual(repoRelative("/r/", "/r/src/a.ts"), "src/a.ts");
+assert.strictEqual(repoRelative("/r", "/rr/a.ts"), null, "이름만 같은 옆 폴더는 레포 밖");
 
 console.log("terminalLinks ok");

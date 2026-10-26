@@ -182,6 +182,7 @@ export default function SettingsDrawer({
   const tScrollSensitivity = useSetting<number>(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity);
   const tMacOptionIsMeta = useSetting<boolean>(TKEYS.macOptionIsMeta, TERMINAL_DEFAULTS.macOptionIsMeta);
   const tFocusFollowsMouse = useSetting<boolean>(TKEYS.focusFollowsMouse, TERMINAL_DEFAULTS.focusFollowsMouse);
+  const tLinkTarget = useSetting<"app" | "external">(TKEYS.linkTarget, TERMINAL_DEFAULTS.linkTarget); // #1193
   // 알림(#928)
   const nAgentDone = useSetting<boolean>(NKEYS.agentDone, NOTIF_DEFAULTS.agentDone);
   const nSuppress = useSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching);
@@ -619,6 +620,19 @@ export default function SettingsDrawer({
                   </button>
                 ))}
               </div>
+            </div>
+            {/* 링크 열기(#1193) — ⌘/Ctrl+클릭한 웹 주소를 어디서 열지 */}
+            <div className="space-y-1.5">
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalLinkTarget")}</span>
+              <div className="inline-flex w-full rounded-xl border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-900">
+                {(["app", "external"] as const).map((lt) => (
+                  <button key={lt} type="button" onClick={() => setSetting(TKEYS.linkTarget, lt)}
+                    className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${tLinkTarget === lt ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
+                    {t(`settings.terminalLink.${lt}`)}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.terminalLinkHint")}</p>
             </div>
             {/* 토글들 */}
             {([
