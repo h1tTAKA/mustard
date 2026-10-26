@@ -46,7 +46,7 @@ const cu = require("./computer-use.cjs");
   assert.strictEqual(cu.targetsOf({ element: { index: 3 } }).targeted, true);
   // 앞에 있는 앱이 막는 앱이면 대상이 없는 키 입력도 막힘
   const frontBw = async (f) => ({ code: 0, out: f.endsWith("lsappinfo") ? '"LSBundlePath"="/Applications/Bitwarden.app"' : "" });
-  assert.strictEqual((await cu.call("press_key", { key: "return" }, { home, run: frontBw })).error, "blocked");
+  if (process.platform === "darwin") assert.strictEqual((await cu.call("press_key", { key: "return" }, { home, run: frontBw })).error, "blocked"); // 앞 앱 확인은 macOS만
   // 앞 앱을 못 알아내면 거절(macOS)
   if (process.platform === "darwin") assert.strictEqual((await cu.call("press_key", { key: "return" }, { home, run: async () => ({ code: -1, out: "" }) })).error, "front-unknown");
   // pid가 어느 앱인지 못 찾아도 거절
