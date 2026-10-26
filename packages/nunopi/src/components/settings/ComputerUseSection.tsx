@@ -44,6 +44,7 @@ export default function ComputerUseSection() {
   const [busy, setBusy] = useState(false);
   const [add, setAdd] = useState("");
   const [adding, setAdding] = useState(false);
+  const addDone = useRef(false); // 입력칸이 닫힐 때 blur가 한 번 더 와도(Enter·Esc 뒤) 두 번 처리하지 않게(리뷰)
   const stRef = useRef<ComputerStatus | null>(null);
   useEffect(() => { stRef.current = st; }, [st]);
   const seq = useRef(0); // 늦게 온 옛 응답이 새 값을 덮지 않게 — 마지막 요청 응답만 반영
@@ -73,7 +74,11 @@ export default function ComputerUseSection() {
   const copy = (s: string) => { void navigator.clipboard.writeText(s).then(() => toast(t("computer.copied"), "success")); };
   const grant = async (kind?: "accessibility" | "screen") => { setBusy(true); try { const r = await api.grant(kind); toast(t(r.ok ? "computer.grantOpened" : "computer.grantFailed"), r.ok ? "success" : "error"); } finally { setBusy(false); void refresh(true); } };
   const reset = async () => { setBusy(true); try { const r = await api.reset(); toast(t(r.ok ? "computer.resetDone" : "computer.resetFailed"), r.ok ? "success" : "error"); } finally { setBusy(false); void refresh(true); } };
-  const addBlocked = () => { const v = add.trim(); if (v && !st.blocked.some((b) => b.toLowerCase() === v.toLowerCase())) void set({ blocked: [...st.blocked, v] }); setAdd(""); setAdding(false); };
+  const addBlocked = (cancel = false) => {
+    if (addDone.current) return;
+    addDone.current = true;
+    const v = cancel ? "" : add.trim(); if (v && !st.blocked.some((b) => b.toLowerCase() === v.toLowerCase())) void set({ blocked: [...st.blocked, v] }); setAdd(""); setAdding(false);
+  };
   const install = st.platform === "win32" ? INSTALL_WIN : INSTALL_MAC;
 
   return (
@@ -153,12 +158,12 @@ export default function ComputerUseSection() {
             </span>
           ))}
           {adding ? (
-            <input autoFocus value={add} onChange={(e) => setAdd(e.target.value)} onBlur={addBlocked}
-              onKeyDown={(e) => { if (e.key === "Enter") addBlocked(); if (e.key === "Escape") { setAdd(""); setAdding(false); } }}
+            <input autoFocus value={add} onChange={(e) => setAdd(e.target.value)} onBlur={() => addBlocked()}
+              onKeyDown={(e) => { if (e.nativeEvent.isComposing) return; /* 한글·일본어 조합 중 Enter는 글자 확정용(리뷰) */ if (e.key === "Enter") addBlocked(); if (e.key === "Escape") addBlocked(true); }}
               placeholder={t("computer.blockedPh")} aria-label={t("computer.blocked")}
               className="w-40 rounded-full border border-mustard-400 bg-transparent px-2.5 py-0.5 text-[12px] text-zinc-800 outline-none dark:text-zinc-100" />
           ) : (
-            <button type="button" onClick={() => setAdding(true)} className="flex items-center gap-1 rounded-full border border-dashed border-zinc-300 px-2.5 py-0.5 text-[12px] text-zinc-500 transition hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-600 dark:text-zinc-400 dark:hover:text-zinc-200">
+            <button type="button" onClick={() => { addDone.current = false; setAdding(true); }} className="flex items-center gap-1 rounded-full border border-dashed border-zinc-300 px-2.5 py-0.5 text-[12px] text-zinc-500 transition hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-600 dark:text-zinc-400 dark:hover:text-zinc-200">
               <IconPlus size={12} aria-hidden />{t("computer.add")}
             </button>
           )}
