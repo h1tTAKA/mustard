@@ -26,17 +26,18 @@ function writeConfig(patch, home) {
 }
 
 // 인자에서 대상 앱 단서 — pid(숫자)와 앱 이름류 문자열(app·app_name·bundle_id·name), 하위 객체 전부.
-// targeted = 창·요소·좌표를 가리키는 인자가 있음 — 그런데 pid·앱 이름이 없으면 어느 앱인지 몰라 막을 수 없음 → 거절(리뷰)
+// targeted = 창·요소·좌표를 가리키는 인자가 있음(값이 객체여도) — 그런데 확인되는 pid가 없으면 어느 앱인지 몰라 막을 수 없음 → 거절(리뷰).
+// 이름은 막기에만 쓰고 통과 근거로는 안 씀("name": "Save" 같은 값으로 비켜 가지 않게, 리뷰)
 function targetsOf(args) {
   const pids = [], names = [];
   let targeted = false;
   const scan = (o, depth) => {
     if (!o || typeof o !== "object" || depth > 8) return;
     for (const [k, v] of Object.entries(o)) {
+      if (/^(window_?id|window_?index|window|element_?token|element_?index|element|x|y|from_x|to_x|point|position)$/i.test(k)) targeted = true;
       if (/^(pid|target_pid)$/i.test(k) && Number.isInteger(Number(v)) && Number(v) > 0) pids.push(Number(v));
       else if (/^(app|app_name|application|bundle_id|bundleId|name)$/i.test(k) && typeof v === "string") names.push(v);
       else if (v && typeof v === "object") scan(v, depth + 1);
-      else if (/^(window_?id|window_?index|element_?token|element_?index|element|x|y|from_x|to_x)$/i.test(k)) targeted = true;
     }
   };
   scan(args, 0);
@@ -46,6 +47,14 @@ function targetsOf(args) {
 function blockedBy(labels, blocked) {
   const low = labels.map((s) => String(s).toLowerCase());
   return blocked.find((b) => low.some((l) => l.includes(b.toLowerCase()))) || null;
+}
+// 지금 앞에 있는 앱의 번들 경로(macOS) — 대상이 없는 키 입력도 앞 앱으로 가니 모든 호출에서 확인(리뷰). 다른 OS·실패 = ""
+async function frontApp(run = runCmd) {
+  if (process.platform !== "darwin") return "";
+  const asn = (await run("/usr/bin/lsappinfo", ["front"], 5000, process.env)).out.trim();
+  if (!asn) return "";
+  const r = await run("/usr/bin/lsappinfo", ["info", "-only", "bundlepath", asn], 5000, process.env);
+  return /"([^"]+)"\s*$/.exec(r.out.trim())?.[1] || "";
 }
 // pid → 실행 파일 경로(예: /Applications/1Password.app/Contents/MacOS/1Password). 못 찾으면 ""
 async function procPath(pid, run = runCmd) {
@@ -104,11 +113,12 @@ async function call(tool, args = {}, { home, cwd = "", run = runCmd } = {}) {
   if (!cfg.enabled) return { ok: false, error: "disabled" };
   if (typeof tool !== "string" || !/^[a-z][a-z0-9_]*$/i.test(tool)) return { ok: false, error: "bad-tool" };
   const { pids, names, targeted } = targetsOf(args);
-  if (targeted && !pids.length && !names.length) { log({ at, tool, app: "", cwd, result: "no-target" }, home); return { ok: false, error: "no-target" }; }
+  if (targeted && !pids.length) { log({ at, tool, app: "", cwd, result: "no-target" }, home); return { ok: false, error: "no-target" }; }
   const paths = await Promise.all(pids.map((p) => procPath(p, run)));
   if (paths.some((p) => !p)) { log({ at, tool, app: "", cwd, result: "no-target" }, home); return { ok: false, error: "no-target" }; } // pid가 어느 앱인지 못 찾음 → 막을 수 없으니 거절
-  const labels = [...names, ...paths];
-  const hit = blockedBy(labels, cfg.blocked);
+  const labels = [...paths, ...names];
+  const front = await frontApp(run);
+  const hit = blockedBy([...labels, front].filter(Boolean), cfg.blocked);
   const app = labels[0] ? String(labels[0]).split("/").find((s) => s.endsWith(".app"))?.replace(/\.app$/, "") || String(labels[0]).split("/").pop() : "";
   if (hit) { log({ at, tool, app, cwd, result: "blocked" }, home); return { ok: false, error: "blocked", app: hit }; }
   const r = await driver(["call", tool, JSON.stringify(args ?? {})], { home, gen });

@@ -22,17 +22,19 @@ export default function ComputerUseSection() {
   const [st, setSt] = useState<ComputerStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [add, setAdd] = useState("");
+  const stRef = useRef<ComputerStatus | null>(null);
+  useEffect(() => { stRef.current = st; }, [st]);
   const seq = useRef(0); // 늦게 온 옛 응답이 새 값을 덮지 않게 — 마지막 요청 응답만 반영(리뷰)
   const refresh = useCallback(async (force = false) => {
     if (!api) return;
     const my = ++seq.current;
     setBusy(true);
-    try { const r = await api.status(force); if (my === seq.current) setSt(r); } catch { /* 다음 확인 때 */ } finally { if (my === seq.current) setBusy(false); }
+    try { const r = await api.status(force); if (my === seq.current) setSt(r); } catch { /* 다음 확인 때 */ } finally { setBusy(false); } // busy는 늘 풂(set이 seq를 올려도 안 멈추게, 리뷰)
   }, [api]);
   // 뜰 때 + 창에 돌아올 때(시스템 설정·터미널에서 설치 후) + 비상 정지 때
   useEffect(() => {
     void refresh(); // eslint-disable-line react-hooks/set-state-in-effect -- 뜰 때 한 번 확인
-    const onFocus = () => void refresh(); // 창에 돌아올 땐 저장된 드라이버로 빠르게(셸 다시 읽기는 "다시 확인"만, 리뷰)
+    const onFocus = () => void refresh(!stRef.current?.driver); // 드라이버가 없을 때만 셸 PATH부터 다시(방금 터미널에서 설치했을 수 있음), 있으면 빠르게(리뷰)
     window.addEventListener("focus", onFocus);
     const off = api?.onChanged(() => void refresh());
     return () => { window.removeEventListener("focus", onFocus); off?.(); };

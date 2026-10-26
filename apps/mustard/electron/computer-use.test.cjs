@@ -41,6 +41,12 @@ const cu = require("./computer-use.cjs");
 
   // 창·요소만 있고 어느 앱인지 모르면 거절(막는 앱을 비켜 가지 못하게)
   assert.strictEqual((await cu.call("click", { window_id: 9001, element_index: 2 }, { home })).error, "no-target");
+  // 이름만 있어도 통과 근거가 안 됨, 값이 객체인 요소 키도 대상으로 봄(리뷰)
+  assert.strictEqual((await cu.call("click", { element_index: 3, name: "Save" }, { home })).error, "no-target");
+  assert.strictEqual(cu.targetsOf({ element: { index: 3 } }).targeted, true);
+  // 앞에 있는 앱이 막는 앱이면 대상이 없는 키 입력도 막힘
+  const frontBw = async (f) => ({ code: 0, out: f.endsWith("lsappinfo") ? '"LSBundlePath"="/Applications/Bitwarden.app"' : "" });
+  assert.strictEqual((await cu.call("press_key", { key: "return" }, { home, run: frontBw })).error, "blocked");
   // pid가 어느 앱인지 못 찾아도 거절
   assert.strictEqual((await cu.call("click", { pid: 99999, element_index: 2 }, { home, run: async () => ({ code: 1, out: "" }) })).error, "no-target");
 
