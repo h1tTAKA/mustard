@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useCallback } from "react";
+import { Fragment, useState, useEffect, useCallback, type ReactNode } from "react";
 import type { AgentProviderKind, AnalyzeMode, ProviderSettings } from "@mustard/core";
 import { PROVIDER_CATALOG } from "../../lib/agent/catalog";
 import { type LearnProviderMode, type ModeModels, type ModeProviders, LEARN_PROVIDER_MODES, resolveModeModel, resolveModeProvider } from "../../lib/modeProviders";
@@ -50,6 +50,8 @@ interface SettingsDrawerProps {
   onNunopiEnabledChange?: (on: boolean) => void;
   // 머스타드 전용 섹션(터미널·워크스페이스·Git·캐치업·연동) 표시(#1116). apps/nunopi 스탠드얼론은 false.
   workspaceSettings?: boolean;
+  // 에이전트 CLI 상태 목록의 브랜드 로고(#1171) — AgentLogo는 apps 소유(패키지 경계)라 주입. 없으면 이름만.
+  agentLogo?: (id: string) => ReactNode;
 }
 
 // 연동(#960) 브랜드 로고 — tabler 부실해 공식 로고 SVG 인라인(CSP상 외부 로드 불가). tabler 아이콘과 동일 시그니처(size/className).
@@ -128,6 +130,7 @@ export default function SettingsDrawer({
   nunopiEnabled,
   onNunopiEnabledChange,
   workspaceSettings = true,
+  agentLogo,
 }: SettingsDrawerProps) {
   const { locale, setLocale } = useLocale();
   const t = useT();
@@ -680,6 +683,7 @@ export default function SettingsDrawer({
                     return (
                       <div key={a.id} className="space-y-1 px-3 py-2">
                         <div className="flex items-center gap-2">
+                          {agentLogo && <span className="flex size-4 shrink-0 items-center justify-center">{agentLogo(a.id)}</span>}
                           <span className="text-sm font-medium text-zinc-800 dark:text-zinc-100">{a.label}</span>
                           {a.version && <span className="font-mono text-[11px] text-zinc-400">v{a.version}</span>}
                           <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.cls}`}>{badge.txt}</span>

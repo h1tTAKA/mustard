@@ -6,6 +6,7 @@
 // NOTE: 제대로 된 워크스페이스-우선 홈 UI는 피봇(추후) — 여기선 부팅+게이트 증명 수준의 최소 구성.
 import { useEffect, useState, useRef } from "react";
 import { AppShell } from "@mustard/nunopi";
+import { AgentLogo, type AgentId } from "@/components/workspace/AgentLogo";
 import { SettingsDrawer } from "@mustard/nunopi";
 import { ConfirmProvider, ToastProvider, I18nProvider } from "@mustard/core";
 import GlobalCommandPalette from "@/components/ui/GlobalCommandPalette";
@@ -72,6 +73,7 @@ export default function WorkspaceOnlyHome() {
         }
       />
       <SettingsDrawer
+        agentLogo={(id) => <AgentLogo agent={id as AgentId} size={16} />}
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         variant="modal"
