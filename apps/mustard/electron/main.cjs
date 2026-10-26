@@ -341,7 +341,7 @@ function setupClaudeHooks(base, token) {
 async function boot() {
   // Crew가 막기 직전 ~/.nunopi/agent-detect.request를 건드리면 바로 다시 감지(새 결과로만 막게, 리뷰). 1초 폴링.
   if (!detectTimer) require("node:fs").watchFile(join(require("node:os").homedir(), ".nunopi", "agent-detect.request"), { interval: 1000 }, (cur, prev) => { if (cur.mtimeMs > prev.mtimeMs) void detectAgents(true).catch(() => {}); });
-  if (!detectTimer) setInterval(() => void drainTrackerSync(), 2000).unref(); // #1172 Crew의 트래커 동기화 요청
+  if (!detectTimer) { setInterval(() => void drainTrackerSync(), 2000).unref(); setInterval(() => void snapshotAssigned().catch(() => {}), 60_000).unref(); } // #1172 Crew의 트래커 동기화 요청·배정 이슈 목록
   detectTimer ??= setInterval(() => void detectAgents().catch(() => {}), 10 * 60_000).unref(); // #1171 activate로 boot가 다시 불려도 한 번만(리뷰). 설치·로그인이 앱 실행 중에 바뀌어도 기록이 따라가게(Crew는 15분 넘은 기록은 안 믿음)
   migrateUserData(); // #900 리브랜딩 — 옛 nunopi userData 1회 이관(창·서버 뜨기 전)
   try { loadRegistry(); } catch { /* #864 재시작 생존 세션 신원 복원 */ }
@@ -725,6 +725,22 @@ async function trackerSync(event, { provider, key, url }) {
   const st = await trackers.run(() => client.states(issue));
   const to = st.ok ? trackers.pickState(st.data, want) : null;
   if (to) await trackers.run(() => client.setState(issue, to.id));
+}
+// Crew 트리거 "나에게 배정된 새 이슈"(#1172) — 그 트리거가 어느 레포에든 있으면 1분마다 목록을 파일로(Next 서버가 읽음)
+async function snapshotAssigned() {
+  const nunopi = join(require("node:os").homedir(), ".nunopi");
+  let want = new Set();
+  try {
+    for (const d of require("node:fs").readdirSync(join(nunopi, "crew"))) {
+      try { const list = JSON.parse(readFileSync(join(nunopi, "crew", d, "triggers.json"), "utf8")); for (const t of list) if (t?.kind === "tracker-assigned" && t.enabled !== false) want.add(t.provider); } catch { /* 트리거 없는 레포 */ }
+    }
+  } catch { return; }
+  for (const p of want) {
+    const c = trackerClient(p);
+    if (!c) continue;
+    const r = await trackers.run(() => c.list({}));
+    if (r.ok) { try { writeFileSync(join(nunopi, `tracker-assigned-${p}.json`), JSON.stringify({ at: Date.now(), issues: r.data.map((i) => ({ key: i.key, title: i.title, url: i.url })) })); } catch { /* 다음 분에 */ } }
+  }
 }
 // Crew(Next 서버)가 남긴 요청 파일 — 2초마다 보고, 읽은 만큼 지우고 처리
 const syncReqFile = () => join(require("node:os").homedir(), ".nunopi", "tracker-sync.jsonl");

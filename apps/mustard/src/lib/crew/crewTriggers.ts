@@ -5,11 +5,12 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
-export type TriggerKind = "ci-failed" | "issue-label" | "schedule";
+export type TriggerKind = "ci-failed" | "issue-label" | "schedule" | "tracker-assigned"; // tracker-assigned = 나에게 새로 배정된 Linear·Jira 이슈(#1172)
 export interface CrewTrigger {
   id: string; kind: TriggerKind; enabled: boolean;
   pipeline: string[];                 // 빈 배열 = 자동 배정(범위 기획자부터)
   label?: string;                     // issue-label
+  provider?: "linear" | "jira";       // tracker-assigned
   branch?: string;                    // ci-failed 대상(비면 레포 기본 브랜치)
   at?: string; everyHours?: number;   // schedule — 매일 "HH:MM" 또는 N시간마다
   title?: string; body?: string;      // schedule 카드 내용
@@ -27,13 +28,14 @@ const ROLE_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 function clean(x: unknown): CrewTrigger | null {
   if (!x || typeof x !== "object") return null;
   const t = x as Record<string, unknown>;
-  if (typeof t.id !== "string" || !["ci-failed", "issue-label", "schedule"].includes(String(t.kind))) return null;
+  if (typeof t.id !== "string" || !["ci-failed", "issue-label", "schedule", "tracker-assigned"].includes(String(t.kind))) return null;
   const str = (v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : undefined);
   const at = str(t.at, 5);
   return {
     id: t.id.slice(0, 64), kind: t.kind as TriggerKind, enabled: t.enabled !== false,
     pipeline: Array.isArray(t.pipeline) ? t.pipeline.filter((r): r is string => typeof r === "string" && ROLE_RE.test(r)).slice(0, 20) : [],
     ...(str(t.label, 100) ? { label: str(t.label, 100) } : {}),
+    ...(t.provider === "linear" || t.provider === "jira" ? { provider: t.provider } : {}),
     ...(str(t.branch, 200) ? { branch: str(t.branch, 200) } : {}),
     ...(at && /^([01]\d|2[0-3]):[0-5]\d$/.test(at) ? { at } : {}),
     ...(typeof t.everyHours === "number" && t.everyHours >= 1 && t.everyHours <= 168 ? { everyHours: Math.floor(t.everyHours) } : {}),
@@ -69,10 +71,11 @@ export function applyTriggerOp(root: string, op: TriggerOp, now = Date.now()): C
   const i = op.trigger.id ? list.findIndex((t) => t.id === op.trigger.id) : -1;
   const prev = i >= 0 ? list[i] : undefined;
   // 조건이 바뀌면(라벨·브랜치) 다시 '처음'부터 — 그 조건의 지금 것을 본 것으로
-  const condChanged = prev && (prev.label !== op.trigger.label || prev.branch !== op.trigger.branch || prev.kind !== op.trigger.kind);
+  const condChanged = prev && (prev.label !== op.trigger.label || prev.branch !== op.trigger.branch || prev.kind !== op.trigger.kind || prev.provider !== op.trigger.provider);
   const merged = clean({ ...prev, ...op.trigger, id: prev?.id ?? randomUUID(), createdAt: prev?.createdAt ?? now, seen: condChanged ? [] : prev?.seen ?? [], primed: condChanged ? false : prev?.primed ?? false });
   if (!merged) throw new Error("bad trigger");
   if (merged.kind === "issue-label" && !merged.label) throw new Error("label required");
+  if (merged.kind === "tracker-assigned" && !merged.provider) throw new Error("provider required");
   if (merged.kind === "schedule" && !merged.at && !merged.everyHours) throw new Error("schedule time required");
   if (merged.kind === "schedule" && !merged.title) throw new Error("title required");
   if (i >= 0) list[i] = merged; else list.push(merged);

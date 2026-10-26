@@ -963,6 +963,11 @@ const ko: Dict = {
   "settings.defaultAgentHint": "터미널 '+' 메뉴 맨 위 '기본 에이전트 실행'과 새 에이전트 단축키(기본 ⌘⌥T)가 새 탭에 띄우는 에이전트예요. 자동 = 감지되고 켜진 첫 에이전트(목록 순서). Crew 역할은 역할마다 따로 정해요.",
   "agents.status": "에이전트 CLI 상태",
   "agents.recheck": "다시 확인 (셸 PATH부터 다시 읽음)",
+  "crewtrig.kind.tracker-assigned": "나에게 배정된 이슈",
+  "crewtrig.hint.tracker-assigned": "Linear·Jira에서 나에게 새로 배정된(안 끝난) 이슈가 생기면 카드를 만들어요(이슈 연결). 설정 > 연동에서 연결해야 해요. 켤 때 이미 있던 이슈는 건너뜀.",
+  "crewtrig.provider": "트래커",
+  "crewtrig.trackerChat": "{key} 이슈가 나에게 배정돼서 카드를 만들었어요",
+  "crewtrig.trackerStale": "트래커 목록을 못 받는 중 — 앱이 켜져 있고 설정 > 연동에서 연결됐는지 확인하세요",
   "trackers.syncTitle": "이슈 상태 동기화",
   "trackers.syncHint": "이슈가 연결된 Crew 카드, 그리고 브랜치 이름이나 PR 제목에 키(ENG-12)가 든 PR에 적용돼요.",
   "trackers.sync.start": "에이전트가 시작하면 → 진행 중으로",
@@ -2700,6 +2705,11 @@ const ja: Dict = {
   "settings.defaultAgentHint": "ターミナルの「+」メニュー先頭「既定のエージェントを起動」と新規エージェントのショートカット(既定 ⌘⌥T)で新しいタブに起動するエージェントです。自動 = 検出済みで有効な最初のエージェント(一覧の順)。Crew の役割は役割ごとに設定します。",
   "agents.status": "エージェント CLI の状態",
   "agents.recheck": "再確認（シェルの PATH から読み直す）",
+  "crewtrig.kind.tracker-assigned": "自分に割り当て",
+  "crewtrig.hint.tracker-assigned": "Linear・Jira で自分に新しく割り当てられた(未完了の)イシューがあるとカードを作ります(イシュー紐付け)。設定 > 連携で接続が必要です。オンにした時点の既存イシューはスキップ。",
+  "crewtrig.provider": "トラッカー",
+  "crewtrig.trackerChat": "{key} が自分に割り当てられたのでカードを作りました",
+  "crewtrig.trackerStale": "トラッカーの一覧を取得できていません — アプリが起動中か、設定 > 連携で接続済みか確認してください",
   "trackers.syncTitle": "イシュー状態の同期",
   "trackers.syncHint": "イシューが紐づいた Crew カードと、ブランチ名や PR タイトルにキー(ENG-12)を含む PR に適用されます。",
   "trackers.sync.start": "エージェント開始 → 進行中に",
@@ -4437,6 +4447,11 @@ const en: Dict = {
   "settings.defaultAgentHint": "The agent opened in a new tab by 'Launch default agent' at the top of the terminal '+' menu and by the new-agent shortcut (⌘⌥T by default). Auto = the first detected, enabled agent in list order. Crew roles pick their own agent per role.",
   "agents.status": "Agent CLI status",
   "agents.recheck": "Recheck (re-read your shell PATH)",
+  "crewtrig.kind.tracker-assigned": "Assigned to me",
+  "crewtrig.hint.tracker-assigned": "Creates a card (linked to the issue) when a new open Linear/Jira issue is assigned to you. Connect it in Settings > Integrations. Issues already there when you turn it on are skipped.",
+  "crewtrig.provider": "Tracker",
+  "crewtrig.trackerChat": "{key} was assigned to you, so I created a card",
+  "crewtrig.trackerStale": "Not receiving the tracker list — make sure the app is running and connected in Settings > Integrations",
   "trackers.syncTitle": "Issue status sync",
   "trackers.syncHint": "Applies to Crew cards linked to an issue, and to PRs whose branch name or title contains the key (ENG-12).",
   "trackers.sync.start": "Agent starts → set In Progress",
@@ -5269,7 +5284,7 @@ export function relocalize(text: string, keys: string[], t: (key: string, vars?:
 export const CARD_SOURCE_KEYS = ["card.workspaceSource", "mem.chatSource"];
 // Crew 보드·시스템이 저장한 문구(채팅·관문 사유·실행 오류)의 키 — 옛 메시지(키 없이 text만)를 지금 언어로(#1125).
 // 저장되는 키만(화면 버튼·라벨 키를 넣으면 넓은 틀이 사람 말을 번역해 버림 — 리뷰).
-export const CREW_TEXT_KEYS = ["crewchat.permission", "crewchat.answerFailed", "crewchat.meetingStopped", "crewchat.fallback", "crewchat.retrying", "crewchat.skipped", "crewchat.gate.merge", "crewchat.gate.blocked", "crewchat.gate.schema", "crewchat.gate.spec", "crewchat.start", "crewchat.restart", "crewchat.decision.approve", "crewchat.decision.retry", "crewchat.prCreated", "crewsplit.created", "crewsplit.parentDone", "crewtrig.ciChat", "crewtrig.issueChat", "crewtrig.scheduleChat", "crew.reason.interrupted", "crew.reason.stopped", "crew.reason.flowError", "crew.reason.neverStarted", "crew.reason.stalled", "crew.reason.setupFailed", "crew.reason.setupTooLong", "crew.reason.agentMissing", "crew.reason.agentBroken", "crew.reason.agentLogin", "crew.reason.agentPath", "crew.reason.neverStartedWhy"];
+export const CREW_TEXT_KEYS = ["crewchat.permission", "crewchat.answerFailed", "crewchat.meetingStopped", "crewchat.fallback", "crewchat.retrying", "crewchat.skipped", "crewchat.gate.merge", "crewchat.gate.blocked", "crewchat.gate.schema", "crewchat.gate.spec", "crewchat.start", "crewchat.restart", "crewchat.decision.approve", "crewchat.decision.retry", "crewchat.prCreated", "crewsplit.created", "crewsplit.parentDone", "crewtrig.ciChat", "crewtrig.issueChat", "crewtrig.scheduleChat", "crewtrig.trackerChat", "crew.reason.interrupted", "crew.reason.stopped", "crew.reason.flowError", "crew.reason.neverStarted", "crew.reason.stalled", "crew.reason.setupFailed", "crew.reason.setupTooLong", "crew.reason.agentMissing", "crew.reason.agentBroken", "crew.reason.agentLogin", "crew.reason.agentPath", "crew.reason.neverStartedWhy"];
 // 답변·분석 실패 문구(#1125, ko가 같은 chat.reply*가 먼저 — 옛 fallback.chat* 저장분도 같은 뜻으로) — 실패 순간의 언어로 저장되므로(채팅 기록·분석 요약·경고·캐치업 설명) 보여 줄 때 지금 언어로.
 export const FAILURE_TEXT_KEYS = ["fallback.emptyResponse", "fallback.error", "fallback.requestFailed", "fallback.summaryFailed", "chat.replyFailed", "chat.replyError", "fallback.chatRequestFailed", "fallback.chatError", "analyze.cancelled", "provider.runtimeFailed", "provider.runtimeConnectFailed", "provider.httpError", "provider.connectFailed", "analyze.partialParse", "explain.conceptParseFailed", "explain.tokenParseFailed", "text.parseFailed", "text.summaryFailed"];
 // 한계: 실패 문구는 짧음 — 긴 정상 답변은 비교 안 하고 통과(런타임 오류 원문이 이보다 길면 원문 그대로)
