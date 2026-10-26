@@ -43,7 +43,7 @@ const { tmpdir } = require("node:os");
   sendLine({ jsonrpc: "2.0", method: "notifications/initialized" }); // 알림 — 답 없음
   sendLine({ jsonrpc: "2.0", id: 2, method: "tools/list" });
   const list = await waitFor(2);
-  assert.deepStrictEqual(list.result.tools.map((t) => t.name), ["katchup_repo_map", "browser_status", "browser_new_tab", "browser_select_tab", "browser_close_tab", "browser_navigate", "browser_screenshot", "browser_read", "browser_console", "browser_click", "browser_type"]);
+  assert.deepStrictEqual(list.result.tools.map((t) => t.name), ["katchup_repo_map", "browser_status", "browser_new_tab", "browser_select_tab", "browser_close_tab", "browser_navigate", "browser_screenshot", "browser_read", "browser_console", "browser_click", "browser_type", "computer_tools", "computer_describe", "computer_call"]);
   assert.ok(list.result.tools.find((t) => t.name === "browser_click").inputSchema.properties.tabId, "tabId 받음");
   sendLine({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "browser_click", arguments: { selector: "#a" } } });
   const call = await waitFor(3);

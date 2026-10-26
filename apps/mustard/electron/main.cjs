@@ -10,7 +10,7 @@ require("./claude-env.cjs").stripParentClaudeEnv(process.env);
   const extra = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", require("node:path").join(require("node:os").homedir(), ".local", "bin")].filter((d) => !have.has(d));
   if (extra.length) process.env.PATH = [...have, ...extra].join(":");
 }
-const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents, WebContentsView } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents, WebContentsView, globalShortcut } = require("electron");
 const { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, cpSync, chmodSync } = require("node:fs");
 const {
   startSnaServer,
@@ -497,7 +497,23 @@ const browserControl = require("./browser-control.cjs").createBrowserControl({
   realpath: (p) => realOf(p), // 요청 때 호출(아래 정의) — MCP cwd와 등록 레포를 같은 실경로로 비교
   // 탭 고르기/닫기 — 그 탭(guest)을 품은 창의 렌더러에(그 BrowserPage가 처리).
   tabCommand: (guestId, action) => { const g = webContents.fromId(Number(guestId)); const host = g && !g.isDestroyed() ? g.hostWebContents : null; if (host && !host.isDestroyed()) host.send("browser:tab-command", { guestId: Number(guestId), action }); },
+  computer: (tool, args, cwd) => computerUse.agentTool(tool, args, { cwd }), // 컴퓨터 사용(#1175)
 });
+// 컴퓨터 사용(#1175) — 켜져 있는 동안만 전역 비상 정지 단축키(다른 앱이 앞에 있어도). 누르면 끄고 알림.
+const computerUse = require("./computer-use.cjs");
+const STOP_KEY = process.platform === "darwin" ? "Control+Alt+Command+." : "Control+Alt+Shift+.";
+function stopComputerUse() {
+  computerUse.stop();
+  syncComputerShortcut();
+  for (const w of BrowserWindow.getAllWindows()) { try { w.webContents.send("computer:changed"); } catch { /* 닫히는 중 */ } }
+  try { new Notification({ title: "Mustard", body: tm("computer.stopped") }).show(); } catch { /* 알림 불가 */ }
+}
+function syncComputerShortcut() {
+  const on = computerUse.readConfig().enabled;
+  if (on && !globalShortcut.isRegistered(STOP_KEY)) globalShortcut.register(STOP_KEY, stopComputerUse);
+  else if (!on && globalShortcut.isRegistered(STOP_KEY)) globalShortcut.unregister(STOP_KEY);
+}
+app.whenReady().then(syncComputerShortcut);
 const openClaims = new Map(); // reqId → [{ sender, repo, depth }]
 const realOf = (p) => { try { return require("node:fs").realpathSync(p); } catch { return String(p || ""); } };
 ipcMain.on("browser:claim-open", (e, { reqId, repo, cwd } = {}) => {

@@ -16,6 +16,10 @@ const cu = require("./computer-use.cjs");
   // 꺼져 있으면 드라이버까지 안 감
   assert.deepStrictEqual(await cu.call("click", { pid: 1 }, { home }), { ok: false, error: "disabled" });
 
+  // 에이전트 도구 — 꺼져 있으면 목록도 안 주고 "켜 달라고 하라"
+  const off = await cu.agentTool("computer_tools", {}, { home });
+  assert.ok(off.isError && /turned off/.test(off.content[0].text));
+
   // 인자에서 대상 찾기 — pid·앱 이름, 한 단계 아래까지
   assert.deepStrictEqual(cu.targetsOf({ pid: 844, window_id: 3 }), { pids: [844], names: [] });
   assert.deepStrictEqual(cu.targetsOf({ target: { app: "Safari" } }), { pids: [], names: ["Safari"] });

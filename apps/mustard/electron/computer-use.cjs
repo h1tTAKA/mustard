@@ -120,4 +120,26 @@ async function status({ force = false, home } = {}) {
   return { ...cfg, driver: { path: d.path, version: d.version }, permissions: p.code === -1 ? null : { accessibility: perm(/accessib/i), screen: perm(/screen/i) } };
 }
 
-module.exports = { DEFAULT_BLOCKED, readConfig, writeConfig, targetsOf, blockedBy, findDriver, driver, call, stop, status, readLog, BIN };
+// 에이전트 도구(Mustard MCP의 computer_*) → MCP 결과 모양. 꺼져 있으면 목록·설명도 안 줌(에이전트가 유저에게 켜 달라고 하게).
+const ERR = {
+  disabled: "Computer use is turned off in Mustard (Settings > Computer use). Ask the user to turn it on. Do not try other ways to control the desktop.",
+  "driver-missing": "The desktop driver (cua-driver) is not installed. Ask the user to install it from Mustard (Settings > Computer use). Do not install it yourself.",
+  blocked: "Mustard blocks this app (Settings > Computer use > Blocked apps). Do not operate it; tell the user.",
+  stopped: "The user stopped computer use (emergency stop). Stop all desktop actions and report what you did so far.",
+  timeout: "The driver did not answer in time. Take a fresh snapshot before retrying.",
+  "bad-tool": "Invalid driver tool name. Use computer_tools to list tools.",
+};
+async function agentTool(name, args = {}, { home, cwd = "" } = {}) {
+  const out = (t, isError = false) => ({ content: [{ type: "text", text: String(t || "(empty)") }], isError });
+  if (!readConfig(home).enabled) return out(ERR.disabled, true);
+  const tool = String(args?.tool || "");
+  let r;
+  if (name === "computer_tools") r = await driver(["list-tools"], { home });
+  else if (name === "computer_describe") r = /^[a-z][a-z0-9_]*$/i.test(tool) ? await driver(["describe", tool], { home }) : { ok: false, error: "bad-tool" };
+  else if (name === "computer_call") r = await call(tool, args?.args && typeof args.args === "object" ? args.args : {}, { home, cwd });
+  else return out(`Unknown tool: ${name}`, true);
+  if (r.ok) return out(r.text);
+  return out(r.error === "blocked" ? `${ERR.blocked} (${r.app})` : ERR[r.error] || `Driver error: ${r.text || r.error}`, true);
+}
+
+module.exports = { agentTool, DEFAULT_BLOCKED, readConfig, writeConfig, targetsOf, blockedBy, findDriver, driver, call, stop, status, readLog, BIN };

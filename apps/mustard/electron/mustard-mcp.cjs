@@ -21,6 +21,10 @@ const TOOLS = [
   { name: "browser_console", description: "Recent console messages from the page (errors, warnings, logs).", inputSchema: { type: "object", properties: { ...TAB, limit: { type: "number", description: "Default 50, max 200" }, level: { type: "string", enum: ["error", "warning", "info", "verbose"] } } } },
   { name: "browser_click", description: "Click an element (real mouse event at its center) by CSS selector from browser_read.", inputSchema: { type: "object", properties: { ...TAB, selector: { type: "string" } }, required: ["selector"] } },
   { name: "browser_type", description: "Click an input by CSS selector, then type text. Optionally clear it first and press Enter.", inputSchema: { type: "object", properties: { ...TAB, selector: { type: "string" }, text: { type: "string" }, clear: { type: "boolean" }, submit: { type: "boolean" } }, required: ["selector", "text"] } },
+  // 컴퓨터 사용(#1175) — 유저 컴퓨터의 데스크톱 앱. Mustard가 켜기·막는 앱·비상 정지·기록을 걸고 드라이버(cua-driver)로 넘김.
+  { name: "computer_tools", description: "Desktop control of the user's real apps (outside Mustard). Lists the desktop driver's tools. Use only when the user asks you to operate a desktop app and no API/CLI/file route can do it. For the app you are building, use browser_* instead.", inputSchema: { type: "object", properties: {} } },
+  { name: "computer_describe", description: "Show the argument schema of one desktop driver tool (from computer_tools).", inputSchema: { type: "object", properties: { tool: { type: "string" } }, required: ["tool"] } },
+  { name: "computer_call", description: "Run one desktop driver tool. Loop: snapshot (window state) -> one action -> fresh snapshot to verify; never reuse element tokens/indexes after the screen changes. Prefer accessibility elements over pixel coordinates. Ask the user right before sending messages, submitting forms, publishing, buying, deleting, or changing accounts. Passwords, passkeys and MFA stay with the user. Leave windows, focus and clipboard as you found them. If Mustard says turned off, blocked or stopped, stop and tell the user.", inputSchema: { type: "object", properties: { tool: { type: "string", description: "Driver tool name from computer_tools" }, args: { type: "object", description: "Tool arguments (see computer_describe)" } }, required: ["tool"] } },
 ];
 
 // 레포 루트 = cwd에서 위로 처음 .git(폴더·파일 모두 — worktree는 파일)이 나오는 곳. 없으면 cwd.
@@ -61,7 +65,7 @@ async function callMustard(name, args) {
   const ep = readEndpoint();
   if (!ep?.url) return failText("Mustard is not running (no browser endpoint). Open the Mustard app.");
   try {
-    const r = await fetch(ep.url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${ep.token}` }, body: JSON.stringify({ tool: name, args: args || {}, cwd: process.cwd() }), signal: AbortSignal.timeout(30000) });
+    const r = await fetch(ep.url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${ep.token}` }, body: JSON.stringify({ tool: name, args: args || {}, cwd: process.cwd() }), signal: AbortSignal.timeout(name.startsWith("computer_") ? 75000 : 30000) }); // 드라이버는 60초까지
     if (!r.ok) return failText(`Mustard refused the request (HTTP ${r.status}). Restart the agent if Mustard was restarted.`);
     return await r.json();
   } catch (e) { return failText(`Could not reach Mustard: ${String(e?.message || e)}`); }
@@ -70,7 +74,7 @@ async function callMustard(name, args) {
 async function handle(msg) {
   const { id, method, params } = msg;
   if (method === "initialize") return reply(id, { protocolVersion: params?.protocolVersion || "2025-06-18", capabilities: { tools: {} }, serverInfo: SERVER,
-    instructions: "Mustard tools. Code graph: before grepping files, use katchup_repo_map for structure, then katchup_find_code/trace_calls/find_all/file_api/search. In-app browser: browser_* to open, read, screenshot and click pages of the app you are building." });
+    instructions: "Mustard tools. Code graph: before grepping files, use katchup_repo_map for structure, then katchup_find_code/trace_calls/find_all/file_api/search. In-app browser: browser_* to open, read, screenshot and click pages of the app you are building. Desktop apps (only when the user asks): computer_*." });
   if (method === "ping") return reply(id, {});
   if (method === "tools/list") return reply(id, { tools: [...await graphTools(), ...TOOLS] });
   if (method === "tools/call") {
