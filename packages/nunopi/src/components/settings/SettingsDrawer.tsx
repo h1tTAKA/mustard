@@ -338,7 +338,8 @@ export default function SettingsDrawer({
   // #1171 경로 직접 지정 — CLI 상태 목록 줄 안에서(백그라운드 SNA가 쓰는 3개만). 감지 목록이 없으면(스탠드얼론 웹) 아래 옛 칸.
   const customPath: Record<string, [string, (v: string) => void]> = { claude: [claudeCliPath, setClaudeCliPath], codex: [codexCliPath, setCodexCliPath], opencode: [openCodeCliPath, setOpenCodeCliPath] };
   const [pathOpen, setPathOpen] = useState<string | null>(null);
-  const [pathDirty, setPathDirty] = useState(false);
+  const [openedPaths] = useState(() => ({ claude: claudeCliPath.trim(), codex: codexCliPath.trim(), opencode: openCodeCliPath.trim() } as Record<string, string>)); // 연 때 값 — 실제로 달라졌을 때만 재시작 안내(리뷰)
+  const pathDirty = Object.entries(customPath).some(([id, [v]]) => v.trim() !== openedPaths[id]);
   // 데스크톱이면 첫 화면부터 목록(확인 중 표시) — 옛 칸이 잠깐 보였다 바뀌지 않게(리뷰). 감지 실패(빈 목록)면 옛 칸.
   const statusList = !!desktop?.detectAgents && !(agentsDet?.length === 0 && !agentsChecking);
 
@@ -712,7 +713,7 @@ export default function SettingsDrawer({
                         {customPath[a.id]?.[0].trim() && pathOpen !== a.id && <p className="truncate font-mono text-[11px] text-amber-600 dark:text-amber-400" title={customPath[a.id][0]}>{t("agents.customPath", { path: customPath[a.id][0].trim() })}</p>}
                         {customPath[a.id] && pathOpen === a.id && (
                           <div className="space-y-1">
-                            <input type="text" autoFocus value={customPath[a.id][0]} onChange={(e) => { customPath[a.id][1](e.target.value); setPathDirty(true); }} onBlur={handleSave}
+                            <input type="text" autoFocus value={customPath[a.id][0]} onChange={(e) => customPath[a.id][1](e.target.value)} onBlur={handleSave}
                               placeholder={a.path || ""} aria-label={`${a.label} ${t("settings.cliPath")}`}
                               className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-[12px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
                             <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("agents.setPathHint")}</p>
