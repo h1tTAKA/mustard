@@ -3,7 +3,7 @@
 // pty는 앱과 분리된 데몬이 소유해 앱 종료에도 생존, 재마운트/재실행 시 scrollback 재생 + live reattach.
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
-import { findLinks, type TerminalLink } from "@/lib/terminalLinks";
+import { findLinks, resolvePath, type TerminalLink } from "@/lib/terminalLinks";
 import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, type TerminalFontWeight } from "@mustard/core";
 
 // 터미널 설정(#926) — 스토어서 읽어 xterm 옵션 구성. copyOnSelect/rightClickPaste는 핸들러서 별도.
@@ -127,7 +127,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       term.open(host);
       oscDisp = term.parser.registerOscHandler(7, (data) => {
         // 터미널을 연 폴더 안쪽일 때만 따라감 — 원격 셸이나 출력에 섞인 값이 다른 레포로 보내지 않게(리뷰)
-        try { const u = new URL(data); const p = u.protocol === "file:" ? decodeURIComponent(u.pathname).replace(/\/+$/, "") : ""; const base = cwd.replace(/\/+$/, ""); if (p === base || p.startsWith(`${base}/`)) shellCwd = p; } catch { /* 형식 아님 */ }
+        try { const u = new URL(data); const p = u.protocol === "file:" ? resolvePath("/", decodeURIComponent(u.pathname)) ?? "" : ""; // . .. 먼저 정리하고 검사(리뷰) const base = cwd.replace(/\/+$/, ""); if (p === base || p.startsWith(`${base}/`)) shellCwd = p; } catch { /* 형식 아님 */ }
         return false; // 다른 처리기도 받게
       });
       // 글자 속 링크(주소·파일 경로) — 마우스를 올리면 밑줄, ⌘/Ctrl+클릭으로 엶. 한계: 줄바꿈으로 두 줄에 걸친 링크는 못 찾음.

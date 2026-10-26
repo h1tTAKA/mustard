@@ -242,10 +242,14 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       if (!d || !inside(root, d.cwd)) return; // 다른 레포 터미널
       if ([...OPEN_ROOTS.keys()].some((r) => r.length > root.length && inside(r, d.cwd))) return; // 더 깊은 레포가 맡음
       if (d.kind === "url") { setBrowserIncoming((prev) => ({ url: d.url, n: (prev?.n ?? 0) + 1 })); setBrowserOpen(true); return; }
-      if (!files.length) return; // 파일 목록을 아직 불러오는 중 — 없다고 잘못 알리지 않음(리뷰)
+      if (!files.length) { toast(t("ws.linkFilesLoading")); return; } // 목록이 아직 없음 — "없는 파일"이라고 잘못 알리지 않음(리뷰)
       const rel = findRepoFile(files, root, d.cwd, d.path, filesCapped);
-      if (rel) openCodeTabRef.current({ kind: "file", file: rel });
-      else toast(t("ws.linkFileMissing", { path: d.path }));
+      if (!rel) { toast(t("ws.linkFileMissing", { path: d.path })); return; }
+      if (!filesCapped) { openCodeTabRef.current({ kind: "file", file: rel }); return; }
+      // 목록이 잘린 큰 레포 — 목록에 없을 수 있어 파일이 실제로 있는지 한 번 확인(오타·폴더면 빈 탭 대신 알림, 리뷰)
+      void fetch("/api/repo/file", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, file: rel }) })
+        .then((r) => { if (r.ok) openCodeTabRef.current({ kind: "file", file: rel }); else toast(t("ws.linkFileMissing", { path: d.path })); })
+        .catch(() => toast(t("ws.linkFileMissing", { path: d.path })));
     };
     window.addEventListener(TERMINAL_LINK_EVENT, onLink);
     return () => { const n = (OPEN_ROOTS.get(root) ?? 1) - 1; if (n > 0) OPEN_ROOTS.set(root, n); else OPEN_ROOTS.delete(root); window.removeEventListener(TERMINAL_LINK_EVENT, onLink); };
