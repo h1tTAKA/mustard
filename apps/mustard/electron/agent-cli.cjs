@@ -27,7 +27,7 @@ function fallbackDirs(home = homedir()) {
 
 // 실행해서 결과 받기 — execFile은 stdout이 닫혀야(close) 끝나서, 프로필·CLI가 띄운 데몬이 stdout을 물고 있으면 영영 안 끝남(리뷰).
 // 그래서 끝남(exit) 뒤 잠깐 기다려 받은 만큼으로 끝내고, 시간 넘으면 프로세스 그룹째 죽이고 끝냄. 결과 = { code, out, timedOut }.
-function runCmd(file, args, timeout, env) {
+function runCmd(file, args, timeout, env, onChild) { // onChild(child) — 부른 쪽이 도중에 죽일 수 있게(컴퓨터 사용 비상 정지)
   return new Promise((res) => {
     let out = "", done = false, child;
     const finish = (code, timedOut = false) => {
@@ -36,7 +36,7 @@ function runCmd(file, args, timeout, env) {
       res({ code, out: out.trim(), timedOut });
     };
     const timer = setTimeout(() => { try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch { /* 이미 끝남 */ } } finish(-1, true); }, timeout);
-    try { child = spawn(file, args, { env, detached: true, stdio: ["ignore", "pipe", "pipe"] }); } catch { return finish(-1); }
+    try { child = spawn(file, args, { env, detached: true, stdio: ["ignore", "pipe", "pipe"] }); onChild?.(child); } catch { return finish(-1); }
     const take = (b) => { if (out.length < 1_000_000) out += b; };
     child.stdout.on("data", take); child.stderr.on("data", take);
     child.on("error", () => finish(-1));

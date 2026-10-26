@@ -26,7 +26,7 @@ interface GhJobStep { name?: string; status?: string; conclusion?: string; numbe
 // 일렉트론 preload가 노출하는 데스크톱 API(웹에선 undefined).
 type ComputerPerm = "granted" | "missing" | "unknown";
 type ComputerStatus = {
-  enabled: boolean; blocked: string[]; defaults: string[]; stopKey: string; platform: string;
+  enabled: boolean; blocked: string[]; defaults: string[]; stopKey: string; stopKeyOk: boolean; platform: string;
   driver: { path: string; version: string } | null;
   permissions: { accessibility: ComputerPerm; screen: ComputerPerm } | null;
   log: { at: string; tool: string; app: string; cwd: string; result: string }[];
