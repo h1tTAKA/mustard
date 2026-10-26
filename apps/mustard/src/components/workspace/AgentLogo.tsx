@@ -15,7 +15,14 @@ export type AgentId = "claude" | "codex" | "gemini" | "antigravity" | "hermes" |
 const PNG = new Set<string>(["openclaude", "mimo-code", "ante", "trae", "muse", "dsh", "qoder", "qoder-cn", "zcode", "prime-agent", "goose", "kilo", "kiro", "crush", "aug", "autohand", "cline", "codebuff", "freebuff", "command-code", "continue", "droid", "kimi", "mistral-vibe", "qwen-code", "rovo", "devin", "openclaw", "codebuddy", "jcode"]);
 
 // 프로세스명 → 에이전트 매칭. foreground 프로세스명(node-pty proc.process)에 대해 검사.
+// 정확한 실행 파일 이름 먼저(electron agent-catalog identityBins와 같은 목록 — 짧은 이름 pi·cn·acli·dst 제외), 그다음 부분 일치.
+// 순서가 중요: openclaude·opencode2가 /claude/·/open-?code/에 먼저 걸리지 않게(리뷰).
+const EXACT: [AgentId, string][] = [["antigravity", "agy"], ["openclaude", "openclaude"], ["opencode2", "opencode2"], ["mimo-code", "mimo"], ["ante", "ante"], ["trae", "traecli"], ["muse", "muse"], ["dsh", "dsh-tui"], ["qoder", "qodercli"], ["qoder", "qoder"],
+    ["qoder-cn", "qoderclicn"], ["qoder-cn", "qodercn"], ["zcode", "zcode"], ["prime-agent", "prime-agent"], ["goose", "goose"], ["kilo", "kilo"], ["kiro", "kiro-cli"], ["crush", "crush"], ["aug", "auggie"],
+    ["autohand", "autohand"], ["cline", "cline"], ["codebuff", "codebuff"], ["freebuff", "freebuff"], ["command-code", "command-code"], ["droid", "droid"], ["kimi", "kimi"], ["kimi", "kimi-code"],
+    ["mistral-vibe", "vibe"], ["mistral-vibe", "mistral-vibe"], ["qwen-code", "qwen"], ["devin", "devin"], ["openclaw", "openclaw"], ["codebuddy", "codebuddy"], ["codebuddy", "cbc"], ["jcode", "jcode"]];
 const MATCH: [AgentId, RegExp][] = [
+  ...EXACT.map(([id, bin]): [AgentId, RegExp] => [id, new RegExp(`^${bin}$`, "i")]),
   ["claude", /claude/i],
   ["codex", /codex/i],
   ["gemini", /gemini/i],
@@ -28,12 +35,6 @@ const MATCH: [AgentId, RegExp][] = [
   ["amp", /^amp$/i],
   ["grok", /grok/i],
   ["omp", /^omp$/i],
-  // 카탈로그 나머지(#1184) — 실행 파일 이름이 정확히 같을 때만(electron agent-catalog identityBins와 같은 목록, 짧은 이름 pi·cn·acli·dst 제외)
-  ...([["openclaude", "openclaude"], ["opencode2", "opencode2"], ["mimo-code", "mimo"], ["ante", "ante"], ["trae", "traecli"], ["muse", "muse"], ["dsh", "dsh-tui"], ["qoder", "qodercli"], ["qoder", "qoder"],
-    ["qoder-cn", "qoderclicn"], ["qoder-cn", "qodercn"], ["zcode", "zcode"], ["prime-agent", "prime-agent"], ["goose", "goose"], ["kilo", "kilo"], ["kiro", "kiro-cli"], ["crush", "crush"], ["aug", "auggie"],
-    ["autohand", "autohand"], ["cline", "cline"], ["codebuff", "codebuff"], ["freebuff", "freebuff"], ["command-code", "command-code"], ["droid", "droid"], ["kimi", "kimi"], ["kimi", "kimi-code"],
-    ["mistral-vibe", "vibe"], ["mistral-vibe", "mistral-vibe"], ["qwen-code", "qwen"], ["devin", "devin"], ["openclaw", "openclaw"], ["codebuddy", "codebuddy"], ["codebuddy", "cbc"], ["jcode", "jcode"]] as [AgentId, string][])
-    .map(([id, bin]): [AgentId, RegExp] => [id, new RegExp(`^${bin}$`, "i")]),
 ];
 
 // 셸 프로세스명(유휴 상태 — 에이전트 안 돎). 선행 "-"(login shell) 정규화 후 비교.
