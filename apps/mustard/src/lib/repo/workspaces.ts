@@ -119,8 +119,9 @@ export async function checkWorkspace(root: string, dir: string): Promise<Check> 
   const dirty = st ? st.split("\n").filter(Boolean).length : 0;
   // gitignore된 것도 같이 지워짐(worktree remove는 ignored를 깨끗하다고 봄, 리뷰) — 메인에서 복사·공유해 온 것(.worktreeinclude·sharedDirectories)은 메인에 원본이 있으니 뺌
   const fromMain = new Set([...readInclude(root), ...readConfig(root).sharedDirectories].map((p) => p.replace(/\/+$/, "")));
-  const ign = existsSync(dir) ? await git(dir, ["status", "--porcelain", "--ignored", "--untracked-files=normal"]).catch(() => "") : "";
-  const ignored = ign.split("\n").filter((l) => l.startsWith("!! ")).map((l) => l.slice(3).replace(/\/+$/, "")).filter((p) => !fromMain.has(p)).slice(0, 50);
+  // ls-files --directory = 통째로 무시된 폴더(node_modules 등)는 한 줄로, 안까지 안 훑음(큰 레포에서 느려지지 않게, 리뷰)
+  const ign = existsSync(dir) ? await git(dir, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory"]).catch(() => "") : "";
+  const ignored = ign.split("\n").filter(Boolean).map((l) => l.replace(/\/+$/, "")).filter((p) => !fromMain.has(p)).slice(0, 50);
   let unpushed: number | null = null;
   if (existsSync(dir)) {
     const hasUp = await ok(git(dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]));
@@ -137,7 +138,7 @@ export type RemoveResult =
   | { status: "archive-failed"; result: ScriptResult }           // archive 실패 — 지우지 않음(Orca), allowFailedArchive면 계속
   | { status: "removed"; branch: string | null; branchKept: boolean };
 
-export interface RemoveOpts { force?: boolean; expectDirty?: number; deleteBranch?: boolean; skipArchive?: boolean; allowFailedArchive?: boolean }
+export interface RemoveOpts { force?: boolean; expectDirty?: number; expectIgnored?: number; deleteBranch?: boolean; skipArchive?: boolean; allowFailedArchive?: boolean }
 // 지우기 — 잠김 거부 → (force 아니면) 미커밋 막음 → archive(승인 필요) → worktree remove → (선택) 로컬 브랜치 -d, 실패면 남김 → prune
 export async function removeWorkspace(root: string, dir: string, o: RemoveOpts = {}): Promise<RemoveResult> {
   const { branch, locked } = await findWorktree(root, dir);
@@ -153,6 +154,11 @@ export async function removeWorkspace(root: string, dir: string, o: RemoveOpts =
     if (archive && (archive.length > MAX_REVIEW || !isTrusted(root, archive))) return { status: "archive-untrusted", script: archive };
     const r = await runArchive(root, dir, undefined, "state");
     if (r && !r.ok && !o.allowFailedArchive) return { status: "archive-failed", result: r };
+  }
+  // 지우기 직전 다시 셈 — archive가 만든 파일·그 사이 생긴 .env 같은 걸 사람이 못 본 채 지우지 않게(리뷰)
+  if (present) {
+    const c = await checkWorkspace(root, dir);
+    if ((c.dirty && (!o.force || c.dirty > (o.expectDirty ?? 0))) || c.ignored.length > (o.expectIgnored ?? 0)) return { status: "dirty", dirty: c.dirty };
   }
   if (present) await git(root, ["worktree", "remove", ...(o.force ? ["--force"] : []), dir]);
   await git(root, ["worktree", "prune"]).catch(() => {});

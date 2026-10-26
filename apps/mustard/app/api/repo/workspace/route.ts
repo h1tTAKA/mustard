@@ -1,4 +1,5 @@
 import { existsSync, statSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { checkWorkspace, createWorkspace, forceDeleteBranch, removeWorkspace, findWorktree, type PrStart } from "@/lib/repo/workspaces";
@@ -27,6 +28,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const root = await mainRoot(path);
     const dir = str(b.dir).trim();
+    if (b.action !== "create" && b.action !== "delete-branch" && !(b.action === "trust" && b.kind === "archive") && (!dir || !isAbsolute(dir))) return Response.json({ ok: false, error: "dir required" }, { status: 400 }); // 빈 값이면 서버 cwd로 풀리지 않게(리뷰)
     switch (b.action) {
       case "create": {
         const pr = b.pr as Partial<PrStart> | undefined;
@@ -35,7 +37,7 @@ export async function POST(request: Request): Promise<Response> {
         return Response.json({ ok: true, ...r });
       }
       case "check": return Response.json({ ok: true, ...(await checkWorkspace(root, dir)) });
-      case "remove": return Response.json({ ok: true, ...(await removeWorkspace(root, dir, { force: !!b.force, expectDirty: Number(b.expectDirty) || 0, deleteBranch: !!b.deleteBranch, skipArchive: !!b.skipArchive, allowFailedArchive: !!b.allowFailedArchive })) });
+      case "remove": return Response.json({ ok: true, ...(await removeWorkspace(root, dir, { force: !!b.force, expectDirty: Number(b.expectDirty) || 0, expectIgnored: Number(b.expectIgnored) || 0, deleteBranch: !!b.deleteBranch, skipArchive: !!b.skipArchive, allowFailedArchive: !!b.allowFailedArchive })) });
       case "delete-branch": await forceDeleteBranch(root, str(b.branch)); return Response.json({ ok: true });
       case "setup": { // 새 작업공간의 setup — 승인 전이면 untrusted(스크립트 내용 돌려줌), 승인됐으면 실행(#1176 runSetup, 로그는 작업 폴더 밖)
         await findWorktree(root, dir);

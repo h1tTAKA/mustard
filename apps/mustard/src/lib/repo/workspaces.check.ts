@@ -72,6 +72,7 @@ writeFileSync(join(w1.dir, "dirty.txt"), "x");
 writeFileSync(join(root, ".gitignore"), "*.local\n"); writeFileSync(join(w1.dir, ".gitignore"), "*.local\n"); writeFileSync(join(w1.dir, "notes.local"), "x");
 let c = await checkWorkspace(root, w1.dir);
 assert.deepStrictEqual(c.ignored, ["notes.local"], "gitignore된 것도 지워진다고 알림");
+assert.deepStrictEqual(await removeWorkspace(root, w1.dir, { force: true, expectDirty: 2 }), { status: "dirty", dirty: 2 }, "못 본 gitignore 파일이 있으면 멈춤");
 assert.strictEqual(c.dirty, 2, "dirty.txt + .gitignore");
 assert.deepStrictEqual(await removeWorkspace(root, w1.dir, { force: true, expectDirty: 1 }), { status: "dirty", dirty: 2 }, "본 것보다 더 바뀌었으면 force여도 멈춤");
 execFileSync("rm", [join(w1.dir, "notes.local"), join(w1.dir, ".gitignore")]);

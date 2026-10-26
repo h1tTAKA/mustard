@@ -46,7 +46,7 @@ export default function RemoveWorkspaceDialog({ root, dir, onClose }: { root: st
         const tr = await post({ action: "trust", kind: "archive", path: root, script: a.script }).catch(() => null);
         if (!tr?.ok) { toast(t("newWs.setupChanged"), "error"); await load(); return; }
       }
-      const r = await post({ action: "remove", path: root, dir, force: check.dirty > 0, expectDirty: check.dirty, deleteBranch, skipArchive, allowFailedArchive }).catch((e) => ({ ok: false, error: String(e) }));
+      const r = await post({ action: "remove", path: root, dir, force: check.dirty > 0, expectDirty: check.dirty, expectIgnored: check.ignored.length, deleteBranch, skipArchive, allowFailedArchive }).catch((e) => ({ ok: false, error: String(e) }));
       if (!r.ok) { toast(t("rmWs.failed", { error: String(r.error ?? "") }), "error"); return; }
       if (r.status === "archive-failed") { setFailed(String(r.result?.tail ?? "")); return; }
       if (r.status === "archive-untrusted" || r.status === "dirty") { await load(); return; } // 그 사이 바뀜 — 다시 보여 줌
