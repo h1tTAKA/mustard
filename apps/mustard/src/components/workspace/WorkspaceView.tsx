@@ -242,7 +242,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       if (!d || !inside(root, d.cwd)) return; // 다른 레포 터미널
       if ([...OPEN_ROOTS.keys()].some((r) => r.length > root.length && inside(r, d.cwd))) return; // 더 깊은 레포가 맡음
       if (d.kind === "url") { setBrowserIncoming((prev) => ({ url: d.url, n: (prev?.n ?? 0) + 1 })); setBrowserOpen(true); return; }
-      if (!files.length) { toast(t("ws.linkFilesLoading")); return; } // 목록이 아직 없음 — "없는 파일"이라고 잘못 알리지 않음(리뷰)
+      if (treeLoading) { toast(t("ws.linkFilesLoading")); return; } // 목록을 불러오는 중 — "없는 파일"이라고 잘못 알리지 않음(리뷰). 실패·빈 레포는 아래 "못 찾음"
       const rel = findRepoFile(files, root, d.cwd, d.path, filesCapped);
       if (!rel) { toast(t("ws.linkFileMissing", { path: d.path })); return; }
       if (!filesCapped) { openCodeTabRef.current({ kind: "file", file: rel }); return; }
@@ -253,7 +253,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     };
     window.addEventListener(TERMINAL_LINK_EVENT, onLink);
     return () => { const n = (OPEN_ROOTS.get(root) ?? 1) - 1; if (n > 0) OPEN_ROOTS.set(root, n); else OPEN_ROOTS.delete(root); window.removeEventListener(TERMINAL_LINK_EVENT, onLink); };
-  }, [path, files, filesCapped, t, toast]);
+  }, [path, files, filesCapped, treeLoading, t, toast]);
   // 분리 브라우저 창(#1034)과 같은 origin localStorage로 주고받음 — storage 이벤트는 다른 창에서 쓸 때만 옴.
   // browser-dock {urls,active,devtools,n} = 분리 창의 "앱 안에서 열기" → 그 탭들 전부를 dock 브라우저로(유저 요청: 통째로).
   // 브라우저가 닫혀 있으면 그 탭들로 열고, 열려 있으면 뒤에 붙임.
