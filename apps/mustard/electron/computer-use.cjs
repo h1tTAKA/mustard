@@ -108,6 +108,7 @@ function helper() {
   return starting;
 }
 async function startHelper() {
+  const gen = generation;
   const dir = mkdtempSync(join(tmpdir(), "mcu-"));
   const sockPath = join(dir, "s"), tokenFile = join(dir, "t"), token = randomBytes(24).toString("hex");
   writeFileSync(tokenFile, token, { mode: 0o600 });
@@ -137,6 +138,7 @@ async function startHelper() {
   c.pid = Number(hs?.result?.pid) || 0;
   c.version = hs?.result?.version || "";
   if (!c.pid) { sock.destroy(); await runCmd("/usr/bin/pkill", ["-f", `--serve ${sockPath}`], 5000, process.env); return null; } // 띄운 도우미도 바로 끝냄(리뷰)
+  if (gen !== generation) { sock.destroy(); try { process.kill(c.pid, "SIGKILL"); } catch { /* 이미 끝남 */ } return null; } // 띄우는 사이 비상 정지 — 연결로 안 씀(리뷰)
   conn = c; // 악수가 끝난 뒤에야 쓸 수 있는 연결로
   return c;
 }
