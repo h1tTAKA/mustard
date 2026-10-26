@@ -1767,8 +1767,8 @@ ipcMain.handle("terminal:shell-input", async (_e, { id, cwd, data } = {}) => {
   const c = String(s?.cwd || "").replace(/\/+$/, "");
   if (!s || !(c === root || c.startsWith(root + "/"))) return { ok: false, reason: "no-terminal" };
   if (s.process === undefined || !isShellProc(s.process)) return { ok: false, reason: "busy" };
-  // 여러 줄(한 번에 붙여넣기)은 붙여넣기 모드를 아는 셸만 — sh·dash 등은 줄마다 바로 실행되니 거절(리뷰)
-  if (data.includes("\x1b[200~") && !/^(zsh|bash|fish)$/.test(String(s.process).trim().toLowerCase().replace(/^-+/, ""))) return { ok: false, reason: "multiline" };
+  // 여러 줄(한 번에 붙여넣기)은 붙여넣기 모드를 아는 셸만 — sh·dash 등은 줄마다 바로 실행되니 거절(리뷰). tmux·screen은 안쪽 셸에 맡김
+  if (data.includes("\x1b[200~") && !/^(zsh|bash|fish|tmux|screen)$/.test(String(s.process).trim().toLowerCase().replace(/^-+/, ""))) return { ok: false, reason: "multiline" };
   termClient.input({ id, data });
   return { ok: true, id };
 });
