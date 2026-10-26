@@ -169,7 +169,7 @@ function agentNote(provider: string): { block?: string; hint?: string } {
   if (!c) return {};
   if (c.kind === "missing") { const why = tr("crew.reason.agentMissing", { agent: c.agent }); return c.sure ? { block: why } : { hint: why }; } // 셸 PATH를 못 봤으면 SNA는 찾을 수도 — 막지 않음(리뷰)
   if (c.kind === "broken") { const why = tr("crew.reason.agentBroken", { agent: c.agent, path: c.path, err: c.err }); return c.sure ? { block: why } : { hint: why }; }
-  if (c.kind === "login") return { block: tr("crew.reason.agentLogin", { agent: c.agent }) };
+  if (c.kind === "login") { const why = tr("crew.reason.agentLogin", { agent: c.agent }); return c.sure ? { block: why } : { hint: why }; }
   return { hint: tr("crew.reason.agentPath", { agent: c.agent, path: c.path, version: c.version }) };
 }
 function roleLabel(id: string): string {
@@ -260,7 +260,7 @@ function watchStalls(now = Date.now()) {
     if (wasStarting && run.worktree) killSetup(run.root, run.worktree); // #1176 setup 중이었으면 같이 끔
     if (wasStarting) g.starting.delete(`${run.root}\n${run.taskId}`); // 멈춘 startRun이 줄 자리·동시 상한을 계속 쥐지 않게(늦게 풀려도 startRun이 상태 보고 그만둠)
     run.state = "failed"; run.endedAt = now; run.error = tr(never ? "crew.reason.neverStarted" : "crew.reason.stalled");
-    if (never) { const n = agentNote(run.provider); const why = n.block ?? n.hint; if (why) run.error += ` — ${why}`; } // #1171 왜 안 떴는지(감지가 바뀌었으면 그 이유, 아니면 띄운 경로)
+    if (never) { const n = agentNote(run.provider); const why = n.block ?? n.hint; if (why) run.error = tr("crew.reason.neverStartedWhy", { why }); } // #1171 왜 안 떴는지(감지 이유, 아니면 띄운 경로) — 한 키로 저장해 언어 바꿔도 다시 번역됨
     persist(run, true);
     // 옛 에이전트를 확실히 끈 뒤에만 재시도 — 10초 안에 못 끄면 사람에게(같은 worktree에서 둘이 돌지 않게, 리뷰)
     const sid = run.sessionId;

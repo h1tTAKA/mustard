@@ -120,12 +120,14 @@ async function runDetect(force, seq) {
   const { list, sp } = await agentCli.detectAll({ force });
   if (seq !== detectSeq) return list;
   if (sp) process.env.PATH = agentCli.mergePath(process.env.PATH, sp); // 이후 자식(SNA·gh 등)도 로그인 셸 PATH로
-  // custom = 사용자가 경로를 직접 지정한 것(설정·env) — SNA는 그 경로를 쓰니 Crew가 감지 결과로 막지 않게
-  const saved = loadSavedRuntimePaths(), env = process.env;
-  const custom = [["claude", saved.claudeCode || env.NUNOPI_CLAUDE_COMMAND?.trim() || env.SNA_CLAUDE_COMMAND?.trim()], ["codex", saved.codex || env.NUNOPI_CODEX_COMMAND?.trim()], ["opencode", saved.opencode || env.NUNOPI_OPENCODE_COMMAND?.trim()]].filter(([, p]) => p).map(([id]) => id);
-  lastDetect = { at: Date.now(), list, custom, shellOk: !!sp }; // shellOk = 로그인 셸 PATH를 받았나 — 못 받았으면 '못 찾음'이 틀릴 수 있어 Crew가 막지 않음
+  lastDetect = { at: Date.now(), list, custom: customIds(), shellOk: !!sp }; // shellOk = 로그인 셸 PATH를 받았나 — 못 받았으면 '못 찾음'이 틀릴 수 있어 Crew가 막지 않음
   writeDetect();
   return list;
+}
+// custom = 사용자가 경로를 직접 지정한 것(설정·env) — SNA는 그 경로를 쓰니 Crew가 감지 결과로 막지 않게
+function customIds() {
+  const saved = loadSavedRuntimePaths(), env = process.env;
+  return [["claude", saved.claudeCode || env.NUNOPI_CLAUDE_COMMAND?.trim() || env.SNA_CLAUDE_COMMAND?.trim()], ["codex", saved.codex || env.NUNOPI_CODEX_COMMAND?.trim()], ["opencode", saved.opencode || env.NUNOPI_OPENCODE_COMMAND?.trim()]].filter(([, p]) => p).map(([id]) => id);
 }
 // sna = SNA에 실제로 넘긴 경로(감지 id별) — 감지가 늦게 끝나 SNA가 다른(깨진) 경로를 받았는지 Crew가 비교(리뷰)
 function writeDetect() {
@@ -541,7 +543,7 @@ ipcMain.handle("mode:list", () => [...openModes.keys()]);
 ipcMain.handle("runtime-paths:get", () => loadSavedRuntimePaths());
 // #1171 에이전트 상태 — force면 로그인 셸 PATH부터 다시(설정의 "다시 확인"). 결과: [{id,label,status,path,version,auth,install,tried}]
 ipcMain.handle("agents:detect", async (_e, force) => { try { return { ok: true, list: await detectAgents(!!force) }; } catch (e) { return { ok: false, error: String(e?.message ?? e) }; } });
-ipcMain.handle("runtime-paths:set", (_e, paths) => { const saved = saveRuntimePaths(paths); void detectAgents(true).catch(() => {}); return { ok: true, saved }; }); // #1171 사용자 지정 경로(custom)가 바로 감지 기록에(Crew가 옛 기록으로 막지 않게)
+ipcMain.handle("runtime-paths:set", (_e, paths) => { const saved = saveRuntimePaths(paths); if (lastDetect) { lastDetect.custom = customIds(); writeDetect(); } void detectAgents(true).catch(() => {}); return { ok: true, saved }; }); // #1171 사용자 지정 경로(custom)가 바로 감지 기록에(Crew가 옛 기록으로 막지 않게)
 // GitHub 패널(#810) — gh 경로는 설정값 우선, 없으면 PATH의 gh. IPC로 인증 상태 진단(서브3~5가 데이터 IPC 추가).
 const ghExe = () => loadSavedRuntimePaths().gh || "gh";
 
