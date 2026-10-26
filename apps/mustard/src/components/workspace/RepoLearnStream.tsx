@@ -575,8 +575,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         <div className="flex shrink-0 items-center gap-1.5 border-b border-mustard-500/30 bg-mustard-500/10 px-3 py-1.5 text-[11px] text-mustard-700 dark:text-mustard-400">
           <IconCalendar size={12} stroke={2} className="shrink-0" aria-hidden />
           {/* #1181 오늘을 '모든 작업 폴더'로 보는 중이면 "오늘 · 모든 작업 폴더" + 이 폴더만(실시간으로), 지난 날이면 예전 그대로 */}
-          <span className="mr-auto truncate">{viewDay === todayKey() ? `${t("learn.today")} · ${t("learn.allFoldersShort")}` : `${t("learn.viewingDay", { date: viewLabel })}${allFolders ? ` · ${t("learn.allFoldersShort")}` : ""}`}</span>
-          {viewDay === todayKey() ? (
+          <span className="mr-auto truncate">{viewDay === todayKey() && allFolders ? `${t("learn.today")} · ${t("learn.allFoldersShort")}` : `${t("learn.viewingDay", { date: viewLabel })}${allFolders ? ` · ${t("learn.allFoldersShort")}` : ""}`}</span>
+          {viewDay === todayKey() && allFolders ? (
             <button type="button" onClick={() => toggleAll(false)} className="flex items-center gap-0.5 rounded-md px-1.5 py-0.5 font-medium hover:bg-mustard-500/15">{t("learn.thisFolderOnly")}</button>
           ) : (
             <button type="button" onClick={() => pickDay(null)} className="flex items-center gap-0.5 rounded-md px-1.5 py-0.5 font-medium hover:bg-mustard-500/15">
