@@ -56,7 +56,7 @@ export const AGENT_META: Record<AgentId, { label: string; color: string }> = {
   opencode: { label: "OpenCode", color: "#F59E0B" },
   cursor: { label: "Cursor", color: "#6B7280" },
   copilot: { label: "Copilot", color: "#8B5CF6" },
-  amp: { label: "Amp", color: "#F97316" },
+  amp: { label: "Amp", color: "#F34E3F" },   // 로고(lobe-icons)와 같은 색
   grok: { label: "Grok Build", color: "#9CA3AF" },  // 중립 그레이(흑백 브랜드 — 양 테마서 보이게)
   omp: { label: "OMP", color: "#F97316" },          // oh-my-pi — 브랜드 주황
   other: { label: "Agent", color: "#6B7280" },
