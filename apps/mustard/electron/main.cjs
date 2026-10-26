@@ -577,7 +577,7 @@ function clearGhToken() { try { rmSync(ghTokenFile()); } catch { /* 없으면 �
 function ghEnv() { const tok = loadGhToken(); return tok ? { ...process.env, GH_TOKEN: tok } : undefined; }
 
 // 연동 확장(#960) — 호스트별 토큰(safeStorage). gh(github)는 위 전용 함수, 여기선 bitbucket/azure.
-const TOKEN_HOSTS = ["bitbucket", "azure", "vercel", "supabase"];
+const TOKEN_HOSTS = ["bitbucket", "azure", "vercel", "supabase", "linear", "jira"];
 const glabExe = () => loadSavedRuntimePaths().glab || "glab";
 function hostTokenFile(host) { return join(app.getPath("userData"), `token-${host}.json`); }
 function loadHostToken(host) {
@@ -650,6 +650,43 @@ ipcMain.handle("integrations:set-token", (_e, { host, token }) => {
 });
 ipcMain.handle("integrations:token-status", (_e, { host }) => ({ hasToken: TOKEN_HOSTS.includes(host) && loadHostToken(host) != null }));
 ipcMain.handle("integrations:clear-token", (_e, { host }) => { if (TOKEN_HOSTS.includes(host)) clearHostToken(host); return { ok: true }; });
+
+// #1172 이슈 트래커(Linear·Jira) — 호출은 여기서만(토큰은 화면으로 안 감). Jira 사이트·이메일은 비밀이 아니라 일반 파일.
+const trackers = require("./trackers.cjs");
+const jiraCfgFile = () => join(app.getPath("userData"), "jira.json");
+function loadJiraCfg() { try { const j = JSON.parse(readFileSync(jiraCfgFile(), "utf8")); return { site: String(j.site || ""), email: String(j.email || "") }; } catch { return { site: "", email: "" }; } }
+function trackerClient(provider) {
+  if (provider === "linear") { const token = loadHostToken("linear"); return token ? trackers.linear({ token }) : null; }
+  if (provider === "jira") { const token = loadHostToken("jira"), cfg = loadJiraCfg(); return token && cfg.site ? trackers.jira({ ...cfg, token }) : null; }
+  return null;
+}
+const notConnected = { ok: false, state: "not-connected", detail: "" };
+const withClient = (provider, fn) => { const c = trackerClient(provider); return c ? trackers.run(() => fn(c)) : notConnected; };
+// 연결 저장 — 저장 전에 확인(틀린 키면 저장 안 함). Jira는 사이트·이메일 함께.
+ipcMain.handle("trackers:connect", async (_e, { provider, token, site, email }) => {
+  if (!["linear", "jira"].includes(provider) || typeof token !== "string" || !token.trim()) return { ok: false, state: "error", detail: tm("token.empty") };
+  if (provider === "jira" && !String(site || "").trim()) return { ok: false, state: "error", detail: "site" };
+  let cfg = null;
+  try { cfg = provider === "jira" ? { site: trackers.siteOf(site), email: String(email || "").trim() } : null; new URL(cfg?.site || "https://x"); } catch { return { ok: false, state: "error", detail: "site" }; }
+  const client = provider === "linear" ? trackers.linear({ token: token.trim() }) : trackers.jira({ ...cfg, token: token.trim() });
+  const r = await trackers.run(() => client.check());
+  if (!r.ok) return r;
+  const saved = saveHostToken(provider, token.trim());
+  if (!saved.ok) return { ...saved, state: "error" };
+  if (cfg) { mkdirSync(app.getPath("userData"), { recursive: true }); writeFileSync(jiraCfgFile(), JSON.stringify(cfg)); }
+  return r;
+});
+ipcMain.handle("trackers:disconnect", (_e, { provider }) => { if (["linear", "jira"].includes(provider)) { clearHostToken(provider); if (provider === "jira") rmSync(jiraCfgFile(), { force: true }); } return { ok: true }; });
+// 상태 — 연결 안 됨이면 not-connected, 됐으면 실제 확인(이름·조직)
+ipcMain.handle("trackers:status", async (_e, { provider }) => {
+  const r = await withClient(provider, (c) => c.check());
+  return provider === "jira" ? { ...r, ...loadJiraCfg() } : r;
+});
+ipcMain.handle("trackers:list", (_e, { provider, query }) => withClient(provider, (c) => c.list({ query: String(query || "").slice(0, 200) })));
+ipcMain.handle("trackers:view", (_e, { provider, id }) => withClient(provider, (c) => c.view(String(id))));
+ipcMain.handle("trackers:states", (_e, { provider, issue }) => withClient(provider, (c) => c.states(issue)));
+ipcMain.handle("trackers:set-state", (_e, { provider, issue, stateId }) => withClient(provider, (c) => c.setState(issue, String(stateId))));
+ipcMain.handle("trackers:comment", (_e, { provider, issue, body }) => withClient(provider, (c) => c.comment(issue, String(body || "").slice(0, 20000))));
 
 ipcMain.handle("github:auth", (_e, { cwd }) => githubBridge.authDiagnose({ gh: ghExe(), cwd, env: ghEnv(), probe: ["api", "rate_limit"] })); // #1151 로그인 필요면 API로 한 번 더(오프라인 구분)
 // 이슈 목록·상세(#813) — gh issue list/view --json. state=open|closed|all(기본 open).

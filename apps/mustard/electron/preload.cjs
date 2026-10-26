@@ -88,6 +88,17 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     tokenStatus: (host) => ipcRenderer.invoke("integrations:token-status", { host }),
     clearToken: (host) => ipcRenderer.invoke("integrations:clear-token", { host }),
   },
+  // #1172 이슈 트래커(Linear·Jira) — 토큰은 main에만
+  trackers: {
+    connect: (provider, payload) => ipcRenderer.invoke("trackers:connect", { provider, ...payload }),
+    disconnect: (provider) => ipcRenderer.invoke("trackers:disconnect", { provider }),
+    status: (provider) => ipcRenderer.invoke("trackers:status", { provider }),
+    list: (provider, query) => ipcRenderer.invoke("trackers:list", { provider, query }),
+    view: (provider, id) => ipcRenderer.invoke("trackers:view", { provider, id }),
+    states: (provider, issue) => ipcRenderer.invoke("trackers:states", { provider, issue }),
+    setState: (provider, issue, stateId) => ipcRenderer.invoke("trackers:set-state", { provider, issue, stateId }),
+    comment: (provider, issue, body) => ipcRenderer.invoke("trackers:comment", { provider, issue, body }),
+  },
   // 터미널(pty) 브릿지 — 레포별 세션(#647).
   terminal: {
     ensure: (opts) => ipcRenderer.invoke("terminal:ensure", opts),

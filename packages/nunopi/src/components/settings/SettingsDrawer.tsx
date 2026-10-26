@@ -6,6 +6,7 @@ import { XIcon } from "../learning/icons";
 import ShortcutsSection from "./ShortcutsSection";
 import { IconKeyboard, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity } from "@tabler/icons-react";
 import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
+import TrackerCards from "./TrackerCards";
 import AgentCatalogSection from "./AgentCatalogSection";
 import { useLocale, useT, useToast } from "@mustard/core";
 import { LOCALES, type Locale } from "@mustard/core";
@@ -1095,6 +1096,8 @@ export default function SettingsDrawer({
                 </div>
               </div>
             ))}
+            {/* #1172 이슈 트래커(Linear·Jira) — 저장 = 확인 후 저장 */}
+            <TrackerCards />
             <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("settings.integrationsMore2")}</p>
           </section>
           )}
