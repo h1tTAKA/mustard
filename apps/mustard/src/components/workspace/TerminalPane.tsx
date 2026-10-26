@@ -4,7 +4,7 @@
 import { launchOpts, liftStoredArgs } from "@/lib/agentLaunch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
-import { useShortcut, useT, useToast, getTerminalThemePref, isTerminalDark, getSetting, AKEYS, AGENT_DEFAULTS, LAUNCH_AGENTS, CKEYS, useConfirm, pickDefaultAgent } from "@mustard/core";
+import { useShortcut, useT, getTerminalThemePref, isTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled } from "@mustard/core";
 import Terminal from "@/components/workspace/Terminal";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
@@ -167,11 +167,12 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   const [menuPos, setMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const plusRef = useRef<HTMLButtonElement>(null);
   const MENU_W = 190, MENU_H = 340; // 드롭다운 대략 크기(양축 화면밖 방지용 추정)
-  // #1171 에이전트 설치 상태 — 메뉴 열 때 받음(main이 60초 캐시). 안 깔린 건 흐리게, 눌러도 실행은 지금처럼(경고만)
-  const toast = useToast();
-  const [agentState, setAgentState] = useState<Record<string, AgentDetect["status"]>>({});
-  useEffect(() => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) void liftStoredArgs(r.list.map((a) => a.id)); }).catch(() => {}); }, []); // #1184 옛 추가 인자 → 권한(한 번)
-  const loadAgentState = () => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) setAgentState(Object.fromEntries(r.list.map((a) => [a.id, a.status]))); }).catch(() => {}); };
+  // #1184 실행 메뉴 = 감지되고(ok) 켜진 에이전트만(Orca), 카탈로그 순서. 마운트·메뉴 열 때 받음(main 60초 캐시).
+  const [agents, setAgents] = useState<AgentDetect[]>([]);
+  const loadAgentState = () => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) setAgents(r.list); }).catch(() => {}); };
+  useEffect(() => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) { setAgents(r.list); void liftStoredArgs(r.list.map((a) => a.id)); } }).catch(() => {}); }, []); // + 옛 추가 인자 → 권한(한 번)
+  const menuAgents = agents.filter((a) => a.status === "ok" && agentEnabled(a.id));
+  const defaultPick = pickDefaultAgent(menuAgents.map((a) => a.id)); // null = 셸만(또는 깔린 게 없음)
   const toggleMenu = () => {
     if (menuOpen) { setMenuOpen(false); return; }
     loadAgentState();
@@ -183,7 +184,6 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
     }
     setMenuOpen(true);
   };
-  const LAUNCHABLE = LAUNCH_AGENTS.map((a) => a.id as AgentId); // 설정 기본 에이전트와 같은 목록(core, #1171) — gemini 제외(구글=antigravity)
   const newTerminal = () => { setMenuOpen(false); addTab(); };
   // #1110 Crew 카드 넘겨받기 — 이 레포 카드면 새 탭에서 카드 작업 폴더로 이동해 그 에이전트 대화를 이어받음
   useEffect(() => {
@@ -200,10 +200,8 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
     window.addEventListener("mustard:crew-takeover", on);
     return () => window.removeEventListener("mustard:crew-takeover", on);
   }, [cwd, t]);
-  const launchInNewTab = (agent: AgentId) => {
+  const launchInNewTab = (agent: string) => {
     setMenuOpen(false);
-    const st = agentState[agent];
-    if (st === "missing" || st === "broken") toast(t("agents.notInstalled", { name: AGENT_META[agent]?.label ?? agent }), "error"); // 실행은 그대로(셸이 더 잘 알 수도 — 로그인 셸 PATH)
     const id = genId();
     setTabs((prev) => [...prev, { id, title: t("workspace.terminalTab", { n: nextNum(prev) }) }]);
     setActiveId(id);
@@ -214,8 +212,8 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   // #1184 자동 = 감지되고 켜진 첫 에이전트(카탈로그 순서), 셸만(blank) = 새 터미널
   const launchDefaultAgent = () => {
     void (window.nunopiDesktop?.detectAgents?.(false) ?? Promise.resolve(null)).then((r) => {
-      const pick = pickDefaultAgent(r && r.ok ? r.list.filter((a) => a.status === "ok").map((a) => a.id) : []);
-      if (pick) launchInNewTab(pick as AgentId); else newTerminal();
+      const pick = pickDefaultAgent(r && r.ok ? r.list.filter((a) => a.status === "ok" && agentEnabled(a.id)).map((a) => a.id) : []);
+      if (pick) launchInNewTab(pick); else newTerminal();
     }).catch(() => newTerminal());
   };
 
@@ -299,16 +297,15 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
             {/* 기본 에이전트 빠른 실행(#927) — 설정 agent.default */}
             <button type="button" onClick={launchDefaultAgent}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] font-medium text-zinc-800 transition hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800">
-              <AgentLogo agent={getSetting<string>(AKEYS.default, AGENT_DEFAULTS.default) as AgentId} size={14} />
+              {defaultPick ? <AgentLogo agent={defaultPick as AgentId} size={14} /> : <IconTerminal2 size={14} stroke={2} aria-hidden />}
               <span className="whitespace-nowrap">{t("workspace.launchDefaultAgent")}</span>
             </button>
             <div className="my-1 border-t border-zinc-200 dark:border-zinc-800" />
-            {LAUNCHABLE.map((a) => (
-              <button key={a} type="button" onClick={() => launchInNewTab(a)}
-                title={agentState[a] === "missing" || agentState[a] === "broken" ? t("agents.notInstalled", { name: AGENT_META[a].label }) : undefined}
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800 ${agentState[a] === "missing" || agentState[a] === "broken" ? "opacity-45" : ""}`}>
-                <AgentLogo agent={a} size={14} />
-                <span className="whitespace-nowrap">{AGENT_META[a].label}</span>
+            {menuAgents.map((a) => (
+              <button key={a.id} type="button" onClick={() => launchInNewTab(a.id)}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">
+                <AgentLogo agent={a.id as AgentId} size={14} />
+                <span className="whitespace-nowrap">{a.label}</span>
               </button>
             ))}
           </div>

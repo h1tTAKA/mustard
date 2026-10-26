@@ -73,15 +73,6 @@ export function pickDefaultAgent(detected: string[]): string | null {
   const ok = detected.filter(agentEnabled);
   return d !== "auto" && ok.includes(d) ? d : (ok[0] ?? null);
 }
-// 실행할 수 있는 에이전트(터미널 + 메뉴·기본 에이전트·추가 인자 한 곳, #1171) — main AGENT_DEFAULT_CMD에 있는 것. gemini 제외(구글=antigravity, #864).
-export const LAUNCH_AGENTS = [
-  { id: "claude", label: "Claude Code", ph: "--dangerously-skip-permissions" }, { id: "codex", label: "Codex", ph: "--sandbox workspace-write" },
-  // ph = 예시(각 CLI --help에서 확인한 실제 플래그 — copilot·amp·aider는 공식 문서)
-  { id: "grok", label: "Grok", ph: "--always-approve" }, { id: "opencode", label: "OpenCode", ph: "--continue" },
-  { id: "omp", label: "OMP", ph: "--thinking high" }, { id: "antigravity", label: "Antigravity", ph: "--dangerously-skip-permissions" },
-  { id: "cursor", label: "Cursor", ph: "--force" }, { id: "hermes", label: "Hermes", ph: "--yolo" }, { id: "copilot", label: "Copilot", ph: "--allow-all-tools" },
-  { id: "amp", label: "Amp", ph: "--dangerously-allow-all" }, { id: "aider", label: "Aider", ph: "--no-auto-commits" },
-] as const;
 
 // 알림(#928)
 // suppressWhileWatching(#1021, 옛 suppressWhileFocused): "지금 보고 있는 레포 탭"의 에이전트 완료 알림만 억제(#973~). 다른 레포는 포커스여도 알림.
