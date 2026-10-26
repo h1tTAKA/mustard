@@ -514,6 +514,20 @@ function syncComputerShortcut() {
   else if (!on && globalShortcut.isRegistered(STOP_KEY)) globalShortcut.unregister(STOP_KEY);
 }
 app.whenReady().then(syncComputerShortcut);
+const computerStatus = async (force) => ({ ...(await computerUse.status({ force })), defaults: computerUse.DEFAULT_BLOCKED, stopKey: STOP_KEY, platform: process.platform, log: computerUse.readLog(undefined, 30) });
+ipcMain.handle("computer:status", (_e, { force } = {}) => computerStatus(!!force));
+ipcMain.handle("computer:set", (_e, patch = {}) => {
+  const p = {};
+  if (typeof patch.enabled === "boolean") p.enabled = patch.enabled;
+  if (Array.isArray(patch.blocked)) p.blocked = patch.blocked.filter((s) => typeof s === "string").map((s) => s.trim()).filter(Boolean).slice(0, 100);
+  computerUse.writeConfig(p);
+  syncComputerShortcut();
+  return computerStatus(false);
+});
+// 권한 받기 = 드라이버가 자기 앱을 띄워 macOS 프롬프트(권한이 드라이버에 붙음). 유저가 시스템 설정에서 켜야 끝남.
+ipcMain.handle("computer:grant", async () => { const r = await computerUse.driver(["permissions", "grant"], { timeout: 120_000 }); return { ok: r.ok, text: r.text }; });
+const PRIVACY = { accessibility: "Privacy_Accessibility", screen: "Privacy_ScreenCapture" };
+ipcMain.handle("computer:open-privacy", (_e, { kind } = {}) => { if (process.platform === "darwin" && PRIVACY[kind]) void shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${PRIVACY[kind]}`); });
 const openClaims = new Map(); // reqId → [{ sender, repo, depth }]
 const realOf = (p) => { try { return require("node:fs").realpathSync(p); } catch { return String(p || ""); } };
 ipcMain.on("browser:claim-open", (e, { reqId, repo, cwd } = {}) => {

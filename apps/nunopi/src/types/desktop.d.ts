@@ -7,11 +7,26 @@ type TrackerProvider = "linear" | "jira";
 interface TrackerIssue { provider: TrackerProvider; id: string; key: string; title: string; state: string; stateType: string; url: string; updatedAt: string; branchName: string; assignee: string; team?: { id: string; key: string }; body?: string; comments?: { author: string; body: string; at: string }[] }
 type TrackerResult<T> = { ok: true; data: T } | { ok: false; state: "not-connected" | "not-authed" | "forbidden" | "rate-limited" | "offline" | "error"; detail?: string };
 interface AgentDetect { id: string; label: string; status: "ok" | "broken" | "missing"; path?: string; version?: string | null; auth: "authenticated" | "unauthenticated" | "unknown"; install: string | null; tried: { path: string; error: string }[]; url?: string; cmd?: string; choices?: string[]; carriers?: string[]; weak?: boolean; flags?: { ask?: string; edits?: string; auto?: string; full?: string }; env?: Record<string, string> | null }
+type ComputerPerm = "granted" | "missing" | "unknown";
+type ComputerStatus = {
+  enabled: boolean; blocked: string[]; defaults: string[]; stopKey: string; platform: string;
+  driver: { path: string; version: string } | null;
+  permissions: { accessibility: ComputerPerm; screen: ComputerPerm } | null;
+  log: { at: string; tool: string; app: string; cwd: string; result: string }[];
+};
 interface NunopiDesktopApi {
   isDesktop: true;
   getRuntimePaths(): Promise<{ claudeCode?: string; codex?: string; opencode?: string }>;
   setRuntimePaths(paths: { claudeCode?: string; codex?: string; opencode?: string }): Promise<{ ok: boolean; saved: Record<string, string> }>;
   // #1171 에이전트 CLI 상태(Mustard main — nunopi 단독 앱엔 없을 수 있음)
+  // #1175 컴퓨터 사용(Mustard main — 단독 앱엔 없음)
+  computer?: {
+    status(force?: boolean): Promise<ComputerStatus>;
+    set(patch: { enabled?: boolean; blocked?: string[] }): Promise<ComputerStatus>;
+    grant(): Promise<{ ok: boolean; text?: string }>;
+    openPrivacy(kind: "accessibility" | "screen"): Promise<void>;
+    onChanged(cb: () => void): () => void;
+  };
   trackers?: {
     connect(provider: TrackerProvider, payload: { token: string; site?: string; email?: string }): Promise<TrackerResult<{ name: string; account: string }>>;
     disconnect(provider: TrackerProvider): Promise<{ ok: boolean }>;

@@ -24,6 +24,13 @@ interface GhAnnotation { path?: string; start_line?: number; annotation_level?: 
 interface GhJobStep { name?: string; status?: string; conclusion?: string; number?: number }
 
 // 일렉트론 preload가 노출하는 데스크톱 API(웹에선 undefined).
+type ComputerPerm = "granted" | "missing" | "unknown";
+type ComputerStatus = {
+  enabled: boolean; blocked: string[]; defaults: string[]; stopKey: string; platform: string;
+  driver: { path: string; version: string } | null;
+  permissions: { accessibility: ComputerPerm; screen: ComputerPerm } | null;
+  log: { at: string; tool: string; app: string; cwd: string; result: string }[];
+};
 interface NunopiDesktopApi {
   isDesktop: true;
   // UI 줌(#937) — 전체 인터페이스 배율(electron webFrame). 즉시 적용, 반환 없음.
@@ -31,6 +38,14 @@ interface NunopiDesktopApi {
   getRuntimePaths(): Promise<{ claudeCode?: string; codex?: string; opencode?: string }>;
   setRuntimePaths(paths: { claudeCode?: string; codex?: string; opencode?: string }): Promise<{ ok: boolean; saved: Record<string, string> }>;
   // #1171 에이전트 CLI 상태 — status: ok(설치·실행됨) / broken(찾았는데 실행 실패) / missing, auth: authenticated / unauthenticated / unknown
+  // #1175 컴퓨터 사용(Mustard main — 단독 앱엔 없음)
+  computer?: {
+    status(force?: boolean): Promise<ComputerStatus>;
+    set(patch: { enabled?: boolean; blocked?: string[] }): Promise<ComputerStatus>;
+    grant(): Promise<{ ok: boolean; text?: string }>;
+    openPrivacy(kind: "accessibility" | "screen"): Promise<void>;
+    onChanged(cb: () => void): () => void;
+  };
   trackers?: {
     connect(provider: TrackerProvider, payload: { token: string; site?: string; email?: string }): Promise<TrackerResult<{ name: string; account: string }>>;
     disconnect(provider: TrackerProvider): Promise<{ ok: boolean }>;
