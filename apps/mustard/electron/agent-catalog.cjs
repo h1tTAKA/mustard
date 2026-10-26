@@ -109,7 +109,7 @@ function launchLine(id, { choice = "own", userArgs = "", cmd } = {}) {
 
 // 유저가 인자에 알려진 권한 플래그를 쓰면 빼서 그 에이전트의 권한 선택으로 — { choice, rest } 또는 null
 // 같은 뜻의 다른 표기(전체 액세스) — 인자로 넣어도 권한 선택으로 옮겨 확인창을 거치게(리뷰)
-const FULL_ALIAS = { claude: ["--permission-mode bypassPermissions"], codex: ["--yolo"], gemini: ["-y", "--approval-mode yolo"], grok: ["--yolo", "--always-approve", "--dangerously-skip-permissions"] };
+const FULL_ALIAS = { claude: ["--permission-mode bypassPermissions"], codex: ["--yolo", "-s danger-full-access", "--sandbox danger-full-access"], devin: ["--permission-mode bypass", "--respect-workspace-trust false"], gemini: ["-y", "--approval-mode yolo"], grok: ["--yolo", "--always-approve", "--dangerously-skip-permissions"] };
 // 알려진 권한 표기를 전부 빼고, 그중 가장 넓은 권한을 고름(전체 > 대신 승인 > 편집 수락 > 승인 요청) — 하나만 빼면 남은 표기로 확인창을 우회(리뷰)
 function liftPermission(id, userArgs) {
   const raw = tokens(userArgs);
