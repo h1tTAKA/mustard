@@ -171,7 +171,7 @@ export default function RepoTabHoverCard({ path, left, top, onMouseEnter, onMous
         <span className="truncate">{basename(path)}</span>
       </div>
 
-      {/* 에이전트(#968) — orca式: 그 레포 세션 전부를 [상태 아이콘 + 로고 + 작업 제목 + 시각]으로 나열 */}
+      {/* 에이전트(#968) — 그 레포 세션 전부를 [상태 아이콘 + 로고 + 작업 제목 + 시각]으로 나열 */}
       <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
         {t("workspace.agents")}{statuses.length > 0 ? ` · ${statuses.length}` : ""}
       </div>

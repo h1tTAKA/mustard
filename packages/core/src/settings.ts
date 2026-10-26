@@ -46,7 +46,7 @@ export const TKEYS = {
   focusFollowsMouse: "terminal.focusFollowsMouse",
 } as const;
 
-// 에이전트 런치(#927, #1184 Orca식) — 기본 에이전트("auto" = 감지되고 켜진 첫 에이전트, "blank" = 셸만, 아니면 id) + per-agent 유저 인자·권한·켜기.
+// 에이전트 런치(#927, #1184) — 기본 에이전트("auto" = 감지되고 켜진 첫 에이전트, "blank" = 셸만, 아니면 id) + per-agent 유저 인자·권한·켜기.
 // 권한 = 전체(perm) + 에이전트별 덮어쓰기(perm.<id>, ""·없음 = 전체 따름). 값: own·ask·accept-edits·auto·full-access. 기본 own(플래그 안 붙임).
 // 키를 에이전트마다 따로 둠(객체 하나로 두면 useSetting 스냅샷이 매번 새 객체 — 무한 렌더).
 export const AGENT_DEFAULTS = { default: "auto", perm: "own" };
@@ -70,14 +70,14 @@ export function agentPermission(agentId: string, choices?: string[]): { choice: 
 export const agentEnabled = (agentId: string) => !getSetting<boolean>(AKEYS.off(agentId), false);
 export const agentUsedAt = (agentId: string) => getSetting<number>(AKEYS.usedAt(agentId), 0);
 export const markAgentUsed = (agentId: string) => setSetting(AKEYS.usedAt(agentId), Date.now());
-// 우리 순서(#1184, Orca는 카탈로그 고정 순서) — 기본 에이전트 → 최근 쓴 순 → 안 쓴 것(받은 순서 = 카탈로그) → 꺼진 것.
+// 순서(#1184) — 기본 에이전트 → 최근 쓴 순 → 안 쓴 것(받은 순서 = 카탈로그) → 꺼진 것.
 export function sortAgents<T extends { id: string }>(list: T[]): T[] {
   const d = getSetting<string>(AKEYS.default, AGENT_DEFAULTS.default);
   const rank = (a: T) => (!agentEnabled(a.id) ? 3 : a.id === d ? 0 : agentUsedAt(a.id) ? 1 : 2);
   return list.map((a, i) => ({ a, i })).sort((x, y) => rank(x.a) - rank(y.a) || agentUsedAt(y.a.id) - agentUsedAt(x.a.id) || x.i - y.i).map((x) => x.a);
 }
 // 기본 에이전트 고르기 — detected = 감지된 id(카탈로그 순서). null = 셸만.
-// 자동 = 켜진 것 중 마지막에 쓴 에이전트(우리 규칙 — Orca는 카탈로그 첫 번째), 한 번도 안 썼으면 카탈로그 순서 첫 번째.
+// 자동 = 켜진 것 중 마지막에 쓴 에이전트, 한 번도 안 썼으면 카탈로그 순서 첫 번째.
 // weak = 짧은 이름으로만 감지돼 다른 도구일 수 있는 것 — 자동에선 한 번이라도 띄운 적 있을 때만 후보(직접 기본으로 고른 건 그대로).
 export function pickDefaultAgent(detected: string[], weak: string[] = []): string | null {
   const d = getSetting<string>(AKEYS.default, AGENT_DEFAULTS.default);

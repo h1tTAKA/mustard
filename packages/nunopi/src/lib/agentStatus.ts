@@ -1,5 +1,5 @@
 // 에이전트 상태 저장 + 변경 푸시(#764) — POST(훅 수신)·GET(조회)·SSE 스트림 라우트가 공유하는 서버 싱글턴.
-// 훅이 상태를 POST하면 즉시 SSE 리스너로 fan-out → 화면은 폴링 없이 그 순간 갱신(Orca식 푸시).
+// 훅이 상태를 POST하면 즉시 SSE 리스너로 fan-out → 화면은 폴링 없이 그 순간 갱신(푸시).
 // globalThis 캐시로 dev 라우트 리로드에도 store/listeners 생존.
 
 export type AgentState = "working" | "waiting" | "blocked" | "done";
@@ -12,7 +12,7 @@ export interface Entry {
   tool?: string;
   toolInput?: string;
   prompt?: string;
-  task?: string; // #968 세션 작업 제목(OSC 타이틀 요약) — orca式 목록 행 텍스트
+  task?: string; // #968 세션 작업 제목(OSC 타이틀 요약) — 목록 행 텍스트
   updatedAt: number;
   stateStartedAt: number;
   hookAt?: number;   // #989 마지막 Claude 훅 수신 시각 — 있으면(신선하면) 화면 판정보다 훅이 권위
@@ -67,7 +67,7 @@ export function findBySession(sessionId: string): Entry | undefined {
   return undefined;
 }
 
-// 레포 root의 상태 — #968 세션별 전부(orca式 목록). 예전엔 에이전트 타입별 1개로 합쳤으나
+// 레포 root의 상태 — #968 세션별 전부(목록). 예전엔 에이전트 타입별 1개로 합쳤으나
 // 같은 repo에 세션 여럿(claude 여러 개)이면 다 보여야 해서 sessionId별로 전부 반환.
 // 정렬: 상태 우선순위(working>waiting>blocked>done) 후 최근 갱신 순 — 바쁜 세션이 위로.
 const STATE_ORDER: Record<AgentState, number> = { working: 0, waiting: 1, blocked: 2, done: 3 };

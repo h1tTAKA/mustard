@@ -1,5 +1,5 @@
 // 에이전트 상태 SSE 스트림(#764) — 훅 POST가 상태를 바꾸면 그 순간 구독 중인 화면(레포탭·호버 카드)으로
-// 변경된 cwd를 밀어준다. 화면은 이 신호를 받고 해당 root만 즉시 재조회(폴링 대기 제거 = Orca식 즉각).
+// 변경된 cwd를 밀어준다. 화면은 이 신호를 받고 해당 root만 즉시 재조회(폴링 대기 제거 = 즉각).
 import { subscribe } from "@mustard/nunopi/agent";
 
 export const runtime = "nodejs";

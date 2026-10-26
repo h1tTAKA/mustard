@@ -11,7 +11,7 @@ import { promisify } from "node:util";
 
 export const CONFIG_PATH = join(".mustard", "config.json");
 export const INCLUDE_FILE = ".worktreeinclude";
-const MAX_FILE = 256 * 1024;   // 설정·include 파일 전체 한도(Orca와 같음) — 넘으면 통째로 무시
+const MAX_FILE = 256 * 1024;   // 설정·include 파일 전체 한도 — 넘으면 통째로 무시
 const MAX_FIELD = 64 * 1024;   // 문자열 필드 한도 — 넘으면 그 필드만 버림
 const MAX_SHARED = 100;        // sharedDirectories 앞 100개만
 const MAX_INCLUDE = 1000;      // .worktreeinclude 유효 경로 1000개까지
@@ -23,7 +23,7 @@ export interface BootstrapConfig {
   sharedDirectories: string[];                      // worktree.sharedDirectories — 메인 체크아웃 폴더로 링크
 }
 
-// 레포 기준 상대 경로 정리 — 역슬래시→/, 앞 ./·뒤 / 제거. 절대 경로·드라이브·빈 조각·./..·.git 조각이면 null(Orca와 같은 거부 규칙).
+// 레포 기준 상대 경로 정리 — 역슬래시→/, 앞 ./·뒤 / 제거. 절대 경로·드라이브·빈 조각·./..·.git 조각이면 null.
 export function normRel(raw: string): string | null {
   let p = raw.trim().replace(/\\/g, "/");
   while (p.startsWith("./")) p = p.slice(2);
@@ -97,12 +97,12 @@ export const readConfig = (dir: string): BootstrapConfig => { const t = readSmal
 export const readInclude = (dir: string): string[] => { const t = readSmall(join(dir, INCLUDE_FILE), dir); return t === null ? [] : parseInclude(t); };
 
 // ── 새 worktree에 적용(#1176 커밋 2) ─────────────────────────────────────────────
-// 규칙과 원본은 메인 체크아웃 것(Orca와 같음). 공유 먼저, 그다음 복사 — 이미 있는 대상은 건드리지 않음.
+// 규칙과 원본은 메인 체크아웃 것. 공유 먼저, 그다음 복사 — 이미 있는 대상은 건드리지 않음.
 // 공유(sharedDirectories) = 메인 폴더로 심링크(편집도 공유) / 복사(.worktreeinclude) = 독립 사본(APFS면 clone — 공간 거의 안 씀).
 // 둘 다 "메인 체크아웃에 실제로 있고 gitignore된 것"만 — 추적 파일·없는 경로는 건너뜀.
 const pexec = promisify(execFile);
 export interface Limits { bytes: number; entries: number }
-export const COPY_LIMITS: Limits = { bytes: 2 * 1024 ** 3, entries: 50_000 }; // 일반 복사 한도(Orca와 같음)
+export const COPY_LIMITS: Limits = { bytes: 2 * 1024 ** 3, entries: 50_000 }; // 일반 복사 한도
 export interface MaterializeReport { shared: string[]; copied: string[]; skipped: { path: string; reason: string }[] }
 
 // git check-ignore --stdin — 무시되는 경로만 돌려줌(종료 코드 1 = 하나도 없음)
@@ -168,10 +168,10 @@ export async function materialize(root: string, dir: string, limits: Limits = CO
 }
 
 // ── setup / archive 스크립트(#1176 커밋 3) ──────────────────────────────────────
-// 레포에 든 스크립트 = 그 레포를 받은 사람의 PC에서 도는 코드 → 내용(sha256)을 사람이 한 번 승인해야 실행(Orca도 명령 승인).
+// 레포에 든 스크립트 = 그 레포를 받은 사람의 PC에서 도는 코드 → 내용(sha256)을 사람이 한 번 승인해야 실행.
 // 신뢰는 레포별·내용별 — 스크립트가 한 글자라도 바뀌면 다시 승인. 저장: ~/.nunopi/crew/<sha(root)>/setup-trust.json
 // 실행: bash -e(첫 실패에서 멈춤), cwd = worktree, 출력은 worktree/.crew/<kind>.log, 시간 제한 넘으면 프로세스 그룹째 끔.
-// setup은 새 worktree의 설정, archive는 메인 체크아웃의 설정(Orca와 같음).
+// setup은 새 worktree의 설정, archive는 메인 체크아웃의 설정.
 const sha = (s: string, n = 64) => createHash("sha256").update(s).digest("hex").slice(0, n);
 const crewBase = () => process.env.MUSTARD_CREW_DIR || join(homedir(), ".nunopi", "crew");
 const repoDir = (root: string) => join(crewBase(), sha(root.replace(/\/+$/, ""), 32));

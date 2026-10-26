@@ -94,7 +94,7 @@ function hasPermissionOption(id, userArgs) {
 }
 
 // 터미널에 칠 명령 — env 앞붙임 + 실행 명령(또는 경로 지정) + 권한 플래그(앞) + 유저 인자.
-// Mustard는 셸에 명령을 쳐 넣으니 env는 `KEY=값 명령` 앞붙임(Orca는 프로세스 env — 결과 같음).
+// Mustard는 셸에 명령을 쳐 넣으니 env는 `KEY=값 명령` 앞붙임(프로세스 env와 결과 같음).
 function launchLine(id, { choice = "own", userArgs = "", cmd } = {}) {
   const a = BY_ID.get(id);
   if (!a) return null;

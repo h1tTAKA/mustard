@@ -346,7 +346,7 @@ export default function SettingsDrawer({
 
   if (!isOpen) return null;
 
-  // orca식 즉시 적용(#924) — 저장 버튼 없이 입력 blur 시 자동 반영. onClose 호출 안 함.
+  // 즉시 적용(#924) — 저장 버튼 없이 입력 blur 시 자동 반영. onClose 호출 안 함.
   function handleSave() {
     onSave({
       "openai-compatible": {
@@ -372,7 +372,7 @@ export default function SettingsDrawer({
     }).catch((e) => console.warn("[settings] desktop runtime-paths save failed:", e));
   }
 
-  // orca식 풀페이지 설정(#925) — 좌측 섹션 사이드바(스크롤 앵커) + 우측 내용. variant는 이제 무시(항상 풀페이지).
+  // 풀페이지 설정(#925) — 좌측 섹션 사이드바(스크롤 앵커) + 우측 내용. variant는 이제 무시(항상 풀페이지).
   // 좌측 nav 그룹(#983) — 순서 = 그룹 순서. 그룹 첫 항목 위에 헤더.
   const SECTIONS: { id: string; label: string; Icon: typeof IconPalette; show: boolean; group: string }[] = [
     { id: "set-appearance", label: t("settings.screen"), Icon: IconPalette, show: true, group: t("settings.groupGeneral") },
@@ -677,7 +677,7 @@ export default function SettingsDrawer({
           {activeSection === "set-agents" && (
           <section id="set-agents" className="scroll-mt-4 space-y-5 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
 
-            {/* #1184 에이전트(Orca식) — 기본 에이전트·권한·설치됨/설치 가능·줄마다 켜기·인자·경로 지정. 데스크톱(감지 있음)만 */}
+            {/* #1184 에이전트 — 기본 에이전트·권한·설치됨/설치 가능·줄마다 켜기·인자·경로 지정. 데스크톱(감지 있음)만 */}
             {statusList && (<>
               <AgentCatalogSection list={agentsDet} checking={agentsChecking} onRefresh={() => void refreshAgents(true)} agentLogo={agentLogo}
                 paths={Object.fromEntries(Object.entries(customPath).map(([id, [value, set]]) => [id, { value, set, save: handleSave }]))}

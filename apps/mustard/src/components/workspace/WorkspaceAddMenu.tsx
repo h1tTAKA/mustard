@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { IconFolderOpen, IconMessages, IconFileCode, IconFileText, IconCards, IconChevronRight } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import { isNunopiEnabled } from "@/lib/product";
-// "+" 드롭다운 픽커(#769) — 워크스페이스에 새 탭으로 무엇을 열지 고른다(Orca式 컴팩트 메뉴).
+// "+" 드롭다운 픽커(#769) — 워크스페이스에 새 탭으로 무엇을 열지 고른다(컴팩트 메뉴).
 // "+" 버튼 아래에 앵커링(fixed). 레포는 폴더 다이얼로그, 모드는 즉시 빈 탭. 실제 추가는 onPick.
 // 섹션 라벨 + 키보드 네비(↑↓/Enter) + 활성 chevron으로 다듬음.
 export type AddKind = "repo" | "ask" | "code" | "text" | "memorize";

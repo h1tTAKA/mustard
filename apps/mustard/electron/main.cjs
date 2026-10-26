@@ -1191,11 +1191,11 @@ const screenTimers = new Map();  // id → 디바운스 타이머
 const lastTitleRawById = new Map(); // #989 id → 마지막 OSC 타이틀 원문(스트림 전체 추적 — 16KB tail서 밀려도 상태 판정 유지)
 const lastTaskById = new Map();  // #970 id → 현재 세션 제목(onData 라이브 추적, 셸 복귀/종료 시 리셋 — 이전 세션 제목 누출 방지)
 const mapScreenState = (s) => (s === "idle" ? "done" : s); // 파서 idle → 스토어 done(present/ready)
-// 포그라운드가 셸이면 에이전트 종료로 간주(버퍼에 옛 화면이 남아도 무시). herdr도 포그라운드 프로세스로 게이트.
+// 포그라운드가 셸이면 에이전트 종료로 간주(버퍼에 옛 화면이 남아도 무시). 포그라운드 프로세스로 게이트.
 const SHELLS = new Set(["zsh", "bash", "sh", "fish", "dash", "ksh", "pwsh", "powershell", "cmd", "login", "screen", "tmux"]);
 const isShellProc = (p) => SHELLS.has(String(p || "").trim().toLowerCase().replace(/^-+/, ""));
 
-// #864 orca식 신원 확정 — 우리가 탭에서 직접 실행한 에이전트를 기록(tabId→agent). 스크레이프 추측 대신
+// #864 신원 확정 — 우리가 탭에서 직접 실행한 에이전트를 기록(tabId→agent). 스크레이프 추측 대신
 // 이 기록이 신원의 진실(오판 원천 소멸). 셸 복귀(종료) 시 해제. 유저가 손으로 실행하면 기록 없음 → 스크레이프 fallback.
 const launchRegistry = new Map(); // id → agent id
 // 에이전트 id → 경로 지정(설정, claude·codex·opencode만 — SNA와 같은 값). 없으면 카탈로그 실행 명령(#1184).

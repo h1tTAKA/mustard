@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 export interface SubagentInfo { id: string; agentType: string; description: string; depth: number; running: boolean; startedAt: number; updatedAt: number }
 
-const DONE_LINGER_MS = 10 * 1000;      // 완료 후 이만큼만 체크로 보였다 사라짐(orca式)
+const DONE_LINGER_MS = 10 * 1000;      // 완료 후 이만큼만 체크로 보였다 사라짐
 const STALE_MS = 5 * 60 * 1000;        // 미완료인데 이만큼 갱신 없으면 중단(스테일)으로 간주
 const MAX_ITEMS = 20;
 const META_ONLY_MS = 2 * 60 * 1000;    // jsonl 없는(meta만) 서브 표시 창 — #979 env 수정 후엔 생성 직후 찰나뿐. 길면 죽은 세션 잔상이 스피너로 남음

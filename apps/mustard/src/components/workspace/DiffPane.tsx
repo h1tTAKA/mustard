@@ -59,7 +59,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
     window.addEventListener(DIFF_NOTES_EVENT, on);
     return () => window.removeEventListener(DIFF_NOTES_EVENT, on);
   }, [root, pr]);
-  // #1169 안 보낸 메모(레포 전체 — 여러 파일·diff에 단 것을 한 묶음으로, Orca처럼) → 이 레포 에이전트 터미널로
+  // #1169 안 보낸 메모(레포 전체 — 여러 파일·diff에 단 것을 한 묶음으로) → 이 레포 에이전트 터미널로
   const pendingNotes = pr ? [] : unsent(dnotes);
   const sentNotes = pr ? 0 : dnotes.length - pendingNotes.length;
   const [sendingNotes, setSendingNotes] = useState(false);
