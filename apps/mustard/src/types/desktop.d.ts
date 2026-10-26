@@ -1,4 +1,5 @@
 // GitHub gh CLI 브릿지 결과·엔티티(#813~). ghJson 반환 형태.
+interface AgentDetect { id: string; label: string; status: "ok" | "broken" | "missing"; path?: string; version?: string | null; auth: "authenticated" | "unauthenticated" | "unknown"; install: string | null; tried: { path: string; error: string }[] }
 type GhResult<T> = { ok: true; data: T } | { ok: false; kind: string; detail?: string };
 interface GhLabel { name: string; color: string }
 type GhMetaField = "reviewer" | "assignee" | "label" | "milestone"; // #1131 사이드바 항목
@@ -25,6 +26,8 @@ interface NunopiDesktopApi {
   setZoomFactor(factor: number): void;
   getRuntimePaths(): Promise<{ claudeCode?: string; codex?: string; opencode?: string }>;
   setRuntimePaths(paths: { claudeCode?: string; codex?: string; opencode?: string }): Promise<{ ok: boolean; saved: Record<string, string> }>;
+  // #1171 에이전트 CLI 상태 — status: ok(설치·실행됨) / broken(찾았는데 실행 실패) / missing, auth: authenticated / unauthenticated / unknown
+  detectAgents?(force?: boolean): Promise<{ ok: true; list: AgentDetect[] } | { ok: false; error: string }>;
   relaunch(): Promise<void>;
   // 데스크톱 네이티브 알림. 창 포커스 중이면 스킵(reason:"focused").
   notify(payload: { title: string; body?: string; suppressWhileFocused?: boolean; silent?: boolean; target?: { repoPath: string; sessionId?: string } }): Promise<{ ok: boolean; reason?: string }>;
