@@ -15,12 +15,13 @@ export function monthCells(year: number, month: number): (number | null)[] {
   return [...Array<null>(lead).fill(null), ...Array.from({ length: last }, (_, i) => i + 1)];
 }
 
-export default function CatchupCalendar({ days, selected, locale, onPick, onClose }: {
+export default function CatchupCalendar({ days, selected, locale, onPick, onClose, all, onAll }: {
   days: Set<string>;            // 기록 있는 날 "YYYY-MM-DD"
   selected: string | null;      // 보고 있는 지난 날(null=오늘)
   locale: string;
   onPick: (day: string | null) => void; // null = 오늘로
   onClose: () => void;
+  all?: boolean; onAll?: (v: boolean) => void; // #1181 모든 작업 폴더(worktree 포함) 보기 — 있으면 아래 토글
 }) {
   const t = useT();
   const today = localDayKey(new Date());
@@ -62,7 +63,7 @@ export default function CatchupCalendar({ days, selected, locale, onPick, onClos
           const has = days.has(key) || key === today;               // 오늘은 기록 없어도 선택 가능(=오늘로)
           const sel = selected ? key === selected : key === today;
           return (
-            <button key={key} type="button" disabled={!has} onClick={() => onPick(key === today ? null : key)}
+            <button key={key} type="button" disabled={!has} onClick={() => onPick(key === today && !all ? null : key)}
               className={`relative flex h-7 flex-col items-center justify-center rounded-md text-[11px] transition ${
                 sel ? "bg-mustard-500 font-semibold text-white" : has ? "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800" : "cursor-default text-zinc-300 dark:text-zinc-600"
               } ${key === today && !sel ? "ring-1 ring-mustard-500" : ""}`}>
@@ -72,6 +73,11 @@ export default function CatchupCalendar({ days, selected, locale, onPick, onClos
           );
         })}
       </div>
+      {onAll && (
+        <label className="mt-2 flex cursor-pointer items-center gap-1.5 border-t border-zinc-100 pt-2 text-[11px] text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">
+          <input type="checkbox" checked={!!all} onChange={(e) => onAll(e.target.checked)} className="accent-mustard-500" />{t("learn.allFolders")}
+        </label>
+      )}
     </div>
   );
 }

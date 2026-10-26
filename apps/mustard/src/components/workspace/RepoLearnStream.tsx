@@ -2,7 +2,7 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { IconX, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban } from "@tabler/icons-react";
+import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
@@ -25,7 +25,7 @@ import { Markdown } from "@mustard/core";
 import { stripCardBlock } from "@mustard/core";
 type ConceptKind = "symbol" | "file" | "query" | "repo" | "edit" | "narration" | "diff" | "session";
 interface ActivityEvent { root: string; tool: string; kind: ConceptKind; target: string; isError: boolean; ts: number; note?: string }
-interface Concept { key: string; kind: ConceptKind; target: string; tool: string; status: "idle" | "loading" | "done" | "error"; expl?: string; ts: number }
+interface Concept { key: string; kind: ConceptKind; target: string; tool: string; status: "idle" | "loading" | "done" | "error"; expl?: string; ts: number; wt?: string; br?: string } // #1181 wt·br = 다른 작업 폴더(worktree)에서 쌓인 기록
 type StreamEvent = { type: string; message?: string; response?: { summary?: string } };
 
 const KIND_ICON: Record<ConceptKind, typeof IconCode> = { symbol: IconCode, file: IconFile, query: IconSearch, repo: IconSitemap, edit: IconPencil, narration: IconBroadcast, diff: IconGitCompare, session: IconMessages };
@@ -302,15 +302,17 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [days, setDays] = useState<Set<string>>(() => new Set());
   const [viewDay, setViewDay] = useState<string | null>(null);
   const [dayItems, setDayItems] = useState<Concept[] | null>(null); // null = 로딩 중
+  const [allFolders, setAllFolders] = useState(false); // #1181 되돌아보기 — 모든 작업 폴더(worktree·지운 것 포함)
   const closeCal = useCallback(() => setCalOpen(false), []);
   const openCal = useCallback(() => {
     if (calOpen) { setCalOpen(false); return; }
     setCalOpen(true);
-    fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&days=1`).then((r) => r.json())
+    fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&days=1${allFolders ? "&all=1" : ""}`).then((r) => r.json())
       .then((j) => { if (j?.ok && Array.isArray(j.days)) setDays(new Set(j.days as string[])); }).catch(() => { /* 오늘만 */ });
-  }, [root, calOpen]);
+  }, [root, calOpen, allFolders]);
   const listRef = useRef<HTMLDivElement>(null);
   const [farDown, setFarDown] = useState(false); // #1076 많이 내려가면 맨 위로 버튼
+  const allRef = useRef(false); // pickDay가 최신 토글 값을 읽게(#1181)
   const daySeqRef = useRef(0); // 요청 번호표(#996 리뷰) — 날짜를 빠르게 바꾸면 늦게 온 옛 응답이 새 선택을 덮지 않게
   const pickDay = useCallback((day: string | null) => {
     const seq = ++daySeqRef.current;
@@ -319,10 +321,17 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     requestAnimationFrame(() => listRef.current?.scrollTo({ top: 0 })); // 날짜 전환·맨 위로 → 최신(맨 위)부터(유저 요청)
     if (!day) return;
     setDayItems(null);
-    fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&day=${day}`).then((r) => r.json())
+    fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&day=${day}${allRef.current ? "&all=1" : ""}`).then((r) => r.json())
       .then((j) => { if (seq === daySeqRef.current) setDayItems(j?.ok && Array.isArray(j.items) ? (j.items as Omit<Concept, "status">[]).map((x) => ({ ...x, status: "done" as const })) : []); })
       .catch(() => { if (seq === daySeqRef.current) setDayItems([]); });
   }, [root]);
+  // #1181 모든 작업 폴더 토글 — 날짜 목록 다시 받고, 보던 날이 있으면 그날도 다시
+  const toggleAll = useCallback((v: boolean) => {
+    allRef.current = v; setAllFolders(v);
+    fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&days=1${v ? "&all=1" : ""}`).then((r) => r.json())
+      .then((j) => { if (j?.ok && Array.isArray(j.days)) setDays(new Set(j.days as string[])); }).catch(() => {});
+    if (viewDay) pickDay(viewDay);
+  }, [root, viewDay, pickDay]);
   // #998 항목 질문 — 💬로 고른 항목 + 항목별 질문 수(배지) + 패널 높이(드래그, 기억).
   const [askItem, setAskItem] = useState<Concept | null>(null);
   const [askCounts, setAskCounts] = useState<Record<string, number>>({});
@@ -518,7 +527,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           </button>
         )}
         {lost && <span className="flex items-center gap-1 text-[10px] text-rose-500" title={t("learn.disconnected")}><IconPointFilled size={10} stroke={2} aria-hidden /> {t("learn.disconnected")}</span>}
-        {calOpen && <CatchupCalendar days={days} selected={viewDay} locale={locale} onPick={pickDay} onClose={closeCal} />}
+        {calOpen && <CatchupCalendar days={days} selected={viewDay} locale={locale} onPick={pickDay} onClose={closeCal} all={allFolders} onAll={toggleAll} />}
       </div>
       {/* #1078 질문 화면 — 계속 마운트(답변 스트리밍 중 전환해도 안 끊김), 카드 목록과 배타 표시 */}
       {chat && <div className={chatOpen ? "flex min-h-0 flex-1 flex-col" : "hidden"}>{chat}</div>}
@@ -587,7 +596,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
             {/* 개념 — 등장한 개념 1회씩(중복 없음), 최근 먼저 */}
             {filter !== "terms" && <ul className="flex flex-col gap-2 p-2.5">
               {shown.map((c, i) => { const Icon = KIND_ICON[c.kind] ?? IconActivity; return ( // 미지 kind(구버전/영속 데이터)여도 크래시 안 나게 fallback
-                <Fragment key={c.key}>
+                <Fragment key={`${c.wt ?? ""}|${c.key}`}>
                 {/* #994 날짜 구분선(카톡式) — 최신순 목록에서 날짜가 바뀌는 첫 항목 위 */}
                 {(i === 0 || dayOf(shown[i - 1].ts) !== dayOf(c.ts)) && (
                   <li role="separator" className="flex items-center gap-2 py-1">
@@ -628,6 +637,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                   <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" || c.kind === "session" ? "pr-24" : "pr-9"}`}>
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
+                      {/* #1181 모든 작업 폴더 보기 — 어느 worktree(브랜치)에서 쌓인 건지. 메인 것은 표시 없음 */}
+                      {viewDay && allFolders && c.wt && <span title={c.wt} className="mb-0.5 inline-flex max-w-full items-center gap-0.5 truncate rounded-md bg-mustard-500/10 px-1.5 py-0.5 font-mono text-[10px] text-mustard-700 dark:text-mustard-400"><IconGitFork size={10} stroke={2} aria-hidden />{c.br ?? c.wt.split("/").pop()}</span>}
                       {c.kind === "session" ? (() => {
                         // #1064 세션 카드 — 커밋 제목 + [에이전트][⎇ 브랜치][커밋] 칩 + 시각. tool = "에이전트 · 브랜치"
                         const m = /^(.*) @([0-9a-f]{4,40})$/i.exec(c.target); const subject = m ? m[1] : c.target; const hash = m?.[2];
