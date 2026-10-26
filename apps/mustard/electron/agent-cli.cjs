@@ -123,7 +123,7 @@ async function detectAll({ force = false, home = homedir(), env = process.env, r
   const list = await Promise.all(AGENTS.map(async (a) => {
     const d = await detectAgent(a, { pathStr, home, env: { ...env, PATH: pathStr }, run });
     const auth = d.status === "ok" ? await checkAuth(a, d.path, { env: { ...env, PATH: pathStr }, run }) : "unknown";
-    return { ...d, label: a.label, install: a.install, url: a.url, cmd: a.launch || a.cmd, choices: choicesOf(a.id), auth };
+    return { ...d, label: a.label, install: a.install, url: a.url, cmd: a.launch || a.cmd, choices: choicesOf(a.id), flags: a.p || {}, env: a.env || null, auth };
   }));
   const at = Date.now();
   if (my === gen) cache = { at, list, sp }; // 늦게 끝난 옛 실행이 새 캐시를 덮지 않게(리뷰)
