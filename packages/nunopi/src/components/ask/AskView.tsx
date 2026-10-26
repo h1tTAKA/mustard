@@ -53,7 +53,7 @@ const clampPanel = (w: number) => Math.min(PANEL_MAX, Math.max(PANEL_MIN, w));
 // 에이전트 질문(Ask) 모드 — 좌측 세션 히스토리 + 활성 세션 챗(이슈2).
 // 서브세션 탭/분할은 후속 이슈. 지금은 세션당 단일 챗(subs[0]).
 // 모든 언어의 "제목 없음" — 저장된 기본 제목 판별용(#1125)
-// ponytail: 옛 저장분 판정(새 세션은 제목 "" 저장) — 유저가 정확히 "새 세션"이라 지은 옛 세션도 기본 이름 취급.
+// 한계: 옛 저장분 판정(새 세션은 제목 "" 저장) — 유저가 정확히 "새 세션"이라 지은 옛 세션도 기본 이름 취급.
 const UNTITLED_ANY = new Set(Object.values(MESSAGES).map((d) => d["ask.untitled"]).filter(Boolean));
 
 export default function AskView({ active = true, providerId, providerSettings, goToTarget, collapsed = false }: {

@@ -16,10 +16,10 @@ export interface Entry {
   updatedAt: number;
   stateStartedAt: number;
   hookAt?: number;   // #989 마지막 Claude 훅 수신 시각 — 있으면(신선하면) 화면 판정보다 훅이 권위
-  silent?: boolean;  // #989 알림 없는 done(수동 /compact 종료 = 세션 경계, orca sessionBoundary)
+  silent?: boolean;  // #989 알림 없는 done(수동 /compact 종료 = 세션 경계)
 }
 
-export const HOOK_FRESH_MS = 30 * 60 * 1000; // orca AGENT_STATUS_STALE_AFTER_MS
+export const HOOK_FRESH_MS = 30 * 60 * 1000; // 훅 신선도 30분
 
 const TTL_MS = 10 * 60 * 1000;      // 갱신 없으면 폐기(유령 방지)
 const DONE_TTL_MS = 3 * 60 * 1000;  // done(유휴)은 몇 분 유지 — 살아있는데 순삭 방지

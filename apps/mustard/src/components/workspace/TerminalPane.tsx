@@ -167,7 +167,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   const [menuPos, setMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const plusRef = useRef<HTMLButtonElement>(null);
   const MENU_W = 190, MENU_H = 340; // 드롭다운 대략 크기(양축 화면밖 방지용 추정)
-  // #1184 실행 메뉴 = 감지되고(ok) 켜진 에이전트만(Orca), 카탈로그 순서. 마운트·메뉴 열 때 받음(main 60초 캐시).
+  // #1184 실행 메뉴 = 감지되고(ok) 켜진 에이전트만, 카탈로그 순서. 마운트·메뉴 열 때 받음(main 60초 캐시).
   const [agents, setAgents] = useState<AgentDetect[]>([]);
   const loadAgentState = () => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) setAgents(r.list); }).catch(() => {}); };
   useEffect(() => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) { setAgents(r.list); void liftStoredArgs(r.list.map((a) => a.id)); } }).catch(() => {}); }, []); // + 옛 추가 인자 → 권한(한 번)
@@ -228,7 +228,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
     else if (d.id === "term.close") void closeTab(activeId);
     else if (d.id === "term.next") setActiveId(tabs[(i + 1) % tabs.length].id);
     else if (d.id === "term.prev") setActiveId(tabs[(i - 1 + tabs.length) % tabs.length].id);
-    else if (d.arg) setActiveId((d.arg === 9 ? tabs[tabs.length - 1] : tabs[d.arg - 1] ?? tabs[tabs.length - 1]).id); // ⌘9 = 마지막(Ghostty 관례)
+    else if (d.arg) setActiveId((d.arg === 9 ? tabs[tabs.length - 1] : tabs[d.arg - 1] ?? tabs[tabs.length - 1]).id); // ⌘9 = 마지막(터미널 관례)
   });
 
   return (

@@ -257,7 +257,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
             </div>
           )}
         </div>
-        {/* ponytail: 45% 고정 — 경계 드래그 리사이즈는 필요해지면 */}
+        {/* 한계: 45% 고정 — 경계 드래그 리사이즈는 필요해지면 */}
         {devtools && ready && <div ref={dtHostRef} className={`shrink-0 border-zinc-200 dark:border-zinc-800 ${wide ? "w-[45%] border-l" : "h-[45%] border-t"}`} />}
       </div>
     </div>

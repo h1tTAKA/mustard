@@ -392,7 +392,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   });
   // 인앱 브라우저(#1034) — 툴바 아이콘으로 열기/닫기(닫으면 페이지도 닫힘, 주소는 기억). 분리하면 dock에서 빼고 별도 창.
   // 열 때 — 분리 창을 그냥 닫았으면 거기 있던 탭들(browser-detached)로 엶(한 번 쓰면 지움).
-  // ponytail: 분리 창이 아직 열려 있어도 가져옴(같은 페이지가 두 군데) — 창 생존 추적은 필요해지면.
+  // 한계: 분리 창이 아직 열려 있어도 가져옴(같은 페이지가 두 군데) — 창 생존 추적은 필요해지면.
   // 닫을 때 넘어온 탭 신호도 비움 — 안 비우면 다시 열 때 새 BrowserPane이 같은 탭을 또 추가.
   const closeBrowser = () => { setBrowserOpen(false); setBrowserRect(null); setBrowserIncoming(null); };
   const toggleBrowser = () => {
@@ -630,7 +630,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     doc: docNode,
     // 기능별 아키텍처 플로우(#743) — flowFeature 있을 때만 dock에 삽입됨. 노드 클릭 → 코드 탭 열기.
     // 브라우저(#1034)는 dock엔 자리(slot)만 — 실제 페이지는 아래 고정 레이어. dock 트리가 바뀌면 리프가 다시 만들어지는데
-    // <webview>는 DOM에서 빠지면 페이지가 죽어서(새로고침·기록 유실) 위치만 따라가게 한다(orca 방식).
+    // <webview>는 DOM에서 빠지면 페이지가 죽어서(새로고침·기록 유실) 위치만 따라가게 한다.
     browser: browserOpen ? <BrowserSlot anchor={dockRef} onRect={setBrowserRect} /> : null,
     crew: crewOpen ? <CrewBoard root={path} onClose={() => setCrewOpen(false)} /> : null, // 에이전트 팀 보드(#1098)
     flow: <RepoFlowPane feature={flowFeature} root={path} providerId={providerId} providerSettings={providerSettings} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onAskArch={askArch} onQuoteNode={quoteNode} onClose={() => setFlowFeature(null)} />,

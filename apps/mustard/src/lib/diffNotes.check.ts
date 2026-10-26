@@ -23,7 +23,7 @@ assert.deepStrictEqual(removeNote(s, "3").map((x) => x.id), ["1"]);
 assert.strictEqual(formatNote({ path: "src/a.ts", line: 12, body: "rename x" }), 'File: src/a.ts\nLine: 12\nUser comment: "rename x"');
 assert.strictEqual(formatNote({ path: "b.ts", line: 9, startLine: 4, body: 'say "hi"\nthen \\n' }), 'File: b.ts\nLines: 4-9\nUser comment: "say \\"hi\\"\\nthen \\\\n"', "따옴표·줄바꿈·역슬래시 이스케이프");
 assert.strictEqual(formatNotes(l), formatNote(l[0]) + "\n\n" + formatNote(l[1]), "메모 사이 빈 줄");
-// 어느 diff 기준인지 — 작업 폴더는 Orca 형식 그대로, staged·커밋은 표시
+// 어느 diff 기준인지 — 작업 폴더는 기본 형식 그대로, staged·커밋은 표시
 assert.ok(formatNote({ path: "a.ts", line: 1, body: "x", scope: "unstaged" }).startsWith("File: a.ts\n"));
 assert.ok(formatNote({ path: "a.ts", line: 1, body: "x", scope: "staged" }).startsWith("File: a.ts (staged)\n"));
 assert.ok(formatNote({ path: "a.ts", line: 1, body: "x", scope: "commit:abcdef1234567" }).startsWith("File: a.ts (commit abcdef1)\n"));

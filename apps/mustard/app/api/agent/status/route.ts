@@ -31,7 +31,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ ok: true, cleared: removed });
   }
   // #989 Ctrl+C 중단 추정(main) — 훅이 working이고 키 입력 이후 새 훅이 없을 때만 알림 없는 done.
-  // 서브에이전트가 돌고 있으면 메인 중단 아님(orca childWorkEvidenced). 조건 안 맞으면 무시.
+  // 서브에이전트가 돌고 있으면 메인 중단 아님. 조건 안 맞으면 무시.
   if (typeof body.interruptAt === "number") {
     const sid = typeof body.sessionId === "string" ? body.sessionId : "";
     const e = cwd ? get(cwd, sid) : undefined;
@@ -55,7 +55,7 @@ export async function POST(request: Request): Promise<Response> {
   // 대기 문구가 스피너 redraw에 밀려 창 밖이라 불안정 → 서브 데이터가 권위.
   const agentName = typeof body.agent === "string" && body.agent ? body.agent : "claude";
   const taskTitle = typeof body.task === "string" ? body.task : "";
-  // #989 훅 권위(orca) — 이 세션에 신선한 Claude 훅이 있으면 화면 상태로 덮지 않는다(제목 등만 갱신).
+  // #989 훅 권위 — 이 세션에 신선한 Claude 훅이 있으면 화면 상태로 덮지 않는다(제목 등만 갱신).
   // 예외: 화면 waiting(권한/선택 박스는 화면이 정확 — AskUserQuestion 등 훅 미등록 경로), 그리고 훅이 waiting인 동안은
   //       화면이 바꿀 수 있음(권한 박스를 Esc로 거절하면 훅이 안 옴 → 박스가 사라진 걸 화면이 정확히 봄).
   // 중단(Ctrl+C)은 위 interruptAt 경로가 처리. Esc 중단은 orca처럼 다음 훅(새 프롬프트·Stop)까지 working 유지.

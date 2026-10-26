@@ -1,5 +1,5 @@
 "use client";
-// PR 변경 파일(#1123) — VS Code GitHub PR 확장의 "Files changed"처럼: 폴더별 파일·변경 종류·+/−·봤음 체크(GitHub에 저장).
+// PR 변경 파일(#1123): 폴더별 파일·변경 종류·+/−·봤음 체크(GitHub에 저장).
 // 파일 클릭 → 가운데 diff 탭(onOpenFile). 봤음은 낙관적으로 바로 반영하고 실패하면 되돌림.
 import { useEffect, useRef, useState } from "react";
 import { IconLoader2, IconAlertTriangle, IconFolder, IconRobot, IconMessage } from "@tabler/icons-react";
@@ -10,7 +10,7 @@ import { loadDrafts, prDraftKey, PR_DRAFT_EVENT } from "@/lib/prDraft";
 type PrFile = { path: string; previousPath?: string; additions: number; deletions: number; changeType: string; viewed: boolean };
 type Load = { loading: boolean; prId?: string; files?: PrFile[]; truncated?: boolean; error?: string };
 
-// 변경 종류 → 한 글자 배지(VS Code·git 표기). RENAMED/COPIED 등은 R/C.
+// 변경 종류 → 한 글자 배지(git 표기). RENAMED/COPIED 등은 R/C.
 const CHANGE: Record<string, { ch: string; cls: string }> = {
   ADDED: { ch: "A", cls: "text-emerald-600 dark:text-emerald-400" },
   MODIFIED: { ch: "M", cls: "text-amber-600 dark:text-amber-400" },

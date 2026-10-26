@@ -20,7 +20,7 @@ function rawNotes(store: string): Record<string, string> {
 }
 export function loadNotes(store: string): Record<string, string> {
   // #1127 parseDiff 수정 전 키(끝 개행이 만든 빈 문맥 줄·"\ No newline" 줄 포함)도 새 키로 찾히게 별칭 — 이미 받은 설명을 다시 사지 않게.
-  // ponytail: 진짜 빈 문맥 줄로 끝나는 새 키에도 별칭이 생김(메모리에서만, 진짜 키가 항상 우선) — 같은 파일에 끝 빈 줄만 다른 구간이 있을 때만 엇갈림.
+  // 한계: 진짜 빈 문맥 줄로 끝나는 새 키에도 별칭이 생김(메모리에서만, 진짜 키가 항상 우선) — 같은 파일에 끝 빈 줄만 다른 구간이 있을 때만 엇갈림.
   // 옛 파서가 hunk 안 "----"·"-- x" 줄을 빼먹은 키는 못 맞춤 → 그 구간만 다시 설명(비용 한 번).
   return withLegacyAliases(rawNotes(store));
 }

@@ -1,5 +1,5 @@
 // 인앱 브라우저(#1034) — <webview> 보안·guest 정책·단축키 전달.
-// guest = 남의 웹페이지(dev 서버든 외부 사이트든)라 앱 권한을 절대 못 갖게 한다(orca 방식, fail-closed).
+// guest = 남의 웹페이지(dev 서버든 외부 사이트든)라 앱 권한을 절대 못 갖게 한다(fail-closed).
 const PARTITION = "persist:mustard-browser"; // 앱 origin(학습 데이터)과 쿠키·저장소 분리
 
 // http(s)·about:blank만 허용 — file:/javascript:/data: 등은 로컬 파일 읽기·스크립트 주입 통로.

@@ -111,7 +111,7 @@ export async function findCommitSession(root: string, commitSec: number, isMerge
 }
 
 // #1068 기록 끝에서 fromMs 이전 줄이 나올 때까지 넓혀 읽음(8MB → 64MB → 256MB). 기록이 GB라 통째로는 못 읽음(문자열 한계 512MB).
-// ponytail: 256MB 넘게 쌓일 만큼 오래·많이 꺼져 있었으면 그 앞은 놓침 — 필요하면 줄 단위 역방향 스트리밍으로.
+// 한계: 256MB 넘게 쌓일 만큼 오래·많이 꺼져 있었으면 그 앞은 놓침 — 필요하면 줄 단위 역방향 스트리밍으로.
 async function linesSince(path: string, fromMs: number, parse: (l: string) => { ts: number } | null): Promise<string[]> {
   let lines: string[] = [];
   for (const bytes of [TAIL_BYTES, WIDE_BYTES, 256 * 1024 * 1024]) {

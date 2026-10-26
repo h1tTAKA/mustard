@@ -10,7 +10,7 @@ export const CLAUDE_ALIASES: SnaModelOption[] = [
   { id: "sonnet", label: "Sonnet", latest: true },
   { id: "haiku", label: "Haiku", latest: true },
 ];
-// 최신 정식 ID — 버전 고정이 필요할 때. ponytail: 새 계열 나오면 여기 갱신(SNA 목록이 최신화되면 제거 가능).
+// 최신 정식 ID — 버전 고정이 필요할 때. 한계: 새 계열 나오면 여기 갱신(SNA 목록이 최신화되면 제거 가능).
 export const CLAUDE_LATEST: SnaModelOption[] = [
   { id: "claude-fable-5-1", label: "Claude Fable 5.1" },
   { id: "claude-opus-5-5", label: "Claude Opus 5.5" },

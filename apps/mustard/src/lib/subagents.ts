@@ -95,7 +95,7 @@ export async function listSubagents(cwd: string, title: string): Promise<Subagen
   let metas: string[];
   try { metas = (await fs.readdir(sub)).filter((n) => n.endsWith(".meta.json")); } catch { return []; }
   const now = Date.now();
-  // ponytail: 서브 수천 개면 전부 stat(수 ms). 느려지면 mtime 인덱스 캐시.
+  // 한계: 서브 수천 개면 전부 stat(수 ms). 느려지면 mtime 인덱스 캐시.
   const out = (await Promise.all(metas.map(async (m): Promise<SubagentInfo | null> => {
     const id = m.slice(0, -".meta.json".length);
     const jl = join(sub, id + ".jsonl");
@@ -120,6 +120,6 @@ export async function listSubagents(cwd: string, title: string): Promise<Subagen
       };
     } catch { return null; }
   }))).filter((x): x is SubagentInfo => !!x);
-  // ponytail: 부모 링크 대신 depth 들여쓰기 + 시작순. depth≥2 드묾 — 필요 시 toolUseId로 부모 jsonl 역추적.
+  // 한계: 부모 링크 대신 depth 들여쓰기 + 시작순. depth≥2 드묾 — 필요 시 toolUseId로 부모 jsonl 역추적.
   return out.sort((a, b) => a.startedAt - b.startedAt).slice(-MAX_ITEMS);
 }

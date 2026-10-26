@@ -1,10 +1,10 @@
 // pty 버퍼 스크레이핑 파서(#765) — Claude Code 등 CLI 에이전트의 터미널 출력을 읽어 상태 판정.
-// herdr·orca 오픈소스의 실제 감지 방식을 그대로 채택: 가장 강한 신호는 화면 본문이 아니라 OSC 터미널 타이틀.
+// 가장 강한 신호는 화면 본문이 아니라 OSC 터미널 타이틀.
 //   - working: 타이틀 앞글자가 브라유 스피너(U+2800–28FF) 또는 사분원(U+25D0–25D3) — claude가 매 프레임 갱신.
 //   - idle:    타이틀이 ✳(U+2733)로 시작.
 //   - blocked/waiting: 본문에 권한/선택 프롬프트("do you want to proceed?" · "esc to cancel" · N.yes/no · tab to amend 등).
-// 본문은 claude TUI가 커서 이동으로 배치 → ANSI 제거 시 공백 증발 → "공백 제거+소문자" compact에 매칭(herdr는 렌더 그리드라
-//   공백 보존; 우린 raw 스트림이라 compact로 대응). 출처: herdr src/detect/manifests/{claude,codex}.toml, orca agent-title-core.ts.
+// 본문은 claude TUI가 커서 이동으로 배치 → ANSI 제거 시 공백 증발 → "공백 제거+소문자" compact에 매칭(렌더 그리드가
+//   아니라 raw 스트림이라 공백이 남지 않음).
 
 // escape 시퀀스 제거(본문용). OSC는 여기서 지우되, 타이틀은 아래 lastTitle이 raw에서 따로 추출.
 // eslint-disable-next-line no-control-regex
@@ -45,7 +45,7 @@ function titleTask(title) {
   const body = (isSpinnerGlyph(c) || isClaudeIdleGlyph(c)) ? t.slice(String.fromCodePoint(c).length).trim() : t;
   return body.slice(0, 120);
 }
-// 마지막 수평선(─ 3개 이상 라인) 이후 텍스트 = 현재 프롬프트/입력 박스 영역(herdr after_last_horizontal_rule).
+// 마지막 수평선(─ 3개 이상 라인) 이후 텍스트 = 현재 프롬프트/입력 박스 영역.
 // claude 입력창·권한 박스는 ───── 로 둘러싸여 화면 하단에 뜬다. 대화에 인용된 마커는 이 위라 제외된다.
 function afterLastRule(screen) {
   const lines = String(screen).split("\n");
@@ -59,7 +59,7 @@ function afterLastRule(screen) {
 const isSpinnerGlyph = (c) => (c >= 0x2800 && c <= 0x28ff) || (c >= 0x25d0 && c <= 0x25d3); // 브라유/사분원
 const isClaudeIdleGlyph = (c) => c === 0x2733; // ✳
 
-// claude 본문 마커(compact = 공백제거+소문자). 출처: herdr claude.toml.
+// claude 본문 마커(compact = 공백제거+소문자).
 const CLAUDE_WAITING = /doyouwantto|wouldyouliketo|esctocancel|tabtoamend|ctrl\+etoexplain|waitingforpermission|❯\d+\.(yes|no)|\b\d+\.(yes|no)\b|whatshouldclaudedoinstead|interrupted·|reviewyouranswers/i;
 // 라이브 "작업 중" 신호: "esc to interrupt" | 라이브 토큰 카운터(↓/↑ 화살표+tokens) | 라이브 타이머 "(18s·…".
 // ↓tokens가 핵심 — 작업 중 카운터는 "↓ 8.3k tokens"처럼 화살표 동반, idle 푸터 "…/clear to save 126.2k tokens"는
@@ -74,7 +74,7 @@ const CLAUDE_BG = /\d+shells?stillrunning|runninginthebackground/i;
 // #979 백그라운드 '에이전트' 대기는 화면 신호로 안 잡음 — 푸터 ◯ 목록·Waiting 문구가 끝난 뒤에도 스크롤백 잔재로 남아
 // 메인이 영원히 working으로 보였음. 대신 status route가 트랜스크립트(서브 jsonl+부모 종료 알림)로 판정.
 
-// codex(보조 — 유저 주력은 claude). 출처: herdr codex.toml.
+// codex(보조 — 유저 주력은 claude).
 const CODEX_WAITING = /actionrequired|allowcommand\?|pressentertoconfirmoresctocancel|doyoutrustthecontentsofthisdirectory|\[y\/n\]|yes\(y\)/i;
 const CODEX_WORKING = /•working\(|working\([^)]*esctointerrupt|esctointerrupt/i;
 const CODEX_CHROME = /openaicodex|codex(session|resume)/i;
@@ -91,7 +91,7 @@ function agentFromProcess(name) {
 // 버퍼 → { agent, state } | null. 알려진 에이전트 TUI가 아니면 null(셸 등).
 function parseAgentScreen(buffer, titleHint = "") {
   // 타이틀은 넓게(입력 에코로 밀려도 확보). 전체 200k는 perf 낭비라 16KB.
-  // #989 출력이 많으면 16KB tail에 타이틀이 아예 없음(실측 6/6) → 스트림 전체서 추적한 마지막 타이틀(titleHint)로 보완(orca 방식).
+  // #989 출력이 많으면 16KB tail에 타이틀이 아예 없음(실측 6/6) → 스트림 전체서 추적한 마지막 타이틀(titleHint)로 보완.
   const raw16 = recentRaw(buffer, 16000);
   const tailTitle = lastTitle(raw16);
   const title = tailTitle || titleHint || "";
@@ -107,7 +107,7 @@ function parseAgentScreen(buffer, titleHint = "") {
   const wide = stripAnsi(recentRaw(buffer, 8000)).toLowerCase().replace(/\s+/g, "");    // 넓게 — chrome 감지(입력 에코 많아도 놓치지 않게)
   const compact = stripAnsi(recentRaw(buffer, 2500)).toLowerCase().replace(/\s+/g, ""); // 좁게 — 작업 마커(옛 tokens stale 방지)
   // ⚠️ 권한/대기 마커는 "마지막 수평선 이후"(현재 프롬프트 박스)에서만 매칭 — 대화에 인용된 "Do you want to
-  //   proceed?" 같은 문구(박스 위 스크롤)를 실제 프롬프트로 오인하지 않게(herdr 영역 스코핑).
+  //   proceed?" 같은 문구(박스 위 스크롤)를 실제 프롬프트로 오인하지 않게(영역 스코핑).
   const bottom = afterLastRule(stripAnsi(recentRaw(buffer, 4000))).toLowerCase().replace(/\s+/g, "");
   if (!wide && !title) return null;
   const task = titleTask(title); // "지금 뭐 하는지" 서브라인(타이틀의 작업 텍스트)

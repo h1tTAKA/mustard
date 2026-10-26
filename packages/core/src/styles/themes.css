@@ -6,7 +6,7 @@
    base=dark 테마: .dark 설정 → dark: 유틸(zinc-800/900/950, text-zinc-300/400…) 재색조. */
 
 /* 라이트 테마 코드블록 신택스(#914) — 전역 import한 github-dark.css는 다크 배경용(밝은 글자)이라
-   라이트서 흐리다. orca(markdown-preview.css)의 GitHub-light .hljs 팔레트를 :root:not(.dark)로 덮어씀.
+   라이트서 흐리다. GitHub-light .hljs 팔레트를 :root:not(.dark)로 덮어씀.
    특이도(:root:not(.dark) .nunopi-md .hljs = 0,4,0)로 github-dark(.hljs=0,1,0)를 이긴다. */
 :root:not(.dark) .nunopi-md .hljs { color: #24292f; }
 :root:not(.dark) .nunopi-md .hljs-comment,

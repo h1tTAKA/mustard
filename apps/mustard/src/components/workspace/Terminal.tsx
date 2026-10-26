@@ -22,8 +22,8 @@ function termOptionsFromSettings() {
 }
 
 // 터미널 팔레트(#914·#956) — 앱 테마와 분리된 자체 색. CLI TUI가 다크 전제.
-// 다크=near-black 배경(앱 다크와 통일, #956), 그레이=orca "Ghostty Default Dark"(차콜),
-// 라이트=orca "Builtin Tango Light". ANSI 16색은 다크/그레이 공유(검정 배경서도 잘 보임).
+// 다크=near-black 배경(앱 다크와 통일, #956), 그레이=차콜,
+// 라이트=Tango 라이트. ANSI 16색은 다크/그레이 공유(검정 배경서도 잘 보임).
 const TERM_ANSI_DARK = {
   black: "#1d1f21", red: "#cc6666", green: "#b5bd68", yellow: "#f0c674", blue: "#81a2be", magenta: "#b294bb", cyan: "#8abeb7", white: "#c5c8c6",
   brightBlack: "#666666", brightRed: "#d54e53", brightGreen: "#b9ca4a", brightYellow: "#e7c547", brightBlue: "#7aa6da", brightMagenta: "#c397d8", brightCyan: "#70c0b1", brightWhite: "#eaeaea",
@@ -100,7 +100,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
         try {
           const gl = new webgl.WebglAddon();
           // #1165 GPU 프로세스가 다시 뜨면 WebGL 문맥이 사라짐 → 그대로 두면 글자 빠짐·흰 화면. 떼면 xterm이 기본(DOM) 렌더로 바꾸고 전체를 다시 그림.
-          // ponytail: 이 탭은 WebGL로 안 돌아감(GPU가 또 죽을 수 있음) — 새 탭부터 다시 WebGL.
+          // 한계: 이 탭은 WebGL로 안 돌아감(GPU가 또 죽을 수 있음) — 새 탭부터 다시 WebGL.
           gl.onContextLoss(() => gl.dispose());
           term.loadAddon(gl);
         } catch { /* WebGL 미지원 → 기본 렌더 폴백 */ }
@@ -137,7 +137,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       window.addEventListener(TERMINAL_THEME_EVENT, applyTermTheme);
       offTheme = () => window.removeEventListener(TERMINAL_THEME_EVENT, applyTermTheme);
 
-      // OSC 10/11 색 질의 응답(#914, orca 방식) — CLI(claude 등)가 `ESC]11;?ESC\`로 배경색을 물으면
+      // OSC 10/11 색 질의 응답(#914) — CLI(claude 등)가 `ESC]11;?ESC\`로 배경색을 물으면
       // 현재 터미널 테마의 bg/fg를 rgb:RRRR/GGGG/BBBB로 답한다 → CLI가 배경 명암을 감지해 스스로
       // 라이트/다크에 맞는 색(diff 배경·dim 등)을 고른다. env(COLORFGBG)가 아니라 터미널 능력 응답.
       const oscColorReply = (slot: 10 | 11) => {

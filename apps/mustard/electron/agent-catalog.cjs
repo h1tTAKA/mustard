@@ -1,11 +1,11 @@
 // 에이전트 카탈로그(#1184) — 감지(agent-cli)·터미널 실행 조립(main)·설정 화면(IPC)이 함께 쓰는 한 곳.
-// Orca 1.4.240 / main@de93f326 그대로 옮김(순서 = Orca 카탈로그 = 자동 고르기 순서):
-//  - 목록·라벨·문서 링크: src/renderer/src/lib/agent-catalog-entries-{primary,secondary}.ts
-//  - 감지 명령·별칭·필수 동반·실행 명령: src/shared/tui-agent-config.ts
-//  - 권한 플래그: src/shared/tui-agent-permissions.ts(auto·full·env), tui-agent-permission-choice.ts(ask·acceptEdits)
-//  - 권한 옵션(이미 있으면 플래그 안 붙임): src/shared/agent-permission-args.ts
-// 차이: claude-agent-teams는 뺌(tmux shim·창 분할 필요 — BACKLOG). install = 우리가 아는 공식 설치 명령(#1171), 없으면 문서 링크만.
-// auth = 로그인 확인 인자(Emdash, #1171), keys = 있으면 로그인된 걸로 보는 env.
+// 순서 = 자동 고르기 순서. 항목마다:
+//  - 목록·라벨·문서 링크
+//  - 감지 명령·별칭·필수 동반·실행 명령
+//  - 권한 플래그(auto·full·env, ask·acceptEdits)
+//  - 권한 옵션(이미 있으면 플래그 안 붙임)
+// claude-agent-teams는 뺌(tmux shim·창 분할 필요 — BACKLOG). install = 우리가 아는 공식 설치 명령(#1171), 없으면 문서 링크만.
+// auth = 로그인 확인 인자(#1171), keys = 있으면 로그인된 걸로 보는 env.
 
 // p = 권한 플래그 { ask, edits(acceptEdits), auto, full }, env = 전체 액세스 때 명령 앞에 붙는 env
 const A = (id, label, cmd, url, o = {}) => ({ id, label, cmd, url, bins: [cmd.split(" ")[0], ...(o.alias || [])], ...o });
@@ -63,7 +63,7 @@ const CHOICES = ["own", "ask", "accept-edits", "auto", "full-access"];
 const KEY = { ask: "ask", "accept-edits": "edits", auto: "auto", "full-access": "full" };
 const flagOf = (id, choice) => (choice === "own" ? "" : BY_ID.get(id)?.p?.[KEY[choice]] ?? "");
 const envOf = (id, choice) => (choice === "full-access" ? BY_ID.get(id)?.env ?? null : null);
-// 이 에이전트가 고를 수 있는 선택(own은 항상) — 고를 게 own뿐이면 화면에 권한 메뉴 없음(Orca)
+// 이 에이전트가 고를 수 있는 선택(own은 항상) — 고를 게 own뿐이면 화면에 권한 메뉴 없음
 const choicesOf = (id) => CHOICES.filter((c) => c === "own" || flagOf(id, c) || envOf(id, c));
 
 // 따옴표를 한 덩어리로 보는 간단한 토큰 나누기(명령 줄은 셸이 다시 해석 — 여기선 옵션 이름만 봄)
@@ -71,7 +71,7 @@ const tokens = (s) => String(s || "").match(/"[^"]*"|'[^']*'|\S+/g) || [];
 const CLAUDE_OPTS = ["--permission-mode", "--dangerously-skip-permissions", "--allow-dangerously-skip-permissions", "--permission-prompt-tool", "--permission-prompts", "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools"];
 const EXTRA = { claude: CLAUDE_OPTS, codex: ["-a", "--ask-for-approval", "-s", "--sandbox", "--yolo", "--not-so-yolo", "--full-auto"], grok: ["--permission-mode", "--always-approve", "--yolo", "--dangerously-skip-permissions"], gemini: ["--approval-mode", "-y"] };
 const CODEX_CFG = ["approval_policy", "sandbox_mode", "approvals_reviewer", "sandbox_workspace_write"];
-// 유저 인자에 이미 권한 옵션이 있나 — 있으면 플래그를 안 붙임(유저가 이김, Orca agentArgsSetPermission)
+// 유저 인자에 이미 권한 옵션이 있나 — 있으면 플래그를 안 붙임(유저가 이김)
 function hasPermissionOption(id, userArgs) {
   const t = tokens(userArgs);
   const carriers = new Set(EXTRA[id] || []);
@@ -84,7 +84,7 @@ function hasPermissionOption(id, userArgs) {
   });
 }
 
-// 터미널에 칠 명령 — env 앞붙임 + 실행 명령(또는 경로 지정) + 권한 플래그(앞) + 유저 인자. Orca resolveTuiAgentLaunchArgs.
+// 터미널에 칠 명령 — env 앞붙임 + 실행 명령(또는 경로 지정) + 권한 플래그(앞) + 유저 인자.
 // Mustard는 셸에 명령을 쳐 넣으니 env는 `KEY=값 명령` 앞붙임(Orca는 프로세스 env — 결과 같음).
 function launchLine(id, { choice = "own", userArgs = "", cmd } = {}) {
   const a = BY_ID.get(id);
@@ -98,7 +98,7 @@ function launchLine(id, { choice = "own", userArgs = "", cmd } = {}) {
   return `${envPart}${base}${args ? ` ${args}` : ""}`;
 }
 
-// 유저가 인자에 알려진 권한 플래그를 쓰면 빼서 그 에이전트의 권한 선택으로(Orca lift) — { choice, rest } 또는 null
+// 유저가 인자에 알려진 권한 플래그를 쓰면 빼서 그 에이전트의 권한 선택으로 — { choice, rest } 또는 null
 function liftPermission(id, userArgs) {
   const t = tokens(userArgs);
   for (const c of ["full-access", "auto", "accept-edits", "ask"]) {

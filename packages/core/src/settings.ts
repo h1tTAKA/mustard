@@ -61,7 +61,7 @@ export const AKEYS = {
   fullOk: "agent.fullAccessOk", // 전체 액세스 처음 고를 때 확인 — 한 번 확인하면 다시 안 물음
 } as const;
 export type AgentPermission = "own" | "ask" | "accept-edits" | "auto" | "full-access";
-// 이 에이전트의 권한 — 덮어쓰기 > 전체 > own(Orca resolveAgentPermission). choices = 그 에이전트가 고를 수 있는 것(카탈로그), 못 고르는 건 own.
+// 이 에이전트의 권한 — 덮어쓰기 > 전체 > own. choices = 그 에이전트가 고를 수 있는 것(카탈로그), 못 고르는 건 own.
 export function agentPermission(agentId: string, choices?: string[]): { choice: AgentPermission; own: boolean } {
   const mine = getSetting<string>(AKEYS.permOf(agentId), "");
   const choice = (mine || getSetting<string>(AKEYS.perm, AGENT_DEFAULTS.perm)) as AgentPermission;

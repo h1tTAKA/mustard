@@ -66,7 +66,7 @@ export function setStoredTheme(id: ThemeId): void {
 }
 
 // ── 터미널 테마(#914·#922) — 앱 테마와 분리 가능하되 기본은 auto(앱 .dark 따라감).
-// dark/light로 고정도 가능(설정). 터미널 색은 앱 토큰이 아닌 자체 고정 팔레트(orca Ghostty/Tango).
+// dark/light로 고정도 가능(설정). 터미널 색은 앱 토큰이 아닌 자체 고정 팔레트(차콜/Tango).
 export type TerminalThemePref = "dark" | "gray" | "light" | "auto";
 export const TERMINAL_THEME_KEY = "nunopi:terminal-theme";
 export const TERMINAL_THEME_EVENT = "nunopi:terminal-theme-change"; // 설정 변경 → 열린 터미널에 브로드캐스트

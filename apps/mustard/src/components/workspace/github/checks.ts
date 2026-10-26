@@ -22,7 +22,7 @@ function oneState(c: GhCheckRaw): CheckState {
 }
 
 export function normalizeChecks(rollup: GhCheckRaw[] | undefined): Check[] {
-  // 이름 dedup(orca 참고) — 혼합 CI(Actions + 레거시 StatusContext)가 같은 이름을 중복 노출할 때
+  // 이름 dedup — 혼합 CI(Actions + 레거시 StatusContext)가 같은 이름을 중복 노출할 때
   // CheckRun을 우선 유지(더 정확한 status/conclusion). 이름 없으면 dedup 대상서 제외.
   const byName = new Map<string, Check>();
   const out: Check[] = [];

@@ -2,7 +2,7 @@
 const assert = require("node:assert");
 const { AGENTS, BY_ID, choicesOf, launchLine, liftPermission, hasPermissionOption } = require("./agent-catalog.cjs");
 
-assert.strictEqual(AGENTS.length, 44, "Orca 45개 - claude-agent-teams");
+assert.strictEqual(AGENTS.length, 44, "카탈로그 44개(claude-agent-teams 제외)");
 assert.strictEqual(new Set(AGENTS.map((a) => a.id)).size, AGENTS.length, "id 겹침 없음");
 assert.ok(AGENTS.every((a) => a.label && a.cmd && /^https:\/\//.test(a.url) && a.bins.length), "필수 칸");
 // 실행 명령 — 권한 플래그는 유저 인자 앞, own이면 안 붙음

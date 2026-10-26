@@ -132,7 +132,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   // 탭별 종합 상태(#764) — 호버 없이도 돌아가는중/완료/대기를 도트로. 레포 탭만 대상. 워크스페이스 활성 동안 폴링.
   const [repoStatus, setRepoStatus] = useState<Record<string, TabState | null>>({});
   const prevRepoStatus = useRef<Record<string, TabState | null>>({}); // 탭 도트(레포 종합)
-  // #989 알림은 세션 단위 전이(orca 방식). key = repo\0sessionId. latest는 대기 타이머가 재확인할 최신값.
+  // #989 알림은 세션 단위 전이. key = repo\0sessionId. latest는 대기 타이머가 재확인할 최신값.
   const prevSession = useRef<Record<string, string>>({});
   const latestSession = useRef<Record<string, string>>({});
   const pendingNotify = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -184,7 +184,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
         // 배경 레포(다른 탭) 또는 창 비포커스(다른 앱/화면)면 알림 O. 예전엔 창 포커스만 봐서 배경 레포 완료를 놓쳤음.
         const warming = Date.now() < notifyWarmupUntil.current; // #973 실행 직후 유예(복원 버퍼 정착 중)
         // #989 세션 단위 전이 → 1.5s 조용히 기다렸다 재확인(그 사이 다시 working이면 취소) → 게이트·쿨다운 후 알림.
-        // orca: hook done 1.5s quiet window + 워크트리별 5s 쿨다운. 깜빡임(working→done→working)이 알림까지 못 가게.
+        // hook done 1.5s quiet window + 워크트리별 5s 쿨다운. 깜빡임(working→done→working)이 알림까지 못 가게.
         const seen = new Set<string>();
         for (const [p, , shown] of results) {
           for (const s of shown ?? []) {
@@ -256,7 +256,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
       for (const p of repoPaths) {
         if (busy.has(p)) continue;
         busy.add(p);
-        // ponytail: 서버가 대화 기록(jsonl)을 매번 처음부터 읽음 — 기록이 커지면 레포별 바이트 위치로 끝만 읽기
+        // 한계: 서버가 대화 기록(jsonl)을 매번 처음부터 읽음 — 기록이 커지면 레포별 바이트 위치로 끝만 읽기
         // 4초 시간 제한 — 멈춘 연결이 busy를 영영 쥐지 않게(리뷰)
         void fetch(`/api/crew/chat?root=${encodeURIComponent(p)}&since=${crewSince.current[p]}&peek=1`, { signal: AbortSignal.timeout(4000) }).then((r) => r.json()).then((j: { ok?: boolean; msgs?: { id: string; ts: number; from: string; kind: string; text: string; taskTitle?: string; mentions?: string[]; i18n?: { key: string; vars?: Record<string, string | number> } }[] }) => {
           if (!alive || !j?.ok) return;
@@ -532,7 +532,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   }), [tabs, t, activate, onPick]);
 
   // #968 레포 탭 닫을 때 그 repo(하위 포함)에서 도는 터미널 pty를 데몬서 kill — 유령 세션(닫힌 탭 생존) 방지.
-  // orca 기본 동작(닫기=kill)과 동일. 명시적 닫기에서만 호출(언마운트/앱종료엔 미호출 → #682 재시작 생존 보존).
+  // 닫기=kill(흔한 터미널 기본 동작). 명시적 닫기에서만 호출(언마운트/앱종료엔 미호출 → #682 재시작 생존 보존).
   function killRepoTerminals(repoPath: string) {
     const nd = desktop;
     if (!nd?.terminal?.list || !nd.terminal.kill) return;

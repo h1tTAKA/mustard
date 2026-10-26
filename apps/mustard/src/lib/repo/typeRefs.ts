@@ -1,7 +1,7 @@
 // C# 타입 참조 → 정의 파일(#1005). C#은 `using`이 네임스페이스라 파일 import가 없고, 같은 네임스페이스 타입은
 // using 없이 이름만 씀 → import 기반 그래프에서 C# 파일이 전부 섬(cooing 221/221). 본문에서 쓰인 타입 이름을
 // 레포 전체 타입 인덱스(이름 → 정의 파일)와 맞춰 파일 간 references 엣지를 만든다. 순수 함수(import 없음, check 가능).
-// ponytail: 정규식 근사(제네릭·using alias·partial class 다파일은 이름 매칭 수준). 정확 해석은 Roslyn급 — 범위 밖.
+// 한계: 정규식 근사(제네릭·using alias·partial class 다파일은 이름 매칭 수준). 정확 해석은 Roslyn급 — 범위 밖.
 
 export interface TypeDef { name: string; file: string; namespace: string | null }
 
@@ -74,7 +74,7 @@ export function csharpNamespaces(text: string): { declared: string | null; using
 }
 
 // 행(0-based) → 그 행에 적용되는 선언 네임스페이스. 한 파일에 namespace 블록이 여럿이면(#1006 리뷰) 첫 것만 쓰면 오분류.
-// ponytail: "그 행 이전 마지막 namespace 선언" 근사 — 중첩 namespace(A { namespace B })·블록 닫힌 뒤 전역 타입은 부정확.
+// 한계: "그 행 이전 마지막 namespace 선언" 근사 — 중첩 namespace(A { namespace B })·블록 닫힌 뒤 전역 타입은 부정확.
 export function csharpNamespaceAt(stripped: string): (row: number) => string | null {
   const decls: { row: number; ns: string }[] = [];
   for (const m of stripped.matchAll(/^\s*namespace\s+([\w.]+)/gm)) {

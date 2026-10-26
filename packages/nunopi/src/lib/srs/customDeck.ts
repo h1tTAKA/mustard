@@ -20,7 +20,7 @@ export function loadCustomDecks(): CustomDeck[] {
     const arr = raw ? (JSON.parse(raw) as CustomDeck[]) : [];
     if (!Array.isArray(arr)) return [];
     // #1125 이름 없이 만든 덱의 기본 이름("덱" 등, 만들 때 언어로 굳음)은 지금 언어로 — 읽는 한 곳에서 처리(표시처 6곳 공통).
-    // 표시가 없는 옛 덱만 이름으로 판정(ponytail: 옛 덱 중 유저가 정확히 "덱"이라 지은 것도 번역됨 — 표시 생긴 뒤엔 없음).
+    // 표시가 없는 옛 덱만 이름으로 판정(한계: 옛 덱 중 유저가 정확히 "덱"이라 지은 것도 번역됨 — 표시 생긴 뒤엔 없음).
     const defaults = new Set(allLocaleValues("deck.defaultName"));
     const cur = translate(localStorage.getItem("nunopi:locale") ?? "ko", "deck.defaultName");
     return arr.map((d) => (d && (d.defaultName ?? defaults.has(d.name)) ? { ...d, name: cur } : d));

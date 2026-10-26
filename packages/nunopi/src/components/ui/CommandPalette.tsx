@@ -30,7 +30,7 @@ export default function CommandPalette({ open, commands, onClose }: { open: bool
 
   if (!open) return null;
 
-  // 필터가 줄어 sel이 범위를 넘으면 마지막 항목으로 클램프(선택 안 보이는 문제 방지, cavecrew).
+  // 필터가 줄어 sel이 범위를 넘으면 마지막 항목으로 클램프(선택 안 보이는 문제 방지).
   const cur = filtered.length ? Math.min(sel, filtered.length - 1) : 0;
   const run = (c?: Command) => { if (!c) return; onClose(); c.run(); };
 

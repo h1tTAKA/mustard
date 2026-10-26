@@ -6,7 +6,7 @@ export function launchOpts(agent: string, extra = "") {
   return { permission: agentPermission(agent).choice, args: [getSetting<string>(AKEYS.args(agent), ""), extra].filter(Boolean).join(" ") };
 }
 
-// 옛 추가 인자에 알려진 권한 플래그가 있으면 빼서 그 에이전트의 권한 덮어쓰기로(Orca lift) — 한 번만.
+// 옛 추가 인자에 알려진 권한 플래그가 있으면 빼서 그 에이전트의 권한 덮어쓰기로 — 한 번만.
 // 예: 예전에 claude 칸에 --dangerously-skip-permissions를 적어 둔 사람 → claude = 전체 액세스, 칸은 나머지만.
 export async function liftStoredArgs(ids: string[]) {
   const lift = window.nunopiDesktop?.liftAgentArgs;

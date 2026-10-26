@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { isTrusted, markSetupDone, materialize, noLinkUnder, normRel, parseConfig, parseInclude, readConfig, runArchive, runSetup, setupDone, trustScript } from "./worktreeBootstrap.ts";
 
-// 경로 정리·거부(Orca 규칙)
+// 경로 정리·거부
 assert.strictEqual(normRel("./.env/"), ".env");
 assert.strictEqual(normRel("a\\b\\c"), "a/b/c");
 for (const bad of ["/etc/passwd", "C:/x", "../up", "a/../b", "a//b", "a/./b", ".git/hooks", "x/.GIT", "", "   "]) assert.strictEqual(normRel(bad), null, bad);

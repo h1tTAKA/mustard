@@ -1,18 +1,18 @@
 // 에이전트 CLI 찾기·확인(#1171, #1164 흡수) — 설치됐나, 그 경로가 진짜 실행되나, 로그인됐나.
 // 터미널 실행은 손대지 않음(로그인 셸이라 PATH가 다 있음). 이건 상태 표시와 SNA(Crew·채팅 백그라운드)가 쓸 "확인된 경로"용.
-// 다른 ADE 대조(소스 + 배포본):
-//  - Orca: 로그인 셸 PATH를 `$SHELL -ilc`로 받아 합침(구분자로 배너 거름, 10초, 세션 캐시, 다시 확인 = 다시 받음) + 설치 폴더 폴백.
+// 방식:
+//  - PATH: 로그인 셸 PATH를 `$SHELL -ilc`로 받아 합침(구분자로 배너 거름, 10초, 세션 캐시, 다시 확인 = 다시 받음) + 설치 폴더 폴백.
 //          git/gh는 후보마다 --version을 돌려 "통과한 실제 경로를 고정"(죽은 shim을 다시 고르지 않게) — 이걸 에이전트에도 씀.
-//  - Emdash: 로그인 = claude auth status · codex login status · opencode auth list(5초), API 키 env 먼저, 모르면 unknown. 설치 명령 표.
+//  - 로그인: 확인 명령 = claude auth status · codex login status · opencode auth list(5초), API 키 env 먼저, 모르면 unknown. 설치 명령 표.
 const { spawn } = require("node:child_process");
 const { accessSync, constants, existsSync, lstatSync, readdirSync, realpathSync } = require("node:fs");
 const { delimiter, join } = require("node:path");
 const { homedir } = require("node:os");
 
-// 지원 에이전트 = 카탈로그(#1184, Orca 44개) — bins = 감지 명령 + 별칭(앞이 먼저), req = 같이 있어야 하는 명령, install·auth·keys도 거기.
+// 지원 에이전트 = 카탈로그(#1184, 44개) — bins = 감지 명령 + 별칭(앞이 먼저), req = 같이 있어야 하는 명령, install·auth·keys도 거기.
 const { AGENTS, choicesOf } = require("./agent-catalog.cjs");
 
-// Orca system-cli-install-dirs + local-agent-install-dir-detection(배포본 1.4.240과 같음) — PATH에 없을 때만 보는 설치 폴더
+// PATH에 없을 때만 보는 설치 폴더(시스템 CLI 설치 위치 + 에이전트별 로컬 설치 위치)
 function fallbackDirs(home = homedir()) {
   const h = (...p) => join(home, ...p);
   const dirs = [
@@ -45,7 +45,7 @@ function runCmd(file, args, timeout, env) {
   });
 }
 
-// 로그인 셸 PATH(Orca hydrate-shell-path) — 프로필이 찍는 배너를 구분자로 걸러냄. 실패면 null(실패는 캐시 안 함 — 다음에 다시).
+// 로그인 셸 PATH — 프로필이 찍는 배너를 구분자로 걸러냄. 실패면 null(실패는 캐시 안 함 — 다음에 다시).
 const DELIM = "__MUSTARD_PATH__";
 let shellPathPromise = null;
 function shellPath({ force = false, timeout = 10_000, shell = process.env.SHELL || "/bin/zsh" } = {}) {
@@ -67,7 +67,7 @@ function mergePath(cur, extra) {
 
 const isExec = (p) => { try { accessSync(p, constants.X_OK); return true; } catch { return false; } };
 const isLink = (p) => { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } };
-// PATH를 직접 걸어(which 안 씀 — Orca) 후보 전부, 다음 설치 폴더. 같은 실제 파일은 한 번만.
+// PATH를 직접 걸어(which 안 씀) 후보 전부, 다음 설치 폴더. 같은 실제 파일은 한 번만.
 function candidates(bins, pathStr, home) {
   const out = [], seen = new Set();
   for (const dir of [...String(pathStr || "").split(delimiter).filter(Boolean), ...fallbackDirs(home)]) {
@@ -85,9 +85,9 @@ function candidates(bins, pathStr, home) {
 
 const versionOf = (out) => (/\d+\.\d+\.\d+(?:[-+.][\w.]+)?/.exec(out)?.[0] ?? out.split("\n")[0].slice(0, 60)) || null;
 
-// 한 에이전트 — 후보마다 --version(10초 — Superset·Emdash와 같음, 동시에 여럿 돌리면 느린 CLI가 있음), 처음 통과한 경로를 씀. 다 실패면 "경로 깨짐"(찾긴 했는데 안 돎), 후보가 없으면 "설치 안 됨".
+// 한 에이전트 — 후보마다 --version(10초 — 동시에 여럿 돌리면 느린 CLI가 있음), 처음 통과한 경로를 씀. 다 실패면 "경로 깨짐"(찾긴 했는데 안 돎), 후보가 없으면 "설치 안 됨".
 async function detectAgent(agent, { pathStr, home, env = process.env, run = runCmd } = {}) {
-  if ((agent.req || []).some((b) => !candidates([b], pathStr, home).length)) return { id: agent.id, status: "missing", tried: [] }; // 필수 동반 명령 없음(Orca requiredCommands)
+  if ((agent.req || []).some((b) => !candidates([b], pathStr, home).length)) return { id: agent.id, status: "missing", tried: [] }; // 필수 동반 명령 없음
   const found = candidates(agent.bins, pathStr, home);
   const tried = [];
   for (const p of found) {
@@ -98,7 +98,7 @@ async function detectAgent(agent, { pathStr, home, env = process.env, run = runC
   return found.length ? { id: agent.id, status: "broken", path: found[0], tried } : { id: agent.id, status: "missing", tried };
 }
 
-// 로그인(Emdash) — API 키 env가 있으면 로그인, 아니면 그 CLI에 물음. 모르는 건 unknown(로그인 필요로 띄우지 않음).
+// 로그인 — API 키 env가 있으면 로그인, 아니면 그 CLI에 물음. 모르는 건 unknown(로그인 필요로 띄우지 않음).
 async function checkAuth(agent, path, { env = process.env, run = runCmd } = {}) {
   if ((agent.keys || []).some((k) => env[k])) return "authenticated";
   if (!agent.auth || !path) return "unknown";
@@ -112,7 +112,7 @@ async function checkAuth(agent, path, { env = process.env, run = runCmd } = {}) 
   return "unknown";
 }
 
-// 전부 — 에이전트끼리 동시에, 결과 60초 캐시(Superset·Emdash처럼). force면 셸 PATH부터 다시.
+// 전부 — 에이전트끼리 동시에, 결과 60초 캐시. force면 셸 PATH부터 다시.
 // { list, sp, at } — at = 이 목록을 만든 때(캐시면 캐시 시각), sp = 이 목록을 만들 때 실제로 쓴 로그인 셸 PATH(없으면 null). 따로 shellPath()를 다시 부르면 그 사이 결과가 달라질 수 있음(리뷰).
 let cache = null, gen = 0;
 async function detectAll({ force = false, home = homedir(), env = process.env, run = runCmd, shell } = {}) {

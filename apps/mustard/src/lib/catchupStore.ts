@@ -61,7 +61,7 @@ function tag(root: string, items: CatchupItem[]): CatchupItem[] {
 }
 // #1181 옛 기록 옮기기 — (1) worktree 경로로 따로 쌓였던 폴더는 메인으로(wt·br 붙여) 옮기고 옛 폴더는 .migrated,
 // (2) 실제 경로가 아닌 경로(심볼릭 링크 등)로 쌓였던 메인 폴더는 실제 경로 자리로 이름만 바꿈. 성공해야 "끝남"으로 기억(실패면 다음에 다시, 겹친 건 wt+key로 걸러짐, 리뷰).
-// ponytail: 여러 프로세스가 동시에 옮기면 줄이 빠질 수 있음(appendItems는 잠금 없음) — 한 번뿐인 이관이라 감수.
+// 한계: 여러 프로세스가 동시에 옮기면 줄이 빠질 수 있음(appendItems는 잠금 없음) — 한 번뿐인 이관이라 감수.
 const migrated = new Set<string>();
 // 옛 폴더 하나를 메인 폴더로 합치고 .migrated — as = 그 기록을 쓴 작업 폴더(wt 표시 기준). 옮기기 안에서 다시 옮기기를 부르지 않게 appendRaw(리뷰)
 function mergeInto(old: string, as: string, main: string) {
@@ -161,7 +161,7 @@ export function replaceItems(root: string, items: CatchupItem[]): number {
 // 같은 날 파일에 이미 있는 key는 스킵(이관·재전송 멱등). 날짜는 항목 ts 기준.
 // 동시성(#994 리뷰): 읽기~append 사이에 await가 없는 동기 함수라 한 서버 프로세스 안에서 요청끼리 끼어들 수 없음.
 // 혹시 생긴 중복(다중 프로세스 등)은 readDayFile이 key로 걸러냄.
-// ponytail: append마다 그날 파일 전체를 읽음(하루 수백 건 수준 OK) — 커지면 파일별 key 캐시.
+// 한계: append마다 그날 파일 전체를 읽음(하루 수백 건 수준 OK) — 커지면 파일별 key 캐시.
 export function appendItems(root: string, items: CatchupItem[]): number {
   if (!root || !items.length) return 0;
   migrate(root);
@@ -192,7 +192,7 @@ function appendRaw(root: string, items: CatchupItem[]): number {
 const allDays = (root: string) => { const dir = repoDir(root); return existsSync(dir) ? readdirSync(dir).map((f) => f.replace(/\.jsonl$/, "")).filter((d) => DAY_RE.test(d)).sort().reverse() : []; };
 export function listDays(root: string, all = false): string[] {
   migrate(root);
-  return all ? allDays(root) : allDays(root).filter((d) => readDay(root, d).length > 0); // ponytail: 날짜 파일을 다 읽음 — 기록이 아주 많아지면 날짜별 폴더 표시 캐시
+  return all ? allDays(root) : allDays(root).filter((d) => readDay(root, d).length > 0); // 한계: 날짜 파일을 다 읽음 — 기록이 아주 많아지면 날짜별 폴더 표시 캐시
 }
 
 export function readDay(root: string, day: string, all = false): CatchupItem[] {
@@ -213,7 +213,7 @@ export function readRecent(root: string, limit: number): CatchupItem[] {
 }
 
 // 검색(#1049) — 전체 날짜를 최신부터 훑어 제목·설명에 검색어(대소문자 무시)가 든 항목 limit개.
-// ponytail: 날짜 파일 전수 스캔 — 기록이 수만 개로 커지면 색인(FTS) 고려.
+// 한계: 날짜 파일 전수 스캔 — 기록이 수만 개로 커지면 색인(FTS) 고려.
 export function searchItems(root: string, q: string, limit: number, all = false): CatchupItem[] {
   const needle = q.trim().toLowerCase();
   if (!needle) return [];

@@ -1,14 +1,14 @@
 "use client";
-// 에이전트 설정(#1184) — Orca(1.4.240 / main#33018) 배치: 기본 에이전트 칩 · 에이전트 권한(전체) · 설치됨 N · 설치 가능 N.
+// 에이전트 설정(#1184) — 배치: 기본 에이전트 칩 · 에이전트 권한(전체) · 설치됨 N · 설치 가능 N.
 // 줄 = 로고·이름·실제 실행 명령 · 따로 정한 권한 배지 · 켜짐/꺼짐 · 기본값 · 문서 링크 · 펼치기(권한·추가 인자·경로 지정·상태).
 // 카탈로그·감지·플래그는 main(IPC detectAgents)이 줌 — 여기선 그리기 + 설정 키(core AKEYS)만.
-// Orca와 차이(우리 규칙 — 사용자 편의): 전체 권한을 바꿔도 따로 정한 에이전트는 그대로 + 되돌리기 토스트(Orca main #33018), 목록은 기본 → 최근 쓴 순 → 안 쓴 것 → 꺼진 것
-// (Orca는 카탈로그 고정 순서), 설치 가능은 접어 두고 검색·이름순, 전체 액세스는 처음 한 번 확인, 줄에 마지막 사용 시각.
+// 규칙(사용자 편의): 전체 권한을 바꿔도 따로 정한 에이전트는 그대로 + 되돌리기 토스트, 목록은 기본 → 최근 쓴 순 → 안 쓴 것 → 꺼진 것,
+// 설치 가능은 접어 두고 검색·이름순, 전체 액세스는 처음 한 번 확인, 줄에 마지막 사용 시각.
 import { useState, type ReactNode } from "react";
 import { IconChevronDown, IconExternalLink, IconLoader2, IconCheck, IconSearch } from "@tabler/icons-react";
 import { AKEYS, AGENT_DEFAULTS, getSetting, setSetting, sortAgents, useConfirm, useLocale, useSetting, useT, useToast, type AgentPermission } from "@mustard/core";
 
-const PERMS: AgentPermission[] = ["own", "ask", "auto", "full-access"]; // 전체 세그먼트(편집 수락은 줄 메뉴에서만, Orca)
+const PERMS: AgentPermission[] = ["own", "ask", "auto", "full-access"]; // 전체 세그먼트(편집 수락은 줄 메뉴에서만)
 const FLAG_KEY: Record<string, "ask" | "edits" | "auto" | "full"> = { ask: "ask", "accept-edits": "edits", auto: "auto", "full-access": "full" };
 const btn = "rounded-lg px-2.5 py-1 text-xs font-medium transition";
 const seg = (on: boolean) => `${btn} ${on ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"}`;
@@ -176,11 +176,11 @@ function AgentRow({ a, logo, isDefault, path, all, guard }: { a: AgentDetect; lo
   const bump = () => setSetting("agent.rev", Date.now());
   const setOff = (v: boolean) => {
     setSetting(AKEYS.off(a.id), v);
-    if (v && getSetting<string>(AKEYS.default, AGENT_DEFAULTS.default) === a.id) setSetting(AKEYS.default, "auto"); // 기본을 끄면 자동으로(Orca)
+    if (v && getSetting<string>(AKEYS.default, AGENT_DEFAULTS.default) === a.id) setSetting(AKEYS.default, "auto"); // 기본을 끄면 자동으로
     bump();
   };
   const setPerm = async (v: string) => { if (!(await guard(v))) return; setSetting(AKEYS.permOf(a.id), v === "default" ? "" : v); bump(); };
-  // 인자 저장 — 알려진 권한 플래그를 쓰면 빼서 이 에이전트 권한으로(Orca lift) + 토스트
+  // 인자 저장 — 알려진 권한 플래그를 쓰면 빼서 이 에이전트 권한으로 + 토스트
   const saveArgs = async () => {
     if (args === null) return;
     const v = args.trim(); setArgs(null);

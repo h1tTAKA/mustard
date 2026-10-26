@@ -399,7 +399,7 @@ const ko: Dict = {
   "workspace.gitSwitched": "{branch}(으)로 전환됨",
   "workspace.gitSwitchFailed": "브랜치 전환 실패",
   "settings.shortcutsSection": "단축키",
-  "settings.shortcutsDesc": "기본값은 Orca·Ghostty·iTerm2·VS Code 관례를 따라요. 키 버튼을 누르고 원하는 조합을 누르면 바뀌어요(Esc 취소). ⌃+글자·⌥ 단독은 셸·에이전트가 쓰니 피하세요.",
+  "settings.shortcutsDesc": "기본값은 흔한 터미널·IDE 관례를 따라요. 키 버튼을 누르고 원하는 조합을 누르면 바뀌어요(Esc 취소). ⌃+글자·⌥ 단독은 셸·에이전트가 쓰니 피하세요.",
   "settings.shortcutsSearch": "단축키 검색",
   "settings.shortcutsPress": "키를 누르세요…",
   "settings.shortcutsRecordFor": "{action} 단축키 바꾸기 — 키를 누르세요, Esc 취소",
@@ -2098,7 +2098,7 @@ const ja: Dict = {
   "workspace.gitSwitched": "{branch} に切り替えました",
   "workspace.gitSwitchFailed": "ブランチの切り替えに失敗",
   "settings.shortcutsSection": "ショートカット",
-  "settings.shortcutsDesc": "既定値は Orca・Ghostty・iTerm2・VS Code の慣例に合わせています。キーボタンを押して組み合わせを入力すると変更できます(Esc で取消)。⌃+文字・⌥ 単独はシェル/エージェントが使うので避けてください。",
+  "settings.shortcutsDesc": "既定値は一般的なターミナル・IDE の慣例に合わせています。キーボタンを押して組み合わせを入力すると変更できます(Esc で取消)。⌃+文字・⌥ 単独はシェル/エージェントが使うので避けてください。",
   "settings.shortcutsSearch": "ショートカットを検索",
   "settings.shortcutsPress": "キーを押してください…",
   "settings.shortcutsRecordFor": "{action} のショートカットを変更 — キーを押す、Esc で取消",
@@ -3797,7 +3797,7 @@ const en: Dict = {
   "workspace.gitSwitched": "Switched to {branch}",
   "workspace.gitSwitchFailed": "Branch switch failed",
   "settings.shortcutsSection": "Shortcuts",
-  "settings.shortcutsDesc": "Defaults follow Orca, Ghostty, iTerm2 and VS Code conventions. Click a key button and press a new combination (Esc cancels). Avoid ⌃+letter and ⌥ alone — the shell and agents use them.",
+  "settings.shortcutsDesc": "Defaults follow common terminal and IDE conventions. Click a key button and press a new combination (Esc cancels). Avoid ⌃+letter and ⌥ alone — the shell and agents use them.",
   "settings.shortcutsSearch": "Search shortcuts",
   "settings.shortcutsPress": "Press keys…",
   "settings.shortcutsRecordFor": "Change shortcut for {action} — press keys, Esc cancels",
@@ -5158,7 +5158,7 @@ export const CARD_SOURCE_KEYS = ["card.workspaceSource", "mem.chatSource"];
 export const CREW_TEXT_KEYS = ["crewchat.permission", "crewchat.answerFailed", "crewchat.meetingStopped", "crewchat.fallback", "crewchat.retrying", "crewchat.skipped", "crewchat.gate.merge", "crewchat.gate.blocked", "crewchat.gate.schema", "crewchat.gate.spec", "crewchat.start", "crewchat.restart", "crewchat.decision.approve", "crewchat.decision.retry", "crewchat.prCreated", "crewsplit.created", "crewsplit.parentDone", "crewtrig.ciChat", "crewtrig.issueChat", "crewtrig.scheduleChat", "crew.reason.interrupted", "crew.reason.stopped", "crew.reason.flowError", "crew.reason.neverStarted", "crew.reason.stalled", "crew.reason.setupFailed", "crew.reason.setupTooLong", "crew.reason.agentMissing", "crew.reason.agentBroken", "crew.reason.agentLogin", "crew.reason.agentPath", "crew.reason.neverStartedWhy"];
 // 답변·분석 실패 문구(#1125, ko가 같은 chat.reply*가 먼저 — 옛 fallback.chat* 저장분도 같은 뜻으로) — 실패 순간의 언어로 저장되므로(채팅 기록·분석 요약·경고·캐치업 설명) 보여 줄 때 지금 언어로.
 export const FAILURE_TEXT_KEYS = ["fallback.emptyResponse", "fallback.error", "fallback.requestFailed", "fallback.summaryFailed", "chat.replyFailed", "chat.replyError", "fallback.chatRequestFailed", "fallback.chatError", "analyze.cancelled", "provider.runtimeFailed", "provider.runtimeConnectFailed", "provider.httpError", "provider.connectFailed", "analyze.partialParse", "explain.conceptParseFailed", "explain.tokenParseFailed", "text.parseFailed", "text.summaryFailed"];
-// ponytail: 실패 문구는 짧음 — 긴 정상 답변은 비교 안 하고 통과(런타임 오류 원문이 이보다 길면 원문 그대로)
+// 한계: 실패 문구는 짧음 — 긴 정상 답변은 비교 안 하고 통과(런타임 오류 원문이 이보다 길면 원문 그대로)
 export const relocalizeFailure = (text: string, t: (key: string, vars?: Record<string, string | number>) => string) => (text.length > 600 ? text : relocalize(text, FAILURE_TEXT_KEYS, t));
 // 질문 카드 출처 "폴더 / 세션 / 질문" — 기본 이름 조각만 지금 언어로(사용자가 지은 이름은 그대로).
 const ASK_PART_KEYS = ["ask.folderN", "ask.sessionN", "ask.thread"];
