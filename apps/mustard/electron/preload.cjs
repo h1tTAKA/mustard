@@ -101,6 +101,14 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     syncGet: () => ipcRenderer.invoke("trackers:sync-get"),
     syncSet: (cfg) => ipcRenderer.invoke("trackers:sync-set", cfg),
   },
+  // #1175 컴퓨터 사용 — 켜기·막는 앱·드라이버·권한·기록(조작 자체는 Mustard MCP → main)
+  computer: {
+    status: (force) => ipcRenderer.invoke("computer:status", { force: !!force }),
+    set: (patch) => ipcRenderer.invoke("computer:set", patch),
+    grant: () => ipcRenderer.invoke("computer:grant"),
+    openPrivacy: (kind) => ipcRenderer.invoke("computer:open-privacy", { kind }),
+    onChanged: (cb) => { const h = () => cb(); ipcRenderer.on("computer:changed", h); return () => ipcRenderer.removeListener("computer:changed", h); },
+  },
   // 터미널(pty) 브릿지 — 레포별 세션(#647).
   terminal: {
     ensure: (opts) => ipcRenderer.invoke("terminal:ensure", opts),

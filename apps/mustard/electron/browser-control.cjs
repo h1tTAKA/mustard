@@ -113,6 +113,7 @@ function createBrowserControl(deps) {
 
   async function call(tool, args, cwd) {
     args = args || {};
+    if (tool.startsWith("computer_") && deps.computer) return deps.computer(tool, args, cwd); // 컴퓨터 사용(#1175) — 같은 토큰·서버를 씀
     if (tool === "browser_status") {
       const mine = mineOf(cwd);
       const pick = pickGuest(mine, real(cwd));

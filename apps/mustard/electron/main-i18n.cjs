@@ -25,6 +25,7 @@ const DICT = {
   "gh.parseFailed": { ko: "gh --json 출력 파싱 실패", ja: "gh --json の出力を解析できません", en: "Failed to parse gh --json output" },
   "token.noSafeStorage": { ko: "이 환경은 안전한 토큰 저장을 지원하지 않음(safeStorage 불가)", ja: "この環境は安全なトークン保存に対応していません(safeStorage 不可)", en: "Secure token storage is not available in this environment (safeStorage unavailable)" },
   "token.empty": { ko: "빈 토큰", ja: "トークンが空です", en: "Empty token" },
+  "computer.stopped": { ko: "컴퓨터 사용을 멈췄어요 — 에이전트의 데스크톱 조작이 꺼졌습니다", ja: "コンピューター操作を停止しました — エージェントのデスクトップ操作はオフです", en: "Computer use stopped — agents can no longer control the desktop" },
   "term.previousSession": { ko: "── 이전 세션 내용(재시작 전) ──", ja: "── 前回のセッション内容(再起動前) ──", en: "── Previous session (before restart) ──" },
 };
 const tm = (key) => (DICT[key] && (DICT[key][mainLocale()] || DICT[key].ko)) || key;

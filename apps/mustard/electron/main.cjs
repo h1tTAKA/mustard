@@ -10,7 +10,7 @@ require("./claude-env.cjs").stripParentClaudeEnv(process.env);
   const extra = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", require("node:path").join(require("node:os").homedir(), ".local", "bin")].filter((d) => !have.has(d));
   if (extra.length) process.env.PATH = [...have, ...extra].join(":");
 }
-const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents, WebContentsView } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents, WebContentsView, globalShortcut } = require("electron");
 const { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, cpSync, chmodSync } = require("node:fs");
 const {
   startSnaServer,
@@ -497,7 +497,38 @@ const browserControl = require("./browser-control.cjs").createBrowserControl({
   realpath: (p) => realOf(p), // 요청 때 호출(아래 정의) — MCP cwd와 등록 레포를 같은 실경로로 비교
   // 탭 고르기/닫기 — 그 탭(guest)을 품은 창의 렌더러에(그 BrowserPage가 처리).
   tabCommand: (guestId, action) => { const g = webContents.fromId(Number(guestId)); const host = g && !g.isDestroyed() ? g.hostWebContents : null; if (host && !host.isDestroyed()) host.send("browser:tab-command", { guestId: Number(guestId), action }); },
+  computer: (tool, args, cwd) => computerUse.agentTool(tool, args, { cwd }), // 컴퓨터 사용(#1175)
 });
+// 컴퓨터 사용(#1175) — 켜져 있는 동안만 전역 비상 정지 단축키(다른 앱이 앞에 있어도). 누르면 끄고 알림.
+const computerUse = require("./computer-use.cjs");
+const STOP_KEY = process.platform === "darwin" ? "Control+Alt+Command+." : "Control+Alt+Shift+.";
+function stopComputerUse() {
+  computerUse.stop();
+  syncComputerShortcut();
+  for (const w of BrowserWindow.getAllWindows()) { try { w.webContents.send("computer:changed"); } catch { /* 닫히는 중 */ } }
+  try { new Notification({ title: "Mustard", body: tm("computer.stopped") }).show(); } catch { /* 알림 불가 */ }
+}
+let stopKeyOk = true;
+function syncComputerShortcut() {
+  const on = computerUse.readConfig().enabled;
+  if (on && !globalShortcut.isRegistered(STOP_KEY)) stopKeyOk = globalShortcut.register(STOP_KEY, stopComputerUse); // 다른 앱이 쓰는 중이면 false → 설정에 경고(리뷰)
+  else if (!on && globalShortcut.isRegistered(STOP_KEY)) globalShortcut.unregister(STOP_KEY);
+}
+app.whenReady().then(syncComputerShortcut);
+const computerStatus = async (force) => ({ ...(await computerUse.status({ force })), defaults: computerUse.DEFAULT_BLOCKED, stopKey: STOP_KEY, stopKeyOk, platform: process.platform, log: computerUse.readLog(undefined, 30) });
+ipcMain.handle("computer:status", (_e, { force } = {}) => computerStatus(!!force));
+ipcMain.handle("computer:set", (_e, patch = {}) => {
+  const p = {};
+  if (typeof patch.enabled === "boolean") p.enabled = patch.enabled;
+  if (Array.isArray(patch.blocked)) p.blocked = patch.blocked.filter((s) => typeof s === "string").map((s) => s.trim()).filter(Boolean).slice(0, 100);
+  computerUse.writeConfig(p);
+  syncComputerShortcut();
+  return computerStatus(false);
+});
+// 권한 받기 = 드라이버가 자기 앱을 띄워 macOS 프롬프트(권한이 드라이버에 붙음). 유저가 시스템 설정에서 켜야 끝남.
+ipcMain.handle("computer:grant", async () => { const r = await computerUse.driver(["permissions", "grant"], { timeout: 120_000 }); return { ok: r.ok, text: r.text }; });
+const PRIVACY = { accessibility: "Privacy_Accessibility", screen: "Privacy_ScreenCapture" };
+ipcMain.handle("computer:open-privacy", (_e, { kind } = {}) => { if (process.platform === "darwin" && PRIVACY[kind]) void shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${PRIVACY[kind]}`); });
 const openClaims = new Map(); // reqId → [{ sender, repo, depth }]
 const realOf = (p) => { try { return require("node:fs").realpathSync(p); } catch { return String(p || ""); } };
 ipcMain.on("browser:claim-open", (e, { reqId, repo, cwd } = {}) => {
