@@ -152,7 +152,7 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
             ) : (
               <div>
                 <input value={num} onChange={(e) => { reqRef.current++; setNum(e.target.value.replace(/\D/g, "")); setRef(null); setRefErr(false); }} onBlur={() => void lookup(from, num)}
-                  onKeyDown={(e) => { if (e.key === "Enter") void lookup(from, num); }} inputMode="numeric" autoFocus placeholder={t("newWs.numberPlaceholder")} className={input} />
+                  onKeyDown={(e) => { if (e.key === "Enter") void lookup(from, num); }} inputMode="numeric" autoFocus placeholder={t(from === "pr" ? "newWs.prPlaceholder" : "newWs.issuePlaceholder")} className={input} />
                 {ref && <p className="mt-1 truncate text-[12px] text-zinc-700 dark:text-zinc-200">#{num} {ref.title}</p>}
                 {refErr && <p className="mt-1 text-[11.5px] text-rose-500">{t("newWs.notFound")}</p>}
                 {from === "pr" && ref?.cross && <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">{t("newWs.forkNote")}</p>}
