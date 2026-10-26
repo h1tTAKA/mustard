@@ -4,7 +4,8 @@ export const OPEN_REPO_TAB_EVENT = "mustard:open-repo-tab";
 export type NewWorkspaceInitial = { kind: "issue" | "pr"; number: number };
 export const openNewWorkspace = (root: string, initial?: NewWorkspaceInitial) =>
   window.dispatchEvent(new CustomEvent(NEW_WORKSPACE_EVENT, { detail: { root, initial } }));
-export const openRepoTab = (path: string) => window.dispatchEvent(new CustomEvent(OPEN_REPO_TAB_EVENT, { detail: path }));
+// root = 그 worktree의 레포 탭 경로 — 있으면 새 탭 대신 그 레포 탭 안에서 작업 폴더를 바꿈(유저 결정: 레포 탭 안에서 전환)
+export const openRepoTab = (path: string, root?: string) => window.dispatchEvent(new CustomEvent(OPEN_REPO_TAB_EVENT, { detail: { path, root } }));
 // 지우기 창 열기 / 지우기 직전 그 작업공간 탭 닫고 터미널 끄기(Orca도 PTY를 먼저 정리)
 export const REMOVE_WORKSPACE_EVENT = "mustard:remove-workspace";
 export const CLOSE_WORKSPACE_EVENT = "mustard:close-workspace";

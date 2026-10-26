@@ -90,7 +90,7 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
       toast(key ? t(key) : t("newWs.failed", { error: String(r.error ?? "") }), "error");
       return;
     }
-    openRepoTab(r.dir);
+    openRepoTab(r.dir, root);
     toast(t("newWs.created", { branch: r.branch }));
     setBusy(true);
     await runSetup(r.dir);

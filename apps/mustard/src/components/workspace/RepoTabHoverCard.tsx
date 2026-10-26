@@ -228,9 +228,9 @@ export default function RepoTabHoverCard({ path, left, top, onMouseEnter, onMous
               <div key={w.path} className="group">
                 <div className="flex items-center gap-1.5 text-[11px] text-zinc-600 dark:text-zinc-300">
                   <IconGitBranch size={12} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
-                  {/* #1170 줄 누르면 그 worktree를 탭으로(메인은 이미 이 탭) */}
+                  {/* #1170 줄 누르면 이 레포 탭에서 그 작업 폴더로 전환 */}
                   {main ? <span className="min-w-0 flex-1 truncate" title={w.path}>{w.detached ? `${w.head} (detached)` : (w.branch ?? basename(w.path))}</span>
-                    : <button type="button" onClick={() => openRepoTab(w.path)} title={t("rmWs.openTab", { path: w.path })} className="min-w-0 flex-1 truncate text-left hover:underline">{w.detached ? `${w.head} (detached)` : (w.branch ?? basename(w.path))}</button>}
+                    : <button type="button" onClick={() => openRepoTab(w.path, path)} title={t("rmWs.openTab", { path: w.path })} className="min-w-0 flex-1 truncate text-left hover:underline">{w.detached ? `${w.head} (detached)` : (w.branch ?? basename(w.path))}</button>}
                   {w.ahead > 0 && <span className="flex shrink-0 items-center text-emerald-500"><IconArrowUp size={11} stroke={2.5} aria-hidden />{w.ahead}</span>}
                   {w.behind > 0 && <span className="flex shrink-0 items-center text-amber-500"><IconArrowDown size={11} stroke={2.5} aria-hidden />{w.behind}</span>}
                   {w.dirty > 0 && <span className="flex shrink-0 items-center gap-0.5 text-zinc-400" title={t("workspace.dirtyFiles", { n: w.dirty })}><IconPencil size={10} stroke={2} aria-hidden />{w.dirty}</span>}
