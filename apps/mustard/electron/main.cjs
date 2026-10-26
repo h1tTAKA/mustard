@@ -501,6 +501,8 @@ const browserControl = require("./browser-control.cjs").createBrowserControl({
 });
 // 컴퓨터 사용(#1175) — 켜져 있는 동안만 전역 비상 정지 단축키(다른 앱이 앞에 있어도). 누르면 끄고 알림.
 const computerUse = require("./computer-use.cjs");
+// #1189 내장 도우미 — 패키징 앱은 Resources, 개발 실행은 build-app.mjs 결과(없으면 외부 드라이버)
+computerUse.setHelperApp(app.isPackaged ? join(process.resourcesPath, "Mustard Computer Use.app") : join(__dirname, "..", "native", "computer-use-macos", "dist", "Mustard Computer Use.app"));
 const STOP_KEY = process.platform === "darwin" ? "Control+Alt+Command+." : "Control+Alt+Shift+.";
 function stopComputerUse() {
   computerUse.stop();
@@ -526,7 +528,8 @@ ipcMain.handle("computer:set", (_e, patch = {}) => {
   return computerStatus(false);
 });
 // 권한 받기 = 드라이버가 자기 앱을 띄워 macOS 프롬프트(권한이 드라이버에 붙음). 유저가 시스템 설정에서 켜야 끝남.
-ipcMain.handle("computer:grant", async () => { const r = await computerUse.driver(["permissions", "grant"], { timeout: 120_000 }); return { ok: r.ok, text: r.text }; });
+ipcMain.handle("computer:grant", (_e, { kind } = {}) => computerUse.grant(kind));
+ipcMain.handle("computer:reset", () => computerUse.resetAccess()); // #1189 내장 도우미의 macOS 허용 지우기
 const PRIVACY = { accessibility: "Privacy_Accessibility", screen: "Privacy_ScreenCapture" };
 ipcMain.handle("computer:open-privacy", (_e, { kind } = {}) => { if (process.platform === "darwin" && PRIVACY[kind]) void shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${PRIVACY[kind]}`); });
 const openClaims = new Map(); // reqId → [{ sender, repo, depth }]

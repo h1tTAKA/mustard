@@ -8,6 +8,9 @@ const cu = require("./computer-use.cjs");
 (async () => {
   const home = mkdtempSync(join(tmpdir(), "cu-"));
 
+  // 진짜 실행 함수가 연결돼 있는지(가짜만 넣어 점검하다 놓쳤던 것, #1189)
+  assert.strictEqual(typeof require("./agent-cli.cjs").runCmd, "function");
+
   // 기본 = 끔, 막는 앱 기본 목록
   let c = cu.readConfig(home);
   assert.strictEqual(c.enabled, false);

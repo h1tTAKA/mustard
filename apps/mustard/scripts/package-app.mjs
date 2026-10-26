@@ -29,6 +29,12 @@ const repoRoot = join(process.cwd(), "..", "..");
 const electronVersion = electronVersionFromConfig();
 const arch = process.arch;
 
+// 0) 컴퓨터 사용 도우미(#1189) .app — macOS만. 실패하면 패키징 중단(electron-builder가 Resources에 넣을 .app이 있어야 함).
+if (process.platform === "darwin") {
+  const r = spawnSync("node", ["native/computer-use-macos/build-app.mjs"], { stdio: "inherit" });
+  if (r.status !== 0) { console.error("[package-app] 컴퓨터 사용 도우미 빌드 실패 — Xcode 명령줄 도구(swift)를 확인하세요"); process.exit(r.status ?? 1); } // 옛 .app이나 빠진 채로 패키징하지 않음(리뷰)
+}
+
 // 1) 네이티브를 electron ABI로 소스빌드(루트 node_modules — 소스가 있는 곳).
 for (const mod of NATIVE) {
   const dir = join(repoRoot, "node_modules", mod);

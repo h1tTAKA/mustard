@@ -105,7 +105,8 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
   computer: {
     status: (force) => ipcRenderer.invoke("computer:status", { force: !!force }),
     set: (patch) => ipcRenderer.invoke("computer:set", patch),
-    grant: () => ipcRenderer.invoke("computer:grant"),
+    grant: (kind) => ipcRenderer.invoke("computer:grant", { kind }),
+    reset: () => ipcRenderer.invoke("computer:reset"),
     openPrivacy: (kind) => ipcRenderer.invoke("computer:open-privacy", { kind }),
     onChanged: (cb) => { const h = () => cb(); ipcRenderer.on("computer:changed", h); return () => ipcRenderer.removeListener("computer:changed", h); },
   },

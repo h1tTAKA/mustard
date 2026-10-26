@@ -130,4 +130,4 @@ async function detectAll({ force = false, home = homedir(), env = process.env, r
   return { list, sp, at };
 }
 
-module.exports = { AGENTS, fallbackDirs, shellPath, mergePath, candidates, detectAgent, checkAuth, detectAll, versionOf };
+module.exports = { AGENTS, fallbackDirs, shellPath, mergePath, candidates, detectAgent, checkAuth, detectAll, versionOf, runCmd }; // runCmd = 컴퓨터 사용도 씀(#1189 — 빠져 있어 실제 호출이 깨졌음)
