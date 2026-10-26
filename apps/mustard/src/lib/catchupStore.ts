@@ -63,6 +63,12 @@ function tag(root: string, items: CatchupItem[]): CatchupItem[] {
 // (2) 실제 경로가 아닌 경로(심볼릭 링크 등)로 쌓였던 메인 폴더는 실제 경로 자리로 이름만 바꿈. 성공해야 "끝남"으로 기억(실패면 다음에 다시, 겹친 건 wt+key로 걸러짐, 리뷰).
 // ponytail: 여러 프로세스가 동시에 옮기면 줄이 빠질 수 있음(appendItems는 잠금 없음) — 한 번뿐인 이관이라 감수.
 const migrated = new Set<string>();
+// 옛 폴더 하나를 메인 폴더로 합치고 .migrated — as = 그 기록을 쓴 작업 폴더(wt 표시 기준). 옮기기 안에서 다시 옮기기를 부르지 않게 appendRaw(리뷰)
+function mergeInto(old: string, as: string, main: string) {
+  for (const f of readdirSync(old)) if (DAY_RE.test(f.replace(/\.jsonl$/, ""))) appendRaw(as, readDayFile(join(old, f)));
+  for (const sub of ["sessions", "ask"]) { const s = join(old, sub); if (existsSync(s)) cpSync(s, join(rawDir(main), sub), { recursive: true, force: false }); }
+  renameSync(old, `${old}.migrated`);
+}
 function migrate(root: string) {
   const r = normPath(root);
   if (migrated.has(r)) return;
@@ -71,13 +77,11 @@ function migrate(root: string) {
     if (wt) {
       for (const old of new Set([rawDir(r), rawDir(wt)])) {
         if (old === rawDir(main) || !existsSync(old)) continue;
-        for (const f of readdirSync(old)) if (DAY_RE.test(f.replace(/\.jsonl$/, ""))) appendItems(wt, readDayFile(join(old, f)));
-        for (const sub of ["sessions", "ask"]) { const s = join(old, sub); if (existsSync(s)) cpSync(s, join(rawDir(main), sub), { recursive: true, force: false }); }
-        renameSync(old, `${old}.migrated`);
+        mergeInto(old, wt, main);
       }
-    } else if (rawDir(r) !== rawDir(main) && existsSync(rawDir(r)) && !existsSync(rawDir(main))) {
-      renameSync(rawDir(r), rawDir(main));
-      writeFileSync(join(rawDir(main), "root.txt"), main);
+    } else if (rawDir(r) !== rawDir(main) && existsSync(rawDir(r))) {
+      if (!existsSync(rawDir(main))) { renameSync(rawDir(r), rawDir(main)); writeFileSync(join(rawDir(main), "root.txt"), main); }
+      else mergeInto(rawDir(r), main, main); // 실제 경로 쪽에 이미 기록이 있으면 합침(리뷰)
     }
     migrated.add(r);
   } catch { /* 다음에 다시 */ }
@@ -155,6 +159,10 @@ export function replaceItems(root: string, items: CatchupItem[]): number {
 export function appendItems(root: string, items: CatchupItem[]): number {
   if (!root || !items.length) return 0;
   migrate(root);
+  return appendRaw(root, items);
+}
+function appendRaw(root: string, items: CatchupItem[]): number {
+  if (!items.length) return 0;
   items = tag(root, items);
   const dir = repoDir(root);
   mkdirSync(dir, { recursive: true });
@@ -272,8 +280,9 @@ export function askCounts(root: string): Record<string, number> {
 
 // #1081 키로 항목 찾기(최근 날짜부터) — 질문 답변의 catchup: 링크 → 그 카드로 이동할 날짜를 알려고.
 export function findItem(root: string, key: string): CatchupItem | null {
-  const mine = inScope(root);
-  for (const day of allDays(root)) { const items = readDay(root, day, true); const hit = items.find((x) => x.key === key && mine(x)) ?? items.find((x) => x.key === key); if (hit) return hit; } // 지금 폴더 먼저, 없으면 레포 전체(#1181)
+  // 지금 폴더 것을 모든 날짜에서 먼저, 없으면 레포 전체(#1181, 리뷰 — 날짜마다가 아니라 전체에서 우선)
+  for (const day of allDays(root)) { const hit = readDay(root, day).find((x) => x.key === key); if (hit) return hit; }
+  for (const day of allDays(root)) { const hit = readDay(root, day, true).find((x) => x.key === key); if (hit) return hit; }
   return null;
 }
 

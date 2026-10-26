@@ -93,6 +93,13 @@ console.log("catchupStore ok");
   appendItems(join(main, "sub"), [it("sub-item", t)]);
   assert.ok(readDay(join(main, "sub"), "2026-10-09").every((x) => x.wt === undefined), "하위 폴더는 worktree 표시 없음");
   assert.ok(!catchupRoots().some((r) => r === wt), "옮기고 남은 옛 폴더(.migrated)는 레포 목록에서 뺌");
+  // 리뷰: 심볼릭 경로로 쌓인 옛 메인 기록 + 실제 경로 기록이 둘 다 있으면 합침
+  const link2 = join(tmp, "link2"); symlinkSync(main, link2);
+  const oldMain = join(process.env.MUSTARD_STREAM_DIR!, createHash("sha256").update(link2).digest("hex").slice(0, 32));
+  mkdirSync(oldMain, { recursive: true });
+  writeFileSync(join(oldMain, "2026-10-07.jsonl"), JSON.stringify(it("via-link", new Date(2026, 9, 7, 9).getTime())) + "\n");
+  assert.ok(readDay(link2, "2026-10-07").some((x) => x.key === "via-link"), "심볼릭 경로 옛 기록이 실제 경로 기록과 합쳐짐");
+  assert.ok(!existsSync(oldMain), "합친 옛 폴더는 .migrated");
   g(main, "worktree", "remove", "--force", wt);
   assert.strictEqual(readDay(main, "2026-10-09", true).filter((x) => x.br === "feat/x").length, 3, "worktree를 지워도 기록과 브랜치 이름은 남음");
 }
