@@ -9,23 +9,8 @@ const { accessSync, constants, existsSync, lstatSync, readdirSync, realpathSync 
 const { delimiter, join } = require("node:path");
 const { homedir } = require("node:os");
 
-// 지원 에이전트 — id는 main AGENT_DEFAULT_CMD·AgentLogo와 같음. bins = 실행 파일 이름(앞이 먼저).
-// install = 공식 설치 명령(Emdash 표·각 공식 문서) — 앱은 복사만(남의 스크립트를 대신 돌리지 않음). 없으면 null.
-// auth = 로그인 확인 인자(Emdash), keys = 있으면 로그인된 걸로 보는 API 키 env.
-const AGENTS = [
-  { id: "claude", label: "Claude Code", bins: ["claude"], install: "curl -fsSL https://claude.ai/install.sh | bash", auth: ["auth", "status"], keys: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"] },
-  { id: "codex", label: "Codex", bins: ["codex"], install: "npm install -g @openai/codex", auth: ["login", "status"], keys: ["OPENAI_API_KEY"] },
-  { id: "gemini", label: "Gemini CLI", bins: ["gemini"], install: "npm install -g @google/gemini-cli" },
-  { id: "antigravity", label: "Antigravity CLI", bins: ["agy"], install: "curl -fsSL https://antigravity.google/cli/install.sh | bash" },
-  { id: "opencode", label: "OpenCode", bins: ["opencode"], install: "npm install -g opencode-ai", auth: ["auth", "list"] },
-  { id: "cursor", label: "Cursor CLI", bins: ["cursor-agent"], install: "curl https://cursor.com/install -fsS | bash" },
-  { id: "grok", label: "Grok Build", bins: ["grok"], install: "curl -fsSL https://x.ai/cli/install.sh | bash" },
-  { id: "copilot", label: "Copilot CLI", bins: ["copilot"], install: "npm install -g @github/copilot" },
-  { id: "amp", label: "Amp", bins: ["amp"], install: "npm install -g @ampcode/cli" },
-  { id: "aider", label: "Aider", bins: ["aider"], install: "python -m pip install aider-install && aider-install" },
-  { id: "hermes", label: "Hermes Agent", bins: ["hermes"], install: null },
-  { id: "omp", label: "omp", bins: ["omp"], install: null },
-];
+// 지원 에이전트 = 카탈로그(#1184, Orca 44개) — bins = 감지 명령 + 별칭(앞이 먼저), req = 같이 있어야 하는 명령, install·auth·keys도 거기.
+const { AGENTS, choicesOf } = require("./agent-catalog.cjs");
 
 // Orca system-cli-install-dirs + local-agent-install-dir-detection(배포본 1.4.240과 같음) — PATH에 없을 때만 보는 설치 폴더
 function fallbackDirs(home = homedir()) {
@@ -102,6 +87,7 @@ const versionOf = (out) => (/\d+\.\d+\.\d+(?:[-+.][\w.]+)?/.exec(out)?.[0] ?? ou
 
 // 한 에이전트 — 후보마다 --version(10초 — Superset·Emdash와 같음, 동시에 여럿 돌리면 느린 CLI가 있음), 처음 통과한 경로를 씀. 다 실패면 "경로 깨짐"(찾긴 했는데 안 돎), 후보가 없으면 "설치 안 됨".
 async function detectAgent(agent, { pathStr, home, env = process.env, run = runCmd } = {}) {
+  if ((agent.req || []).some((b) => !candidates([b], pathStr, home).length)) return { id: agent.id, status: "missing", tried: [] }; // 필수 동반 명령 없음(Orca requiredCommands)
   const found = candidates(agent.bins, pathStr, home);
   const tried = [];
   for (const p of found) {
@@ -137,7 +123,7 @@ async function detectAll({ force = false, home = homedir(), env = process.env, r
   const list = await Promise.all(AGENTS.map(async (a) => {
     const d = await detectAgent(a, { pathStr, home, env: { ...env, PATH: pathStr }, run });
     const auth = d.status === "ok" ? await checkAuth(a, d.path, { env: { ...env, PATH: pathStr }, run }) : "unknown";
-    return { ...d, label: a.label, install: a.install, auth };
+    return { ...d, label: a.label, install: a.install, url: a.url, cmd: a.launch || a.cmd, choices: choicesOf(a.id), auth };
   }));
   const at = Date.now();
   if (my === gen) cache = { at, list, sp }; // 늦게 끝난 옛 실행이 새 캐시를 덮지 않게(리뷰)
