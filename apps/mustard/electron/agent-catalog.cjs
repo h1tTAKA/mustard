@@ -67,7 +67,10 @@ const envOf = (id, choice) => (choice === "full-access" ? BY_ID.get(id)?.env ?? 
 const choicesOf = (id) => CHOICES.filter((c) => c === "own" || flagOf(id, c) || envOf(id, c));
 
 // 따옴표를 한 덩어리로 보는 간단한 토큰 나누기(명령 줄은 셸이 다시 해석 — 여기선 옵션 이름만 봄)
-const tokens = (s) => String(s || "").match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || []; // 단어 중간 따옴표(--opt="a  b")도 한 덩어리
+// 단어 중간 따옴표(--opt="a  b")도 한 덩어리, 짝 없는 따옴표(don't)도 글자로 남김(리뷰)
+const tokens = (s) => String(s || "").match(/(?:[^\s"']|"[^"]*"|'[^']*'|["'])+/g) || [];
+// 비교용 — 셸이 벗기는 따옴표를 벗김("--yolo"도 --yolo로 알아봄, 리뷰)
+const unq = (s) => String(s).replace(/"([^"]*)"|'([^']*)'/g, (_, a, b) => a ?? b);
 const CLAUDE_OPTS = ["--permission-mode", "--dangerously-skip-permissions", "--allow-dangerously-skip-permissions", "--permission-prompt-tool", "--permission-prompts", "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools"];
 const EXTRA = { claude: CLAUDE_OPTS, codex: ["-a", "--ask-for-approval", "-s", "--sandbox", "--yolo", "--not-so-yolo", "--full-auto"], grok: ["--permission-mode", "--always-approve", "--yolo", "--dangerously-skip-permissions"], gemini: ["--approval-mode", "-y"] };
 const CODEX_CFG = ["approval_policy", "sandbox_mode", "approvals_reviewer", "sandbox_workspace_write"];
@@ -82,9 +85,10 @@ function hasPermissionOption(id, userArgs) {
   const t = tokens(userArgs);
   const carriers = new Set(carriersOf(id));
   return t.some((tok, i) => {
-    const name = id === "codex" && /^-[as].+/.test(tok) ? tok.slice(0, 2) : tok.split("=")[0];
+    const u = unq(tok);
+    const name = id === "codex" && /^-[as].+/.test(u) ? u.slice(0, 2) : u.split("=")[0];
     if (carriers.has(name)) return true;
-    if (id === "codex" && (tok === "-c" || tok === "--config")) return CODEX_CFG.includes(String(t[i + 1] || "").split("=")[0].split(".")[0].trim());
+    if (id === "codex" && (u === "-c" || u === "--config")) return CODEX_CFG.includes(unq(t[i + 1] || "").split("=")[0].split(".")[0].trim());
     return false;
   });
 }
@@ -107,9 +111,9 @@ function launchLine(id, { choice = "own", userArgs = "", cmd } = {}) {
 function liftPermission(id, userArgs) {
   // --opt=값도 --opt 값처럼 비교하되, 나머지는 원래 토큰 그대로 돌려줌(유저가 쓴 형태·따옴표 유지, 리뷰)
   const raw = tokens(userArgs);
-  const t = raw.flatMap((x, ri) => (/^--[^=]+=/.test(x) ? [[x.slice(0, x.indexOf("=")), ri], [x.slice(x.indexOf("=") + 1), ri]] : [[x, ri]]));
+  const t = raw.map(unq).flatMap((x, ri) => (/^--[^=]+=/.test(x) ? [[x.slice(0, x.indexOf("=")), ri], [x.slice(x.indexOf("=") + 1), ri]] : [[x, ri]]));
   for (const c of ["full-access", "auto", "accept-edits", "ask"]) {
-    const f = tokens(flagOf(id, c));
+    const f = tokens(flagOf(id, c)).map(unq);
     if (!f.length) continue;
     for (let i = 0; i + f.length <= t.length; i++) {
       if (!f.every((x, k) => t[i + k][0] === x)) continue;
