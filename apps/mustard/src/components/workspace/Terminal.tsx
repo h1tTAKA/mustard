@@ -127,7 +127,8 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       term.open(host);
       oscDisp = term.parser.registerOscHandler(7, (data) => {
         // 터미널을 연 폴더 안쪽일 때만 따라감 — 원격 셸이나 출력에 섞인 값이 다른 레포로 보내지 않게(리뷰)
-        try { const u = new URL(data); const p = u.protocol === "file:" ? resolvePath("/", decodeURIComponent(u.pathname)) ?? "" : ""; // . .. 먼저 정리하고 검사(리뷰) const base = cwd.replace(/\/+$/, ""); if (p === base || p.startsWith(`${base}/`)) shellCwd = p; } catch { /* 형식 아님 */ }
+        // . .. 을 먼저 정리하고 검사(리뷰)
+        try { const u = new URL(data); const p = u.protocol === "file:" ? resolvePath("/", decodeURIComponent(u.pathname)) ?? "" : ""; const base = cwd.replace(/\/+$/, ""); if (p === base || p.startsWith(`${base}/`)) shellCwd = p; } catch { /* 형식 아님 */ }
         return false; // 다른 처리기도 받게
       });
       // 글자 속 링크(주소·파일 경로) — 마우스를 올리면 밑줄, ⌘/Ctrl+클릭으로 엶. 한계: 줄바꿈으로 두 줄에 걸친 링크는 못 찾음.
