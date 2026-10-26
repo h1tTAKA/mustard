@@ -19,6 +19,7 @@ interface NunopiDesktopApi {
   getRuntimePaths(): Promise<{ claudeCode?: string; codex?: string; opencode?: string }>;
   setRuntimePaths(paths: { claudeCode?: string; codex?: string; opencode?: string }): Promise<{ ok: boolean; saved: Record<string, string> }>;
   // #1171 에이전트 CLI 상태(Mustard main — nunopi 단독 앱엔 없을 수 있음)
+  openExternal?(url: string): Promise<void>; // #1193
   // #1175 컴퓨터 사용(Mustard main — 단독 앱엔 없음)
   computer?: {
     status(force?: boolean): Promise<ComputerStatus>;

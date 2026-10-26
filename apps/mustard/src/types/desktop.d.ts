@@ -38,6 +38,7 @@ interface NunopiDesktopApi {
   getRuntimePaths(): Promise<{ claudeCode?: string; codex?: string; opencode?: string }>;
   setRuntimePaths(paths: { claudeCode?: string; codex?: string; opencode?: string }): Promise<{ ok: boolean; saved: Record<string, string> }>;
   // #1171 에이전트 CLI 상태 — status: ok(설치·실행됨) / broken(찾았는데 실행 실패) / missing, auth: authenticated / unauthenticated / unknown
+  openExternal?(url: string): Promise<void>; // #1193
   // #1175 컴퓨터 사용(Mustard main — 단독 앱엔 없음)
   computer?: {
     status(force?: boolean): Promise<ComputerStatus>;
