@@ -108,11 +108,11 @@ function ExclusionGroup({
 }
 
 // 에이전트별 추가 인자 한 줄(#927, #1171 모든 실행 에이전트로) — 줄마다 useSetting이라 컴포넌트로.
-function AgentArgsRow({ id, label, ph, logo, suffix, optional }: { id: string; label: string; ph: string; logo?: ReactNode; suffix: string; optional: string }) {
+function AgentArgsRow({ id, label, ph, logo, optional }: { id: string; label: string; ph: string; logo?: ReactNode; optional: string }) {
   const val = useSetting<string>(AKEYS.args(id), "");
   return (
     <label className="block space-y-1.5">
-      <span className="flex items-center gap-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300">{logo && <span className="flex size-4 shrink-0 items-center justify-center">{logo}</span>}{label} {suffix} <span className="text-zinc-400 dark:text-zinc-500">{optional}</span></span>
+      <span className="flex items-center gap-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300">{logo && <span className="flex size-4 shrink-0 items-center justify-center">{logo}</span>}{label} <span className="text-zinc-400 dark:text-zinc-500">{optional}</span></span>
       <input type="text" value={val} onChange={(e) => setSetting(AKEYS.args(id), e.target.value)} placeholder={ph}
         className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
     </label>
@@ -286,7 +286,7 @@ export default function SettingsDrawer({
     const fn = typeof window !== "undefined" ? window.nunopiDesktop?.detectAgents : undefined;
     if (!fn) return;
     setAgentsChecking(true);
-    try { const r = await fn(force); if (r.ok) setAgentsDet(r.list); } catch { /* 표시 없이 */ } finally { setAgentsChecking(false); }
+    try { const r = await fn(force); setAgentsDet(r.ok ? r.list : []); } catch { setAgentsDet([]); } finally { setAgentsChecking(false); } // 실패 = 빈 목록 → 아래 옛 경로 칸으로
   }, []);
   useEffect(() => { if (activeSection === "set-agents" && !agentsDet) void refreshAgents(false); }, [activeSection, agentsDet, refreshAgents]); // eslint-disable-line react-hooks/set-state-in-effect -- 칸 열 때 한 번 불러옴
   const refreshGh = useCallback(async () => {
@@ -339,7 +339,8 @@ export default function SettingsDrawer({
   const customPath: Record<string, [string, (v: string) => void]> = { claude: [claudeCliPath, setClaudeCliPath], codex: [codexCliPath, setCodexCliPath], opencode: [openCodeCliPath, setOpenCodeCliPath] };
   const [pathOpen, setPathOpen] = useState<string | null>(null);
   const [pathDirty, setPathDirty] = useState(false);
-  const statusList = agentsDet !== null || agentsChecking;
+  // 데스크톱이면 첫 화면부터 목록(확인 중 표시) — 옛 칸이 잠깐 보였다 바뀌지 않게(리뷰). 감지 실패(빈 목록)면 옛 칸.
+  const statusList = !!desktop?.detectAgents && !(agentsDet?.length === 0 && !agentsChecking);
 
   if (!isOpen) return null;
 
@@ -711,7 +712,7 @@ export default function SettingsDrawer({
                         {customPath[a.id]?.[0].trim() && pathOpen !== a.id && <p className="truncate font-mono text-[11px] text-amber-600 dark:text-amber-400" title={customPath[a.id][0]}>{t("agents.customPath", { path: customPath[a.id][0].trim() })}</p>}
                         {customPath[a.id] && pathOpen === a.id && (
                           <div className="space-y-1">
-                            <input type="text" autoFocus value={customPath[a.id][0]} onChange={(e) => customPath[a.id][1](e.target.value)} onBlur={() => { handleSave(); setPathDirty(true); }}
+                            <input type="text" autoFocus value={customPath[a.id][0]} onChange={(e) => { customPath[a.id][1](e.target.value); setPathDirty(true); }} onBlur={handleSave}
                               placeholder={a.path || ""} aria-label={`${a.label} ${t("settings.cliPath")}`}
                               className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-[12px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
                             <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("agents.setPathHint")}</p>
@@ -753,9 +754,17 @@ export default function SettingsDrawer({
                   </select>
                   <IconChevronDown size={16} stroke={2} aria-hidden className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
                 </div>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.defaultAgentHint")}</p>
               </div>
-              {LAUNCH_AGENTS.map((row) => <AgentArgsRow key={row.id} id={row.id} label={row.label} ph={"ph" in row ? row.ph : ""} logo={agentLogo?.(row.id)} suffix={t("settings.agentExtraArgs")} optional={t("settings.optional")} />)}
+            </div>
+
+            <div className="border-t border-zinc-200 dark:border-zinc-800" />
+
+            {/* 에이전트별 추가 인자(#927, #1171 모든 실행 에이전트) — 따로 섹션 */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t("settings.agentExtraArgs")}</h4>
               <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.agentExtraArgsHint")}</p>
+              {LAUNCH_AGENTS.map((row) => <AgentArgsRow key={row.id} id={row.id} label={row.label} ph={row.ph} logo={agentLogo?.(row.id)} optional={t("settings.optional")} />)}
             </div>
 
             <div className="border-t border-zinc-200 dark:border-zinc-800" />

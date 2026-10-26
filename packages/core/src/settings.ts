@@ -55,8 +55,11 @@ export const AKEYS = {
 // 실행할 수 있는 에이전트(터미널 + 메뉴·기본 에이전트·추가 인자 한 곳, #1171) — main AGENT_DEFAULT_CMD에 있는 것. gemini 제외(구글=antigravity, #864).
 export const LAUNCH_AGENTS = [
   { id: "claude", label: "Claude Code", ph: "--dangerously-skip-permissions" }, { id: "codex", label: "Codex", ph: "--model gpt-5" },
-  { id: "grok", label: "Grok" }, { id: "opencode", label: "OpenCode" }, { id: "omp", label: "OMP" }, { id: "antigravity", label: "Antigravity" },
-  { id: "cursor", label: "Cursor" }, { id: "hermes", label: "Hermes" }, { id: "copilot", label: "Copilot" }, { id: "amp", label: "Amp" }, { id: "aider", label: "Aider" },
+  // ph = 예시(각 CLI --help에서 확인한 실제 플래그 — copilot·amp·aider는 공식 문서)
+  { id: "grok", label: "Grok", ph: "--always-approve" }, { id: "opencode", label: "OpenCode", ph: "--model anthropic/claude-sonnet-4-5" },
+  { id: "omp", label: "OMP", ph: "--model opus" }, { id: "antigravity", label: "Antigravity", ph: "--dangerously-skip-permissions" },
+  { id: "cursor", label: "Cursor", ph: "--force" }, { id: "hermes", label: "Hermes", ph: "--yolo" }, { id: "copilot", label: "Copilot", ph: "--allow-all-tools" },
+  { id: "amp", label: "Amp", ph: "--dangerously-allow-all" }, { id: "aider", label: "Aider", ph: "--model sonnet" },
 ] as const;
 
 // 알림(#928)
