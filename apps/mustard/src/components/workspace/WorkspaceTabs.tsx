@@ -12,6 +12,10 @@ import WorkspaceModePane from "@/components/workspace/WorkspaceModePane";
 import RepoAvatar from "@/components/workspace/RepoAvatar";
 import WorkspaceAddMenu, { type AddKind } from "@/components/workspace/WorkspaceAddMenu";
 import RepoTabHoverCard from "@/components/workspace/RepoTabHoverCard";
+import NewWorkspaceDialog from "@/components/workspace/NewWorkspaceDialog";
+import WorktreeSwitcher from "@/components/workspace/WorktreeSwitcher";
+import RemoveWorkspaceDialog from "@/components/workspace/RemoveWorkspaceDialog";
+import { CLOSE_WORKSPACE_EVENT, NEW_WORKSPACE_EVENT, OPEN_REPO_TAB_EVENT, REMOVE_WORKSPACE_EVENT, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
 import DaemonOutdatedNotice from "@/components/workspace/DaemonOutdatedNotice";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
 import { publishRepoSessions } from "@/lib/agentSessionStates";
@@ -25,7 +29,7 @@ const OLD_PATH_KEY = "nunopi:workspace-path"; // 구 단일 워크스페이스 �
 // 탭 모델(#769) — 레포 탭은 폴더 경로가 정체성, 모드 탭(질문/코드/글)은 폴더 없이 유니크 id가 정체성.
 type ModeKind = "ask" | "code" | "text" | "memorize";
 export type Tab =
-  | { type: "repo"; path: string }
+  | { type: "repo"; path: string; wt?: string } // #1170 wt = 이 레포 탭이 지금 보는 worktree(없으면 메인 폴더)
   | { type: ModeKind; id: string };
 // keep-alive·활성 판별 공통 키 — 레포=경로, 모드=id. localStorage active 키로도 씀.
 const tabKey = (t: Tab): string => (t.type === "repo" ? `repo:${t.path}` : `${t.type}:${t.id}`);
@@ -47,7 +51,7 @@ function migrateTab(x: unknown): Tab | null {
   if (typeof x === "string") return { type: "repo", path: x };
   if (x && typeof x === "object") {
     const o = x as Record<string, unknown>;
-    if (o.type === "repo" && typeof o.path === "string") return { type: "repo", path: o.path };
+    if (o.type === "repo" && typeof o.path === "string") return typeof o.wt === "string" && o.wt ? { type: "repo", path: o.path, wt: o.wt } : { type: "repo", path: o.path };
     if (isMode(o.type) && typeof o.id === "string") return { type: o.type, id: o.id };
   }
   return null;
@@ -104,6 +108,8 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   const modeSeq = useRef(0); // 모드 탭 id 세션 카운터(같은 ms 충돌 방지, #769)
   const [addMenu, setAddMenu] = useState<{ left: number; top: number } | null>(null); // "+" 드롭다운 픽커(#769)
   const closeAddMenu = useCallback(() => setAddMenu(null), []); // 안정 참조 — 메뉴 effect 재부착 최소화
+  const [newWs, setNewWs] = useState<{ root: string; initial?: NewWorkspaceInitial } | null>(null); // #1170 "새 작업공간" 창
+  const [rmWs, setRmWs] = useState<{ root: string; dir: string } | null>(null); // #1170 지우기 창
   // "+" 버튼 아래로 드롭다운 앵커링. 화면 오른쪽 넘침 방지.
   const openAddMenu = (el: HTMLElement) => {
     const r = el.getBoundingClientRect();
@@ -154,7 +160,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     // #973 실행/재활성 직후 4s는 알림 워밍업 — 복원된 터미널 버퍼(옛 에이전트 출력)가 정착하며 생기는
     // 가짜 working→done 전이로 알림이 뜨던 문제 억제. baseline(prevRepoStatus)은 그대로 잡되 알림만 스킵.
     if (!notifyWarmupUntil.current) notifyWarmupUntil.current = Date.now() + 4000;
-    const repoPaths = tabs.filter((x): x is { type: "repo"; path: string } => x.type === "repo").map((x) => x.path);
+    const repoPaths = tabs.filter((x): x is { type: "repo"; path: string; wt?: string } => x.type === "repo").map((x) => x.wt ?? x.path); // #1170 지금 보는 작업 폴더 기준
     if (repoPaths.length === 0) return;
     let alive = true;
     // 각 레포의 에이전트 상태(버퍼 스크레이핑, /api/agent/status)로 종합 도트. 프로세스명 휴리스틱은 제거(#765).
@@ -195,7 +201,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
               if (latestSession.current[k] !== fired || !notifyOnRef.current) return; // 그새 바뀜 → 취소
               const focused = typeof document !== "undefined" && document.hasFocus();
               const at = tabsRef.current.find((x) => tabKey(x) === activeKeyRef.current);
-              const watching = focused && !!at && at.type === "repo" && at.path === p; // 지금 이 레포를 보고 있음
+              const watching = focused && !!at && at.type === "repo" && (at.wt ?? at.path) === p; // 지금 이 레포(작업 폴더)를 보고 있음(#1170 wt 기준)
               if (getSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching) && watching) return;
               const now = Date.now();
               if (now - (lastNotifyAt.current[p] ?? 0) < 5000) return; // 레포별 5s 쿨다운(세션 여러 개 동시 완료 등)
@@ -323,12 +329,65 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
+  // #1170 작업공간 — 어디서든 "새 작업공간" 창 열기 + 만든 worktree를 레포 탭으로(이미 열려 있으면 그 탭으로)
+  useEffect(() => {
+    const onNew = (e: Event) => { const d = (e as CustomEvent<{ root: string; initial?: NewWorkspaceInitial }>).detail; if (d?.root) setNewWs(d); };
+    // worktree는 레포 탭 안에서 전환(유저 결정) — 그 레포 탭(root)이 있으면 작업 폴더만 바꾸고, 없으면 레포 탭을 열며 바꿈. 예전에 따로 연 worktree 탭이 있으면 그 탭으로.
+    const onOpen = (e: Event) => {
+      const { path, root } = (e as CustomEvent<{ path: string; root?: string }>).detail ?? {};
+      if (!path) return;
+      const own = tabKey({ type: "repo", path });
+      const home = root ? tabKey({ type: "repo", path: root }) : own;
+      setTabs((prev) => {
+        if (prev.some((x) => tabKey(x) === own)) return prev;
+        const wt = root && root !== path ? path : undefined;
+        const set = (x: Tab): Tab => (wt ? { type: "repo", path: x.type === "repo" ? x.path : root!, wt } : { type: "repo", path: x.type === "repo" ? x.path : path });
+        return prev.some((x) => tabKey(x) === home) ? prev.map((x) => (tabKey(x) === home ? set(x) : x)) : [...prev, set({ type: "repo", path: root ?? path })];
+      });
+      setTimeout(() => activate(tabsRef.current.some((x) => tabKey(x) === own) ? own : home), 0);
+    };
+    const onRm = (e: Event) => { const d = (e as CustomEvent<{ root: string; dir: string }>).detail; if (d?.root && d.dir) setRmWs(d); };
+    window.addEventListener(REMOVE_WORKSPACE_EVENT, onRm);
+    window.addEventListener(NEW_WORKSPACE_EVENT, onNew);
+    window.addEventListener(OPEN_REPO_TAB_EVENT, onOpen);
+    return () => { window.removeEventListener(REMOVE_WORKSPACE_EVENT, onRm); window.removeEventListener(NEW_WORKSPACE_EVENT, onNew); window.removeEventListener(OPEN_REPO_TAB_EVENT, onOpen); };
+  }, []); // activate는 setter만 씀 — 한 번만 걸면 됨
+  // #1170 지우기 직전 — 그 작업공간 탭이 열려 있으면 닫고(터미널도 끔), 안 열려 있어도 그 폴더에서 도는 터미널은 끔
+  useEffect(() => {
+    const onClose = (e: Event) => {
+      const dir = String((e as CustomEvent<string>).detail || "").replace(/\/+$/, "");
+      if (!dir) return;
+      const key = tabKey({ type: "repo", path: dir });
+      if (tabs.some((x) => tabKey(x) === key)) { closeTab(key); return; }
+      setTabs((prev) => prev.map((x) => (x.type === "repo" && x.wt === dir ? { type: "repo", path: x.path } : x))); // 그 폴더를 보던 레포 탭은 메인으로
+      desktop?.terminal?.list?.().then((ss) => { for (const s of ss) { const c = (s.cwd ?? "").replace(/\/+$/, ""); if (c === dir || c.startsWith(dir + "/")) desktop.terminal!.kill({ id: s.id }); } }).catch(() => {});
+    };
+    window.addEventListener(CLOSE_WORKSPACE_EVENT, onClose);
+    return () => window.removeEventListener(CLOSE_WORKSPACE_EVENT, onClose);
+  });
+
+  // #1170 복원한 탭의 wt가 이제 worktree가 아니면(앱 밖에서 지움) 메인으로 — 죽은 폴더에 머물지 않게(리뷰)
+  useEffect(() => {
+    if (!mounted) return;
+    for (const tb of tabsRef.current) {
+      if (tb.type !== "repo" || !tb.wt) continue;
+      const { path, wt } = tb;
+      void fetch("/api/repo/git-worktree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) })
+        .then((r) => r.json()).then((d) => {
+          if (!d.ok || (d.worktrees ?? []).some((w: { path: string }) => w.path === wt)) return;
+          setTabs((prev) => prev.map((x) => (x.type === "repo" && x.path === path && x.wt === wt ? { type: "repo", path } : x)));
+        }).catch(() => {});
+    }
+  }, [mounted]);
+
   // #989 알림 클릭 → 그 레포 탭 활성(닫혀 있으면 다시 열기) + 그 터미널 탭 포커스.
   useEffect(() => {
     if (!mounted || !desktop?.onNotifyActivate) return;
     return desktop.onNotifyActivate(({ repoPath, sessionId }) => {
-      const key = tabKey({ type: "repo", path: repoPath });
-      setTabs((prev) => (prev.some((x) => tabKey(x) === key) ? prev : [...prev, { type: "repo", path: repoPath }]));
+      // #1170 worktree 알림이면 그 폴더를 보는 레포 탭으로. 어느 탭도 그 폴더를 안 보고 있으면(드묾) 예전처럼 그 경로를 탭으로 엶 — 여기선 부모 레포를 모름
+      const holder = tabsRef.current.find((x) => x.type === "repo" && x.wt === repoPath);
+      const key = holder ? tabKey(holder) : tabKey({ type: "repo", path: repoPath });
+      if (!holder) setTabs((prev) => (prev.some((x) => tabKey(x) === key) ? prev : [...prev, { type: "repo", path: repoPath }]));
       activate(key);
       if (sessionId) requestTerminalFocus(repoPath, sessionId);
     });
@@ -498,7 +557,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     if (idx < 0) return;
     const closing = tabs[idx];
     if (closing.type !== "repo") desktop?.modeRelease?.(closing.type); // 모드 탭 닫으면 레지스트리 해제(#789)
-    else killRepoTerminals(closing.path); // #968 레포 탭 명시적 닫기 → 그 repo 터미널 pty kill(유령 세션 방지). 앱 재시작 생존(#682)은 별개.
+    else { killRepoTerminals(closing.path); if (closing.wt) killRepoTerminals(closing.wt); } // #968 레포 탭 명시적 닫기 → 그 repo 터미널 pty kill(유령 세션 방지). 앱 재시작 생존(#682)은 별개.
     const next = tabs.filter((x) => tabKey(x) !== key);
     if (activeKey === key) {
       // 활성 탭을 닫으면 이웃으로 활성 이동.
@@ -541,9 +600,11 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
             onPointerUp={tabPointerUp}
             onMouseEnter={p ? (e) => openHover(p, e.currentTarget) : undefined} onMouseLeave={p ? scheduleClose : undefined}
             className={`group relative flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12px] transition ${draggingKey ? "cursor-grabbing" : "cursor-grab"} ${isDragging ? "opacity-50" : ""} ${on ? "bg-brown-500/12 text-zinc-900 shadow-sm ring-1 ring-inset ring-brown-500/45 dark:bg-brown-400/12 dark:text-zinc-50 dark:ring-brown-400/45" : "text-zinc-500 hover:bg-zinc-200/60 dark:text-zinc-400 dark:hover:bg-zinc-800/60"} ${dropBar}`}>
-            {p ? tabDot(repoStatus[p] ?? null) : null}
+            {p ? tabDot(repoStatus[(tab.type === "repo" && tab.wt) || p] ?? null) : null}
             {p ? <RepoAvatar path={p} size={13} iconClassName={`shrink-0 ${iconColor}`} /> : <Icon size={13} stroke={2} className={`shrink-0 ${iconColor}`} aria-hidden />}
             <span className="max-w-[12rem] truncate whitespace-nowrap font-medium">{label}</span>
+            {/* #1170 레포 탭 안 작업 폴더 전환 — 활성 탭이거나 worktree를 보고 있을 때 */}
+            {tab.type === "repo" && (on || tab.wt) && <WorktreeSwitcher root={tab.path} current={tab.wt} onPick={(w) => { setTabs((prev) => prev.map((x) => (tabKey(x) === key && x.type === "repo" ? (w ? { type: "repo", path: x.path, wt: w } : { type: "repo", path: x.path }) : x))); activate(key); }} />}
             <button type="button" onClick={async (e) => { e.stopPropagation(); if (await confirm({ skipKey: CKEYS.skipCloseTab, title: label, message: t("workspace.closeTabConfirm"), detail: t("workspace.closeTabConfirmDetail"), confirmText: t("workspace.closeTab"), tone: "warn" })) closeTab(key); }} title={t("workspace.closeTab")} aria-label={t("workspace.closeTab")}
               className={`ml-0.5 shrink-0 rounded p-0.5 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200 ${on ? "" : "opacity-0 group-hover:opacity-100"}`}>
               <IconX size={12} stroke={2.5} aria-hidden />
@@ -595,9 +656,10 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
               <div key={key} className={on ? "flex min-h-0 w-full flex-1" : "hidden"}>
                 {tab.type === "repo" ? (
                   <WorkspaceView
-                    path={tab.path}
+                    key={tab.wt ?? tab.path} // #1170 작업 폴더를 바꾸면 그 폴더로 새로(터미널·변경·파일 모두 그 폴더 기준)
+                    path={tab.wt ?? tab.path}
                     active={active && on}
-                    agentWorking={repoStatus[tab.path] === "working"} // #1043 숨은 레포라도 에이전트 작업 중이면 캐치업 연결 유지
+                    agentWorking={repoStatus[tab.wt ?? tab.path] === "working"} // #1043 숨은 레포라도 에이전트 작업 중이면 캐치업 연결 유지
                     providerId={providerId}
                     providerSettings={providerSettings}
                     onOpenMemorize={onOpenMemorize}
@@ -641,6 +703,8 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
         );
       })()}
       <WorkspaceAddMenu anchor={addMenu} onClose={closeAddMenu} onPick={onPick} />
+      {newWs && <NewWorkspaceDialog root={newWs.root} initial={newWs.initial} onClose={() => setNewWs(null)} />}
+      {rmWs && <RemoveWorkspaceDialog root={rmWs.root} dir={rmWs.dir} onClose={() => setRmWs(null)} />}
     </div>
   );
 });

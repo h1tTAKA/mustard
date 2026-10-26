@@ -219,9 +219,10 @@ export function trustScript(root: string, script: string) {
 // 돌고 있는 setup 끄기 — Stop·감시가 setup 단계(아직 에이전트 세션 없음)에서 실행을 끝낼 때(리뷰)
 export const killSetup = (root: string, dir: string) => killStale(stateFile(root, dir, "setup.pid"));
 export interface ScriptResult { ok: boolean; code: number | null; timedOut: boolean; tail: string; log: string }
-export function runScript(kind: "setup" | "archive", script: string, root: string, dir: string, timeoutMs: number): Promise<ScriptResult> {
-  const log = join(dir, ".crew", `${kind}.log`);
-  if (!noLinkUnder(dir, log)) return Promise.resolve({ ok: false, code: null, timedOut: false, tail: ".crew is a symlink", log });
+// logAt: "worktree" = <worktree>/.crew/<kind>.log(Crew — 에이전트도 봄), "state" = worktree 밖 상태 폴더(사람용 작업공간 #1170 — 작업 폴더에 .crew/를 안 남김)
+export function runScript(kind: "setup" | "archive", script: string, root: string, dir: string, timeoutMs: number, logAt: "worktree" | "state" = "worktree"): Promise<ScriptResult> {
+  const log = logAt === "state" ? stateFile(root, dir, `${kind}.log`) : join(dir, ".crew", `${kind}.log`);
+  if (logAt === "worktree" && !noLinkUnder(dir, log)) return Promise.resolve({ ok: false, code: null, timedOut: false, tail: ".crew is a symlink", log });
   mkdirSync(dirname(log), { recursive: true });
   // 앱이 꺼져 주인 없이 남은 이전 실행이 있으면 먼저 끔(같은 worktree에 둘이 돌지 않게, 리뷰)
   const pidFile = stateFile(root, dir, `${kind}.pid`);
@@ -264,22 +265,22 @@ export const SETUP_TIMEOUT = 15 * 60_000, ARCHIVE_TIMEOUT = 5 * 60_000; // setup
 
 // 새 worktree의 setup — 없으면 none, 승인 전이면 untrusted(실행 안 함), 승인됐으면 실행.
 // 끝난 표시가 지금 스크립트와 같으면 다시 안 돎(none). 4000자 넘으면 too-long(사람이 끝까지 못 봄).
-export async function runSetup(root: string, dir: string, timeoutMs = SETUP_TIMEOUT): Promise<SetupOutcome> {
+export async function runSetup(root: string, dir: string, timeoutMs = SETUP_TIMEOUT, logAt: "worktree" | "state" = "worktree"): Promise<SetupOutcome> {
   const { setup } = readConfig(dir);
   if (!setup) return { status: "none" };
   const done = setupDone(root, dir);
   if (done === scriptHash(setup) || done === "skipped") return { status: "none" };
   if (setup.length > MAX_REVIEW) return { status: "too-long" };
   if (!isTrusted(root, setup)) return { status: "untrusted", script: setup };
-  const result = await runScript("setup", setup, root, dir, timeoutMs);
+  const result = await runScript("setup", setup, root, dir, timeoutMs, logAt);
   if (result.ok) markSetupDone(root, dir, scriptHash(setup));
   return { status: result.ok ? "ok" : "failed", result };
 }
 
 // worktree 지우기 전 archive — 승인된 것만, 실패해도 지우기는 진행(결과만 돌려줌). 메인 체크아웃의 설정.
-// ponytail: archive 승인 화면은 아직 없음 — 앱에서 worktree를 지우는 곳이 생기는 #1170(사람용 작업공간)에서 승인 UI 추가. 그 전엔 승인 안 된 archive는 건너뜀.
-export async function runArchive(root: string, dir: string, timeoutMs = ARCHIVE_TIMEOUT): Promise<ScriptResult | null> {
+// Crew는 승인된 것만 조용히 돌림. 사람용 작업공간(#1170)은 지우기 전에 승인 화면을 먼저 띄우고(workspaces.ts) 이걸 부름.
+export async function runArchive(root: string, dir: string, timeoutMs = ARCHIVE_TIMEOUT, logAt: "worktree" | "state" = "worktree"): Promise<ScriptResult | null> {
   const { archive } = readConfig(root);
-  if (!archive || !isTrusted(root, archive) || !existsSync(dir)) return null;
-  return runScript("archive", archive, root, dir, timeoutMs);
+  if (!archive || archive.length > MAX_REVIEW || !isTrusted(root, archive) || !existsSync(dir)) return null;
+  return runScript("archive", archive, root, dir, timeoutMs, logAt);
 }

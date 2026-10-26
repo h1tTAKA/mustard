@@ -70,7 +70,7 @@ export default function WorkspaceAddMenu({ anchor, onClose, onPick }: {
       {rows.map((row, i) => {
         const on = i === activeIdx;
         const first = i === 0 || rows[i - 1].group !== row.group;
-        const isMode = row.kind !== "repo"; // 모드 행만 서브메뉴(탭 추가/새 창). 레포는 즉시 폴더 선택.
+        const isMode = row.group === "modes"; // 모드 행만 서브메뉴(탭 추가/새 창). 레포는 즉시 폴더 선택.
         return (
           <div key={row.kind}>
             {first && label(row.group)}
@@ -79,7 +79,7 @@ export default function WorkspaceAddMenu({ anchor, onClose, onPick }: {
                 onMouseMove={() => setActiveIdx(i)} onClick={() => choose(i)}
                 className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition ${on ? "bg-zinc-100 text-zinc-900 dark:bg-white/[0.08] dark:text-zinc-50" : "text-zinc-700 dark:text-zinc-200"}`}>
                 {/* 활성 시 색 — 레포=인디고, 모드(질문/코드/글)=파랑(탭 아이콘과 일치). */}
-                <row.Icon size={16} stroke={1.75} className={`shrink-0 ${on ? (row.kind === "repo" ? "text-mustard-600 dark:text-mustard-400" : "text-sky-500 dark:text-sky-400") : "text-zinc-400 dark:text-zinc-500"}`} aria-hidden />
+                <row.Icon size={16} stroke={1.75} className={`shrink-0 ${on ? (row.group === "ws" ? "text-mustard-600 dark:text-mustard-400" : "text-sky-500 dark:text-sky-400") : "text-zinc-400 dark:text-zinc-500"}`} aria-hidden />
                 <span className="min-w-0 flex-1 truncate font-medium">{t(row.labelKey)}</span>
                 {isMode && (
                   <IconChevronRight size={14} stroke={2} aria-hidden

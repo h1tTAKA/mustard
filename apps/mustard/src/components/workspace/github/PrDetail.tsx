@@ -1,7 +1,7 @@
 "use client";
 // GitHub 패널 PR 상세(#814) — gh pr view → 제목·상태·머지상태·담당자 + 체크(ChecksView)·본문·코멘트.
 import { useEffect, useRef, useState } from "react";
-import { IconLoader2, IconAlertTriangle, IconArrowLeft, IconExternalLink, IconPencil, IconGitPullRequest, IconGitPullRequestDraft, IconGitPullRequestClosed, IconGitMerge, IconChevronDown, IconCheck, IconGitBranch, IconArrowBackUp } from "@tabler/icons-react";
+import { IconLoader2, IconGitFork, IconAlertTriangle, IconArrowLeft, IconExternalLink, IconPencil, IconGitPullRequest, IconGitPullRequestDraft, IconGitPullRequestClosed, IconGitMerge, IconChevronDown, IconCheck, IconGitBranch, IconArrowBackUp } from "@tabler/icons-react";
 import { useT, useToast } from "@mustard/core";
 import { useConfirm } from "@mustard/core";
 import { Markdown } from "@mustard/core";
@@ -10,6 +10,7 @@ import ChecksView from "@/components/workspace/github/ChecksView";
 import MarkdownToolbar from "@/components/workspace/github/MarkdownToolbar";
 import CommentComposer from "@/components/workspace/github/CommentComposer";
 import CommentItem from "@/components/workspace/github/CommentItem";
+import { openNewWorkspace } from "@/lib/repo/workspaceEvents";
 import SendToAgent from "@/components/workspace/github/SendToAgent";
 import PrAgentReview from "@/components/workspace/github/PrAgentReview";
 import PrReviewComments from "@/components/workspace/github/PrReviewComments";
@@ -251,6 +252,8 @@ export default function PrDetail({ root, number, reloadKey, host = "github", onB
               {d.state.toUpperCase() === "OPEN" && (d.isDraft
                 ? <button type="button" onClick={() => void confirmState("ready", t("github.markReady"), <IconGitPullRequest size={15} stroke={2} aria-hidden />)} disabled={actBusy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{actBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconGitPullRequest size={13} stroke={2} className="text-emerald-500" aria-hidden />}{t("github.markReady")}</button>
                 : <button type="button" onClick={() => void confirmState("draft", t("github.markDraft"), <IconGitPullRequestDraft size={15} stroke={2} aria-hidden />)} disabled={actBusy} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{actBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconGitPullRequestDraft size={13} stroke={2} className="text-zinc-400" aria-hidden />}{t("github.markDraft")}</button>)}
+              {/* #1170 메인 폴더는 그대로, 이 PR을 새 worktree 작업공간으로(옆의 체크아웃은 메인 자리를 바꿈) */}
+              {d.state.toUpperCase() === "OPEN" && host === "github" && <button type="button" onClick={() => openNewWorkspace(root, { kind: "pr", number })} title={t("newWs.openPrTitle")} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"><IconGitFork size={13} stroke={2} className="text-zinc-400" aria-hidden />{t("newWs.openPr")}</button>}
               {d.state.toUpperCase() === "OPEN" && window.nunopiDesktop?.github?.prCheckout && (prevBranch
                 ? <button type="button" onClick={() => void backToPrev()} disabled={actBusy} title={prevBranch} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{actBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconArrowBackUp size={13} stroke={2} className="text-zinc-400" aria-hidden />}{t("github.backToPrev")}</button>
                 : <button type="button" onClick={() => void checkout()} disabled={actBusy} title={t("github.checkoutTitle")} className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{actBusy ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconGitBranch size={13} stroke={2} className="text-zinc-400" aria-hidden />}{t("github.checkout")}</button>)}
