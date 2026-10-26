@@ -34,6 +34,8 @@ const basename = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
 // 생성 시점 "MM-DD HH:MM" — 구분선이 있어도 카드 단독으로 날짜가 보이게(유저 요청, #994).
 const fmtDateTime = (ts: number) => { const d = new Date(ts); const p = (n: number) => String(n).padStart(2, "0"); return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
 // 로컬 날짜 키(서버 파일명과 같은 규칙) — 구분선 그룹 기준.
+// 서버 dayKey와 같은 로컬 "YYYY-MM-DD"(#1181 오늘을 날짜로 고를 때)
+const todayKey = () => { const d = new Date(), p = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
 const dayOf = (ts: number) => { const d = new Date(ts); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
 // 카톡式 구분선 표기 — locale별 자동(ko "2026년 10월 6일 화요일", ja "2026年10月6日火曜日", en "Tuesday, October 6, 2026").
 const fmtDay = (ts: number, locale: string) => { try { return new Intl.DateTimeFormat(locale, { year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(ts); } catch { return new Date(ts).toDateString(); } };
@@ -330,8 +332,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     allRef.current = v; setAllFolders(v);
     fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&days=1${v ? "&all=1" : ""}`).then((r) => r.json())
       .then((j) => { if (j?.ok && Array.isArray(j.days)) setDays(new Set(j.days as string[])); }).catch(() => {});
-    if (viewDay) pickDay(viewDay);
-    else if (v) { const d = new Date(), p2 = (n: number) => String(n).padStart(2, "0"); pickDay(`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`); } // 오늘(실시간) 보던 중 켜면 오늘 하루를 레포 전체로(리뷰) — 서버 dayKey 형식
+    if (viewDay) pickDay(!v && viewDay === todayKey() ? null : viewDay); // 오늘 전체 보던 중 끄면 이 폴더 실시간으로
+    else if (v) pickDay(todayKey()); // 오늘(실시간) 보던 중 켜면 오늘 하루를 레포 전체로(리뷰)
   }, [root, viewDay, pickDay]);
   // #998 항목 질문 — 💬로 고른 항목 + 항목별 질문 수(배지) + 패널 높이(드래그, 기억).
   const [askItem, setAskItem] = useState<Concept | null>(null);
@@ -572,10 +574,15 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       {viewDay && (
         <div className="flex shrink-0 items-center gap-1.5 border-b border-mustard-500/30 bg-mustard-500/10 px-3 py-1.5 text-[11px] text-mustard-700 dark:text-mustard-400">
           <IconCalendar size={12} stroke={2} className="shrink-0" aria-hidden />
-          <span className="mr-auto truncate">{t("learn.viewingDay", { date: viewLabel })}</span>
-          <button type="button" onClick={() => pickDay(null)} className="flex items-center gap-0.5 rounded-md px-1.5 py-0.5 font-medium hover:bg-mustard-500/15">
-            <IconArrowBarToUp size={11} stroke={2} aria-hidden /> {t("learn.backToToday")}
-          </button>
+          {/* #1181 오늘을 '모든 작업 폴더'로 보는 중이면 "오늘 · 모든 작업 폴더" + 이 폴더만(실시간으로), 지난 날이면 예전 그대로 */}
+          <span className="mr-auto truncate">{viewDay === todayKey() ? `${t("learn.today")} · ${t("learn.allFoldersShort")}` : `${t("learn.viewingDay", { date: viewLabel })}${allFolders ? ` · ${t("learn.allFoldersShort")}` : ""}`}</span>
+          {viewDay === todayKey() ? (
+            <button type="button" onClick={() => toggleAll(false)} className="flex items-center gap-0.5 rounded-md px-1.5 py-0.5 font-medium hover:bg-mustard-500/15">{t("learn.thisFolderOnly")}</button>
+          ) : (
+            <button type="button" onClick={() => pickDay(null)} className="flex items-center gap-0.5 rounded-md px-1.5 py-0.5 font-medium hover:bg-mustard-500/15">
+              <IconArrowBarToUp size={11} stroke={2} aria-hidden /> {t("learn.backToToday")}
+            </button>
+          )}
         </div>
       )}
       {filter === "all" && glossary && <div className="shrink-0">{glossary}</div>}
