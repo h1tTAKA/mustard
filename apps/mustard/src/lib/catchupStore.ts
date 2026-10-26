@@ -65,7 +65,7 @@ function tag(root: string, items: CatchupItem[]): CatchupItem[] {
 const migrated = new Set<string>();
 // 옛 폴더 하나를 메인 폴더로 합치고 .migrated — as = 그 기록을 쓴 작업 폴더(wt 표시 기준). 옮기기 안에서 다시 옮기기를 부르지 않게 appendRaw(리뷰)
 function mergeInto(old: string, as: string, main: string) {
-  if (!existsSync(rawDir(main))) { renameSync(old, rawDir(main)); writeFileSync(join(rawDir(main), "root.txt"), main); return; } // 메인 자리가 비었으면 이름만
+  if (as === main && !existsSync(rawDir(main))) { renameSync(old, rawDir(main)); writeFileSync(join(rawDir(main), "root.txt"), main); return; } // 메인 자기 옛 폴더 + 자리가 비었으면 이름만(worktree 것은 wt 표시가 붙어야 해서 아래로, 리뷰)
   for (const f of readdirSync(old)) if (DAY_RE.test(f.replace(/\.jsonl$/, ""))) appendRaw(as, readDayFile(join(old, f)));
   for (const sub of ["sessions", "ask"]) { const s = join(old, sub); if (existsSync(s)) cpSync(s, join(rawDir(main), sub), { recursive: true, force: false }); }
   renameSync(old, existsSync(`${old}.migrated`) ? `${old}.migrated.${Date.now()}` : `${old}.migrated`); // 이미 있으면 겹치지 않게(리뷰)

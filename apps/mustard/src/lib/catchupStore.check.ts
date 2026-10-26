@@ -103,4 +103,18 @@ console.log("catchupStore ok");
   g(main, "worktree", "remove", "--force", wt);
   assert.strictEqual(readDay(main, "2026-10-09", true).filter((x) => x.br === "feat/x").length, 3, "worktree를 지워도 기록과 브랜치 이름은 남음");
 }
+// 리뷰: 메인 기록이 아직 없을 때 worktree 옛 폴더를 옮겨도 wt 표시가 붙음
+{
+  const tmp = realpathSync(mkdtempSync(join(tmpdir(), "cs-wt2-")));
+  const g = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, encoding: "utf8" }).trim();
+  const main = join(tmp, "r2"), wt = join(tmp, "r2-wt");
+  mkdirSync(main); g(main, "init", "-q", "-b", "main"); g(main, "config", "user.email", "t@t"); g(main, "config", "user.name", "t");
+  writeFileSync(join(main, "a"), "1"); g(main, "add", "."); g(main, "commit", "-qm", "c1"); g(main, "worktree", "add", "-q", "-b", "feat/y", wt);
+  const legacy = join(process.env.MUSTARD_STREAM_DIR!, createHash("sha256").update(wt).digest("hex").slice(0, 32));
+  mkdirSync(legacy, { recursive: true }); writeFileSync(join(legacy, "root.txt"), wt);
+  writeFileSync(join(legacy, "2026-10-08.jsonl"), JSON.stringify(it("lone", new Date(2026, 9, 8, 9).getTime())) + "\n");
+  const got = readDay(wt, "2026-10-08");
+  assert.ok(got.length === 1 && got[0].wt === wt && got[0].br === "feat/y", "빈 메인 자리여도 worktree 옛 기록엔 wt·br");
+  assert.strictEqual(readDay(main, "2026-10-08").length, 0, "메인 화면엔 안 섞임");
+}
 console.log("catchupStore.check ok");
