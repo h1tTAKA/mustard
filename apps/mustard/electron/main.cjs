@@ -107,7 +107,7 @@ function safeResolve(fn) {
 // #1171 에이전트 CLI 찾기·확인 — 로그인 셸 PATH를 합치고, 에이전트마다 --version이 통과한 실제 경로·로그인 상태.
 // 결과는 ~/.nunopi/agent-detect.json에도 남김 — Next 서버(Crew)가 '안 뜸' 실패 이유를 붙일 때 읽음(main IPC를 못 부르니까).
 const agentCli = require("./agent-cli.cjs");
-let lastDetect = null, detecting = null, detectSeq = 0, detectTimer = null;
+let lastDetect = null, detecting = null, detectSeq = 0, detectTimer = null, snaPaths = null;
 // 한 번에 하나(진행 중이면 그걸 같이 기다림) — force(다시 확인)는 새로 돌리고, 늦게 끝난 옛 감지가 새 결과를 덮지 않게 순번 확인(리뷰)
 function detectAgents(force = false) {
   if (detecting && !force) return detecting;
@@ -117,20 +117,24 @@ function detectAgents(force = false) {
   return p;
 }
 async function runDetect(force, seq) {
-  const list = await agentCli.detectAll({ force });
+  const { list, sp } = await agentCli.detectAll({ force });
   if (seq !== detectSeq) return list;
-  const sp = await agentCli.shellPath(); // detectAll이 받아 둔 것(캐시)
   if (sp) process.env.PATH = agentCli.mergePath(process.env.PATH, sp); // 이후 자식(SNA·gh 등)도 로그인 셸 PATH로
   // custom = 사용자가 경로를 직접 지정한 것(설정·env) — SNA는 그 경로를 쓰니 Crew가 감지 결과로 막지 않게
   const saved = loadSavedRuntimePaths(), env = process.env;
   const custom = [["claude", saved.claudeCode || env.NUNOPI_CLAUDE_COMMAND?.trim() || env.SNA_CLAUDE_COMMAND?.trim()], ["codex", saved.codex || env.NUNOPI_CODEX_COMMAND?.trim()], ["opencode", saved.opencode || env.NUNOPI_OPENCODE_COMMAND?.trim()]].filter(([, p]) => p).map(([id]) => id);
   lastDetect = { at: Date.now(), list, custom, shellOk: !!sp }; // shellOk = 로그인 셸 PATH를 받았나 — 못 받았으면 '못 찾음'이 틀릴 수 있어 Crew가 막지 않음
+  writeDetect();
+  return list;
+}
+// sna = SNA에 실제로 넘긴 경로(감지 id별) — 감지가 늦게 끝나 SNA가 다른(깨진) 경로를 받았는지 Crew가 비교(리뷰)
+function writeDetect() {
+  if (!lastDetect) return;
   try {
     const dir = join(require("node:os").homedir(), ".nunopi");
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "agent-detect.json"), JSON.stringify(lastDetect));
+    writeFileSync(join(dir, "agent-detect.json"), JSON.stringify({ ...lastDetect, sna: snaPaths }));
   } catch { /* 기록 실패는 무시 — 화면엔 IPC로 감 */ }
-  return list;
 }
 const detectedPath = (id) => lastDetect?.list.find((a) => a.id === id && a.status === "ok")?.path;
 
@@ -180,6 +184,8 @@ async function startRuntimeServer() {
   };
   for (const k of Object.keys(runtimePaths)) if (!runtimePaths[k]) delete runtimePaths[k];
   console.log("[sna] runtimePaths:", JSON.stringify(runtimePaths));
+  snaPaths = { claude: runtimePaths.claudeCode, codex: runtimePaths.codex, opencode: runtimePaths.opencode, grok: runtimePaths.grok, cursor: runtimePaths.cursor };
+  writeDetect();
   // 주의: forked 런타임 서버는 better-sqlite3(네이티브)를 로드한다. 패키징(③)에서
   // electron ABI로 rebuild한 뒤 { nativeBinding } 경로를 넘겨야 electron-owned 실행이 됨
   // (미rebuild면 "compiled for a different Node.js version"). ③에서 nativeBinding 추가.

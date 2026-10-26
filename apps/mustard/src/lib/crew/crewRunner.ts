@@ -163,12 +163,12 @@ function block(root: string, taskId: string, stage: number, why: string) {
 const tr = (key: string, vars?: Record<string, string | number>) => translate(narrationLocale(), key, vars);
 const PROVIDER: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", grok: "Grok Build", cursor: "Cursor", opencode: "OpenCode" };
 // #1171 감지 결과 → 사람이 읽을 이유. 못 찾음(셸 PATH까지 봄)·로그인 필요면 block, 아니면 '안 뜸'에 덧붙일 hint(경로 깨짐 이유 또는 띄운 경로·버전).
-// 경로 깨짐은 안 막음 — --version이 느리거나(첫 실행) 0이 아닌 값으로 끝나는 CLI도 실제론 뜰 수 있음(리뷰).
+// 경로 깨짐은 SNA가 바로 그 경로를 받았을 때만 막음 — 그 외엔 --version이 느리거나(첫 실행) 0이 아닌 값으로 끝나는 CLI도 실제론 뜰 수 있음(리뷰).
 function agentNote(provider: string): { block?: string; hint?: string } {
   const c = checkAgent(provider);
   if (!c) return {};
   if (c.kind === "missing") { const why = tr("crew.reason.agentMissing", { agent: c.agent }); return c.sure ? { block: why } : { hint: why }; } // 셸 PATH를 못 봤으면 SNA는 찾을 수도 — 막지 않음(리뷰)
-  if (c.kind === "broken") return { hint: tr("crew.reason.agentBroken", { agent: c.agent, path: c.path, err: c.err }) };
+  if (c.kind === "broken") { const why = tr("crew.reason.agentBroken", { agent: c.agent, path: c.path, err: c.err }); return c.sure ? { block: why } : { hint: why }; }
   if (c.kind === "login") return { block: tr("crew.reason.agentLogin", { agent: c.agent }) };
   return { hint: tr("crew.reason.agentPath", { agent: c.agent, path: c.path, version: c.version }) };
 }

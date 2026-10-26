@@ -5,7 +5,7 @@
 //          git/gh는 후보마다 --version을 돌려 "통과한 실제 경로를 고정"(죽은 shim을 다시 고르지 않게) — 이걸 에이전트에도 씀.
 //  - Emdash: 로그인 = claude auth status · codex login status · opencode auth list(5초), API 키 env 먼저, 모르면 unknown. 설치 명령 표.
 const { spawn } = require("node:child_process");
-const { accessSync, constants, existsSync, readdirSync, realpathSync } = require("node:fs");
+const { accessSync, constants, existsSync, lstatSync, readdirSync, realpathSync } = require("node:fs");
 const { delimiter, join } = require("node:path");
 const { homedir } = require("node:os");
 
@@ -81,13 +81,15 @@ function mergePath(cur, extra) {
 }
 
 const isExec = (p) => { try { accessSync(p, constants.X_OK); return true; } catch { return false; } };
+const isLink = (p) => { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } };
 // PATH를 직접 걸어(which 안 씀 — Orca) 후보 전부, 다음 설치 폴더. 같은 실제 파일은 한 번만.
 function candidates(bins, pathStr, home) {
   const out = [], seen = new Set();
   for (const dir of [...String(pathStr || "").split(delimiter).filter(Boolean), ...fallbackDirs(home)]) {
     for (const b of bins) {
       const p = join(dir, b);
-      if (!existsSync(p) || !isExec(p)) continue;
+      // 깨진 링크(대상 지워짐 — Claude 업데이트 후 흔함)도 후보로 → --version이 실패해 "경로 깨짐"(못 찾음 아님, 리뷰)
+      if (existsSync(p) ? !isExec(p) : !isLink(p)) continue;
       let key = p; try { key = realpathSync(p); } catch { /* 깨진 링크도 후보 — 실행해 보면 안다 */ }
       if (seen.has(key)) continue;
       seen.add(key); out.push(p);
@@ -125,9 +127,10 @@ async function checkAuth(agent, path, { env = process.env, run = runCmd } = {}) 
 }
 
 // 전부 — 에이전트끼리 동시에, 결과 60초 캐시(Superset·Emdash처럼). force면 셸 PATH부터 다시.
+// { list, sp } — sp = 이 목록을 만들 때 실제로 쓴 로그인 셸 PATH(없으면 null). 따로 shellPath()를 다시 부르면 그 사이 결과가 달라질 수 있음(리뷰).
 let cache = null, gen = 0;
 async function detectAll({ force = false, home = homedir(), env = process.env, run = runCmd, shell } = {}) {
-  if (cache && !force && Date.now() - cache.at < 60_000) return cache.list;
+  if (cache && !force && Date.now() - cache.at < 60_000) return { list: cache.list, sp: cache.sp };
   const my = ++gen;
   const sp = await shellPath({ force, shell });
   const pathStr = mergePath(env.PATH, sp);
@@ -136,8 +139,8 @@ async function detectAll({ force = false, home = homedir(), env = process.env, r
     const auth = d.status === "ok" ? await checkAuth(a, d.path, { env: { ...env, PATH: pathStr }, run }) : "unknown";
     return { ...d, label: a.label, install: a.install, auth };
   }));
-  if (my === gen) cache = { at: Date.now(), list }; // 늦게 끝난 옛 실행이 새 캐시를 덮지 않게(리뷰)
-  return list;
+  if (my === gen) cache = { at: Date.now(), list, sp }; // 늦게 끝난 옛 실행이 새 캐시를 덮지 않게(리뷰)
+  return { list, sp };
 }
 
 module.exports = { AGENTS, fallbackDirs, shellPath, mergePath, candidates, detectAgent, checkAuth, detectAll, versionOf };

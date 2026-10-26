@@ -14,14 +14,18 @@ const { AGENTS, mergePath, candidates, detectAgent, checkAuth, shellPath, versio
   const good = sh(join(home, ".local", "bin"), "claude", 'echo "2.1.226 (Claude Code)"');
   const claude = AGENTS.find((a) => a.id === "claude");
   const pathStr = join(tmp, "mise-shims");
-  assert.deepStrictEqual(candidates(claude.bins, pathStr, home), [shim, good], "PATH 먼저, 다음 설치 폴더");
+  assert.deepStrictEqual(candidates(claude.bins, pathStr, home).slice(0, 2), [shim, good], "PATH 먼저, 다음 설치 폴더(뒤는 이 기계의 /usr/local/bin 등)");
   const d = await detectAgent(claude, { pathStr, home });
   assert.strictEqual(d.status, "ok"); assert.strictEqual(d.path, good, "--version 통과한 경로를 고름(깨진 shim 건너뜀)");
   assert.strictEqual(d.version, "2.1.226");
   assert.strictEqual(d.tried.length, 1); assert.match(d.tried[0].error, /mise ERROR/, "건너뛴 이유 남김");
   // 같은 실제 파일(링크)은 한 번만
   mkdirSync(join(tmp, "links")); symlinkSync(good, join(tmp, "links", "claude"));
-  assert.strictEqual(candidates(claude.bins, join(tmp, "links"), home).length, 1);
+  assert.strictEqual(candidates(claude.bins, join(tmp, "links"), home).filter((p) => p.startsWith(tmp)).length, 1);
+  // 깨진 링크(대상 지워짐)는 "못 찾음"이 아니라 "경로 깨짐"(리뷰)
+  mkdirSync(join(tmp, "dangling")); symlinkSync(join(tmp, "gone", "claude"), join(tmp, "dangling", "claude"));
+  const dg = await detectAgent(claude, { pathStr: join(tmp, "dangling"), home: join(tmp, "empty-home") });
+  assert.strictEqual(dg.status, "broken");
   // 깨짐만 있으면 broken, 하나도 없으면 missing
   const codex = AGENTS.find((a) => a.id === "codex");
   sh(join(tmp, "only-broken"), "codex", "exit 127");
