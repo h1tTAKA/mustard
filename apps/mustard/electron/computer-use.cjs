@@ -127,16 +127,18 @@ async function startHelper() {
     c.pending.clear(); rmSync(dir, { recursive: true, force: true });
     if (conn === c) conn = null;
   });
-  conn = c;
-  // 도우미 pid — 비상 정지 때 이미 받은 동작까지 멈추려고 프로세스째 끝냄(리뷰)
+  // 도우미 pid — 비상 정지 때 이미 받은 동작까지 멈추려고 프로세스째 끝냄. pid를 못 받으면 못 쓰는 연결로 보고 버림(리뷰)
   const id = ++c.id;
   const hs = await new Promise((res) => { const t = setTimeout(() => res(null), 10_000); c.pending.set(id, (m) => { clearTimeout(t); res(m); }); sock.write(JSON.stringify({ id, token, method: "handshake", params: {} }) + "\n"); });
   c.pid = Number(hs?.result?.pid) || 0;
   c.version = hs?.result?.version || "";
+  if (!c.pid) { sock.destroy(); return null; }
+  conn = c; // 악수가 끝난 뒤에야 쓸 수 있는 연결로
   return c;
 }
-async function helperReq(method, params = {}, timeout = 60_000) {
+async function helperReq(method, params = {}, timeout = 60_000, gen = generation) {
   const c = await helper();
+  if (gen !== generation) return { ok: false, error: { code: "stopped", message: "" } }; // 띄우는 사이 비상 정지(리뷰)
   if (!c) return { ok: false, error: { code: "helper-launch", message: "Could not start Mustard Computer Use." } };
   const id = ++c.id;
   return new Promise((res) => {
@@ -157,6 +159,7 @@ function helperOut(m) {
   const e = m.error || {};
   if (e.code === "app_blocked") return { ok: false, error: "blocked", app: String(e.message || "").replace(/^Mustard blocks (.*?)\..*$/, "$1") };
   if (e.code === "timeout") return { ok: false, error: "timeout" };
+  if (e.code === "stopped") return { ok: false, error: "stopped" };
   return { ok: false, error: "helper-error", text: `${e.code}: ${e.message}` };
 }
 
@@ -199,7 +202,7 @@ async function call(tool, args = {}, { home, cwd = "", run = runCmd } = {}) {
   if (hit) { log({ at, tool, app, cwd, result: "blocked" }, home); return { ok: false, error: "blocked", app: hit }; }
   if (gen !== generation) return { ok: false, error: "stopped" };
   const r = helperApp
-    ? await helperReq("call", { tool, args: args ?? {}, blocked: cfg.blocked }).then((m) => (gen !== generation ? { ok: false, error: "stopped" } : helperOut(m)))
+    ? await helperReq("call", { tool, args: args ?? {}, blocked: cfg.blocked }, 60_000, gen).then((m) => (gen !== generation ? { ok: false, error: "stopped" } : helperOut(m)))
     : await driver(["call", tool, JSON.stringify(args ?? {})], { home, gen });
   log({ at, tool, app, cwd, result: r.ok ? "ok" : r.error }, home);
   return r;
@@ -210,6 +213,7 @@ function stop(home) {
   generation++;
   for (const c of live) { try { process.kill(-c.pid, "SIGKILL"); } catch { try { c.kill("SIGKILL"); } catch { /* 이미 끝남 */ } } }
   live.clear();
+  starting?.then((c) => { if (c?.pid) { try { process.kill(c.pid, "SIGKILL"); } catch { /* 이미 끝남 */ } } }); // 띄우는 중이던 도우미도(리뷰)
   killHelper(); // 도우미를 프로세스째 끝냄 — 이미 받아 둔 입력·클릭도 실행되지 않게(리뷰)
   writeConfig({ enabled: false }, home); log({ at: new Date().toISOString(), tool: "(stop)", app: "", cwd: "", result: "stopped" }, home);
 }
