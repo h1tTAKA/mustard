@@ -147,7 +147,7 @@ interface NunopiDesktopApi {
   terminal: {
     ensure(opts: { id: string; cwd: string; cols: number; rows: number; dark?: boolean }): Promise<{ ok: boolean; buffer?: string; reason?: string }>;
     input(payload: { id: string; data: string }): void;
-    shellInput?(payload: { id: string; cwd: string; data: string }): Promise<{ ok: true; id: string } | { ok: false; reason: "bad-args" | "error" | "no-terminal" | "busy" }>; // #1194
+    shellInput?(payload: { id: string; cwd: string; data: string }): Promise<{ ok: true; id: string } | { ok: false; reason: "bad-args" | "error" | "no-terminal" | "busy" | "multiline" }>; // #1194
     resize(payload: { id: string; cols: number; rows: number }): void;
     kill(payload: { id: string }): void;
     // 세션 목록(#764) — 레포탭 호버 카드용. process=foreground 프로세스명(claude/codex/zsh…), cwd=spawn 디렉터리.
