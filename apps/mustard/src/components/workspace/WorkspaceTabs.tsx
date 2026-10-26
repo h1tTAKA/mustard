@@ -88,6 +88,7 @@ export type WorkspaceTabsHandle = {
   listTabs: () => { key: string; kind: "repo" | ModeKind; label: string }[];
   activate: (key: string) => void;
   addTab: (kind: AddKind) => void;
+  currentRepo: () => { main: string; cwd: string } | null; // #1194 빠른 명령 — 지금 레포 탭(main = 메인 폴더, cwd = 보고 있는 작업 폴더)
 };
 type WorkspaceTabsProps = { active?: boolean; providerId: AgentProviderKind; providerSettings: ProviderSettings; onExitWorkspace?: () => void; onOpenMemorize?: () => void; onOpenSettings?: () => void };
 const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(function WorkspaceTabs({ active = true, providerId, providerSettings, onExitWorkspace, onOpenMemorize, onOpenSettings }, ref) {
@@ -529,7 +530,8 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     listTabs: () => tabs.map((tb) => ({ key: tabKey(tb), kind: tb.type, label: tb.type === "repo" ? basename(tb.path) : t(MODE_TAB[tb.type].labelKey) })),
     activate: (key) => activate(key),
     addTab: (kind) => onPick(kind),
-  }), [tabs, t, activate, onPick]);
+    currentRepo: () => { const tb = tabs.find((x) => tabKey(x) === activeKey); return tb?.type === "repo" ? { main: tb.path, cwd: tb.wt ?? tb.path } : null; },
+  }), [tabs, t, activate, onPick, activeKey]);
 
   // #968 레포 탭 닫을 때 그 repo(하위 포함)에서 도는 터미널 pty를 데몬서 kill — 유령 세션(닫힌 탭 생존) 방지.
   // 닫기=kill(흔한 터미널 기본 동작). 명시적 닫기에서만 호출(언마운트/앱종료엔 미호출 → #682 재시작 생존 보존).
