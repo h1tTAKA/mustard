@@ -4,7 +4,7 @@
 import { launchOpts, liftStoredArgs } from "@/lib/agentLaunch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
-import { useShortcut, useT, getTerminalThemePref, isTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled } from "@mustard/core";
+import { useShortcut, useT, getTerminalThemePref, isTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
 import Terminal from "@/components/workspace/Terminal";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
@@ -171,7 +171,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   const [agents, setAgents] = useState<AgentDetect[]>([]);
   const loadAgentState = () => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) setAgents(r.list); }).catch(() => {}); };
   useEffect(() => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) { setAgents(r.list); void liftStoredArgs(r.list.map((a) => a.id)); } }).catch(() => {}); }, []); // + 옛 추가 인자 → 권한(한 번)
-  const menuAgents = agents.filter((a) => a.status === "ok" && agentEnabled(a.id));
+  const menuAgents = sortAgents(agents.filter((a) => a.status === "ok" && agentEnabled(a.id))); // 기본 → 최근 쓴 순(우리 규칙)
   const defaultPick = pickDefaultAgent(menuAgents.map((a) => a.id)); // null = 셸만(또는 깔린 게 없음)
   const toggleMenu = () => {
     if (menuOpen) { setMenuOpen(false); return; }
@@ -195,6 +195,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
       const id = genId();
       setTabs((prev) => [...prev, { id, title: t("workspace.terminalTab", { n: nextNum(prev) }) }]);
       setActiveId(id);
+      markAgentUsed(agent);
       void window.nunopiDesktop?.terminal?.launchAgent?.({ id, agent, dark: isTerminalDark(getTerminalThemePref()), ...launchOpts(agent, args), cwd: d.worktree });
     };
     window.addEventListener("mustard:crew-takeover", on);
@@ -202,6 +203,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   }, [cwd, t]);
   const launchInNewTab = (agent: string) => {
     setMenuOpen(false);
+    markAgentUsed(agent);
     const id = genId();
     setTabs((prev) => [...prev, { id, title: t("workspace.terminalTab", { n: nextNum(prev) }) }]);
     setActiveId(id);

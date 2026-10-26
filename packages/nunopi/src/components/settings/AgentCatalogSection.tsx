@@ -2,15 +2,34 @@
 // 에이전트 설정(#1184) — Orca(1.4.240 / main#33018) 배치: 기본 에이전트 칩 · 에이전트 권한(전체) · 설치됨 N · 설치 가능 N.
 // 줄 = 로고·이름·실제 실행 명령 · 따로 정한 권한 배지 · 켜짐/꺼짐 · 기본값 · 문서 링크 · 펼치기(권한·추가 인자·경로 지정·상태).
 // 카탈로그·감지·플래그는 main(IPC detectAgents)이 줌 — 여기선 그리기 + 설정 키(core AKEYS)만.
-// Orca와 차이: 전체 권한을 바꿔도 따로 정한 에이전트는 그대로(Orca main #33018, 배포본 1.4.240은 다 지움) + 되돌리기 토스트.
+// Orca와 차이(우리 규칙 — 사용자 편의): 전체 권한을 바꿔도 따로 정한 에이전트는 그대로 + 되돌리기 토스트(Orca main #33018), 목록은 기본 → 최근 쓴 순 → 안 쓴 것 → 꺼진 것
+// (Orca는 카탈로그 고정 순서), 설치 가능은 접어 두고 검색·이름순, 전체 액세스는 처음 한 번 확인, 줄에 마지막 사용 시각.
 import { useState, type ReactNode } from "react";
-import { IconChevronDown, IconExternalLink, IconLoader2, IconCheck } from "@tabler/icons-react";
-import { AKEYS, AGENT_DEFAULTS, getSetting, setSetting, useSetting, useT, useToast, type AgentPermission } from "@mustard/core";
+import { IconChevronDown, IconExternalLink, IconLoader2, IconCheck, IconSearch } from "@tabler/icons-react";
+import { AKEYS, AGENT_DEFAULTS, getSetting, setSetting, sortAgents, useConfirm, useLocale, useSetting, useT, useToast, type AgentPermission } from "@mustard/core";
 
 const PERMS: AgentPermission[] = ["own", "ask", "auto", "full-access"]; // 전체 세그먼트(편집 수락은 줄 메뉴에서만, Orca)
 const FLAG_KEY: Record<string, "ask" | "edits" | "auto" | "full"> = { ask: "ask", "accept-edits": "edits", auto: "auto", "full-access": "full" };
 const btn = "rounded-lg px-2.5 py-1 text-xs font-medium transition";
 const seg = (on: boolean) => `${btn} ${on ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"}`;
+
+// 전체 액세스 확인 — 처음 한 번만(확인하면 AKEYS.fullOk, 다음부턴 안 물음)
+function useFullAccessGuard() {
+  const confirm = useConfirm();
+  const t = useT();
+  return async (choice: string) => {
+    if (choice !== "full-access" || getSetting<boolean>(AKEYS.fullOk, false)) return true;
+    const ok = await confirm({ title: t("agents.fullTitle"), message: t("agents.fullMsg"), confirmText: t("agents.perm.full-access"), tone: "warn" });
+    if (ok) setSetting(AKEYS.fullOk, true);
+    return ok;
+  };
+}
+// "3분 전" — 브라우저 Intl(앱 언어)
+function ago(ms: number, locale: string) {
+  const s = Math.round((ms - Date.now()) / 1000), f = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  const a = Math.abs(s);
+  return a < 60 ? f.format(Math.round(s), "second") : a < 3600 ? f.format(Math.round(s / 60), "minute") : a < 86400 ? f.format(Math.round(s / 3600), "hour") : f.format(Math.round(s / 86400), "day");
+}
 
 // 화면에 보일 명령 — main 카탈로그 launchLine과 같은 순서([env] 명령 플래그 유저인자). 유저 인자가 권한 옵션을 쓰는 경우의 생략은 main만 앎(표시는 근사).
 function lineOf(a: AgentDetect, choice: string, args: string, cmd?: string) {
@@ -36,15 +55,20 @@ export default function AgentCatalogSection({ list, checking, onRefresh, agentLo
   const def = useSetting<string>(AKEYS.default, AGENT_DEFAULTS.default);
   const all = useSetting<string>(AKEYS.perm, AGENT_DEFAULTS.perm);
   useSetting<number>("agent.rev", 0); // 줄별 키(off·perm) 변경도 다시 그리게(아래 setAgent가 올림)
-  const installed = (list ?? []).filter((a) => a.status !== "missing");
-  const available = (list ?? []).filter((a) => a.status === "missing");
+  const guard = useFullAccessGuard();
+  const [showAvail, setShowAvail] = useState(false);
+  const [q, setQ] = useState("");
+  const installed = sortAgents((list ?? []).filter((a) => a.status !== "missing"));
+  const available = (list ?? []).filter((a) => a.status === "missing").sort((x, y) => x.label.localeCompare(y.label));
+  const shownAvail = q.trim() ? available.filter((a) => `${a.label} ${a.cmd ?? ""}`.toLowerCase().includes(q.trim().toLowerCase())) : available;
   const enabled = (id: string) => !getSetting<boolean>(AKEYS.off(id), false);
   const chips = installed.filter((a) => a.status === "ok" && enabled(a.id));
   const overridden = (list ?? []).filter((a) => getSetting<string>(AKEYS.permOf(a.id), ""));
   const permLabel = (c: string) => t(`agents.perm.${c}`);
 
-  const setAll = (c: string) => {
+  const setAll = async (c: string) => {
     const prev = all;
+    if (prev === c || !(await guard(c))) return;
     setSetting(AKEYS.perm, c);
     if (prev !== c) toast(t("agents.permAllSet", { mode: permLabel(c) }), "success", { label: t("agents.undo"), onClick: () => setSetting(AKEYS.perm, prev) });
   };
@@ -76,7 +100,7 @@ export default function AgentCatalogSection({ list, checking, onRefresh, agentLo
             <p className="text-xs text-zinc-400 dark:text-zinc-500">{all === "own" ? t("agents.permOwnHint") : t("agents.permHint")}</p>
           </div>
           <div className="flex shrink-0 gap-0.5 rounded-xl border border-zinc-200 p-0.5 dark:border-zinc-700" role="radiogroup" aria-label={t("agents.permTitle")}>
-            {PERMS.map((c) => <button key={c} type="button" role="radio" aria-checked={all === c} onClick={() => setAll(c)} className={`${seg(all === c)} ${c === "full-access" && all === c ? "!text-amber-600 dark:!text-amber-400" : ""}`}>{permLabel(c)}</button>)}
+            {PERMS.map((c) => <button key={c} type="button" role="radio" aria-checked={all === c} onClick={() => void setAll(c)} className={`${seg(all === c)} ${c === "full-access" && all === c ? "!text-amber-600 dark:!text-amber-400" : ""}`}>{permLabel(c)}</button>)}
           </div>
         </div>
         {overridden.length > 0 && (
@@ -100,7 +124,7 @@ export default function AgentCatalogSection({ list, checking, onRefresh, agentLo
         <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("agents.statusHint")}</p>
         <div className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-700">
           {list === null && <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-zinc-400"><IconLoader2 size={12} className="animate-spin" aria-hidden />{t("agents.checking")}</div>}
-          {installed.map((a) => <AgentRow key={a.id} a={a} logo={agentLogo?.(a.id)} isDefault={def === a.id} path={paths[a.id]} all={all} />)}
+          {installed.map((a) => <AgentRow key={a.id} a={a} logo={agentLogo?.(a.id)} isDefault={def === a.id} path={paths[a.id]} all={all} guard={guard} />)}
         </div>
         {pathDirty && onRelaunch && (
           <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/20">
@@ -109,15 +133,26 @@ export default function AgentCatalogSection({ list, checking, onRefresh, agentLo
           </div>
         )}
       </div>
+      {/* 설치 가능 — 기본 접힘(우리 규칙: 긴 목록을 늘 펼치지 않음), 펼치면 검색·이름순 */}
       {available.length > 0 && (
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setShowAvail(!showAvail)} aria-expanded={showAvail} className="flex w-full items-center gap-2 text-left">
             <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t("agents.available")}</h4>
             <span className="rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">{t("agents.availableN", { n: available.length })}</span>
-          </div>
-          <div className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 opacity-70 dark:divide-zinc-800 dark:border-zinc-700">
-            {available.map((a) => <AgentRow key={a.id} a={a} logo={agentLogo?.(a.id)} isDefault={false} all={all} />)}
-          </div>
+            <span className="ml-auto text-xs text-zinc-500">{showAvail ? t("agents.hide") : t("agents.show")}</span>
+            <IconChevronDown size={14} stroke={1.75} className={`text-zinc-400 ${showAvail ? "rotate-180" : ""}`} aria-hidden />
+          </button>
+          {showAvail && (<>
+            <label className="flex items-center gap-2 rounded-lg border border-zinc-200 px-2 py-1 dark:border-zinc-700">
+              <IconSearch size={13} className="text-zinc-400" aria-hidden />
+              <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("agents.searchPh")} aria-label={t("agents.searchPh")}
+                className="min-w-0 flex-1 bg-transparent text-xs text-zinc-900 outline-none dark:text-zinc-50" />
+            </label>
+            <div className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-700">
+              {shownAvail.map((a) => <AgentRow key={a.id} a={a} logo={agentLogo?.(a.id)} isDefault={false} all={all} guard={guard} />)}
+              {shownAvail.length === 0 && <p className="px-3 py-2 text-xs text-zinc-400">{t("agents.noMatch")}</p>}
+            </div>
+          </>)}
         </div>
       )}
     </div>
@@ -125,8 +160,10 @@ export default function AgentCatalogSection({ list, checking, onRefresh, agentLo
 }
 
 // 줄 하나 — 설정 키를 줄마다 구독(켜짐·권한·인자)
-function AgentRow({ a, logo, isDefault, path, all }: { a: AgentDetect; logo?: ReactNode; isDefault: boolean; path?: PathCtl; all: string }) {
+function AgentRow({ a, logo, isDefault, path, all, guard }: { a: AgentDetect; logo?: ReactNode; isDefault: boolean; path?: PathCtl; all: string; guard: (c: string) => Promise<boolean> }) {
   const t = useT();
+  const { locale } = useLocale();
+  const used = useSetting<number>(AKEYS.usedAt(a.id), 0);
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const off = useSetting<boolean>(AKEYS.off(a.id), false);
@@ -142,13 +179,13 @@ function AgentRow({ a, logo, isDefault, path, all }: { a: AgentDetect; logo?: Re
     if (v && getSetting<string>(AKEYS.default, AGENT_DEFAULTS.default) === a.id) setSetting(AKEYS.default, "auto"); // 기본을 끄면 자동으로(Orca)
     bump();
   };
-  const setPerm = (v: string) => { setSetting(AKEYS.permOf(a.id), v === "default" ? "" : v); bump(); };
+  const setPerm = async (v: string) => { if (!(await guard(v))) return; setSetting(AKEYS.permOf(a.id), v === "default" ? "" : v); bump(); };
   // 인자 저장 — 알려진 권한 플래그를 쓰면 빼서 이 에이전트 권한으로(Orca lift) + 토스트
   const saveArgs = async () => {
     if (args === null) return;
     const v = args.trim(); setArgs(null);
     const r = v ? await window.nunopiDesktop?.liftAgentArgs?.(a.id, v).catch(() => null) : null;
-    if (r) { setSetting(AKEYS.args(a.id), r.rest); setPerm(r.choice); toast(t("agents.permLifted", { name: a.label, mode: t(`agents.perm.${r.choice}`) })); }
+    if (r) { setSetting(AKEYS.args(a.id), r.rest); setSetting(AKEYS.permOf(a.id), r.choice); bump(); toast(t("agents.permLifted", { name: a.label, mode: t(`agents.perm.${r.choice}`) })); }
     else setSetting(AKEYS.args(a.id), v);
   };
   const badge = a.status === "broken" ? { txt: t("agents.broken"), cls: "bg-rose-500/15 text-rose-600 dark:text-rose-400" }
@@ -164,6 +201,7 @@ function AgentRow({ a, logo, isDefault, path, all }: { a: AgentDetect; logo?: Re
             <span className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">{a.label}</span>
             {ok && a.version && <span className="font-mono text-[11px] text-zinc-400">v{a.version}</span>}
             {badge && <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${badge.cls}`}>{badge.txt}</span>}
+            {used > 0 && <span className="hidden truncate text-[11px] text-zinc-400 sm:inline" title={new Date(used).toLocaleString(locale)}>· {t("agents.lastUsed", { when: ago(used, locale) })}</span>}
           </div>
           <p className="truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500" title={lineOf(a, eff, savedArgs, customPath)}>{lineOf(a, eff, savedArgs, customPath)}</p>
         </div>
@@ -193,7 +231,7 @@ function AgentRow({ a, logo, isDefault, path, all }: { a: AgentDetect; logo?: Re
           {choices.length > 1 && (
             <label className="flex items-center gap-2">
               <span className="w-16 shrink-0 text-xs text-zinc-500">{t("agents.permShort")}</span>
-              <select value={mine && choices.includes(mine) ? mine : "default"} onChange={(e) => setPerm(e.target.value)}
+              <select value={mine && choices.includes(mine) ? mine : "default"} onChange={(e) => void setPerm(e.target.value)}
                 className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-900 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50">
                 <option value="default">{t("agents.permSameAsAll", { mode: t(`agents.perm.${choices.includes(all) ? all : "own"}`) })}</option>
                 {choices.map((c) => <option key={c} value={c}>{c === "own" ? t("agents.permOwnOf", { name: a.label }) : t(`agents.perm.${c}`)}</option>)}
