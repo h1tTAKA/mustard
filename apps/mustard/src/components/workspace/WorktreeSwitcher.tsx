@@ -28,7 +28,7 @@ export default function WorktreeSwitcher({ root, current, onPick }: { root: stri
   };
   useEffect(() => {
     if (!pos) return;
-    const close = () => setPos(null);
+    const close = (e?: Event) => { if (e && btn.current?.contains(e.target as Node)) return; setPos(null); }; // 칩 자체 누름은 칩 onClick이 토글(리뷰)
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
     const id = setTimeout(() => { window.addEventListener("mousedown", close); window.addEventListener("resize", close); }, 0);
     window.addEventListener("keydown", onKey);
@@ -46,7 +46,7 @@ export default function WorktreeSwitcher({ root, current, onPick }: { root: stri
         <IconChevronDown size={11} stroke={2.5} className="shrink-0" aria-hidden />
       </button>
       {pos && createPortal(
-        <div role="menu" aria-label={t("wt.switchTitle")} onMouseDown={(e) => e.stopPropagation()} style={{ left: pos.left, top: pos.top }}
+        <div role="menu" aria-label={t("wt.switchTitle")} onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} style={{ left: pos.left, top: pos.top }}
           className="fixed z-50 w-64 rounded-xl border border-zinc-200 bg-white p-1.5 shadow-2xl ring-1 ring-black/5 dark:border-white/10 dark:bg-[var(--s-menu)] dark:ring-white/5">
           <div className="px-2.5 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">{t("wt.folders")}</div>
           {list === null ? (

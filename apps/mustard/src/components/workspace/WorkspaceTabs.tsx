@@ -201,7 +201,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
               if (latestSession.current[k] !== fired || !notifyOnRef.current) return; // 그새 바뀜 → 취소
               const focused = typeof document !== "undefined" && document.hasFocus();
               const at = tabsRef.current.find((x) => tabKey(x) === activeKeyRef.current);
-              const watching = focused && !!at && at.type === "repo" && at.path === p; // 지금 이 레포를 보고 있음
+              const watching = focused && !!at && at.type === "repo" && (at.wt ?? at.path) === p; // 지금 이 레포(작업 폴더)를 보고 있음(#1170 wt 기준)
               if (getSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching) && watching) return;
               const now = Date.now();
               if (now - (lastNotifyAt.current[p] ?? 0) < 5000) return; // 레포별 5s 쿨다운(세션 여러 개 동시 완료 등)
@@ -366,12 +366,28 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     return () => window.removeEventListener(CLOSE_WORKSPACE_EVENT, onClose);
   });
 
+  // #1170 복원한 탭의 wt가 이제 worktree가 아니면(앱 밖에서 지움) 메인으로 — 죽은 폴더에 머물지 않게(리뷰)
+  useEffect(() => {
+    if (!mounted) return;
+    for (const tb of tabsRef.current) {
+      if (tb.type !== "repo" || !tb.wt) continue;
+      const { path, wt } = tb;
+      void fetch("/api/repo/git-worktree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) })
+        .then((r) => r.json()).then((d) => {
+          if (!d.ok || (d.worktrees ?? []).some((w: { path: string }) => w.path === wt)) return;
+          setTabs((prev) => prev.map((x) => (x.type === "repo" && x.path === path && x.wt === wt ? { type: "repo", path } : x)));
+        }).catch(() => {});
+    }
+  }, [mounted]);
+
   // #989 알림 클릭 → 그 레포 탭 활성(닫혀 있으면 다시 열기) + 그 터미널 탭 포커스.
   useEffect(() => {
     if (!mounted || !desktop?.onNotifyActivate) return;
     return desktop.onNotifyActivate(({ repoPath, sessionId }) => {
-      const key = tabKey({ type: "repo", path: repoPath });
-      setTabs((prev) => (prev.some((x) => tabKey(x) === key) ? prev : [...prev, { type: "repo", path: repoPath }]));
+      // #1170 worktree 알림이면 그 폴더를 보는 레포 탭으로(따로 탭을 만들지 않음)
+      const holder = tabsRef.current.find((x) => x.type === "repo" && x.wt === repoPath);
+      const key = holder ? tabKey(holder) : tabKey({ type: "repo", path: repoPath });
+      if (!holder) setTabs((prev) => (prev.some((x) => tabKey(x) === key) ? prev : [...prev, { type: "repo", path: repoPath }]));
       activate(key);
       if (sessionId) requestTerminalFocus(repoPath, sessionId);
     });
