@@ -5,9 +5,10 @@
 import { type RefObject, useEffect, useMemo, useState } from "react";
 import {
   IconCode, IconFileText, IconMessage2, IconLayoutDashboard, IconCards, IconHome, IconSettings,
-  IconFiles, IconFileCode, IconMessages,
+  IconFiles, IconFileCode, IconMessages, IconTerminal2, IconSparkles,
 } from "@tabler/icons-react";
-import { useT, useShortcut, useShortcutHint, shortcutHint, installShortcutDispatcher } from "@mustard/core";
+import { useT, useShortcut, useShortcutHint, shortcutHint, installShortcutDispatcher, useQuickCommands, quickCommandsFor, useToast } from "@mustard/core";
+import { runQuickCommand } from "@/lib/quickRun";
 import { CommandPalette, type Command } from "@mustard/nunopi";
 import { isNunopiEnabled } from "@/lib/product";
 import type { ViewMode } from "@mustard/core";
@@ -52,6 +53,8 @@ export default function GlobalCommandPalette({
   const t = useT();
   const [open, setOpen] = useState(false);
   const [tabCmds, setTabCmds] = useState<Command[]>([]);
+  const quick = useQuickCommands(); // #1194
+  const toast = useToast();
 
   // #1027 단축키 실행기 설치(앱 전역 1개) + 팔레트(⌘K 터미널 밖·⇧⌘P)·설정(⌘,). input 포커스 중에도 동작.
   useEffect(() => installShortcutDispatcher(), []);
@@ -76,11 +79,18 @@ export default function GlobalCommandPalette({
         label: `${t("palette.newTab")}: ${k === "repo" ? t("palette.tabRepo") : t(`mode.${k}`)}`,
         icon: TAB_ICON[k], run: () => workspaceRef.current?.addTab(k),
       }));
-      next = [...switchTabs, ...newTabs];
+      // #1194 빠른 명령 — 레포 탭일 때만, 이 레포 것 먼저. 맨 위 섹션.
+      const repo = ws.currentRepo();
+      const quickCmds: Command[] = repo ? quickCommandsFor(quick, repo.main).map((c) => ({
+        id: `quick:${c.id}`, section: t("quick.title"), label: c.name,
+        icon: c.kind === "shell" ? <IconTerminal2 size={16} stroke={2} aria-hidden /> : <IconSparkles size={16} stroke={2} aria-hidden />,
+        run: () => { void runQuickCommand(repo.cwd, c).then((r) => { if (!r.ok) toast(t(`quick.fail.${r.reason}`), "error"); }); },
+      })) : [];
+      next = [...quickCmds, ...switchTabs, ...newTabs];
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 열림/뷰 전환 시 탭 스냅샷 1회 갱신
     setTabCmds(next);
-  }, [open, vm, t, workspaceRef]);
+  }, [open, vm, t, workspaceRef, quick, toast]);
 
   const commands = useMemo<Command[]>(() => {
     // Mustard 섹션 — 워크스페이스 + 설정(항상).
@@ -92,7 +102,7 @@ export default function GlobalCommandPalette({
     const nunopiNav: Command[] = isNunopiEnabled()
       ? NUNOPI_VIEWS.map((v) => ({ id: `view:${v}`, section: t("palette.section.nunopi"), label: t(`mode.${v}`), icon: VIEW_ICON[v], run: () => onNavigate(v) }))
       : [];
-    return [...mustard, ...nunopiNav, ...tabCmds];
+    return [...tabCmds.filter((c) => c.id.startsWith("quick:")), ...mustard, ...nunopiNav, ...tabCmds.filter((c) => !c.id.startsWith("quick:"))]; // 빠른 명령이 맨 위
   }, [t, onNavigate, onOpenSettings, tabCmds, settingsHint]);
 
   return <CommandPalette open={open} commands={commands} onClose={() => setOpen(false)} />;
