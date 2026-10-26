@@ -589,7 +589,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           <div className="flex justify-center py-6"><IconLoader2 size={14} stroke={2} className="animate-spin text-zinc-400" aria-hidden /></div>
         ) : viewDay && !shown.length && filter !== "terms" ? ( /* 용어집은 날짜 무관 — 지난 날 보기여도 용어 필터면 용어집 */
           <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.dayEmpty")}</p>
-        ) : !loaded && !concepts.length ? null : !concepts.length && !(showTerms && terms.length) ? (
+        ) : !viewDay && !query && !loaded && !concepts.length ? null : !viewDay && !query && !concepts.length && !(showTerms && terms.length) ? ( /* #1181 지난 날·검색 결과가 있으면 실시간 목록이 비어도 그걸 보여 줌(worktree는 실시간이 자주 비어 있음) */
           <p className="px-4 py-6 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("learn.empty")}</p>
         ) : (
           <>
