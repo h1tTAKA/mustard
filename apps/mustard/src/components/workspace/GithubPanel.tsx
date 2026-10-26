@@ -11,6 +11,7 @@ import PrList from "@/components/workspace/github/PrList";
 import PrDetail from "@/components/workspace/github/PrDetail";
 import TrackerIssueList from "@/components/workspace/github/TrackerIssueList";
 import TrackerIssueDetail from "@/components/workspace/github/TrackerIssueDetail";
+import TrackerActions from "@/components/workspace/github/TrackerActions";
 import type { CiDot } from "@/components/workspace/github/useBranchCi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 
@@ -203,7 +204,7 @@ export default function GithubPanel({ root, ciDot, onOpenPrDiff, agent }: { root
           /* 상세 — 전체 차지(#824). 뒤로가기로 반반 목록 복귀. */
           <div className="min-h-0 flex-1">
             {open.kind === "tracker"
-              ? <TrackerIssueDetail key={`tracker-${open.issue.provider}-${open.issue.id}`} provider={open.issue.provider} initial={open.issue} reloadKey={reload} onBack={() => setOpen(null)} />
+              ? <TrackerIssueDetail key={`tracker-${open.issue.provider}-${open.issue.id}`} provider={open.issue.provider} initial={open.issue} reloadKey={reload} onBack={() => setOpen(null)} actions={(issue) => <TrackerActions root={root} issue={issue} />} />
               : open.kind === "issue"
               ? <IssueDetail key={`issue-${open.number}`} root={root} number={open.number} reloadKey={reload} host={host} onBack={() => setOpen(null)} />
               : <PrDetail key={`pr-${open.number}`} root={root} number={open.number} onOpenFile={onOpenPrDiff ? (file: string) => onOpenPrDiff(open.number, file) : undefined} reloadKey={reload} host={host} agent={agent} onBack={() => setOpen(null)} />}

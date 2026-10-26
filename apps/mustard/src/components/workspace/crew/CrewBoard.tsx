@@ -169,6 +169,7 @@ export default function CrewBoard({ root, onClose }: { root: string; onClose: ()
                               ))}
                             </div>
                           )}
+                          {c.issue && <a href={c.issue.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title={c.issue.provider === "jira" ? "Jira" : "Linear"} className="mr-1 mt-1.5 inline-flex items-center rounded-md bg-indigo-500/10 px-1.5 py-0.5 font-mono text-[10.5px] font-medium text-indigo-700 hover:bg-indigo-500/20 dark:text-indigo-300">{c.issue.key}</a>}
                           {c.pr && <a href={c.pr.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-violet-500/10 px-1.5 py-0.5 text-[10.5px] font-medium text-violet-700 hover:bg-violet-500/20 dark:text-violet-300"><IconGitPullRequest size={11} aria-hidden />PR</a>}
                           {(() => { // #1114 부모 = 하위 진행, 하위 = 상위 카드·기다리는 카드
                             const all = board?.tasks ?? [];

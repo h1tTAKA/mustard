@@ -17,13 +17,13 @@ const post = async (body: Record<string, unknown>) => (await fetch("/api/repo/wo
 export default function NewWorkspaceDialog({ root, initial, onClose }: { root: string; initial?: NewWorkspaceInitial; onClose: () => void }) {
   const t = useT();
   const toast = useToast();
-  const [from, setFrom] = useState<From>(initial?.kind ?? "branch");
+  const [from, setFrom] = useState<From>(initial && initial.kind !== "tracker" ? initial.kind : "branch");
   const [base, setBase] = useState("");
-  const [num, setNum] = useState(initial ? String(initial.number) : "");
+  const [num, setNum] = useState(initial && initial.kind !== "tracker" ? String(initial.number) : "");
   const [ref, setRef] = useState<Ref | null>(null);
   const [refErr, setRefErr] = useState(false);
-  const [name, setName] = useState("");
-  const [nameTouched, setNameTouched] = useState(false);
+  const [name, setName] = useState(initial?.kind === "tracker" ? initial.name : ""); // #1172 트래커 이슈면 이름 미리 채움(키 포함)
+  const [nameTouched, setNameTouched] = useState(initial?.kind === "tracker");
   const [branches, setBranches] = useState<string[]>([]);
   const [items, setItems] = useState<{ issue: { number: number; title: string }[]; pr: { number: number; title: string }[] }>({ issue: [], pr: [] }); // 열린 이슈·PR(번호 칸 목록)
   const [busy, setBusy] = useState(false);
@@ -59,7 +59,7 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
     const d = r.data as GhPrDetail;
     setRef(kind === "pr" ? { title: d.title, headRefName: d.headRefName, headRefOid: d.headRefOid, cross: !!d.isCrossRepository } : { title: d.title });
   };
-  useEffect(() => { if (initial) void lookup(initial.kind, String(initial.number)); }, []); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect -- 처음 열 때 이슈·PR 번호를 받았으면 한 번 불러옴
+  useEffect(() => { if (initial && initial.kind !== "tracker") void lookup(initial.kind, String(initial.number)); }, []); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect -- 처음 열 때 이슈·PR 번호를 받았으면 한 번 불러옴
 
   // 이름 제안 — 직접 고치기 전까지만(이슈 제목 slug / pr-N)
   const suggested = from === "issue" && ref ? issueName(Number(num), ref.title) : from === "pr" && num ? `pr-${Number(num)}` : "";
