@@ -39,5 +39,8 @@ assert.strictEqual(findRepoFile(F, "/r", "/r/apps/web", "./page.tsx"), "apps/web
 assert.strictEqual(findRepoFile(F, "/r", "/r", "./page.tsx"), null, "끝이 같은 게 둘이면 추측 안 함");
 assert.strictEqual(findRepoFile(F, "/r", "/r", "lib/x.ts"), "apps/web/lib/x.ts", "낡은 cwd — 하나면 그것");
 assert.strictEqual(findRepoFile(F, "/r", "/r", "/etc/x.ts"), null, "절대 경로는 추측 안 함");
+assert.strictEqual(findRepoFile(F, "/r", "/r", "../lib/x.ts"), null, "../ 는 레포 밖이라 추측 안 함");
+assert.strictEqual(findRepoFile([], "/r", "/r", "src/big.ts", true), "src/big.ts", "목록이 잘린 큰 레포 — 풀린 경로 그대로");
+assert.strictEqual(findRepoFile([], "/r", "/r", "../out.ts", true), null);
 
 console.log("terminalLinks ok");

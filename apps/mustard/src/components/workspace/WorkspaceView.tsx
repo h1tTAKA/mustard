@@ -30,7 +30,7 @@ import WorkspaceDockLayout, { defaultTree, pruneTree, leavesOf, isDockNode, appe
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { TERMINAL_LINK_EVENT, type TerminalLinkDetail } from "@/components/workspace/Terminal";
 import { findRepoFile } from "@/lib/terminalLinks";
-const OPEN_ROOTS = new Set<string>(); // 지금 열린 레포 화면들(#1193 터미널 링크 — 가장 깊은 레포만 처리)
+const OPEN_ROOTS = new Map<string, number>(); // 지금 열린 레포 화면 수(#1193 터미널 링크 — 가장 깊은 레포만 처리). 같은 레포 화면이 둘이어도 하나 닫힐 때 안 지워지게 개수로(리뷰)
 // 코드/diff 멀티탭 한 건(#714) — 파일 또는 diff(커밋 diff는 hash, 워킹트리 diff는 worktree).
 type CodeTab = { kind: "file"; file: string } | { kind: "diff"; hash?: string; file: string; worktree?: "staged" | "unstaged" | "untracked"; pr?: number }; // pr = PR 리뷰 diff(#1123)
 // 탭 식별 키(중복 열기 방지·활성 지정). file / diff(hash) / diff(워킹트리) 구분.
@@ -61,6 +61,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const fullscreen = useFullscreen(); // 타이틀바 통합(#779) — 신호등 자리 좌측 패딩 토글
   const [picking, setPicking] = useState(false);
   const [files, setFiles] = useState<string[]>([]);
+  const [filesCapped, setFilesCapped] = useState(false); // 목록이 상한에서 잘렸는지(#1193 링크가 목록만 믿지 않게)
   const [fileStatus, setFileStatus] = useState<Record<string, "added" | "modified">>({}); // 변경 파일 도트(#687)
   const [treeLoading, setTreeLoading] = useState(false);
   // 문서 뷰어(#693) — 레포와 별개 문서 폴더. docTabs/activeDoc은 docsRoot 기준 상대경로.
@@ -234,20 +235,21 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   useEffect(() => {
     if (!path) return;
     const root = path.replace(/\/+$/, "");
-    OPEN_ROOTS.add(root);
+    OPEN_ROOTS.set(root, (OPEN_ROOTS.get(root) ?? 0) + 1);
     const inside = (r: string, c: string) => c === r || c.startsWith(`${r}/`);
     const onLink = (e: Event) => {
       const d = (e as CustomEvent<TerminalLinkDetail>).detail;
       if (!d || !inside(root, d.cwd)) return; // 다른 레포 터미널
-      if ([...OPEN_ROOTS].some((r) => r.length > root.length && inside(r, d.cwd))) return; // 더 깊은 레포가 맡음
+      if ([...OPEN_ROOTS.keys()].some((r) => r.length > root.length && inside(r, d.cwd))) return; // 더 깊은 레포가 맡음
       if (d.kind === "url") { setBrowserIncoming((prev) => ({ url: d.url, n: (prev?.n ?? 0) + 1 })); setBrowserOpen(true); return; }
-      const rel = findRepoFile(files, root, d.cwd, d.path);
+      if (!files.length) return; // 파일 목록을 아직 불러오는 중 — 없다고 잘못 알리지 않음(리뷰)
+      const rel = findRepoFile(files, root, d.cwd, d.path, filesCapped);
       if (rel) openCodeTabRef.current({ kind: "file", file: rel });
       else toast(t("ws.linkFileMissing", { path: d.path }));
     };
     window.addEventListener(TERMINAL_LINK_EVENT, onLink);
-    return () => { OPEN_ROOTS.delete(root); window.removeEventListener(TERMINAL_LINK_EVENT, onLink); };
-  }, [path, files, t, toast]);
+    return () => { const n = (OPEN_ROOTS.get(root) ?? 1) - 1; if (n > 0) OPEN_ROOTS.set(root, n); else OPEN_ROOTS.delete(root); window.removeEventListener(TERMINAL_LINK_EVENT, onLink); };
+  }, [path, files, filesCapped, t, toast]);
   // 분리 브라우저 창(#1034)과 같은 origin localStorage로 주고받음 — storage 이벤트는 다른 창에서 쓸 때만 옴.
   // browser-dock {urls,active,devtools,n} = 분리 창의 "앱 안에서 열기" → 그 탭들 전부를 dock 브라우저로(유저 요청: 통째로).
   // 브라우저가 닫혀 있으면 그 탭들로 열고, 열려 있으면 뒤에 붙임.
@@ -514,7 +516,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       try {
         const r = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
         const d = await r.json();
-        if (!cancelled) setFiles(r.ok && Array.isArray(d.files) ? d.files : []);
+        if (!cancelled) { setFiles(r.ok && Array.isArray(d.files) ? d.files : []); setFilesCapped(!!d.capped); }
       } catch { if (!cancelled) setFiles([]); }
       finally { if (!cancelled) setTreeLoading(false); }
       if (!cancelled) void loadGitStatus(path); // 변경 파일 상태 도트(#687)·워킹트리 챗 승계(#689)용

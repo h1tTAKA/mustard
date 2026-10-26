@@ -58,12 +58,14 @@ export function repoRelative(repo: string, abs: string): string | null {
 
 // 터미널 링크의 파일 → 레포 기준 경로. ① cwd 기준으로 푼 경로가 레포 파일이면 그것
 // ② 아니면(셸이 지금 폴더를 안 알려 cwd가 낡았을 때) 레포 파일 중 끝이 같은 것이 딱 하나면 그것. 없거나 여럿이면 null.
-export function findRepoFile(files: readonly string[], repo: string, cwd: string, p: string): string | null {
+// capped = 목록이 상한에서 잘림(큰 레포) → 목록으로 확인·추측 못 하니 풀린 경로가 레포 안이면 그대로.
+export function findRepoFile(files: readonly string[], repo: string, cwd: string, p: string, capped = false): string | null {
   const abs = resolvePath(cwd, p);
   const rel = abs ? repoRelative(repo, abs) : null;
-  if (rel && files.includes(rel)) return rel;
-  const tail = p.replace(/^(\.{1,2}\/)+/, "").replace(/^\/+/, "");
-  if (!tail || p.startsWith("/") || p.startsWith("~/")) return null; // 절대 경로는 추측 안 함
+  if (rel && (capped || files.includes(rel))) return rel;
+  if (capped) return null;
+  const tail = p.replace(/^(\.\/)+/, "").replace(/^\/+/, "");
+  if (!tail || p.startsWith("/") || p.startsWith("~/") || p.startsWith("../")) return null; // 절대 경로·레포 밖(../)은 추측 안 함(리뷰)
   const hits = files.filter((f) => f === tail || f.endsWith(`/${tail}`));
   return hits.length === 1 ? hits[0] : null;
 }
