@@ -117,10 +117,10 @@ function detectAgents(force = false) {
   return p;
 }
 async function runDetect(force, seq) {
-  const { list, sp } = await agentCli.detectAll({ force });
+  const { list, sp, at } = await agentCli.detectAll({ force });
   if (seq !== detectSeq) return list;
   if (sp) process.env.PATH = agentCli.mergePath(process.env.PATH, sp); // 이후 자식(SNA·gh 등)도 로그인 셸 PATH로
-  lastDetect = { at: Date.now(), list, custom: customIds(), shellOk: !!sp }; // shellOk = 로그인 셸 PATH를 받았나 — 못 받았으면 '못 찾음'이 틀릴 수 있어 Crew가 막지 않음
+  lastDetect = { at, list, custom: customIds(), shellOk: !!sp }; // shellOk = 로그인 셸 PATH를 받았나 — 못 받았으면 '못 찾음'이 틀릴 수 있어 Crew가 막지 않음
   writeDetect();
   return list;
 }
@@ -339,6 +339,8 @@ function setupClaudeHooks(base, token) {
 }
 
 async function boot() {
+  // Crew가 막기 직전 ~/.nunopi/agent-detect.request를 건드리면 바로 다시 감지(새 결과로만 막게, 리뷰). 1초 폴링.
+  if (!detectTimer) require("node:fs").watchFile(join(require("node:os").homedir(), ".nunopi", "agent-detect.request"), { interval: 1000 }, (cur, prev) => { if (cur.mtimeMs > prev.mtimeMs) void detectAgents(true).catch(() => {}); });
   detectTimer ??= setInterval(() => void detectAgents().catch(() => {}), 10 * 60_000).unref(); // #1171 activate로 boot가 다시 불려도 한 번만(리뷰). 설치·로그인이 앱 실행 중에 바뀌어도 기록이 따라가게(Crew는 15분 넘은 기록은 안 믿음)
   migrateUserData(); // #900 리브랜딩 — 옛 nunopi userData 1회 이관(창·서버 뜨기 전)
   try { loadRegistry(); } catch { /* #864 재시작 생존 세션 신원 복원 */ }

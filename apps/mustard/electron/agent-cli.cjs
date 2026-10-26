@@ -127,10 +127,10 @@ async function checkAuth(agent, path, { env = process.env, run = runCmd } = {}) 
 }
 
 // 전부 — 에이전트끼리 동시에, 결과 60초 캐시(Superset·Emdash처럼). force면 셸 PATH부터 다시.
-// { list, sp } — sp = 이 목록을 만들 때 실제로 쓴 로그인 셸 PATH(없으면 null). 따로 shellPath()를 다시 부르면 그 사이 결과가 달라질 수 있음(리뷰).
+// { list, sp, at } — at = 이 목록을 만든 때(캐시면 캐시 시각), sp = 이 목록을 만들 때 실제로 쓴 로그인 셸 PATH(없으면 null). 따로 shellPath()를 다시 부르면 그 사이 결과가 달라질 수 있음(리뷰).
 let cache = null, gen = 0;
 async function detectAll({ force = false, home = homedir(), env = process.env, run = runCmd, shell } = {}) {
-  if (cache && !force && Date.now() - cache.at < 60_000) return { list: cache.list, sp: cache.sp };
+  if (cache && !force && Date.now() - cache.at < 60_000) return { list: cache.list, sp: cache.sp, at: cache.at };
   const my = ++gen;
   const sp = await shellPath({ force, shell });
   const pathStr = mergePath(env.PATH, sp);
@@ -139,8 +139,9 @@ async function detectAll({ force = false, home = homedir(), env = process.env, r
     const auth = d.status === "ok" ? await checkAuth(a, d.path, { env: { ...env, PATH: pathStr }, run }) : "unknown";
     return { ...d, label: a.label, install: a.install, auth };
   }));
-  if (my === gen) cache = { at: Date.now(), list, sp }; // 늦게 끝난 옛 실행이 새 캐시를 덮지 않게(리뷰)
-  return { list, sp };
+  const at = Date.now();
+  if (my === gen) cache = { at, list, sp }; // 늦게 끝난 옛 실행이 새 캐시를 덮지 않게(리뷰)
+  return { list, sp, at };
 }
 
 module.exports = { AGENTS, fallbackDirs, shellPath, mergePath, candidates, detectAgent, checkAuth, detectAll, versionOf };

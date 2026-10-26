@@ -26,7 +26,7 @@ import { isFailedNote } from "@/lib/failText";
 import { freshIds, hasTriggers, readTriggers, scheduleDue, writeTriggers, type CrewTrigger } from "./crewTriggers";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems } from "@/lib/catchupStore";
-import { checkAgent } from "./agentDetect";
+import { checkAgent, recheck } from "./agentDetect";
 import type { CrewStatus, CrewTask } from "./crewTypes";
 
 export type RunState = "starting" | "running" | "needs-permission" | "done" | "failed" | "stopped";
@@ -162,12 +162,11 @@ function block(root: string, taskId: string, stage: number, why: string) {
 // #1104 팀 채팅·캐치업 — 서버 문구는 앱 언어. 실패해도 실행엔 영향 없게 삼킴.
 const tr = (key: string, vars?: Record<string, string | number>) => translate(narrationLocale(), key, vars);
 const PROVIDER: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", grok: "Grok Build", cursor: "Cursor", opencode: "OpenCode" };
-// #1171 감지 결과 → 사람이 읽을 이유. 못 찾음(셸 PATH까지 봄)·로그인 필요면 block, 아니면 '안 뜸'에 덧붙일 hint(경로 깨짐 이유 또는 띄운 경로·버전).
-// 경로 깨짐은 SNA가 바로 그 경로를 받았을 때만 막음 — 그 외엔 --version이 느리거나(첫 실행) 0이 아닌 값으로 끝나는 CLI도 실제론 뜰 수 있음(리뷰).
-function agentNote(provider: string): { block?: string; hint?: string } {
-  const c = checkAgent(provider);
+// #1171 감지 결과 → 사람이 읽을 이유. since(다시 감지 부탁한 때) 뒤 기록으로 확실하면(sure, agentDetect.ts) block, 아니면 '안 뜸'에 덧붙일 hint(문제 이유 또는 띄운 경로·버전).
+function agentNote(provider: string, since = 0): { block?: string; hint?: string } {
+  const c = checkAgent(provider, undefined, Date.now(), since);
   if (!c) return {};
-  if (c.kind === "missing") { const why = tr("crew.reason.agentMissing", { agent: c.agent }); return c.sure ? { block: why } : { hint: why }; } // 셸 PATH를 못 봤으면 SNA는 찾을 수도 — 막지 않음(리뷰)
+  if (c.kind === "missing") { const why = tr("crew.reason.agentMissing", { agent: c.agent }); return c.sure ? { block: why } : { hint: why }; }
   if (c.kind === "broken") { const why = tr("crew.reason.agentBroken", { agent: c.agent, path: c.path, err: c.err }); return c.sure ? { block: why } : { hint: why }; }
   if (c.kind === "login") { const why = tr("crew.reason.agentLogin", { agent: c.agent }); return c.sure ? { block: why } : { hint: why }; }
   return { hint: tr("crew.reason.agentPath", { agent: c.agent, path: c.path, version: c.version }) };
@@ -404,8 +403,13 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
   g.runs.set(run.id, run);
   persist(run, true);
   try {
-    const pre = agentNote(role.provider).block; // #1171 실행 파일 못 찾음·로그인 필요면 worktree도 안 만들고 바로 막힘(재시도 안 함 — 사람이 고쳐야)
-    if (pre) throw new Error(pre);
+    // #1171 실행 파일·로그인 문제가 보이면 main에 바로 다시 감지를 부탁하고 그 새 결과로 확실할 때만 worktree도 안 만들고 막힘(재시도 안 함 — 사람이 고쳐야)
+    const seen = checkAgent(role.provider);
+    if (seen && seen.kind !== "ok") {
+      const since = await recheck();
+      const pre = since ? agentNote(role.provider, since).block : undefined;
+      if (pre) throw new Error(pre);
+    }
     const dep = board0.find((x) => x.id === task.dependsOn?.[task.dependsOn.length - 1]); // ponytail: 의존 여럿이면 마지막 것 브랜치에서 시작(나머지는 그 안에 없을 수 있음), 필요하면 머지 단계 추가
     const wt = await ensureWorktree(root, taskId, task.title, dep ? worktreeFor(root, dep.id, dep.title).branch : undefined);
     Object.assign(run, { worktree: wt.dir, branch: wt.branch, base: wt.base });
