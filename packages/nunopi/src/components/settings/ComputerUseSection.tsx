@@ -45,7 +45,9 @@ export default function ComputerUseSection() {
   const mac = st.platform === "darwin";
   const set = async (patch: { enabled?: boolean; blocked?: string[] }) => { const my = ++seq.current; const r = await api.set(patch); if (my === seq.current) setSt(r); };
   const copy = (s: string) => { void navigator.clipboard.writeText(s).then(() => toast(t("computer.copied"), "success")); };
-  const grant = async () => { setBusy(true); try { const r = await api.grant(); toast(t(r.ok ? "computer.grantOpened" : "computer.grantFailed"), r.ok ? "success" : "error"); } finally { setBusy(false); void refresh(true); } };
+  const builtin = !!st.driver?.builtin; // #1189 내장 도우미 — 설치 필요 없음, 권한은 줄마다 받기
+  const grant = async (kind?: "accessibility" | "screen") => { setBusy(true); try { const r = await api.grant(kind); toast(t(r.ok ? "computer.grantOpened" : "computer.grantFailed"), r.ok ? "success" : "error"); } finally { setBusy(false); void refresh(true); } };
+  const reset = async () => { setBusy(true); try { const r = await api.reset(); toast(t(r.ok ? "computer.resetDone" : "computer.resetFailed"), r.ok ? "success" : "error"); } finally { setBusy(false); void refresh(true); } };
   const addBlocked = () => { const v = add.trim(); if (!v || st.blocked.some((b) => b.toLowerCase() === v.toLowerCase())) return; void set({ blocked: [...st.blocked, v] }); setAdd(""); };
   const permRow = (kind: "accessibility" | "screen") => {
     const v = st.permissions?.[kind] ?? "unknown";
@@ -56,6 +58,7 @@ export default function ComputerUseSection() {
           <p className={hint}>{t(`computer.perm.${kind}Hint`)}</p>
         </div>
         <span className={pill(v === "granted")}>{t(`computer.permState.${v}`)}</span>
+        {builtin && v !== "granted" && <button type="button" onClick={() => void grant(kind)} disabled={busy} className={btn}>{t("computer.allow")}</button>}
         <button type="button" onClick={() => void api.openPrivacy(kind)} className={btn}>{t("computer.openSettings")}</button>
       </div>
     );
@@ -80,11 +83,11 @@ export default function ComputerUseSection() {
       {/* 드라이버 */}
       <div className={card}>
         <div className="flex items-center gap-2">
-          <span className={title}>{t("computer.driver")}</span>
+          <span className={title}>{t(builtin ? "computer.builtin" : "computer.driver")}</span>
           <span className={`ml-auto ${pill(!!st.driver)}`}>{st.driver ? t("computer.driverOk", { version: st.driver.version }) : t("computer.driverMissing")}</span>
           <button type="button" onClick={() => void refresh(true)} disabled={busy} className={btn}>{t("computer.recheck")}</button>
         </div>
-        <p className={hint}>{t("computer.driverHint")}</p>
+        <p className={hint}>{t(builtin ? "computer.builtinHint" : "computer.driverHint")}</p>
         {!st.driver && (
           <div className="flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded-lg bg-zinc-100 px-2 py-1.5 font-mono text-[11px] text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">{st.platform === "win32" ? INSTALL_WIN : INSTALL_MAC}</code>
@@ -99,9 +102,11 @@ export default function ComputerUseSection() {
         <div className={card}>
           <div className="flex items-center gap-2">
             <span className={title}>{t("computer.perms")}</span>
-            <button type="button" onClick={() => void grant()} disabled={busy} className={`ml-auto ${btn}`}>{t("computer.grant")}</button>
+            {builtin
+              ? <button type="button" onClick={() => void reset()} disabled={busy} className={`ml-auto ${btn}`}>{t("computer.reset")}</button>
+              : <button type="button" onClick={() => void grant()} disabled={busy} className={`ml-auto ${btn}`}>{t("computer.grant")}</button>}
           </div>
-          <p className={hint}>{t("computer.permsHint")}</p>
+          <p className={hint}>{t(builtin ? "computer.builtinPermsHint" : "computer.permsHint")}</p>
           {permRow("accessibility")}
           {permRow("screen")}
         </div>

@@ -2,9 +2,11 @@
 // 호출은 모두 main을 거침(Mustard MCP → main 로컬 HTTP → 여기) — 그래서 끄기·비상 정지·막는 앱·기록이 에이전트 종류와 상관없이 걸림.
 // 설정 = ~/.nunopi/computer-use.json { enabled(기본 끔), blocked:[앱 이름] }, 기록 = ~/.nunopi/computer-use-log.jsonl(최근 200건).
 // 권한(접근성·화면 기록)은 드라이버 앱이 받음 — Mustard는 TCC 권한이 필요 없음.
-const { readFileSync, writeFileSync, mkdirSync, appendFileSync } = require("node:fs");
+const { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync, mkdtempSync, rmSync } = require("node:fs");
 const { join } = require("node:path");
-const { homedir } = require("node:os");
+const { homedir, tmpdir, release } = require("node:os");
+const net = require("node:net");
+const { randomBytes } = require("node:crypto");
 const { runCmd, shellPath, mergePath, candidates } = require("./agent-cli.cjs");
 
 const BIN = "cua-driver";
@@ -89,6 +91,65 @@ function readLog(home, n = 50) {
   catch { return []; }
 }
 
+// ── 내장 도우미(#1189, macOS 14+) ── 있으면 외부 드라이버 대신. `open -n -g`로 띄워 권한이 도우미 자신에게 붙게.
+// 소켓 하나를 계속 씀(0700 임시 폴더, 1회용 토큰 파일 — 도우미가 읽고 지움). 끊기면 다음 요청 때 다시 띄움.
+const HELPER_ID = "ai.neuradex.mustard.computer-use";
+let helperApp = null;
+function setHelperApp(p) { helperApp = p && process.platform === "darwin" && Number(release().split(".")[0]) >= 23 && existsSync(p) ? p : null; }
+let conn = null;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function helper() {
+  if (conn && !conn.sock.destroyed) return conn;
+  const dir = mkdtempSync(join(tmpdir(), "mcu-"));
+  const sockPath = join(dir, "s"), tokenFile = join(dir, "t"), token = randomBytes(24).toString("hex");
+  writeFileSync(tokenFile, token, { mode: 0o600 });
+  const r = await runCmd("/usr/bin/open", ["-n", "-g", helperApp, "--args", "--serve", sockPath, "--token-file", tokenFile], 15_000, process.env);
+  for (let i = 0; r.code === 0 && i < 100 && !existsSync(sockPath); i++) await sleep(100);
+  const sock = await new Promise((res) => { const s = net.createConnection(sockPath); s.once("connect", () => res(s)); s.once("error", () => res(null)); });
+  if (!sock) { rmSync(dir, { recursive: true, force: true }); return null; }
+  const c = { sock, pending: new Map(), buf: "", id: 0, token };
+  sock.setEncoding("utf8");
+  sock.on("data", (d) => {
+    c.buf += d;
+    for (let i; (i = c.buf.indexOf("\n")) >= 0;) {
+      const line = c.buf.slice(0, i); c.buf = c.buf.slice(i + 1);
+      let m; try { m = JSON.parse(line); } catch { continue; }
+      const p = c.pending.get(m.id); if (p) { c.pending.delete(m.id); p(m); }
+    }
+  });
+  sock.on("error", () => {});
+  sock.on("close", () => {
+    for (const p of c.pending.values()) p({ ok: false, error: { code: "helper-gone", message: "The helper stopped." } });
+    c.pending.clear(); rmSync(dir, { recursive: true, force: true });
+    if (conn === c) conn = null;
+  });
+  conn = c;
+  return c;
+}
+async function helperReq(method, params = {}, timeout = 60_000) {
+  const c = await helper();
+  if (!c) return { ok: false, error: { code: "helper-launch", message: "Could not start Mustard Computer Use." } };
+  const id = ++c.id;
+  return new Promise((res) => {
+    const t = setTimeout(() => { c.pending.delete(id); res({ ok: false, error: { code: "timeout", message: "" } }); }, timeout);
+    c.pending.set(id, (m) => { clearTimeout(t); res(m); });
+    c.sock.write(JSON.stringify({ id, token: c.token, method, params }) + "\n");
+  });
+}
+const restartHelper = () => { conn?.sock.destroy(); conn = null; };
+// 도우미 답 → { ok, text } | { ok:false, error, text }. 트리는 JSON 밖에 그대로 붙여 읽기 쉽게.
+function helperOut(m) {
+  if (m.ok) {
+    const r = m.result;
+    if (r && typeof r === "object" && typeof r.tree === "string") { const { tree, ...head } = r; return { ok: true, text: `${JSON.stringify(head)}\n\n${tree}` }; }
+    return { ok: true, text: JSON.stringify(r) };
+  }
+  const e = m.error || {};
+  if (e.code === "app_blocked") return { ok: false, error: "blocked", app: String(e.message || "").replace(/^Mustard blocks (.*?)\..*$/, "$1") };
+  if (e.code === "timeout") return { ok: false, error: "timeout" };
+  return { ok: false, error: "helper-error", text: `${e.code}: ${e.message}` };
+}
+
 // 정지 세대 — 호출이 시작될 때 세대를 잡고, 그 사이 비상 정지가 있었으면 드라이버를 안 띄우거나 결과를 버림.
 // live = 실행 중인 드라이버 — 비상 정지 때 프로세스 그룹째 죽임(리뷰)
 let generation = 0;
@@ -113,7 +174,8 @@ async function call(tool, args = {}, { home, cwd = "", run = runCmd } = {}) {
   if (!cfg.enabled) return { ok: false, error: "disabled" };
   if (typeof tool !== "string" || !/^[a-z][a-z0-9_]*$/i.test(tool)) return { ok: false, error: "bad-tool" };
   const { pids, names, targeted } = targetsOf(args);
-  if (targeted && !pids.length) { log({ at, tool, app: "", cwd, result: "no-target" }, home); return { ok: false, error: "no-target" }; }
+  // 내장 도우미는 이름으로 찾은 실제 앱을 막는 앱 목록으로 다시 확인하므로 pid가 없어도 됨
+  if (targeted && !pids.length && !helperApp) { log({ at, tool, app: "", cwd, result: "no-target" }, home); return { ok: false, error: "no-target" }; }
   const paths = await Promise.all(pids.map((p) => procPath(p, run)));
   if (paths.some((p) => !p)) { log({ at, tool, app: "", cwd, result: "no-target" }, home); return { ok: false, error: "no-target" }; } // pid가 어느 앱인지 못 찾음 → 막을 수 없으니 거절
   const labels = [...paths, ...names];
@@ -125,7 +187,10 @@ async function call(tool, args = {}, { home, cwd = "", run = runCmd } = {}) {
     hit = blockedBy([front].filter(Boolean), cfg.blocked);
   }
   if (hit) { log({ at, tool, app, cwd, result: "blocked" }, home); return { ok: false, error: "blocked", app: hit }; }
-  const r = await driver(["call", tool, JSON.stringify(args ?? {})], { home, gen });
+  if (gen !== generation) return { ok: false, error: "stopped" };
+  const r = helperApp
+    ? await helperReq("call", { tool, args: args ?? {}, blocked: cfg.blocked }).then((m) => (gen !== generation ? { ok: false, error: "stopped" } : helperOut(m)))
+    : await driver(["call", tool, JSON.stringify(args ?? {})], { home, gen });
   log({ at, tool, app, cwd, result: r.ok ? "ok" : r.error }, home);
   return r;
 }
@@ -135,11 +200,21 @@ function stop(home) {
   generation++;
   for (const c of live) { try { process.kill(-c.pid, "SIGKILL"); } catch { try { c.kill("SIGKILL"); } catch { /* 이미 끝남 */ } } }
   live.clear();
+  restartHelper(); // 도우미 연결을 끊음 — 진행 중 답은 버려지고, 도우미는 주인이 없으면 스스로 끝남
   writeConfig({ enabled: false }, home); log({ at: new Date().toISOString(), tool: "(stop)", app: "", cwd: "", result: "stopped" }, home);
 }
 
 // 설정 화면용 — 드라이버 상태 + 권한 상태(드라이버가 내는 글 그대로 — 형식이 버전마다 다를 수 있어 줄 단위로 판정)
 async function status({ force = false, home } = {}) {
+  if (helperApp) {
+    // 화면 기록 권한은 켠 뒤 새 프로세스여야 보임 → 다시 확인이거나 아직 안 켜진 권한이 있으면 도우미를 새로 띄워 확인
+    const ask = () => helperReq("permissions", {}, 15_000);
+    let m = force ? (restartHelper(), await ask()) : await ask();
+    if (m.ok && (!m.result.accessibility || !m.result.screen)) { restartHelper(); m = await ask(); }
+    const v = m.ok ? (await helperReq("handshake")).result?.version || "" : "";
+    const g = (b) => (m.ok ? (b ? "granted" : "missing") : "unknown");
+    return { ...readConfig(home), driver: { path: helperApp, version: v, builtin: true }, permissions: { accessibility: g(m.result?.accessibility), screen: g(m.result?.screen) } };
+  }
   const d = await findDriver({ force, home });
   if (!d) return { ...readConfig(home), driver: null, permissions: null };
   const p = await runCmd(d.path, ["permissions", "status"], 15_000, d.env);
@@ -164,12 +239,25 @@ async function agentTool(name, args = {}, { home, cwd = "" } = {}) {
   if (!readConfig(home).enabled) return out(ERR.disabled, true);
   const tool = String(args?.tool || "");
   let r;
-  if (name === "computer_tools") r = await driver(["list-tools"], { home });
-  else if (name === "computer_describe") r = /^[a-z][a-z0-9_]*$/i.test(tool) ? await driver(["describe", tool], { home }) : { ok: false, error: "bad-tool" };
+  if (name === "computer_tools") r = helperApp ? helperOut(await helperReq("list_tools")) : await driver(["list-tools"], { home });
+  else if (name === "computer_describe") r = !/^[a-z][a-z0-9_]*$/i.test(tool) ? { ok: false, error: "bad-tool" } : helperApp ? helperOut(await helperReq("describe", { tool })) : await driver(["describe", tool], { home });
   else if (name === "computer_call") r = await call(tool, args?.args && typeof args.args === "object" ? args.args : {}, { home, cwd });
   else return out(`Unknown tool: ${name}`, true);
   if (r.ok) return out(r.text);
-  return out(r.error === "blocked" ? `${ERR.blocked} (${r.app})` : ERR[r.error] || `Driver error: ${r.text || r.error}`, true);
+  return out(r.error === "blocked" ? `${ERR.blocked} (${r.app})` : ERR[r.error] || `Failed: ${r.text || r.error}`, true);
 }
 
-module.exports = { agentTool, DEFAULT_BLOCKED, readConfig, writeConfig, targetsOf, blockedBy, findDriver, driver, call, stop, status, readLog, BIN };
+// 권한 요청(도우미 이름으로 macOS 프롬프트 + 시스템 설정) / 접근 초기화(macOS가 기억한 허용을 지움 — 다시 받아야 함)
+async function grant(kind) {
+  if (helperApp) { const m = await helperReq("request_permission", { kind: kind === "screen" ? "screen" : "accessibility" }); return { ok: !!m.ok }; }
+  const r = await driver(["permissions", "grant"], { timeout: 120_000 });
+  return { ok: r.ok, text: r.text };
+}
+async function resetAccess() {
+  restartHelper();
+  const a = await runCmd("/usr/bin/tccutil", ["reset", "Accessibility", HELPER_ID], 10_000, process.env);
+  const b = await runCmd("/usr/bin/tccutil", ["reset", "ScreenCapture", HELPER_ID], 10_000, process.env);
+  return { ok: a.code === 0 && b.code === 0 };
+}
+
+module.exports = { setHelperApp, grant, resetAccess, agentTool, DEFAULT_BLOCKED, readConfig, writeConfig, targetsOf, blockedBy, findDriver, driver, call, stop, status, readLog, BIN };

@@ -27,7 +27,7 @@ interface GhJobStep { name?: string; status?: string; conclusion?: string; numbe
 type ComputerPerm = "granted" | "missing" | "unknown";
 type ComputerStatus = {
   enabled: boolean; blocked: string[]; defaults: string[]; stopKey: string; stopKeyOk: boolean; platform: string;
-  driver: { path: string; version: string } | null;
+  driver: { path: string; version: string; builtin?: boolean } | null;
   permissions: { accessibility: ComputerPerm; screen: ComputerPerm } | null;
   log: { at: string; tool: string; app: string; cwd: string; result: string }[];
 };
@@ -42,7 +42,8 @@ interface NunopiDesktopApi {
   computer?: {
     status(force?: boolean): Promise<ComputerStatus>;
     set(patch: { enabled?: boolean; blocked?: string[] }): Promise<ComputerStatus>;
-    grant(): Promise<{ ok: boolean; text?: string }>;
+    grant(kind?: "accessibility" | "screen"): Promise<{ ok: boolean; text?: string }>;
+    reset(): Promise<{ ok: boolean }>;
     openPrivacy(kind: "accessibility" | "screen"): Promise<void>;
     onChanged(cb: () => void): () => void;
   };
