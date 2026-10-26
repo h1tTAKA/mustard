@@ -70,7 +70,7 @@ const choicesOf = (id) => CHOICES.filter((c) => c === "own" || flagOf(id, c) || 
 // 단어 중간 따옴표(--opt="a  b")도 한 덩어리, 짝 없는 따옴표(don't)도 글자로 남김(리뷰)
 const tokens = (s) => String(s || "").match(/(?:[^\s"']|"[^"]*"|'[^']*'|["'])+/g) || [];
 // 비교용 — 셸이 벗기는 따옴표를 벗김("--yolo"도 --yolo로 알아봄, 리뷰)
-const unq = (s) => String(s).replace(/"([^"]*)"|'([^']*)'/g, (_, a, b) => a ?? b);
+const unq = (s) => String(s).replace(/"([^"]*)"|'([^']*)'|\\(.)/g, (_, a, b, c) => a ?? b ?? c); // + 따옴표 밖 \ 이스케이프
 const CLAUDE_OPTS = ["--permission-mode", "--dangerously-skip-permissions", "--allow-dangerously-skip-permissions", "--permission-prompt-tool", "--permission-prompts", "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools"];
 const EXTRA = { claude: CLAUDE_OPTS, codex: ["-a", "--ask-for-approval", "-s", "--sandbox", "--yolo", "--not-so-yolo", "--full-auto"], grok: ["--permission-mode", "--always-approve", "--yolo", "--dangerously-skip-permissions"], gemini: ["--approval-mode", "-y"] };
 const CODEX_CFG = ["approval_policy", "sandbox_mode", "approvals_reviewer", "sandbox_workspace_write"];
@@ -108,12 +108,15 @@ function launchLine(id, { choice = "own", userArgs = "", cmd } = {}) {
 }
 
 // 유저가 인자에 알려진 권한 플래그를 쓰면 빼서 그 에이전트의 권한 선택으로 — { choice, rest } 또는 null
+// 같은 뜻의 다른 표기(전체 액세스) — 인자로 넣어도 권한 선택으로 옮겨 확인창을 거치게(리뷰)
+const FULL_ALIAS = { claude: ["--permission-mode bypassPermissions"], codex: ["--yolo"], gemini: ["-y", "--approval-mode yolo"], grok: ["--yolo", "--always-approve", "--dangerously-skip-permissions"] };
 function liftPermission(id, userArgs) {
   // --opt=값도 --opt 값처럼 비교하되, 나머지는 원래 토큰 그대로 돌려줌(유저가 쓴 형태·따옴표 유지, 리뷰)
   const raw = tokens(userArgs);
   const t = raw.map(unq).flatMap((x, ri) => (/^--[^=]+=/.test(x) ? [[x.slice(0, x.indexOf("=")), ri], [x.slice(x.indexOf("=") + 1), ri]] : [[x, ri]]));
-  for (const c of ["full-access", "auto", "accept-edits", "ask"]) {
-    const f = tokens(flagOf(id, c)).map(unq);
+  const recipes = [...["full-access", "auto", "accept-edits", "ask"].map((c) => [c, flagOf(id, c)]), ...(FULL_ALIAS[id] || []).map((f) => ["full-access", f])];
+  for (const [c, flag] of recipes) {
+    const f = tokens(flag).map(unq);
     if (!f.length) continue;
     for (let i = 0; i + f.length <= t.length; i++) {
       if (!f.every((x, k) => t[i + k][0] === x)) continue;
