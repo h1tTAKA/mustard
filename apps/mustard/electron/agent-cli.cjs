@@ -1,0 +1,129 @@
+// 에이전트 CLI 찾기·확인(#1171, #1164 흡수) — 설치됐나, 그 경로가 진짜 실행되나, 로그인됐나.
+// 터미널 실행은 손대지 않음(로그인 셸이라 PATH가 다 있음). 이건 상태 표시와 SNA(Crew·채팅 백그라운드)가 쓸 "확인된 경로"용.
+// 다른 ADE 대조(소스 + 배포본):
+//  - Orca: 로그인 셸 PATH를 `$SHELL -ilc`로 받아 합침(구분자로 배너 거름, 10초, 세션 캐시, 다시 확인 = 다시 받음) + 설치 폴더 폴백.
+//          git/gh는 후보마다 --version을 돌려 "통과한 실제 경로를 고정"(죽은 shim을 다시 고르지 않게) — 이걸 에이전트에도 씀.
+//  - Emdash: 로그인 = claude auth status · codex login status · opencode auth list(5초), API 키 env 먼저, 모르면 unknown. 설치 명령 표.
+const { execFile } = require("node:child_process");
+const { accessSync, constants, existsSync, readdirSync, realpathSync } = require("node:fs");
+const { delimiter, join } = require("node:path");
+const { homedir } = require("node:os");
+
+// 지원 에이전트 — id는 main AGENT_DEFAULT_CMD·AgentLogo와 같음. bins = 실행 파일 이름(앞이 먼저).
+// install = 공식 설치 명령(Emdash 표·각 공식 문서) — 앱은 복사만(남의 스크립트를 대신 돌리지 않음). 없으면 null.
+// auth = 로그인 확인 인자(Emdash), keys = 있으면 로그인된 걸로 보는 API 키 env.
+const AGENTS = [
+  { id: "claude", label: "Claude Code", bins: ["claude"], install: "curl -fsSL https://claude.ai/install.sh | bash", auth: ["auth", "status"], keys: ["ANTHROPIC_API_KEY"] },
+  { id: "codex", label: "Codex", bins: ["codex"], install: "npm install -g @openai/codex", auth: ["login", "status"], keys: ["OPENAI_API_KEY"] },
+  { id: "gemini", label: "Gemini CLI", bins: ["gemini"], install: "npm install -g @google/gemini-cli" },
+  { id: "antigravity", label: "Antigravity CLI", bins: ["agy"], install: "curl -fsSL https://antigravity.google/cli/install.sh | bash" },
+  { id: "opencode", label: "OpenCode", bins: ["opencode"], install: "npm install -g opencode-ai", auth: ["auth", "list"] },
+  { id: "cursor", label: "Cursor CLI", bins: ["cursor-agent"], install: "curl https://cursor.com/install -fsS | bash" },
+  { id: "grok", label: "Grok Build", bins: ["grok"], install: "curl -fsSL https://x.ai/cli/install.sh | bash" },
+  { id: "copilot", label: "Copilot CLI", bins: ["copilot"], install: "npm install -g @github/copilot" },
+  { id: "amp", label: "Amp", bins: ["amp"], install: "npm install -g @ampcode/cli" },
+  { id: "aider", label: "Aider", bins: ["aider"], install: "python -m pip install aider-install && aider-install" },
+  { id: "hermes", label: "Hermes Agent", bins: ["hermes"], install: null },
+  { id: "omp", label: "omp", bins: ["omp"], install: null },
+];
+
+// Orca system-cli-install-dirs + local-agent-install-dir-detection(배포본 1.4.240과 같음) — PATH에 없을 때만 보는 설치 폴더
+function fallbackDirs(home = homedir()) {
+  const h = (...p) => join(home, ...p);
+  const dirs = [
+    h(".local", "bin"), h(".claude", "local"), h(".volta", "bin"), h(".asdf", "shims"), h(".fnm", "aliases", "default", "bin"),
+    h(".local", "share", "mise", "shims"), h("Library", "pnpm"), h(".yarn", "bin"), h(".bun", "bin"), h(".cargo", "bin"),
+    h(".npm-global", "bin"), h(".opencode", "bin"), h(".grok", "bin"), h(".codex", "bin"),
+    "/opt/homebrew/bin", "/usr/local/bin",
+  ];
+  try { for (const v of readdirSync(h(".nvm", "versions", "node")).sort().reverse()) dirs.push(h(".nvm", "versions", "node", v, "bin")); } catch { /* nvm 없음 */ }
+  return dirs;
+}
+
+// 로그인 셸 PATH(Orca hydrate-shell-path) — 프로필이 찍는 배너를 구분자로 걸러냄. 실패면 null.
+const DELIM = "__MUSTARD_PATH__";
+let shellPathPromise = null;
+function shellPath({ force = false, timeout = 10_000, shell = process.env.SHELL || "/bin/zsh" } = {}) {
+  if (shellPathPromise && !force) return shellPathPromise;
+  shellPathPromise = new Promise((res) => {
+    execFile(shell, ["-ilc", `printf '${DELIM}'; printf '%s' "$PATH"; printf '${DELIM}'`], { timeout, encoding: "utf8", env: process.env }, (_e, out) => {
+      const m = new RegExp(`${DELIM}([\\s\\S]*?)${DELIM}`).exec(String(out ?? ""));
+      res(m && m[1].trim() ? m[1].trim() : null);
+    });
+  });
+  return shellPathPromise;
+}
+// 지금 PATH 뒤에 새 조각만(있는 건 그대로 — 유저 PATH 우선)
+function mergePath(cur, extra) {
+  const have = String(cur || "").split(delimiter).filter(Boolean);
+  const add = String(extra || "").split(delimiter).filter((d) => d && !have.includes(d));
+  return [...have, ...add].join(delimiter);
+}
+
+const isExec = (p) => { try { accessSync(p, constants.X_OK); return true; } catch { return false; } };
+// PATH를 직접 걸어(which 안 씀 — Orca) 후보 전부, 다음 설치 폴더. 같은 실제 파일은 한 번만.
+function candidates(bins, pathStr, home) {
+  const out = [], seen = new Set();
+  for (const dir of [...String(pathStr || "").split(delimiter).filter(Boolean), ...fallbackDirs(home)]) {
+    for (const b of bins) {
+      const p = join(dir, b);
+      if (!existsSync(p) || !isExec(p)) continue;
+      let key = p; try { key = realpathSync(p); } catch { /* 깨진 링크도 후보 — 실행해 보면 안다 */ }
+      if (seen.has(key)) continue;
+      seen.add(key); out.push(p);
+    }
+  }
+  return out;
+}
+
+// 실행해서 결과 받기(테스트에선 바꿔 끼움)
+function runCmd(file, args, timeout, env) {
+  return new Promise((res) => {
+    execFile(file, args, { timeout, encoding: "utf8", env, maxBuffer: 1_000_000 }, (e, stdout, stderr) => {
+      res({ code: e ? (typeof e.code === "number" ? e.code : -1) : 0, out: `${stdout ?? ""}\n${stderr ?? ""}`.trim(), timedOut: !!e?.killed });
+    });
+  });
+}
+const versionOf = (out) => (/\d+\.\d+\.\d+(?:[-+.][\w.]+)?/.exec(out)?.[0] ?? out.split("\n")[0].slice(0, 60)) || null;
+
+// 한 에이전트 — 후보마다 --version(10초 — Superset·Emdash와 같음, 동시에 여럿 돌리면 느린 CLI가 있음), 처음 통과한 경로를 씀. 다 실패면 "경로 깨짐"(찾긴 했는데 안 돎), 후보가 없으면 "설치 안 됨".
+async function detectAgent(agent, { pathStr, home, env = process.env, run = runCmd } = {}) {
+  const found = candidates(agent.bins, pathStr, home);
+  const tried = [];
+  for (const p of found) {
+    const r = await run(p, ["--version"], 10_000, env);
+    if (r.code === 0) return { id: agent.id, status: "ok", path: p, version: versionOf(r.out), tried };
+    tried.push({ path: p, error: r.timedOut ? "timeout" : r.out.split("\n").slice(-2).join(" ").slice(0, 200) });
+  }
+  return found.length ? { id: agent.id, status: "broken", path: found[0], tried } : { id: agent.id, status: "missing", tried };
+}
+
+// 로그인(Emdash) — API 키 env가 있으면 로그인, 아니면 그 CLI에 물음. 모르는 건 unknown(로그인 필요로 띄우지 않음).
+async function checkAuth(agent, path, { env = process.env, run = runCmd } = {}) {
+  if ((agent.keys || []).some((k) => env[k])) return "authenticated";
+  if (!agent.auth || !path) return "unknown";
+  const r = await run(path, agent.auth, 5000, env);
+  const t = r.out;
+  if (agent.id === "opencode") { const m = /(\d+)\s+credentials?/i.exec(t); return m ? (Number(m[1]) > 0 ? "authenticated" : "unauthenticated") : "unknown"; }
+  if (/not (authenticated|logged in|signed in)|login required|logged out|not logged/i.test(t)) return "unauthenticated";
+  if (agent.id === "claude") return r.code === 0 ? "authenticated" : "unknown";
+  if (/authenticated|logged in|signed in/i.test(t)) return "authenticated";
+  return "unknown";
+}
+
+// 전부 — 에이전트끼리 동시에, 결과 60초 캐시(Superset·Emdash처럼). force면 셸 PATH부터 다시.
+let cache = null;
+async function detectAll({ force = false, home = homedir(), env = process.env, run = runCmd, shell } = {}) {
+  if (cache && !force && Date.now() - cache.at < 60_000) return cache.list;
+  const sp = await shellPath({ force, shell });
+  const pathStr = mergePath(env.PATH, sp);
+  const list = await Promise.all(AGENTS.map(async (a) => {
+    const d = await detectAgent(a, { pathStr, home, env: { ...env, PATH: pathStr }, run });
+    const auth = d.status === "ok" ? await checkAuth(a, d.path, { env: { ...env, PATH: pathStr }, run }) : "unknown";
+    return { ...d, label: a.label, install: a.install, auth };
+  }));
+  cache = { at: Date.now(), list };
+  return list;
+}
+
+module.exports = { AGENTS, fallbackDirs, shellPath, mergePath, candidates, detectAgent, checkAuth, detectAll, versionOf };
