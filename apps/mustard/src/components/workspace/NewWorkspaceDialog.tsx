@@ -99,7 +99,7 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
 
   // Esc = 닫기(setup 승인 중엔 "이번엔 안 돌림"과 같음 — 닫으면 안 돌림, Orca)
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { if (setup) void decide(false); else onClose(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) { if (setup) void decide(false); else onClose(); } }; // 만드는 중엔 안 닫음 — setup 승인 묻기가 사라지지 않게(리뷰)
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
@@ -115,7 +115,7 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
 
   return createPortal(
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[12vh]">
-      <div className="absolute inset-0 bg-black/40 dark:bg-black/50" onClick={() => (setup ? void decide(false) : onClose())} aria-hidden />
+      <div className="absolute inset-0 bg-black/40 dark:bg-black/50" onClick={() => { if (busy) return; if (setup) void decide(false); else onClose(); }} aria-hidden />
       <div role="dialog" aria-modal="true" aria-label={t("newWs.title")}
         className="relative w-full max-w-lg overflow-visible rounded-2xl border border-zinc-200/80 bg-white shadow-2xl ring-1 ring-black/5 dark:border-white/10 dark:bg-[#14151c] dark:ring-white/5">
         <div className="px-5 pt-4 text-[11.5px] font-medium text-zinc-400 dark:text-zinc-500">{t("newWs.title")}</div>
@@ -136,7 +136,7 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
               <span className={label}>{t("newWs.from")}</span>
               <div className="flex gap-1">
                 {tabs.map(({ k, Icon, label: l }) => (
-                  <button key={k} type="button" onClick={() => { setFrom(k); setRef(null); setRefErr(false); if (k === "issue" || k === "pr") void lookup(k, num); }}
+                  <button key={k} type="button" onClick={() => { reqRef.current++; setFrom(k); setRef(null); setRefErr(false); if (k === "issue" || k === "pr") void lookup(k, num); }}
                     className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[12px] font-medium transition ${from === k ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-white/10"}`}>
                     <Icon size={13} stroke={2} aria-hidden />{l}
                   </button>
@@ -151,7 +151,7 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
               </div>
             ) : (
               <div>
-                <input value={num} onChange={(e) => { setNum(e.target.value.replace(/\D/g, "")); setRef(null); setRefErr(false); }} onBlur={() => void lookup(from, num)}
+                <input value={num} onChange={(e) => { reqRef.current++; setNum(e.target.value.replace(/\D/g, "")); setRef(null); setRefErr(false); }} onBlur={() => void lookup(from, num)}
                   onKeyDown={(e) => { if (e.key === "Enter") void lookup(from, num); }} inputMode="numeric" autoFocus placeholder={t("newWs.numberPlaceholder")} className={input} />
                 {ref && <p className="mt-1 truncate text-[12px] text-zinc-700 dark:text-zinc-200">#{num} {ref.title}</p>}
                 {refErr && <p className="mt-1 text-[11.5px] text-rose-500">{t("newWs.notFound")}</p>}
@@ -172,7 +172,7 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
           </div>
           <div className="flex items-center gap-2 rounded-b-2xl border-t border-zinc-100 bg-zinc-50/60 px-5 py-3 dark:border-white/5 dark:bg-white/[0.02]">
             <span className="flex-1" />
-            <button type="button" onClick={onClose} className="rounded-lg px-3.5 py-2 text-[13px] font-medium text-zinc-600 transition hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-white/10">{t("crew.cancel")}</button>
+            <button type="button" onClick={onClose} disabled={busy} className="rounded-lg px-3.5 py-2 disabled:opacity-40 text-[13px] font-medium text-zinc-600 transition hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-white/10">{t("crew.cancel")}</button>
             <button type="button" onClick={() => void create()} disabled={!ready}
               className="inline-flex items-center gap-1 rounded-lg bg-mustard-500 px-3.5 py-2 text-[13px] font-semibold text-brown-900 shadow-sm transition hover:bg-mustard-400 disabled:opacity-40">
               {busy && <IconLoader2 size={13} className="animate-spin" aria-hidden />}{busy ? t("newWs.creating") : t("newWs.create")}

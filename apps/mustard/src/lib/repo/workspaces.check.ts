@@ -69,7 +69,13 @@ assert.strictEqual(g(root, "rev-parse", "--abbrev-ref", "HEAD"), "main");
 
 // 점검·지우기
 writeFileSync(join(w1.dir, "dirty.txt"), "x");
+writeFileSync(join(root, ".gitignore"), "*.local\n"); writeFileSync(join(w1.dir, ".gitignore"), "*.local\n"); writeFileSync(join(w1.dir, "notes.local"), "x");
 let c = await checkWorkspace(root, w1.dir);
+assert.deepStrictEqual(c.ignored, ["notes.local"], "gitignore된 것도 지워진다고 알림");
+assert.strictEqual(c.dirty, 2, "dirty.txt + .gitignore");
+assert.deepStrictEqual(await removeWorkspace(root, w1.dir, { force: true, expectDirty: 1 }), { status: "dirty", dirty: 2 }, "본 것보다 더 바뀌었으면 force여도 멈춤");
+execFileSync("rm", [join(w1.dir, "notes.local"), join(w1.dir, ".gitignore")]);
+c = await checkWorkspace(root, w1.dir);
 assert.strictEqual(c.dirty, 1); assert.strictEqual(c.unpushed, 0, "main에서 갈라진 직후 = 원격에 다 있음");
 let r = await removeWorkspace(root, w1.dir, { deleteBranch: true });
 assert.deepStrictEqual(r, { status: "dirty", dirty: 1 }, "미커밋이면 force 없이 안 지움");
@@ -83,7 +89,7 @@ await forceDeleteBranch(root, "hong/dark-mode");
 assert.throws(() => g(root, "rev-parse", "--verify", "refs/heads/hong/dark-mode"));
 r = await removeWorkspace(root, w2.dir, { deleteBranch: true });
 assert.deepStrictEqual(r, { status: "removed", branch: "hong/dark-mode-2", branchKept: false }, "머지된(같은) 브랜치는 -d로 지움");
-await assert.rejects(forceDeleteBranch(root, "main-2"), /branch in use/, "쓰는 중인 브랜치는 강제 삭제 거부");
+await assert.rejects(forceDeleteBranch(root, "main"), /not a kept branch/, "지우며 남긴 브랜치만 강제 삭제(아무 브랜치나 -D 금지)");
 
 // 거부 — 메인·남의 폴더
 await assert.rejects(removeWorkspace(root, root), /main worktree/);

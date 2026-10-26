@@ -1,10 +1,11 @@
 import { existsSync, statSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { checkWorkspace, createWorkspace, forceDeleteBranch, pruneWorkspaces, removeWorkspace, findWorktree, type PrStart } from "@/lib/repo/workspaces";
+import { checkWorkspace, createWorkspace, forceDeleteBranch, removeWorkspace, findWorktree, type PrStart } from "@/lib/repo/workspaces";
+import { crossSite } from "@/lib/crew/crewPolicy";
 import { markSetupDone, MAX_REVIEW, readConfig, runSetup, trustScript } from "@/lib/crew/worktreeBootstrap";
 
-// 사람용 worktree 작업공간(#1170) — 만들기·점검·지우기·브랜치 강제 삭제·정리·setup 실행·스크립트 승인. 로컬 git 쓰기. 서버 전용.
+// 사람용 worktree 작업공간(#1170) — 만들기·점검·지우기·브랜치 강제 삭제·setup 실행·스크립트 승인. 로컬 git 쓰기. 서버 전용.
 // path = 레포 탭 경로(메인이든 그 레포의 worktree든) → 메인 worktree를 root로 씀(archive 설정·승인 기록은 메인 기준, #1176과 같음).
 export const runtime = "nodejs";
 const pexecFile = promisify(execFile);
@@ -18,6 +19,7 @@ async function mainRoot(path: string): Promise<string> {
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 
 export async function POST(request: Request): Promise<Response> {
+  if (crossSite(request)) return Response.json({ ok: false, error: "cross-site" }, { status: 403 }); // 다른 사이트의 폼 POST로 작업공간·브랜치 지우기 금지(Crew #1137과 같음, 리뷰)
   let b: Record<string, unknown>;
   try { b = await request.json(); } catch { return Response.json({ ok: false, error: "invalid body" }, { status: 400 }); }
   const path = str(b.path).trim();
@@ -33,9 +35,8 @@ export async function POST(request: Request): Promise<Response> {
         return Response.json({ ok: true, ...r });
       }
       case "check": return Response.json({ ok: true, ...(await checkWorkspace(root, dir)) });
-      case "remove": return Response.json({ ok: true, ...(await removeWorkspace(root, dir, { force: !!b.force, deleteBranch: !!b.deleteBranch, skipArchive: !!b.skipArchive, allowFailedArchive: !!b.allowFailedArchive })) });
+      case "remove": return Response.json({ ok: true, ...(await removeWorkspace(root, dir, { force: !!b.force, expectDirty: Number(b.expectDirty) || 0, deleteBranch: !!b.deleteBranch, skipArchive: !!b.skipArchive, allowFailedArchive: !!b.allowFailedArchive })) });
       case "delete-branch": await forceDeleteBranch(root, str(b.branch)); return Response.json({ ok: true });
-      case "prune": await pruneWorkspaces(root); return Response.json({ ok: true });
       case "setup": { // 새 작업공간의 setup — 승인 전이면 untrusted(스크립트 내용 돌려줌), 승인됐으면 실행(#1176 runSetup, 로그는 작업 폴더 밖)
         await findWorktree(root, dir);
         return Response.json({ ok: true, ...(await runSetup(root, dir, undefined, "state")) });

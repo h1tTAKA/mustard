@@ -7,7 +7,7 @@ import { basename, join, relative, resolve, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
 import { branchFor, slugName, sanitizeSegment } from "./workspaceName.ts";
-import { clearSetupState, materialize, MAX_REVIEW, readConfig, isTrusted, runArchive, type MaterializeReport, type ScriptResult } from "../crew/worktreeBootstrap.ts";
+import { clearSetupState, materialize, MAX_REVIEW, readConfig, readInclude, isTrusted, runArchive, type MaterializeReport, type ScriptResult } from "../crew/worktreeBootstrap.ts";
 
 const pexec = promisify(execFile);
 const git = async (cwd: string, args: string[], timeout = 120_000) => (await pexec("git", args, { cwd, timeout, maxBuffer: 10_000_000 })).stdout.trim();
@@ -112,11 +112,15 @@ export async function findWorktree(root: string, dir: string): Promise<{ branch:
 }
 
 // 지우기 전 점검 — 미커밋(Orca preflight와 같은 status)·미푸시(upstream 있으면 앞선 수, 없으면 어느 원격에도 없는 커밋 수). 경고용.
-export interface Check { branch: string | null; dirty: number; unpushed: number | null; archive: { script: string; trusted: boolean; tooLong: boolean } | null }
+export interface Check { branch: string | null; dirty: number; ignored: string[]; unpushed: number | null; archive: { script: string; trusted: boolean; tooLong: boolean } | null }
 export async function checkWorkspace(root: string, dir: string): Promise<Check> {
   const { branch } = await findWorktree(root, dir);
   const st = existsSync(dir) ? await git(dir, ["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"]).catch(() => "") : "";
   const dirty = st ? st.split("\n").filter(Boolean).length : 0;
+  // gitignore된 것도 같이 지워짐(worktree remove는 ignored를 깨끗하다고 봄, 리뷰) — 메인에서 복사·공유해 온 것(.worktreeinclude·sharedDirectories)은 메인에 원본이 있으니 뺌
+  const fromMain = new Set([...readInclude(root), ...readConfig(root).sharedDirectories].map((p) => p.replace(/\/+$/, "")));
+  const ign = existsSync(dir) ? await git(dir, ["status", "--porcelain", "--ignored", "--untracked-files=normal"]).catch(() => "") : "";
+  const ignored = ign.split("\n").filter((l) => l.startsWith("!! ")).map((l) => l.slice(3).replace(/\/+$/, "")).filter((p) => !fromMain.has(p)).slice(0, 50);
   let unpushed: number | null = null;
   if (existsSync(dir)) {
     const hasUp = await ok(git(dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]));
@@ -124,7 +128,7 @@ export async function checkWorkspace(root: string, dir: string): Promise<Check> 
     if (!Number.isFinite(unpushed)) unpushed = null; // 모름(원격 없음 등)
   }
   const { archive } = readConfig(root);
-  return { branch, dirty, unpushed, archive: archive ? { script: archive, trusted: isTrusted(root, archive), tooLong: archive.length > MAX_REVIEW } : null };
+  return { branch, dirty, ignored, unpushed, archive: archive ? { script: archive, trusted: isTrusted(root, archive), tooLong: archive.length > MAX_REVIEW } : null };
 }
 
 export type RemoveResult =
@@ -133,15 +137,16 @@ export type RemoveResult =
   | { status: "archive-failed"; result: ScriptResult }           // archive 실패 — 지우지 않음(Orca), allowFailedArchive면 계속
   | { status: "removed"; branch: string | null; branchKept: boolean };
 
-export interface RemoveOpts { force?: boolean; deleteBranch?: boolean; skipArchive?: boolean; allowFailedArchive?: boolean }
+export interface RemoveOpts { force?: boolean; expectDirty?: number; deleteBranch?: boolean; skipArchive?: boolean; allowFailedArchive?: boolean }
 // 지우기 — 잠김 거부 → (force 아니면) 미커밋 막음 → archive(승인 필요) → worktree remove → (선택) 로컬 브랜치 -d, 실패면 남김 → prune
 export async function removeWorkspace(root: string, dir: string, o: RemoveOpts = {}): Promise<RemoveResult> {
   const { branch, locked } = await findWorktree(root, dir);
   if (locked) throw new Error("locked");
   const present = existsSync(dir);
-  if (present && !o.force) {
+  if (present) {
     const { dirty } = await checkWorkspace(root, dir);
-    if (dirty) return { status: "dirty", dirty };
+    // force는 사람이 본 개수까지만 — 경고 뒤에 더 바뀌었으면 다시 보여 줌(못 본 파일을 --force로 지우지 않게, 리뷰)
+    if (dirty && (!o.force || dirty > (o.expectDirty ?? 0))) return { status: "dirty", dirty };
   }
   if (present && !o.skipArchive) {
     const { archive } = readConfig(root);
@@ -153,15 +158,18 @@ export async function removeWorkspace(root: string, dir: string, o: RemoveOpts =
   await git(root, ["worktree", "prune"]).catch(() => {});
   let branchKept = !!branch;
   if (branch && o.deleteBranch) branchKept = !(await ok(git(root, ["branch", "-d", "--", branch]))); // 머지 안 된 커밋이 있으면 git이 거부 → 남김(Orca)
+  if (branch && o.deleteBranch && branchKept) keptBranches.add(`${root}\0${branch}`);
   return { status: "removed", branch, branchKept };
 }
 
-// 남긴 브랜치를 사람이 강제로 — 어느 worktree에서도 안 쓰는 로컬 브랜치만
+// 남긴 브랜치를 사람이 강제로 — 방금 작업공간을 지우며 -d가 거부해 남긴 브랜치만(아무 브랜치나 -D 하지 않게, 리뷰), 어느 worktree에서도 안 쓰는 것만
+const keptBranches = new Set<string>(); // ponytail: 서버 메모리 — 재시작하면 잊음(그땐 터미널에서 git branch -D)
 export async function forceDeleteBranch(root: string, branch: string): Promise<void> {
+  if (!keptBranches.has(`${root}\0${branch}`)) throw new Error("not a kept branch");
   if (!(await validBranch(root, branch))) throw new Error("bad branch");
   const used = (await git(root, ["worktree", "list", "--porcelain"])).split("\n").some((l) => l === `branch refs/heads/${branch}`);
   if (used) throw new Error("branch in use");
   await git(root, ["branch", "-D", "--", branch]);
+  keptBranches.delete(`${root}\0${branch}`);
 }
 
-export const pruneWorkspaces = (root: string) => git(root, ["worktree", "prune"]);
