@@ -98,10 +98,14 @@ let helperApp = null;
 function setHelperApp(p) { helperApp = p && process.platform === "darwin" && Number(release().split(".")[0]) >= 23 && existsSync(p) ? p : null; }
 let conn = null;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-let starting = null; // 띄우는 중 — 동시에 온 요청이 도우미를 둘 띄우지 않게 같은 약속을 기다림
+let starting = null, startingGen = -1; // 띄우는 중 — 동시에 온 요청이 도우미를 둘 띄우지 않게 같은 약속을 기다림(비상 정지 전에 띄우던 건 안 씀, 리뷰)
 function helper() {
   if (conn && !conn.sock.destroyed) return Promise.resolve(conn);
-  return (starting ||= startHelper().finally(() => { starting = null; }));
+  if (!starting || startingGen !== generation) {
+    const p = startHelper().finally(() => { if (starting === p) starting = null; });
+    starting = p; startingGen = generation;
+  }
+  return starting;
 }
 async function startHelper() {
   const dir = mkdtempSync(join(tmpdir(), "mcu-"));
@@ -132,7 +136,7 @@ async function startHelper() {
   const hs = await new Promise((res) => { const t = setTimeout(() => res(null), 10_000); c.pending.set(id, (m) => { clearTimeout(t); res(m); }); sock.write(JSON.stringify({ id, token, method: "handshake", params: {} }) + "\n"); });
   c.pid = Number(hs?.result?.pid) || 0;
   c.version = hs?.result?.version || "";
-  if (!c.pid) { sock.destroy(); return null; }
+  if (!c.pid) { sock.destroy(); await runCmd("/usr/bin/pkill", ["-f", `--serve ${sockPath}`], 5000, process.env); return null; } // 띄운 도우미도 바로 끝냄(리뷰)
   conn = c; // 악수가 끝난 뒤에야 쓸 수 있는 연결로
   return c;
 }
