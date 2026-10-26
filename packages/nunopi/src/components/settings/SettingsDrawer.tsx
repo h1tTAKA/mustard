@@ -335,6 +335,11 @@ export default function SettingsDrawer({
     settings["opencode-agent"]?.cliPath ?? "",
   );
   const desktop = typeof window !== "undefined" ? window.nunopiDesktop : undefined;
+  // #1171 경로 직접 지정 — CLI 상태 목록 줄 안에서(백그라운드 SNA가 쓰는 3개만). 감지 목록이 없으면(스탠드얼론 웹) 아래 옛 칸.
+  const customPath: Record<string, [string, (v: string) => void]> = { claude: [claudeCliPath, setClaudeCliPath], codex: [codexCliPath, setCodexCliPath], opencode: [openCodeCliPath, setOpenCodeCliPath] };
+  const [pathOpen, setPathOpen] = useState<string | null>(null);
+  const [pathDirty, setPathDirty] = useState(false);
+  const statusList = agentsDet !== null || agentsChecking;
 
   if (!isOpen) return null;
 
@@ -670,7 +675,7 @@ export default function SettingsDrawer({
           <section id="set-agents" className="scroll-mt-4 space-y-5 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
 
             {/* #1171 에이전트 CLI 상태 — 설치·실행되는 경로·버전·로그인. GitHub 연동 카드와 같은 배지·다시 확인 */}
-            {agentsDet !== null || agentsChecking ? (
+            {statusList ? (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t("agents.status")}</h4>
@@ -694,7 +699,24 @@ export default function SettingsDrawer({
                           {a.version && <span className="font-mono text-[11px] text-zinc-400">v{a.version}</span>}
                           <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.cls}`}>{badge.txt}</span>
                         </div>
-                        {a.path && <p className="truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500" title={a.path}>{a.path}</p>}
+                        {(a.path || customPath[a.id]) && (
+                          <div className="flex items-center gap-2">
+                            <p className={`min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500 ${customPath[a.id]?.[0].trim() ? "line-through" : ""}`} title={a.path}>{a.path}</p>
+                            {customPath[a.id] && (
+                              <button type="button" onClick={() => setPathOpen(pathOpen === a.id ? null : a.id)}
+                                className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-zinc-500 transition hover:bg-zinc-100 dark:hover:bg-zinc-800">{t("agents.setPath")}</button>
+                            )}
+                          </div>
+                        )}
+                        {customPath[a.id]?.[0].trim() && pathOpen !== a.id && <p className="truncate font-mono text-[11px] text-amber-600 dark:text-amber-400" title={customPath[a.id][0]}>{t("agents.customPath", { path: customPath[a.id][0].trim() })}</p>}
+                        {customPath[a.id] && pathOpen === a.id && (
+                          <div className="space-y-1">
+                            <input type="text" autoFocus value={customPath[a.id][0]} onChange={(e) => customPath[a.id][1](e.target.value)} onBlur={() => { handleSave(); setPathDirty(true); }}
+                              placeholder={a.path || ""} aria-label={`${a.label} ${t("settings.cliPath")}`}
+                              className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-[12px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+                            <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("agents.setPathHint")}</p>
+                          </div>
+                        )}
                         {a.status === "broken" && a.tried[0] && <p className="break-all text-[11px] text-rose-500">{a.tried[0].error || t("agents.brokenHint")}</p>}
                         {a.status === "ok" && a.tried.length > 0 && <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("agents.skipped", { n: a.tried.length })}</p>}
                         {a.status !== "ok" && a.install && (
@@ -709,6 +731,13 @@ export default function SettingsDrawer({
                   })}
                   {agentsDet === null && <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-zinc-400"><IconLoader2 size={12} className="animate-spin" aria-hidden />{t("agents.checking")}</div>}
                 </div>
+                {pathDirty && desktop && (
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/20">
+                    <p className="text-xs text-amber-700 dark:text-amber-300">{t("settings.cliPathRestartHint")}</p>
+                    <button type="button" onClick={() => { void desktop.relaunch(); }}
+                      className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-amber-700">{t("settings.relaunchNow")}</button>
+                  </div>
+                )}
               </div>
             ) : null}
 
@@ -781,6 +810,7 @@ export default function SettingsDrawer({
             </label>
             </div>
 
+            {!statusList && (<>
             <div className="border-t border-zinc-200 dark:border-zinc-800" />
 
             <div className="space-y-4">
@@ -868,6 +898,7 @@ export default function SettingsDrawer({
                 </button>
               </div>
             )}
+            </>)}
           </section>
           )}
 
