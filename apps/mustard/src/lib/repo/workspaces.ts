@@ -158,7 +158,11 @@ export async function removeWorkspace(root: string, dir: string, o: RemoveOpts =
     const r = await runArchive(root, dir, undefined, "state");
     if (r && !r.ok && !o.allowFailedArchive) return { status: "archive-failed", result: r };
   }
-  if (present) await git(root, ["worktree", "remove", ...(o.force ? ["--force"] : []), dir]);
+  if (present) {
+    // force 아닌데 git이 거부(archive가 untracked를 남김 등) → 다시 점검해 보여 줌(일반 실패 안내로 끝나지 않게, 리뷰)
+    try { await git(root, ["worktree", "remove", ...(o.force ? ["--force"] : []), dir]); }
+    catch (e) { if (o.force) throw e; return { status: "dirty", dirty: (await checkWorkspace(root, dir)).dirty }; }
+  }
   await git(root, ["worktree", "prune"]).catch(() => {});
   let branchKept = !!branch;
   if (branch && o.deleteBranch) branchKept = !(await ok(git(root, ["branch", "-d", "--", branch]))); // 머지 안 된 커밋이 있으면 git이 거부 → 남김(Orca)

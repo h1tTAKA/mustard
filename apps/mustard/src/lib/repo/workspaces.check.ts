@@ -114,8 +114,12 @@ writeFileSync(join(root, ".mustard", "config.json"), JSON.stringify({ scripts: {
 trustScript(root, "exit 3");
 r = await removeWorkspace(root, p1.dir);
 assert.strictEqual(r.status, "archive-failed", "archive 실패면 안 지움(Orca)");
-r = await removeWorkspace(root, p1.dir, { allowFailedArchive: true });
-assert.strictEqual(r.status, "removed");
-r = await removeWorkspace(root, p2.dir, { skipArchive: true });
-assert.strictEqual(r.status, "removed", "archive 건너뛰기");
+writeFileSync(join(root, ".mustard", "config.json"), JSON.stringify({ scripts: { archive: "touch left-behind.txt" } }));
+trustScript(root, "touch left-behind.txt");
+assert.deepStrictEqual(await removeWorkspace(root, p1.dir), { status: "dirty", dirty: 1 }, "archive가 untracked를 남겨 git이 거부하면 다시 점검해 보여 줌");
+r = await removeWorkspace(root, p1.dir, { force: true, expectDirty: 1, skipArchive: true });
+assert.strictEqual(r.status, "removed", "본 개수만큼 force로");
+writeFileSync(join(root, ".mustard", "config.json"), JSON.stringify({ scripts: { archive: "exit 3" } }));
+r = await removeWorkspace(root, p2.dir, { allowFailedArchive: true });
+assert.strictEqual(r.status, "removed", "archive 실패 무시하고 지우기");
 console.log("workspaces.check ok");
