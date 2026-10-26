@@ -4,10 +4,11 @@ import { PROVIDER_CATALOG } from "../../lib/agent/catalog";
 import { type LearnProviderMode, type ModeModels, type ModeProviders, LEARN_PROVIDER_MODES, resolveModeModel, resolveModeProvider } from "../../lib/modeProviders";
 import { XIcon } from "../learning/icons";
 import ShortcutsSection from "./ShortcutsSection";
-import { IconKeyboard, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop } from "@tabler/icons-react";
+import { IconKeyboard, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt } from "@tabler/icons-react";
 import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
 import ComputerUseSection from "./ComputerUseSection";
+import QuickCommandsSection from "./QuickCommandsSection";
 import AgentCatalogSection from "./AgentCatalogSection";
 import { useLocale, useT, useToast } from "@mustard/core";
 import { LOCALES, type Locale } from "@mustard/core";
@@ -384,6 +385,7 @@ export default function SettingsDrawer({
     { id: "set-terminal", label: t("settings.terminalSection"), Icon: IconTerminal2, show: workspaceSettings, group: t("settings.groupEnvironment") },
     { id: "set-workspace", label: t("settings.workspaceSection"), Icon: IconFolder, show: workspaceSettings, group: t("settings.groupEnvironment") },
     { id: "set-git", label: t("settings.gitSection"), Icon: IconGitBranch, show: workspaceSettings, group: t("settings.groupEnvironment") },
+    { id: "set-quick", label: t("quick.title"), Icon: IconBolt, show: workspaceSettings, group: t("settings.groupEnvironment") }, // #1194
     { id: "set-shortcuts", label: t("settings.shortcutsSection"), Icon: IconKeyboard, show: true, group: t("settings.groupEnvironment") }, // #1027
     { id: "set-agents", label: t("settings.provider"), Icon: IconRobot, show: true, group: t("settings.groupAgents") },
     { id: "set-catchup", label: t("settings.catchupSection"), Icon: IconActivity, show: workspaceSettings, group: t("settings.groupAgents") }, // #1049
@@ -1098,6 +1100,13 @@ export default function SettingsDrawer({
             {/* #1172 이슈 트래커(Linear·Jira) — 저장 = 확인 후 저장 */}
             <TrackerCards />
             <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("settings.integrationsMore2")}</p>
+          </section>
+          )}
+
+          {/* 빠른 명령(#1194) — ⌘K 팔레트에서 실행할 저장 명령 */}
+          {activeSection === "set-quick" && (
+          <section id="set-quick" className="scroll-mt-4">
+            <QuickCommandsSection />
           </section>
           )}
 

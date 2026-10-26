@@ -43,3 +43,4 @@ export function quickShellInput(c: QuickCommand): string {
   const body = c.text.replace(/\r\n/g, "\n").replace(/\n+$/, "").replace(/\n/g, "\r");
   return c.enter ? `${body}\r` : body;
 }
+
