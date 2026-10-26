@@ -3,7 +3,7 @@
 // 화면 = ① 상태 + 켜기 스위치 + 비상 정지 ② 준비(조작 도우미·권한 — 할 일만 버튼) ③ 막는 앱 ④ 최근 기록.
 // 조작 자체는 Mustard MCP의 computer_* → main → 도우미(없으면 외부 드라이버). 이 화면은 main 설정만 바꿈.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { IconLoader2, IconCopy, IconX, IconDeviceDesktop, IconAccessible, IconScreenshot, IconCpu, IconShieldLock, IconHistory, IconCircleCheckFilled, IconExternalLink, IconRefresh, IconPlus, IconAlertTriangle } from "@tabler/icons-react";
+import { IconLoader2, IconCopy, IconX, IconDeviceDesktop, IconAccessible, IconScreenshot, IconCpu, IconShieldLock, IconHistory, IconCircleCheckFilled, IconExternalLink, IconRefresh, IconPlus, IconAlertTriangle, IconPointer, IconKeyboard, IconEye, IconAppWindow, IconApps, IconArrowsVertical, IconCursorText, IconHandStop, IconCommand, IconChevronDown } from "@tabler/icons-react";
 import { useT, useToast } from "@mustard/core";
 
 const card = "rounded-2xl border border-zinc-200 bg-white/60 dark:border-zinc-800 dark:bg-zinc-900/40";
@@ -32,6 +32,56 @@ function Step({ icon, title, desc, done, children }: { icon: ReactNode; title: s
         <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{desc}</p>
       </div>
       {children}
+    </div>
+  );
+}
+
+// 최근 조작 — 사람이 읽는 한 줄("TextEdit에 글자 입력"), 도구별 아이콘, 결과는 문제 있을 때만 배지. 처음엔 6개.
+type LogRow = ComputerStatus["log"][number];
+const ACT: Record<string, typeof IconPointer> = {
+  list_apps: IconApps, list_windows: IconAppWindow, get_app_state: IconEye, click: IconPointer, set_value: IconCursorText,
+  type_text: IconKeyboard, press_key: IconCommand, scroll: IconArrowsVertical, "(stop)": IconHandStop,
+};
+function ActivityLog({ log }: { log: LogRow[] }) {
+  const t = useT();
+  const [all, setAll] = useState(false);
+  const rows = all ? log : log.slice(0, 6);
+  const when = (iso: string) => {
+    const d = new Date(iso), today = new Date().toDateString() === d.toDateString();
+    return d.toLocaleString([], today ? { hour: "2-digit", minute: "2-digit", hour12: false } : { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+  };
+  return (
+    <div className={`${card} p-4`}>
+      <div className="flex items-center gap-2">
+        <IconHistory size={16} className="text-zinc-500 dark:text-zinc-400" aria-hidden />
+        <p className="text-[13px] font-medium text-zinc-800 dark:text-zinc-100">{t("computer.log")}</p>
+        {log.length > 0 && <span className="text-[11px] text-zinc-400 dark:text-zinc-500">{log.length}</span>}
+      </div>
+      {log.length === 0 ? <p className="mt-2 text-[12px] text-zinc-400 dark:text-zinc-500">{t("computer.logEmpty")}</p> : (
+        <ul className="mt-3 space-y-1">
+          {rows.map((l, i) => {
+            const known = Object.hasOwn(ACT, l.tool); // constructor 같은 이름이 기록돼도 안 깨지게(리뷰)
+            const Icon = known ? ACT[l.tool] : IconPointer;
+            const bad = l.result === "ok" ? null : l.result === "blocked" ? "blocked" : l.result === "stopped" ? "stopped" : "other";
+            const verb = known ? t(`computer.act.${l.tool === "(stop)" ? "stop" : l.tool}`) : l.tool;
+            return (
+              <li key={`${l.at}-${i}`} title={`${l.tool}${l.cwd ? ` · ${l.cwd}` : ""}`} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${bad === "blocked" || bad === "stopped" ? "bg-rose-500/10 text-rose-500" : bad ? "bg-amber-500/10 text-amber-500" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"}`}><Icon size={13} aria-hidden /></span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-600 dark:text-zinc-300">
+                  {l.app ? <><span className="font-medium text-zinc-800 dark:text-zinc-100">{l.app}</span> {verb}</> : verb}
+                </span>
+                {bad && <span className={`shrink-0 rounded-full px-1.5 py-px text-[10px] font-medium ${bad === "other" ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" : "bg-rose-500/10 text-rose-600 dark:text-rose-400"}`}>{t(`computer.result.${bad}`)}</span>}
+                <span className="shrink-0 tabular-nums text-[11px] text-zinc-400 dark:text-zinc-500">{when(l.at)}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {log.length > 6 && (
+        <button type="button" onClick={() => setAll((v) => !v)} className={`mt-1 ${ghost}`}>
+          <IconChevronDown size={13} className={`transition ${all ? "rotate-180" : ""}`} aria-hidden />{t(all ? "computer.logLess" : "computer.logMore", { n: log.length - 6 })}
+        </button>
+      )}
     </div>
   );
 }
@@ -170,25 +220,8 @@ export default function ComputerUseSection() {
         </div>
       </div>
 
-      {/* ④ 최근 기록 */}
-      <div className={`${card} p-4`}>
-        <div className="flex items-center gap-2">
-          <IconHistory size={16} className="text-zinc-500 dark:text-zinc-400" aria-hidden />
-          <p className="text-[13px] font-medium text-zinc-800 dark:text-zinc-100">{t("computer.log")}</p>
-        </div>
-        {st.log.length === 0 ? <p className="mt-2 text-[12px] text-zinc-400 dark:text-zinc-500">{t("computer.logEmpty")}</p> : (
-          <ul className="mt-2 max-h-56 space-y-0.5 overflow-auto">
-            {st.log.map((l, i) => (
-              <li key={`${l.at}-${i}`} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-[12px] hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
-                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${l.result === "ok" ? "bg-emerald-500" : l.result === "blocked" || l.result === "stopped" ? "bg-rose-500" : "bg-amber-500"}`} aria-hidden />
-                <span className="w-16 shrink-0 font-mono text-[11px] text-zinc-400">{new Date(l.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
-                <span className="min-w-0 flex-1 truncate text-zinc-700 dark:text-zinc-200"><span className="font-mono text-[11px]">{l.tool}</span>{l.app ? <span className="text-zinc-400"> · {l.app}</span> : null}</span>
-                <span className="shrink-0 text-[11px] text-zinc-400">{t(`computer.result.${["ok", "blocked", "stopped"].includes(l.result) ? l.result : "other"}`)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {/* ④ 최근 조작 */}
+      <ActivityLog log={st.log} />
     </div>
   );
 }
