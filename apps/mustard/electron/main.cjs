@@ -112,7 +112,10 @@ async function detectAgents(force = false) {
   const list = await agentCli.detectAll({ force });
   const sp = await agentCli.shellPath(); // detectAll이 받아 둔 것(캐시)
   if (sp) process.env.PATH = agentCli.mergePath(process.env.PATH, sp); // 이후 자식(SNA·gh 등)도 로그인 셸 PATH로
-  lastDetect = { at: Date.now(), list };
+  // custom = 사용자가 경로를 직접 지정한 것(설정·env) — SNA는 그 경로를 쓰니 Crew가 감지 결과로 막지 않게
+  const saved = loadSavedRuntimePaths(), env = process.env;
+  const custom = [["claude", saved.claudeCode || env.NUNOPI_CLAUDE_COMMAND?.trim()], ["codex", saved.codex || env.NUNOPI_CODEX_COMMAND?.trim()], ["opencode", saved.opencode || env.NUNOPI_OPENCODE_COMMAND?.trim()]].filter(([, p]) => p).map(([id]) => id);
+  lastDetect = { at: Date.now(), list, custom };
   try {
     const dir = join(require("node:os").homedir(), ".nunopi");
     mkdirSync(dir, { recursive: true });
