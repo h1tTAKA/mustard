@@ -1196,7 +1196,7 @@ function registryAgent(id, proc) {
 }
 // 커맨드 basename → agent id. 유저가 셸에 직접 친 실행 커맨드도 잡아 신원 확정(피커 안 써도 정확).
 // 카탈로그의 감지 명령·별칭 전부(#1184) + 옛 별칭. gemini도 이제 따로(#864의 antigravity 통일은 실행 목록이 좁던 때 결정).
-const CMD_TO_AGENT = { ...Object.fromEntries(agentCatalog.AGENTS.flatMap((a) => a.bins.map((b) => [b, a.id]))), antigravity: "antigravity", cursor: "cursor" };
+const CMD_TO_AGENT = new Map([...agentCatalog.identityBins(), ["antigravity", "antigravity"], ["cursor", "cursor"]]); // Map — "constructor" 같은 이름이 Object 프로토타입을 집지 않게(리뷰)
 const inputBuf = new Map(); // id → 현재 타이핑 중인 라인(개행 전까지 누적)
 // pty 입력 스트림을 감시해 "에이전트 실행 커맨드 + Enter"를 감지 → launchRegistry 갱신. 수동 실행도 신원 확정(#864).
 // (셸 복귀 시 registry는 이미 해제되므로, 이전 stale 신원이 남아도 새 커맨드가 덮어씀 → codex→claude 오판 소멸.)
@@ -1208,7 +1208,7 @@ function detectLaunchFromInput(id, data) {
       const line = s.trim(); s = "";
       const tok = line.split(/\s+/).filter((tk) => !/^\w+=/.test(tk))[0] || ""; // FOO=bar 같은 env 할당 스킵
       const base = tok.split("/").pop().toLowerCase();
-      const agent = CMD_TO_AGENT[base];
+      const agent = CMD_TO_AGENT.get(base);
       if (agent) launchRegistry.set(id, { agent, confirmed: false, at: Date.now() });
     } else if (code === 0x7f || code === 0x08) { s = s.slice(0, -1); } // backspace
     else if (code === 0x03 || code === 0x15) { s = ""; }               // Ctrl-C / Ctrl-U → 라인 취소

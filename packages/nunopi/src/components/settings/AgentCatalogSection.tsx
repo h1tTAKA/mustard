@@ -32,8 +32,10 @@ function ago(ms: number, locale: string) {
 }
 
 // 화면에 보일 명령 — main 카탈로그 launchLine과 같은 순서([env] 명령 플래그 유저인자). 유저 인자가 권한 옵션을 쓰는 경우의 생략은 main만 앎(표시는 근사).
+// 유저 인자에 이 에이전트의 권한 옵션이 있으면 플래그를 안 붙임(main과 같은 판단 — carriers는 main 카탈로그가 줌)
+const argsSetPermission = (a: AgentDetect, args: string) => (args.match(/"[^"]*"|'[^']*'|\S+/g) || []).some((tok) => (a.carriers ?? []).includes(a.id === "codex" && /^-[as].+/.test(tok) ? tok.slice(0, 2) : tok.split("=")[0]));
 function lineOf(a: AgentDetect, choice: string, args: string, cmd?: string) {
-  const flag = choice === "own" ? "" : a.flags?.[FLAG_KEY[choice]] ?? "";
+  const flag = choice === "own" || argsSetPermission(a, args) ? "" : a.flags?.[FLAG_KEY[choice]] ?? "";
   const env = choice === "full-access" && a.env ? Object.entries(a.env).map(([k, v]) => `${k}=${v} `).join("") : "";
   return `${env}${cmd || a.cmd || a.id}${flag ? ` ${flag}` : ""}${args.trim() ? ` ${args.trim()}` : ""}`;
 }
@@ -204,6 +206,7 @@ function AgentRow({ a, logo, isDefault, path, all, guard }: { a: AgentDetect; lo
             {used > 0 && <span className="hidden truncate text-[11px] text-zinc-400 sm:inline" title={new Date(used).toLocaleString(locale)}>· {t("agents.lastUsed", { when: ago(used, locale) })}</span>}
           </div>
           <p className="truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500" title={lineOf(a, eff, savedArgs, customPath)}>{lineOf(a, eff, savedArgs, customPath)}</p>
+          {eff !== "own" && argsSetPermission(a, savedArgs) && <p className="text-[11px] text-amber-600 dark:text-amber-400">{t("agents.argsOverridePerm")}</p>}
         </div>
         {mine && choices.includes(mine) && (
           <button type="button" onClick={() => setOpen(true)} className="hidden shrink-0 rounded-full border border-zinc-300 px-2 py-0.5 text-[11px] text-zinc-600 sm:block dark:border-zinc-600 dark:text-zinc-300">

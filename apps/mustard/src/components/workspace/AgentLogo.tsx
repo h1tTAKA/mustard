@@ -28,6 +28,12 @@ const MATCH: [AgentId, RegExp][] = [
   ["amp", /^amp$/i],
   ["grok", /grok/i],
   ["omp", /^omp$/i],
+  // 카탈로그 나머지(#1184) — 실행 파일 이름이 정확히 같을 때만(electron agent-catalog identityBins와 같은 목록, 짧은 이름 pi·cn·acli·dst 제외)
+  ...([["openclaude", "openclaude"], ["opencode2", "opencode2"], ["mimo-code", "mimo"], ["ante", "ante"], ["trae", "traecli"], ["muse", "muse"], ["dsh", "dsh-tui"], ["qoder", "qodercli"], ["qoder", "qoder"],
+    ["qoder-cn", "qoderclicn"], ["qoder-cn", "qodercn"], ["zcode", "zcode"], ["prime-agent", "prime-agent"], ["goose", "goose"], ["kilo", "kilo"], ["kiro", "kiro-cli"], ["crush", "crush"], ["aug", "auggie"],
+    ["autohand", "autohand"], ["cline", "cline"], ["codebuff", "codebuff"], ["freebuff", "freebuff"], ["command-code", "command-code"], ["droid", "droid"], ["kimi", "kimi"], ["kimi", "kimi-code"],
+    ["mistral-vibe", "vibe"], ["mistral-vibe", "mistral-vibe"], ["qwen-code", "qwen"], ["devin", "devin"], ["openclaw", "openclaw"], ["codebuddy", "codebuddy"], ["codebuddy", "cbc"], ["jcode", "jcode"]] as [AgentId, string][])
+    .map(([id, bin]): [AgentId, RegExp] => [id, new RegExp(`^${bin}$`, "i")]),
 ];
 
 // 셸 프로세스명(유휴 상태 — 에이전트 안 돎). 선행 "-"(login shell) 정규화 후 비교.

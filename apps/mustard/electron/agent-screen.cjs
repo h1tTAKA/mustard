@@ -80,7 +80,9 @@ const CODEX_WORKING = /•working\(|working\([^)]*esctointerrupt|esctointerrupt/
 const CODEX_CHROME = /openaicodex|codex(session|resume)/i;
 
 // 포그라운드 프로세스명 → 에이전트 id | null. "존재" 판정용(버퍼가 상태를 못 잡아도 에이전트가 떠 있음을 안다).
-const PROC_MATCH = [["claude", /claude/i], ["codex", /codex/i], ["gemini", /gemini/i], ["antigravity", /antigravity/i], ["hermes", /hermes/i], ["aider", /aider/i], ["opencode", /open-?code/i], ["cursor", /cursor/i], ["copilot", /copilot/i], ["amp", /^amp$/i], ["grok", /grok/i]];
+const PROC_MATCH = [["claude", /claude/i], ["codex", /codex/i], ["gemini", /gemini/i], ["antigravity", /antigravity/i], ["hermes", /hermes/i], ["aider", /aider/i], ["opencode", /open-?code/i], ["cursor", /cursor/i], ["copilot", /copilot/i], ["amp", /^amp$/i], ["grok", /grok/i],
+  // 카탈로그 나머지(#1184) — 실행 파일 이름 그대로(정확히 같을 때만, 짧은 이름은 카탈로그가 뺌). 상태(작업 중·끝)는 위 claude·codex 화면 규칙만 — 나머지는 "떠 있음"까지.
+  ...require("./agent-catalog.cjs").identityBins().map(([bin, id]) => [id, new RegExp(`^${bin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i")])];
 function agentFromProcess(name) {
   const p = String(name || "").trim().toLowerCase().replace(/^-+/, "");
   if (!p) return null;

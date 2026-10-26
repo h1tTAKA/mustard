@@ -2,7 +2,7 @@
 // nunopi 스탠드얼론 학습앱(#894 서브5) — preload.cjs가 실제 노출하는 학습 표면만 선언.
 // 워크스페이스 전용(terminal·ports·repo watch·provider-usage)은 없음. 공유 설정 창이 ?.로 확인하는 github·integrations·pickRepoFolder는
 // 타입만 선택(optional)으로 둠 — 스탠드얼론 런타임엔 없어서 그 설정 칸은 동작 안 함.
-interface AgentDetect { id: string; label: string; status: "ok" | "broken" | "missing"; path?: string; version?: string | null; auth: "authenticated" | "unauthenticated" | "unknown"; install: string | null; tried: { path: string; error: string }[]; url?: string; cmd?: string; choices?: string[]; flags?: { ask?: string; edits?: string; auto?: string; full?: string }; env?: Record<string, string> | null }
+interface AgentDetect { id: string; label: string; status: "ok" | "broken" | "missing"; path?: string; version?: string | null; auth: "authenticated" | "unauthenticated" | "unknown"; install: string | null; tried: { path: string; error: string }[]; url?: string; cmd?: string; choices?: string[]; carriers?: string[]; flags?: { ask?: string; edits?: string; auto?: string; full?: string }; env?: Record<string, string> | null }
 interface NunopiDesktopApi {
   isDesktop: true;
   getRuntimePaths(): Promise<{ claudeCode?: string; codex?: string; opencode?: string }>;

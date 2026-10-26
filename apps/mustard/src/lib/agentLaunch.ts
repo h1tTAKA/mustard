@@ -11,11 +11,12 @@ export function launchOpts(agent: string, extra = "") {
 export async function liftStoredArgs(ids: string[]) {
   const lift = window.nunopiDesktop?.liftAgentArgs;
   if (!lift || getSetting<boolean>(AKEYS.argsLifted, false)) return;
+  let failed = false;
   for (const id of ids) {
     const args = getSetting<string>(AKEYS.args(id), "");
     if (!args.trim() || getSetting<string>(AKEYS.permOf(id), "")) continue;
-    const r = await lift(id, args).catch(() => null);
+    const r = await lift(id, args).catch(() => { failed = true; return null; });
     if (r) { setSetting(AKEYS.args(id), r.rest); setSetting(AKEYS.permOf(id), r.choice); }
   }
-  setSetting(AKEYS.argsLifted, true);
+  if (!failed) setSetting(AKEYS.argsLifted, true); // 실패가 있으면 다음 실행에 다시(리뷰)
 }

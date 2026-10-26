@@ -1,6 +1,6 @@
 // agent-catalog 점검 — node electron/agent-catalog.test.cjs
 const assert = require("node:assert");
-const { AGENTS, BY_ID, choicesOf, launchLine, liftPermission, hasPermissionOption } = require("./agent-catalog.cjs");
+const { AGENTS, BY_ID, choicesOf, launchLine, liftPermission, hasPermissionOption, identityBins, carriersOf } = require("./agent-catalog.cjs");
 
 assert.strictEqual(AGENTS.length, 44, "카탈로그 44개(claude-agent-teams 제외)");
 assert.strictEqual(new Set(AGENTS.map((a) => a.id)).size, AGENTS.length, "id 겹침 없음");
@@ -31,4 +31,8 @@ assert.deepStrictEqual(liftPermission("continue", '--allow "*"'), { choice: "ful
 assert.deepStrictEqual(liftPermission("claude", "--permission-mode auto"), { choice: "auto", rest: "" });
 assert.strictEqual(liftPermission("claude", "--model opus"), null);
 assert.strictEqual(BY_ID.get("dsh").req[0], "dsh");
+assert.deepStrictEqual(liftPermission("claude", "--permission-mode=acceptEdits --model x"), { choice: "accept-edits", rest: "--model x" }, "--opt=값도 옮김");
+const ids = new Map(identityBins());
+assert.ok(!ids.has("pi") && !ids.has("cn") && !ids.has("acli") && ids.get("goose") === "goose", "짧은 이름은 신원에서 뺌");
+assert.ok(carriersOf("claude").includes("--permission-mode"));
 console.log("agent-catalog.test ok");

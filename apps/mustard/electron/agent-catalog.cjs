@@ -71,11 +71,16 @@ const tokens = (s) => String(s || "").match(/"[^"]*"|'[^']*'|\S+/g) || [];
 const CLAUDE_OPTS = ["--permission-mode", "--dangerously-skip-permissions", "--allow-dangerously-skip-permissions", "--permission-prompt-tool", "--permission-prompts", "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools"];
 const EXTRA = { claude: CLAUDE_OPTS, codex: ["-a", "--ask-for-approval", "-s", "--sandbox", "--yolo", "--not-so-yolo", "--full-auto"], grok: ["--permission-mode", "--always-approve", "--yolo", "--dangerously-skip-permissions"], gemini: ["--approval-mode", "-y"] };
 const CODEX_CFG = ["approval_policy", "sandbox_mode", "approvals_reviewer", "sandbox_workspace_write"];
+// 이 에이전트의 권한 옵션 이름들 — 유저 인자에 있으면 플래그를 안 붙임(화면도 이걸로 "인자가 권한을 정함" 표시)
+function carriersOf(id) {
+  const c = new Set(EXTRA[id] || []);
+  for (const ch of CHOICES) for (const tok of tokens(flagOf(id, ch))) if (tok.startsWith("-") && !(id === "codex" && tok === "-c")) c.add(tok.split("=")[0]);
+  return [...c];
+}
 // 유저 인자에 이미 권한 옵션이 있나 — 있으면 플래그를 안 붙임(유저가 이김)
 function hasPermissionOption(id, userArgs) {
   const t = tokens(userArgs);
-  const carriers = new Set(EXTRA[id] || []);
-  for (const c of CHOICES) for (const tok of tokens(flagOf(id, c))) if (tok.startsWith("-") && !(id === "codex" && tok === "-c")) carriers.add(tok.split("=")[0]);
+  const carriers = new Set(carriersOf(id));
   return t.some((tok, i) => {
     const name = id === "codex" && /^-[as].+/.test(tok) ? tok.slice(0, 2) : tok.split("=")[0];
     if (carriers.has(name)) return true;
@@ -100,7 +105,7 @@ function launchLine(id, { choice = "own", userArgs = "", cmd } = {}) {
 
 // 유저가 인자에 알려진 권한 플래그를 쓰면 빼서 그 에이전트의 권한 선택으로 — { choice, rest } 또는 null
 function liftPermission(id, userArgs) {
-  const t = tokens(userArgs);
+  const t = tokens(userArgs).flatMap((x) => (/^--[^=]+=/.test(x) ? [x.slice(0, x.indexOf("=")), x.slice(x.indexOf("=") + 1)] : [x])); // --opt=값도 --opt 값처럼(리뷰)
   for (const c of ["full-access", "auto", "accept-edits", "ask"]) {
     const f = tokens(flagOf(id, c));
     if (!f.length) continue;
@@ -111,4 +116,8 @@ function liftPermission(id, userArgs) {
   return null;
 }
 
-module.exports = { AGENTS, BY_ID, CHOICES, flagOf, envOf, choicesOf, hasPermissionOption, launchLine, liftPermission };
+// 신원(셸에 친 명령·포그라운드 프로세스 이름 → 에이전트)에 쓰는 이름 — 다른 도구와 겹치기 쉬운 짧은 이름은 뺌(리뷰: pi·cn·acli·dst)
+const GENERIC = new Set(["pi", "cn", "acli", "dst"]);
+const identityBins = () => AGENTS.flatMap((a) => a.bins.filter((b) => !GENERIC.has(b)).map((b) => [b, a.id]));
+
+module.exports = { AGENTS, BY_ID, CHOICES, flagOf, envOf, choicesOf, carriersOf, hasPermissionOption, launchLine, liftPermission, identityBins };
