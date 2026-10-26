@@ -117,9 +117,13 @@ async function call(tool, args = {}, { home, cwd = "", run = runCmd } = {}) {
   const paths = await Promise.all(pids.map((p) => procPath(p, run)));
   if (paths.some((p) => !p)) { log({ at, tool, app: "", cwd, result: "no-target" }, home); return { ok: false, error: "no-target" }; } // pid가 어느 앱인지 못 찾음 → 막을 수 없으니 거절
   const labels = [...paths, ...names];
-  const front = await frontApp(run);
-  const hit = blockedBy([...labels, front].filter(Boolean), cfg.blocked);
   const app = labels[0] ? String(labels[0]).split("/").find((s) => s.endsWith(".app"))?.replace(/\.app$/, "") || String(labels[0]).split("/").pop() : "";
+  let hit = blockedBy(labels, cfg.blocked); // 대상 앱 먼저, 다음 지금 앞에 있는 앱
+  if (!hit) {
+    const front = await frontApp(run);
+    if (process.platform === "darwin" && !front) { log({ at, tool, app, cwd, result: "front-unknown" }, home); return { ok: false, error: "front-unknown" }; } // 앞 앱을 모르면 막을 수 없으니 거절(리뷰)
+    hit = blockedBy([front].filter(Boolean), cfg.blocked);
+  }
   if (hit) { log({ at, tool, app, cwd, result: "blocked" }, home); return { ok: false, error: "blocked", app: hit }; }
   const r = await driver(["call", tool, JSON.stringify(args ?? {})], { home, gen });
   log({ at, tool, app, cwd, result: r.ok ? "ok" : r.error }, home);
@@ -152,6 +156,7 @@ const ERR = {
   stopped: "The user stopped computer use (emergency stop). Stop all desktop actions and report what you did so far.",
   timeout: "The driver did not answer in time. Take a fresh snapshot before retrying.",
   "bad-tool": "Invalid driver tool name. Use computer_tools to list tools.",
+  "front-unknown": "Mustard could not tell which app is in front, so it refused the action. Try again in a moment.",
   "no-target": "Mustard needs to know which app this targets: include the app's pid (from the window state/app list) in args. Mustard checks it against blocked apps.",
 };
 async function agentTool(name, args = {}, { home, cwd = "" } = {}) {
