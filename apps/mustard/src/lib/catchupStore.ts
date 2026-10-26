@@ -67,6 +67,8 @@ const migrated = new Set<string>();
 function mergeInto(old: string, as: string, main: string) {
   if (as === main && !existsSync(rawDir(main))) { renameSync(old, rawDir(main)); writeFileSync(join(rawDir(main), "root.txt"), main); return; } // 메인 자기 옛 폴더 + 자리가 비었으면 이름만(worktree 것은 wt 표시가 붙어야 해서 아래로, 리뷰)
   for (const f of readdirSync(old)) if (DAY_RE.test(f.replace(/\.jsonl$/, ""))) appendRaw(as, readDayFile(join(old, f)));
+  mkdirSync(rawDir(main), { recursive: true });
+  if (!existsSync(join(rawDir(main), "root.txt"))) writeFileSync(join(rawDir(main), "root.txt"), main); // 세션·질문만 옮겨도 어느 레포인지 남게(리뷰)
   for (const sub of ["sessions", "ask"]) { const s = join(old, sub); if (existsSync(s)) cpSync(s, join(rawDir(main), sub), { recursive: true, force: false }); }
   renameSync(old, existsSync(`${old}.migrated`) ? `${old}.migrated.${Date.now()}` : `${old}.migrated`); // 이미 있으면 겹치지 않게(리뷰)
 }
