@@ -47,8 +47,8 @@ function linear({ token, fetch: fetchFn = globalThis.fetch }) {
   };
   const shape = (n, withBody) => ({
     provider: "linear", id: n.id, key: n.identifier, title: n.title, state: n.state?.name ?? "", stateType: n.state?.type ?? "", url: n.url, updatedAt: n.updatedAt,
-    branchName: n.branchName || "", assignee: n.assignee?.name ?? "", team: n.team ? { id: n.team.id, key: n.team.key } : undefined,
-    ...(withBody ? { body: n.description ?? "", comments: (n.comments?.nodes ?? []).map((c) => ({ author: c.user?.name ?? "", body: c.body, at: c.createdAt })) } : {}),
+    branchName: n.branchName || "", assignee: n.assignee?.name ?? "", team: n.team ? { id: n.team.id, key: n.team.key } : undefined, body: n.description ?? "", // 본문은 목록에도(Crew 트리거 카드용, 리뷰)
+    ...(withBody ? { comments: (n.comments?.nodes ?? []).map((c) => ({ author: c.user?.name ?? "", body: c.body, at: c.createdAt })) } : {}),
   });
   return {
     async check() { const d = await gql("{ viewer { id name email organization { name } } }"); return { name: d.viewer.name, account: d.viewer.organization?.name ?? d.viewer.email ?? "" }; },
@@ -72,9 +72,15 @@ function linear({ token, fetch: fetchFn = globalThis.fetch }) {
 
 // ── Jira(Cloud = /rest/api/3 + ADF, Server/DC = /rest/api/2 + 글) ─────────────────
 // 이메일 있으면 Basic(email:token — Cloud API 토큰), 없으면 Bearer(Server/DC 개인 토큰).
-const JIRA_FIELDS = ["summary", "status", "updated", "assignee"];
+const JIRA_FIELDS = ["summary", "status", "updated", "assignee", "description"]; // description = 목록에도 본문(Crew 트리거 카드, 리뷰)
 const KEY_RE = /^[A-Z][A-Z0-9_]+-\d+$/;
-function siteOf(site) { const s = String(site || "").trim().replace(/\/+$/, ""); return /^https?:\/\//.test(s) ? s : `https://${s}`; }
+// https만(토큰이 평문으로 나가지 않게, 리뷰) — 프로토콜 없으면 https 붙임, http://면 오류
+function siteOf(site) {
+  const s = String(site || "").trim().replace(/\/+$/, "");
+  const full = /^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? s : `https://${s}`;
+  if (new URL(full).protocol !== "https:") throw new TrackerError("error", "https only");
+  return full;
+}
 // ADF(문서 트리) → 글. 문단·줄바꿈·목록만 대충(본문 읽기용)
 function adfText(node) {
   if (!node || typeof node !== "object") return typeof node === "string" ? node : "";
@@ -95,8 +101,8 @@ function jira({ site, email, token, fetch: fetchFn = globalThis.fetch }) {
     const desc = f.description;
     return {
       provider: "jira", id: i.id, key: i.key, title: f.summary ?? "", state: f.status?.name ?? "", stateType: f.status?.statusCategory?.key ?? "", url: `${base}/browse/${i.key}`, updatedAt: f.updated,
-      branchName: "", assignee: f.assignee?.displayName ?? "",
-      ...(withBody ? { body: (typeof desc === "string" ? desc : adfText(desc)).trim(), comments: (f.comment?.comments ?? []).map((c) => ({ author: c.author?.displayName ?? "", body: (typeof c.body === "string" ? c.body : adfText(c.body)).trim(), at: c.created })) } : {}),
+      branchName: "", assignee: f.assignee?.displayName ?? "", body: (typeof desc === "string" ? desc : adfText(desc)).trim(),
+      ...(withBody ? { comments: (f.comment?.comments ?? []).map((c) => ({ author: c.author?.displayName ?? "", body: (typeof c.body === "string" ? c.body : adfText(c.body)).trim(), at: c.created })) } : {}),
     };
   };
   return {

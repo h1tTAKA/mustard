@@ -19,7 +19,7 @@ export default function TrackerActions({ root, issue }: { root: string; issue: T
     try {
       const op = { op: "create", title: `${issue.key} ${issue.title}`.slice(0, 200), body: formatGithubHandoff(item), status: "backlog", issue: { provider: issue.provider, key: issue.key, url: issue.url } };
       const j = await (await fetch("/api/crew/board", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, ...op }) })).json().catch(() => null);
-      toast(j?.ok ? t("trackers.cardCreated", { key: issue.key }) : t("crewchat.sendFailed"), j?.ok ? "success" : "error");
+      toast(j?.ok ? t("trackers.cardCreated", { key: issue.key }) : j?.error === "issue card exists" ? t("trackers.cardExists", { key: issue.key }) : t("crewchat.sendFailed"), j?.ok ? "success" : "error");
     } finally { setBusy(false); }
   };
   const btn = "inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800";

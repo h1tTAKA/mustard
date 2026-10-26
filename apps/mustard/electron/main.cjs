@@ -658,7 +658,7 @@ const jiraCfgFile = () => join(app.getPath("userData"), "jira.json");
 function loadJiraCfg() { try { const j = JSON.parse(readFileSync(jiraCfgFile(), "utf8")); return { site: String(j.site || ""), email: String(j.email || "") }; } catch { return { site: "", email: "" }; } }
 function trackerClient(provider) {
   if (provider === "linear") { const token = loadHostToken("linear"); return token ? trackers.linear({ token }) : null; }
-  if (provider === "jira") { const token = loadHostToken("jira"), cfg = loadJiraCfg(); return token && cfg.site ? trackers.jira({ ...cfg, token }) : null; }
+  if (provider === "jira") { const token = loadHostToken("jira"), cfg = loadJiraCfg(); if (!token || !cfg.site) return null; try { return trackers.jira({ ...cfg, site: trackers.siteOf(cfg.site), token }); } catch { return null; } } // https 아니면 연결 안 됨
   return null;
 }
 const notConnected = { ok: false, state: "not-connected", detail: "" };
@@ -703,14 +703,16 @@ ipcMain.handle("trackers:sync-set", (_e, cfg) => {
 // 브랜치·PR 제목에서 키(ENG-12) — 작업공간 이름에 키가 들어감(#1172)
 const trackerKeyIn = (s) => /(?:^|[^A-Za-z0-9])([A-Za-z][A-Za-z0-9_]{1,9}-\d+)(?![A-Za-z0-9])/.exec(String(s || ""))?.[1]?.toUpperCase() ?? null;
 // 키만 알면 연결된 트래커에서 찾기(Linear 먼저 — 키로 바로 조회됨)
+// 둘 다 연결됐는데 같은 키가 양쪽에 있으면 어느 건지 모르니 건너뜀(엉뚱한 이슈를 안 건드리게, 리뷰)
 async function findTrackerIssue(key, provider) {
+  const hits = [];
   for (const p of provider ? [provider] : ["linear", "jira"]) {
-    const c = trackerClient(p);
+    const c = (() => { try { return trackerClient(p); } catch { return null; } })();
     if (!c) continue;
     const r = await trackers.run(() => c.view(key));
-    if (r.ok && r.data?.key?.toUpperCase() === key) return { client: c, issue: r.data };
+    if (r.ok && r.data?.key?.toUpperCase() === key) hits.push({ client: c, issue: r.data });
   }
-  return null;
+  return hits.length === 1 ? hits[0] : null;
 }
 async function trackerSync(event, { provider, key, url }) {
   const cfg = loadSyncCfg();
@@ -718,7 +720,7 @@ async function trackerSync(event, { provider, key, url }) {
   const hit = await findTrackerIssue(String(key).toUpperCase(), provider);
   if (!hit) return;
   const { client, issue } = hit;
-  if (event === "pr" && url) { await trackers.run(() => client.comment(issue, `PR: ${url}`)); return; }
+  if (event === "pr") { if (url) await trackers.run(() => client.comment(issue, `PR: ${url}`)); return; } // url 없으면 아무것도 안 함(완료로 새지 않게, 리뷰)
   const want = event === "start" ? "started" : "done";
   // 이미 그 단계거나 더 나간 이슈는 안 건드림(완료된 걸 진행 중으로 되돌리지 않게)
   if (["completed", "canceled", "done"].includes(issue.stateType) || (want === "started" && ["started", "indeterminate"].includes(issue.stateType))) return;
@@ -739,7 +741,7 @@ async function snapshotAssigned() {
     const c = trackerClient(p);
     if (!c) continue;
     const r = await trackers.run(() => c.list({}));
-    if (r.ok) { try { writeFileSync(join(nunopi, `tracker-assigned-${p}.json`), JSON.stringify({ at: Date.now(), issues: r.data.map((i) => ({ key: i.key, title: i.title, url: i.url })) })); } catch { /* 다음 분에 */ } }
+    if (r.ok) { try { writeFileSync(join(nunopi, `tracker-assigned-${p}.json`), JSON.stringify({ at: Date.now(), issues: r.data.map((i) => ({ key: i.key, title: i.title, url: i.url, body: String(i.body || "").slice(0, 6000) })) })); } catch { /* 다음 분에 */ } }
   }
 }
 // Crew(Next 서버)가 남긴 요청 파일 — 2초마다 보고, 읽은 만큼 지우고 처리

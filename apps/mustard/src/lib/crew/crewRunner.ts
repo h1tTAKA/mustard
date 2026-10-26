@@ -807,6 +807,7 @@ async function baseBranch(root: string): Promise<string> {
   return sh("git", ["rev-parse", "--abbrev-ref", "HEAD"], root).catch(() => "main");
 }
 function triggerCard(root: string, t: CrewTrigger, title: string, body: string, chat: { key: string; vars?: Record<string, string | number> }, issue?: CrewTask["issue"]) {
+  if (issue && readBoard(root).tasks.some((x) => x.issue?.provider === issue.provider && x.issue.key === issue.key && x.status !== "done")) return; // 이미 그 이슈 카드가 있음(직접 만든 것 포함, 리뷰)
   const b = applyOp(root, { op: "create", title: title.slice(0, 200), body: body.slice(0, 20_000), status: "ready", ...(t.pipeline[0] ? { role: t.pipeline[0] } : {}), ...(t.pipeline.length ? { pipeline: t.pipeline } : {}), ...(issue ? { issue } : {}) });
   const card = b.tasks[b.tasks.length - 1];
   say(root, { from: "board", kind: "gate", taskId: card.id, taskTitle: card.title, ...(() => { const suffix = t.pipeline[0] ? ` @${t.pipeline[0]}` : ""; const c = tx(chat.key, chat.vars); return { text: c.text + suffix, i18n: { ...c.i18n, ...(suffix ? { suffix } : {}) } }; })(), ...(t.pipeline[0] ? { mentions: [t.pipeline[0]] } : {}) });

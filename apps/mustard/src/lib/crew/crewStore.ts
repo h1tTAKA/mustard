@@ -121,6 +121,7 @@ export function applyOp(root: string, op: CrewOp, now = Date.now()): CrewBoard {
     const role = cleanRole(op.role);
     const pipeline = (Array.isArray(op.pipeline) ? op.pipeline : []).map(cleanRole).filter((r): r is string => !!r).slice(0, 30);
     const issue = cleanIssue(op.issue);
+    if (issue && tasks.some((t) => t.issue?.provider === issue.provider && t.issue.key === issue.key && t.status !== "done")) throw new Error("issue card exists"); // 같은 이슈 카드 두 번 안 만듦(리뷰)
     tasks.push({ id: randomUUID(), title: title.slice(0, TITLE_MAX), body: String(op.body ?? "").slice(0, BODY_MAX), status, order, createdAt: now, updatedAt: now, ...(role ? { role } : {}), ...(pipeline.length ? { pipeline, stage: 0 } : {}), ...(issue ? { issue } : {}) });
   } else if (op.op === "update") {
     const t = find(op.id);

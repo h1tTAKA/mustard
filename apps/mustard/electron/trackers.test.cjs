@@ -82,5 +82,6 @@ function fakeFetch(routes) {
   f = fakeFetch([() => { throw new Error("ENOTFOUND"); }]);
   assert.strictEqual((await run(() => linear({ token: "k", fetch: f }).check())).state, "offline");
   assert.strictEqual(adfText(null), "");
+  assert.throws(() => require("./trackers.cjs").siteOf("http://jira.corp"), /https only/, "http 사이트 거부(토큰 평문 방지)");
   console.log("trackers.test ok");
 })().catch((e) => { console.error(e); process.exit(1); });
