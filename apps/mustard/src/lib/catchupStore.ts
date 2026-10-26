@@ -22,8 +22,8 @@ const baseDir = () => join(process.env.MUSTARD_STREAM_DIR || join(homedir(), ".n
 // 판정은 git에 물음: --git-dir ≠ --git-common-dir 이면 linked worktree(→ 메인 = 공용 .git의 부모, wt = 그 worktree 꼭대기). 아니면 연 경로 그대로(하위 폴더·일반 레포는 예전과 같은 자리).
 // 경로는 실제 경로(realpath)로 — 심볼릭 링크·/var↔/private/var로 같은 레포가 두 곳에 나뉘지 않게(리뷰). git이 실패하면 그 경로 그대로, 캐시하지 않음(일시 실패가 굳지 않게).
 const real = (p: string) => { try { return normPath(realpathSync(p)); } catch { return normPath(p); } };
-const whereCache = new Map<string, { main: string; wt?: string }>();
-function where(root: string): { main: string; wt?: string } {
+const whereCache = new Map<string, { main: string; wt?: string; ok?: boolean }>();
+function where(root: string): { main: string; wt?: string; ok?: boolean } {
   const r = normPath(root);
   const hit = whereCache.get(r);
   if (hit) return hit;
@@ -31,7 +31,7 @@ function where(root: string): { main: string; wt?: string } {
   try {
     const [gitDir, common, top] = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir", "--show-toplevel"], { cwd: rr, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim().split("\n").map(real);
     const linked = gitDir !== common && basename(common) === ".git";
-    const w = linked ? { main: real(dirname(common)), wt: top } : { main: rr };
+    const w = linked ? { main: real(dirname(common)), wt: top, ok: true } : { main: rr, ok: true };
     whereCache.set(r, w);
     return w;
   } catch { return { main: rr }; }
@@ -65,25 +65,29 @@ function tag(root: string, items: CatchupItem[]): CatchupItem[] {
 const migrated = new Set<string>();
 // 옛 폴더 하나를 메인 폴더로 합치고 .migrated — as = 그 기록을 쓴 작업 폴더(wt 표시 기준). 옮기기 안에서 다시 옮기기를 부르지 않게 appendRaw(리뷰)
 function mergeInto(old: string, as: string, main: string) {
+  if (!existsSync(rawDir(main))) { renameSync(old, rawDir(main)); writeFileSync(join(rawDir(main), "root.txt"), main); return; } // 메인 자리가 비었으면 이름만
   for (const f of readdirSync(old)) if (DAY_RE.test(f.replace(/\.jsonl$/, ""))) appendRaw(as, readDayFile(join(old, f)));
   for (const sub of ["sessions", "ask"]) { const s = join(old, sub); if (existsSync(s)) cpSync(s, join(rawDir(main), sub), { recursive: true, force: false }); }
-  renameSync(old, `${old}.migrated`);
+  renameSync(old, existsSync(`${old}.migrated`) ? `${old}.migrated.${Date.now()}` : `${old}.migrated`); // 이미 있으면 겹치지 않게(리뷰)
 }
+// 처음 만질 때 한 번 — 기록 폴더들의 root.txt를 보고 이 레포(메인)나 이 worktree로 풀리는 옛 폴더(옛 경로 표기·심볼릭·worktree 경로로 쌓인 것)를 메인으로 합침(리뷰).
+// git이 실패한 판정(ok 없음)으로는 아무것도 안 옮기고 "끝남"으로 기억하지도 않음.
 function migrate(root: string) {
-  const r = normPath(root);
-  if (migrated.has(r)) return;
-  const { main, wt } = where(r);
+  const w = where(root);
+  if (!w.ok) return;
+  const done = normPath(root); // 연 경로 표기마다 한 번(다른 표기로 쌓인 옛 폴더도 그 표기로 열 때 합쳐지게)
+  if (migrated.has(done)) return;
   try {
-    if (wt) {
-      for (const old of new Set([rawDir(r), rawDir(wt)])) {
-        if (old === rawDir(main) || !existsSync(old)) continue;
-        mergeInto(old, wt, main);
-      }
-    } else if (rawDir(r) !== rawDir(main) && existsSync(rawDir(r))) {
-      if (!existsSync(rawDir(main))) { renameSync(rawDir(r), rawDir(main)); writeFileSync(join(rawDir(main), "root.txt"), main); }
-      else mergeInto(rawDir(r), main, main); // 실제 경로 쪽에 이미 기록이 있으면 합침(리뷰)
+    let dirs: string[] = []; try { dirs = readdirSync(baseDir()); } catch { /* 없음 */ }
+    const self = rawDir(w.main);
+    for (const d of dirs) {
+      const dir = join(baseDir(), d);
+      if (dir === self || d.includes(".migrated")) continue;
+      let r0 = ""; try { r0 = real(readFileSync(join(dir, "root.txt"), "utf8").trim()); } catch { /* root.txt 없는 옛 폴더(질문·세션만) — 아래 경로 대조로 */ }
+      if (w.wt && (r0 === w.wt || dir === rawDir(w.wt) || dir === rawDir(root))) mergeInto(dir, w.wt, w.main);
+      else if (r0 === w.main || (!w.wt && dir === rawDir(root))) mergeInto(dir, w.main, w.main);
     }
-    migrated.add(r);
+    migrated.add(done);
   } catch { /* 다음에 다시 */ }
 }
 // #998 캐치업 질문 에이전트가 읽을 기록 폴더(--add-dir).
@@ -91,7 +95,7 @@ export const streamDirFor = (root: string) => repoDir(root);
 // #1068 캐치업을 쓰는 레포들(기록 폴더의 root.txt) + 앱 생존 하트비트 파일 위치
 export function catchupRoots(): string[] {
   let dirs: string[]; try { dirs = readdirSync(baseDir()); } catch { return []; }
-  return dirs.filter((d) => !d.endsWith(".migrated")).map((d) => { try { return readFileSync(join(baseDir(), d, "root.txt"), "utf8").trim(); } catch { return ""; } }).filter(Boolean); // #1181 옮기고 남은 옛 폴더는 뺌
+  return dirs.filter((d) => !d.includes(".migrated")).map((d) => { try { return readFileSync(join(baseDir(), d, "root.txt"), "utf8").trim(); } catch { return ""; } }).filter(Boolean); // #1181 옮기고 남은 옛 폴더는 뺌
 }
 export const aliveFile = () => join(baseDir(), "alive.json");
 
