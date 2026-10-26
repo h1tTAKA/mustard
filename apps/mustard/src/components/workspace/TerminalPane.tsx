@@ -3,7 +3,7 @@
 // 활성 탭만 렌더(전환 시 remount → scrollback 재생). 탭 목록은 레포별 localStorage 영속.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
-import { useShortcut, useT, getTerminalThemePref, isTerminalDark, getSetting, AKEYS, AGENT_DEFAULTS, CKEYS, useConfirm } from "@mustard/core";
+import { useShortcut, useT, useToast, getTerminalThemePref, isTerminalDark, getSetting, AKEYS, AGENT_DEFAULTS, CKEYS, useConfirm } from "@mustard/core";
 import Terminal from "@/components/workspace/Terminal";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
@@ -166,8 +166,13 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   const [menuPos, setMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const plusRef = useRef<HTMLButtonElement>(null);
   const MENU_W = 190, MENU_H = 340; // 드롭다운 대략 크기(양축 화면밖 방지용 추정)
+  // #1171 에이전트 설치 상태 — 메뉴 열 때 받음(main이 60초 캐시). 안 깔린 건 흐리게, 눌러도 실행은 지금처럼(경고만)
+  const toast = useToast();
+  const [agentState, setAgentState] = useState<Record<string, AgentDetect["status"]>>({});
+  const loadAgentState = () => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) setAgentState(Object.fromEntries(r.list.map((a) => [a.id, a.status]))); }).catch(() => {}); };
   const toggleMenu = () => {
     if (menuOpen) { setMenuOpen(false); return; }
+    loadAgentState();
     const r = plusRef.current?.getBoundingClientRect();
     if (r) {
       const x = Math.max(4, Math.min(r.left, window.innerWidth - MENU_W - 4));
@@ -195,6 +200,8 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   }, [cwd, t]);
   const launchInNewTab = (agent: AgentId) => {
     setMenuOpen(false);
+    const st = agentState[agent];
+    if (st === "missing" || st === "broken") toast(t("agents.notInstalled", { name: AGENT_META[agent]?.label ?? agent }), "error"); // 실행은 그대로(셸이 더 잘 알 수도 — 로그인 셸 PATH)
     const id = genId();
     setTabs((prev) => [...prev, { id, title: t("workspace.terminalTab", { n: nextNum(prev) }) }]);
     setActiveId(id);
@@ -291,7 +298,8 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
             <div className="my-1 border-t border-zinc-200 dark:border-zinc-800" />
             {LAUNCHABLE.map((a) => (
               <button key={a} type="button" onClick={() => launchInNewTab(a)}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">
+                title={agentState[a] === "missing" || agentState[a] === "broken" ? t("agents.notInstalled", { name: AGENT_META[a].label }) : undefined}
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800 ${agentState[a] === "missing" || agentState[a] === "broken" ? "opacity-45" : ""}`}>
                 <AgentLogo agent={a} size={14} />
                 <span className="whitespace-nowrap">{AGENT_META[a].label}</span>
               </button>

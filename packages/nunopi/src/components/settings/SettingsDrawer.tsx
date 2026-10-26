@@ -270,6 +270,16 @@ export default function SettingsDrawer({
   const [vcHasToken, setVcHasToken] = useState(false);
   const [sbToken, setSbToken] = useState("");
   const [sbHasToken, setSbHasToken] = useState(false);
+  // #1171 에이전트 CLI 설치·경로·로그인 상태 — 에이전트 칸 열 때 한 번(main이 60초 캐시), "다시 확인" = 셸 PATH부터 다시
+  const [agentsDet, setAgentsDet] = useState<AgentDetect[] | null>(null);
+  const [agentsChecking, setAgentsChecking] = useState(false);
+  const refreshAgents = useCallback(async (force: boolean) => {
+    const fn = typeof window !== "undefined" ? window.nunopiDesktop?.detectAgents : undefined;
+    if (!fn) return;
+    setAgentsChecking(true);
+    try { const r = await fn(force); if (r.ok) setAgentsDet(r.list); } catch { /* 표시 없이 */ } finally { setAgentsChecking(false); }
+  }, []);
+  useEffect(() => { if (activeSection === "set-agents" && !agentsDet) void refreshAgents(false); }, [activeSection, agentsDet, refreshAgents]); // eslint-disable-line react-hooks/set-state-in-effect -- 칸 열 때 한 번 불러옴
   const refreshGh = useCallback(async () => {
     const nd = typeof window !== "undefined" ? window.nunopiDesktop : undefined;
     const gh = nd?.github; const int = nd?.integrations;
@@ -649,6 +659,48 @@ export default function SettingsDrawer({
           {/* 프로바이더 카드 — OpenAI-Compatible / Claude / Codex 소제목+구분선으로 */}
           {activeSection === "set-agents" && (
           <section id="set-agents" className="scroll-mt-4 space-y-5 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+
+            {/* #1171 에이전트 CLI 상태 — 설치·실행되는 경로·버전·로그인. GitHub 연동 카드와 같은 배지·다시 확인 */}
+            {agentsDet !== null || agentsChecking ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t("agents.status")}</h4>
+                  <button type="button" onClick={() => void refreshAgents(true)} disabled={agentsChecking} title={t("agents.recheck")} aria-label={t("agents.recheck")}
+                    className="ml-auto shrink-0 rounded p-1 text-zinc-400 transition hover:bg-zinc-100 disabled:opacity-50 dark:hover:bg-zinc-800">
+                    <IconLoader2 size={13} stroke={2} className={agentsChecking ? "animate-spin" : ""} aria-hidden />
+                  </button>
+                </div>
+                <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("agents.statusHint")}</p>
+                <div className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-700">
+                  {(agentsDet ?? []).map((a) => {
+                    const badge = a.status === "missing" ? { txt: t("agents.missing"), cls: "bg-zinc-500/15 text-zinc-500 dark:text-zinc-400" }
+                      : a.status === "broken" ? { txt: t("agents.broken"), cls: "bg-rose-500/15 text-rose-600 dark:text-rose-400" }
+                      : a.auth === "unauthenticated" ? { txt: t("agents.loginNeeded"), cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400" }
+                      : { txt: a.auth === "authenticated" ? t("agents.okAuthed") : t("agents.ok"), cls: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" };
+                    return (
+                      <div key={a.id} className="space-y-1 px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-100">{a.label}</span>
+                          {a.version && <span className="font-mono text-[11px] text-zinc-400">v{a.version}</span>}
+                          <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.cls}`}>{badge.txt}</span>
+                        </div>
+                        {a.path && <p className="truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500" title={a.path}>{a.path}</p>}
+                        {a.status === "broken" && a.tried[0] && <p className="break-all text-[11px] text-rose-500">{a.tried[0].error || t("agents.brokenHint")}</p>}
+                        {a.status === "ok" && a.tried.length > 0 && <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("agents.skipped", { n: a.tried.length })}</p>}
+                        {a.status !== "ok" && a.install && (
+                          <div className="flex items-center gap-1.5">
+                            <code className="min-w-0 flex-1 truncate rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[11px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300" title={a.install}>{a.install}</code>
+                            <button type="button" onClick={() => { void navigator.clipboard.writeText(a.install!).then(() => toast(t("agents.copied"))); }}
+                              className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-zinc-500 transition hover:bg-zinc-100 dark:hover:bg-zinc-800">{t("agents.copy")}</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {agentsDet === null && <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-zinc-400"><IconLoader2 size={12} className="animate-spin" aria-hidden />{t("agents.checking")}</div>}
+                </div>
+              </div>
+            ) : null}
 
             {/* 에이전트 런치(#927) — 기본 에이전트 + per-agent 추가 인자 */}
             <div className="space-y-4">
