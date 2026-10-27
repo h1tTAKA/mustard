@@ -360,9 +360,9 @@ export default function SettingsDrawer({
     // 맥은 ⌘F만(Ctrl+F는 커서 이동), 그 밖은 Ctrl+F. 글자 말고 키 위치로(한글 입력 상태에서도). 다른 입력칸에 있으면 그 칸 기본 동작(리뷰)
     const mac = /Mac/i.test(navigator.platform);
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== "KeyF" || e.shiftKey || e.altKey || (mac ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey)) return;
+      if ((e.key.toLowerCase() !== "f" && e.code !== "KeyF") || e.shiftKey || e.altKey || (mac ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey)) return;
       const tg = e.target as HTMLElement | null;
-      if (tg && tg !== searchRef.current && (tg.closest("input, textarea, [contenteditable='true']"))) return;
+      if (tg && tg !== searchRef.current && (tg.closest("input:not([type=checkbox]):not([type=radio]):not([type=range]), textarea, [contenteditable='true']"))) return;
       e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select();
     };
     window.addEventListener("keydown", onKey);
@@ -371,7 +371,7 @@ export default function SettingsDrawer({
   // 이동한 섹션에서 그 항목 이름 글자를 가진 가장 안쪽 요소 → 그 줄로 스크롤·강조(항목마다 id를 박지 않음)
   useEffect(() => {
     if (!jump) return;
-    let tries = 0, timer: ReturnType<typeof setTimeout> | undefined;
+    let tries = 0, timer: ReturnType<typeof setTimeout> | undefined, flash: ReturnType<typeof setTimeout> | undefined, flashed: HTMLElement | null = null;
     // 섹션 내용이 늦게 그려질 수 있어(감지·불러오기) 1초 동안 몇 번 더 찾음(리뷰)
     const find = () => {
       const root = contentRef.current; if (!root) return;
@@ -385,14 +385,15 @@ export default function SettingsDrawer({
       if (!hit) { if (++tries < 10) timer = setTimeout(find, 100); else root.scrollTo({ top: 0 }); return; }
       // 그 줄 = 항목 글자에서 위로 — 글자가 적고 자식이 몇 개 안 되는 블록까지만(묶음 전체를 강조하지 않게, 리뷰)
       let row: HTMLElement = hit;
-      while (row.parentElement && row.parentElement !== root && row.parentElement.childElementCount <= 3 && (row.parentElement.textContent ?? "").length < 300) row = row.parentElement;
+      // 줄 모양(label·좌우 배치·목록 항목)을 만나면 거기서 멈춤(리뷰)
+      while (!row.matches("label, li, .justify-between") && row.parentElement && row.parentElement !== root && row.parentElement.childElementCount <= 3 && (row.parentElement.textContent ?? "").length < 300) row = row.parentElement;
       row.scrollIntoView({ block: "center", behavior: "smooth" });
       const FLASH = ["ring-2", "ring-mustard-400", "ring-offset-2", "rounded-lg", "transition"];
-      row.classList.add(...FLASH);
-      setTimeout(() => row.classList.remove(...FLASH), 1600);
+      row.classList.add(...FLASH); flashed = row;
+      flash = setTimeout(() => { row.classList.remove(...FLASH); flashed = null; }, 1600);
     };
     const raf = requestAnimationFrame(find);
-    return () => { cancelAnimationFrame(raf); if (timer) clearTimeout(timer); };
+    return () => { cancelAnimationFrame(raf); if (timer) clearTimeout(timer); if (flash) clearTimeout(flash); flashed?.classList.remove("ring-2", "ring-mustard-400", "ring-offset-2", "rounded-lg", "transition"); }; // 다음 이동·닫기 때 강조 정리(리뷰)
   }, [jump, activeSection]);
 
   if (!isOpen) return null;
