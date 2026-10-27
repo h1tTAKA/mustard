@@ -97,4 +97,4 @@ function installBrowserGuestPolicy(app) {
   });
 }
 
-module.exports = { installBrowserGuestPolicy, hardenWebview, isAllowedUrl, setAppChords, trackChordHost, chordOf, forwardAppKeys, PARTITION };
+module.exports = { PARTITION, installBrowserGuestPolicy, hardenWebview, isAllowedUrl, setAppChords, trackChordHost, chordOf, forwardAppKeys, PARTITION };

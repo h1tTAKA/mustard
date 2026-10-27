@@ -21,6 +21,7 @@ interface NunopiDesktopApi {
   // #1171 에이전트 CLI 상태(Mustard main — nunopi 단독 앱엔 없을 수 있음)
   openExternal?(url: string): Promise<void>; // #1193
   checkUpdate?(): Promise<{ ok: boolean; current: string; latest?: string | null; newer?: boolean; url?: string | null; reason?: string }>; // #1200 (Mustard 앱만 — 여기선 없음)
+  clearBrowserData?(): Promise<{ ok: boolean; reason?: string }>; // #1209
   // #1175 컴퓨터 사용(Mustard main — 단독 앱엔 없음)
   computer?: {
     status(force?: boolean): Promise<ComputerStatus>;

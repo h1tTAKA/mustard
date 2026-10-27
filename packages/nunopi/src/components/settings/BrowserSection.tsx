@@ -1,6 +1,7 @@
 "use client";
 // 설정 > 브라우저(#1209) — 인앱 브라우저 옵션. 로그인(쿠키)은 레포끼리 공유(유저 결정).
-import { useT, useSetting, setSetting, BROWSER_KEYS, BROWSER_DEFAULTS } from "@mustard/core";
+import { useState } from "react";
+import { useT, useSetting, setSetting, useConfirm, useToast, BROWSER_KEYS, BROWSER_DEFAULTS } from "@mustard/core";
 
 const ENGINES = [["google", "Google"], ["duckduckgo", "DuckDuckGo"], ["bing", "Bing"], ["kagi", "Kagi"]] as const;
 const select = "min-w-0 shrink-0 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-900 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50";
@@ -8,6 +9,16 @@ const select = "min-w-0 shrink-0 rounded-lg border border-zinc-200 bg-zinc-50 px
 export default function BrowserSection() {
   const t = useT();
   const engine = useSetting<string>(BROWSER_KEYS.searchEngine, BROWSER_DEFAULTS.searchEngine);
+  const confirm = useConfirm(), toast = useToast();
+  const [clearing, setClearing] = useState(false);
+  // 쿠키·저장소·캐시 통째로 — 로그인은 모든 레포가 같이 쓰니 전부 로그아웃(확인창)
+  const clearData = async () => {
+    if (!(await confirm({ title: t("browser.clearData"), message: t("browser.clearConfirm"), confirmText: t("browser.clearDo"), tone: "warn" }))) return;
+    setClearing(true);
+    const r = await window.nunopiDesktop?.clearBrowserData?.().catch(() => null);
+    setClearing(false);
+    toast(t(r?.ok ? "browser.cleared" : "browser.clearFailed"), r?.ok ? "success" : "error");
+  };
   return (
     <section id="set-browser" className="scroll-mt-4 space-y-4 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
       <label className="flex items-center justify-between gap-3">
@@ -19,6 +30,16 @@ export default function BrowserSection() {
           {ENGINES.map(([v, name]) => <option key={v} value={v}>{name}</option>)}
         </select>
       </label>
+      {typeof window !== "undefined" && window.nunopiDesktop?.clearBrowserData && (
+        <div className="flex items-center justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block text-sm text-zinc-700 dark:text-zinc-300">{t("browser.clearData")}</span>
+            <span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("browser.clearDataDesc")}</span>
+          </span>
+          <button type="button" onClick={() => void clearData()} disabled={clearing}
+            className="shrink-0 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 dark:border-zinc-700 dark:text-rose-400 dark:hover:bg-rose-500/10">{t("browser.clearDo")}</button>
+        </div>
+      )}
     </section>
   );
 }

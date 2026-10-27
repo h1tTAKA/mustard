@@ -519,6 +519,11 @@ function syncComputerShortcut() {
 app.whenReady().then(syncComputerShortcut);
 const computerStatus = async (force) => ({ ...(await computerUse.status({ force })), defaults: computerUse.DEFAULT_BLOCKED, stopKey: STOP_KEY, stopKeyOk, platform: process.platform, log: computerUse.readLog(undefined, 30) });
 ipcMain.handle("clipboard:write-text", (_e, text) => { if (typeof text === "string" && text.length <= 1_000_000) clipboard.writeText(text); }); // #1196 터미널 OSC 52(창이 앞에 없어도 되게 main에서)
+// #1209 브라우저 데이터 지우기 — 인앱 브라우저 세션(모든 레포 공유) 쿠키·저장소·캐시. 열린 페이지는 다시 불러오면 로그아웃 상태.
+ipcMain.handle("browser:clear-data", async () => {
+  try { const ses = require("electron").session.fromPartition(require("./browser-guest.cjs").PARTITION); await ses.clearStorageData(); await ses.clearCache(); return { ok: true }; }
+  catch (e) { return { ok: false, reason: String((e && e.message) || e) }; }
+});
 // #1200 업데이트 확인 — GitHub 최신 릴리스와 앱 버전 비교(설치는 배포 채널 생기면). 실패는 ok:false로.
 const updateCheck = require("./update-check.cjs");
 ipcMain.handle("update:check", () => updateCheck.check(app.getVersion(), "h1tTAKA/mustard").catch((e) => ({ ok: false, current: app.getVersion(), reason: String((e && e.message) || e) })));

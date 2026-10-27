@@ -104,6 +104,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
   },
   setKeepAwake: (mode) => ipcRenderer.send("power:keep-awake", mode), // #1197 잠자기 막기
   checkUpdate: () => ipcRenderer.invoke("update:check"), // #1200
+  clearBrowserData: () => ipcRenderer.invoke("browser:clear-data"), // #1209
   openInList: () => ipcRenderer.invoke("open-in:list"), // #1199 설치된 편집기·터미널·git 앱
   openIn: (id, dir) => ipcRenderer.invoke("open-in:open", { id, dir }),
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url), // #1193 터미널 링크 → 외부 브라우저(http·https만)
