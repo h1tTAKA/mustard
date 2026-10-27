@@ -57,7 +57,11 @@ assert.ok(weakDetect("pi") && weakDetect("continue") && weakDetect("rovo") && !w
 assert.deepStrictEqual(parseEnv("# 주석\n\nexport A=1\nB = \"x y\"\n1BAD=no\n=nope\nC='q'\nD=a=b"), { A: "1", B: "x y", C: "q", D: "a=b" });
 assert.strictEqual(launchLine("claude", { userEnv: "A=1\nB=$(rm -rf ~); echo" }), "A='1' B='$(rm -rf ~); echo' claude", "값은 작은따옴표 — 셸이 해석 안 함");
 assert.strictEqual(launchLine("claude", { userEnv: "Q=it's" }), "Q='it'\\''s' claude", "작은따옴표 이스케이프");
-assert.strictEqual(launchLine("goose", { choice: "full-access", userEnv: "GOOSE_MODE=chat\nX=1" }), "GOOSE_MODE='chat' X='1' goose", "같은 이름이면 유저 값");
+assert.strictEqual(launchLine("goose", { choice: "full-access", userEnv: "GOOSE_MODE=chat\nX=1" }), "GOOSE_MODE=auto X='1' goose", "권한 env는 유저 환경변수로 못 바꿈");
+assert.strictEqual(launchLine("goose", { userEnv: "GOOSE_MODE=auto" }), "goose", "권한 env로 확인창 우회 안 됨");
+assert.deepStrictEqual(parseEnv("A=x\ry\nB=\u0003\nC=ok"), { C: "ok" }, "제어문자 줄은 건너뜀");
+assert.strictEqual(launchLine("claude", { userEnv: "A=1", shell: "fish" }), "env A='1' claude", "fish는 env 명령으로");
+assert.strictEqual(launchLine("claude", { userEnv: "A=1", shell: "zsh" }), "A='1' claude");
 assert.strictEqual(launchLine("goose", { choice: "full-access", userEnv: "X=1" }), "GOOSE_MODE=auto X='1' goose");
 assert.strictEqual(Object.keys(parseEnv(Array.from({ length: 60 }, (_, i) => `K${i}=1`).join("\n"))).length, 50, "50개까지");
 console.log("agent-catalog.test ok");

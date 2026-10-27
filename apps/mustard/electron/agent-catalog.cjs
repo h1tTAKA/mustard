@@ -75,7 +75,7 @@ function parseEnv(text) {
     if (eq < 1 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
     let v = line.slice(eq + 1).trim();
     if (v.length >= 2 && (v[0] === '"' || v[0] === "'") && v.at(-1) === v[0]) v = v.slice(1, -1);
-    if (v.length > 4000 || /\0/.test(v)) continue;
+    if (v.length > 4000 || /[\x00-\x1f\x7f]/.test(v)) continue; // 제어문자(\r=Enter, \x03=Ctrl-C 등)는 터미널 입력으로 먹힘 — 줄째 건너뜀(리뷰)
     out[k] = v;
     if (Object.keys(out).length >= 50) break;
   }
@@ -116,7 +116,7 @@ function hasPermissionOption(id, userArgs) {
 
 // 터미널에 칠 명령 — env 앞붙임 + 실행 명령(또는 경로 지정) + 권한 플래그(앞) + 유저 인자.
 // Mustard는 셸에 명령을 쳐 넣으니 env는 `KEY=값 명령` 앞붙임(프로세스 env와 결과 같음).
-function launchLine(id, { choice = "own", userArgs = "", cmd, userEnv = "" } = {}) {
+function launchLine(id, { choice = "own", userArgs = "", cmd, userEnv = "", shell = "" } = {}) {
   const a = BY_ID.get(id);
   if (!a) return null;
   const base = cmd || a.launch || a.cmd;
@@ -124,11 +124,14 @@ function launchLine(id, { choice = "own", userArgs = "", cmd, userEnv = "" } = {
   const flag = flagOf(id, choice);
   const args = !flag || hasPermissionOption(id, user) ? user : user ? `${flag} ${user}` : flag;
   const env = envOf(id, choice);
-  const mine = parseEnv(userEnv);
-  // 카탈로그 env(전체 액세스용)는 유저가 같은 이름을 인자나 환경변수로 직접 줬으면 뺌 — 유저 값이 이김
-  const cat = env ? Object.entries(env).filter(([k]) => !(k in mine) && !new RegExp(`(^|\\s)${k}=`).test(user)) : [];
-  const envPart = [...cat.map(([k, v]) => `${k}=${v}`), ...Object.entries(mine).map(([k, v]) => `${k}=${shq(v)}`)].join(" ");
-  return `${envPart ? `${envPart} ` : ""}${base}${args ? ` ${args}` : ""}`;
+  // 권한을 정하는 env(카탈로그 env 이름)는 유저 환경변수로 못 바꿈 — 권한은 권한 선택(확인창)으로만(리뷰)
+  const permKeys = Object.keys(BY_ID.get(id)?.env || {});
+  const mine = Object.entries(parseEnv(userEnv)).filter(([k]) => !permKeys.includes(k));
+  const cat = env ? Object.entries(env).filter(([k]) => !new RegExp(`(^|\\s)${k}=`).test(user)) : [];
+  const envPart = [...cat.map(([k, v]) => `${k}=${v}`), ...mine.map(([k, v]) => `${k}=${shq(v)}`)].join(" ");
+  // fish는 `KEY=값 명령` 문법이 없어 env 명령으로(리뷰). 그 밖(zsh·bash 등)은 그대로 — 별칭·함수가 계속 먹게
+  const pre = envPart ? `${/^fish$/.test(shell) ? "env " : ""}${envPart} ` : "";
+  return `${pre}${base}${args ? ` ${args}` : ""}`;
 }
 
 // 유저가 인자에 알려진 권한 플래그를 쓰면 빼서 그 에이전트의 권한 선택으로 — { choice, rest } 또는 null
