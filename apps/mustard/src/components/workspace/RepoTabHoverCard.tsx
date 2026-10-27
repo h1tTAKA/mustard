@@ -200,7 +200,7 @@ export default function RepoTabHoverCard({ path, left, top, onMouseEnter, onMous
               <button key={a.id} type="button" onClick={() => void openWith(a)}
                 className="flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-[11px] text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">
                 {/* eslint-disable-next-line @next/next/no-img-element -- 앱 아이콘 data URL */}
-                {a.icon ? <img src={a.icon} alt="" className="size-4 shrink-0" /> : <IconAppWindow size={14} stroke={1.75} className="shrink-0 text-zinc-400" aria-hidden />}
+                {a.icon ? <img src={a.icon} alt="" className="size-4 shrink-0 rounded-[4px] ring-1 ring-black/10 dark:ring-white/15" /> : <IconAppWindow size={14} stroke={1.75} className="shrink-0 text-zinc-400" aria-hidden />}
                 <span className="min-w-0 flex-1 truncate">{a.name || t("openIn.files")}</span>
                 {a.id === last && <span className="shrink-0 text-[10px] text-zinc-400 dark:text-zinc-500">{t("openIn.recent")}</span>}
               </button>

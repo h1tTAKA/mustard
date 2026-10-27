@@ -521,10 +521,20 @@ const computerStatus = async (force) => ({ ...(await computerUse.status({ force 
 ipcMain.handle("clipboard:write-text", (_e, text) => { if (typeof text === "string" && text.length <= 1_000_000) clipboard.writeText(text); }); // #1196 터미널 OSC 52(창이 앞에 없어도 되게 main에서)
 // #1199 다른 앱에서 열기 — 설치된 앱만(매번 감지, 파일 존재 확인뿐이라 가벼움) + 앱 아이콘. 열 폴더는 main이 검사, 앱은 목록 id로만.
 const openIn = require("./open-in.cjs");
+// 아이콘 둘레 투명 여백을 잘라 32px로 — 앱마다 같은 크기로 꽉 차게(화면은 둥근 테두리를 둘러 어두운 아이콘도 경계가 보이게)(앱 확인)
+function trimIcon(im) {
+  const { width: w, height: h } = im.getSize(), b = im.toBitmap();
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (b[(y * w + x) * 4 + 3] > 24) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) return im.resize({ width: 32, height: 32 });
+  const s = Math.max(x1 - x0, y1 - y0) + 1;
+  const x = Math.max(0, Math.min(w - s, Math.round((x0 + x1 + 1 - s) / 2))), y = Math.max(0, Math.min(h - s, Math.round((y0 + y1 + 1 - s) / 2)));
+  return im.crop({ x, y, width: s, height: s }).resize({ width: 32, height: 32, quality: "best" });
+}
 ipcMain.handle("open-in:list", async () => {
   if (process.platform !== "darwin") return [{ id: "files", kind: "files", name: "", icon: null }];
   const apps = [{ id: "finder", kind: "files", name: "Finder", appPath: "/System/Library/CoreServices/Finder.app" }, ...openIn.detect()];
-  return Promise.all(apps.map(async (a) => ({ id: a.id, kind: a.kind, name: a.name, icon: await nativeImage.createThumbnailFromPath(a.appPath, { width: 32, height: 32 }).then((im) => (im.isEmpty() ? null : im.toDataURL())).catch(() => null) }))); // 앱 진짜 아이콘(getFileIcon은 .app에 빈 네모를 줌 — 앱 확인)
+  return Promise.all(apps.map(async (a) => ({ id: a.id, kind: a.kind, name: a.name, icon: await nativeImage.createThumbnailFromPath(a.appPath, { width: 64, height: 64 }).then((im) => (im.isEmpty() ? null : trimIcon(im).toDataURL())).catch(() => null) }))); // 앱 진짜 아이콘(getFileIcon은 .app에 빈 네모를 줌 — 앱 확인)
 });
 ipcMain.handle("open-in:open", async (_e, { id, dir } = {}) => {
   const real = openIn.safeDir(dir); // 실제 경로(., .., 링크 푼 것) — 번들 폴더면 null
