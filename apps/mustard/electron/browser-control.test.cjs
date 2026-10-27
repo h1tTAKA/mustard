@@ -36,7 +36,10 @@ assert.ok(CENTER_SCRIPT('"); alert(1); ("').includes('"\\"); alert(1); (\\""'), 
     sendInputEvent(e) { events.push(e.type); }, insertText(t) { events.push("text:" + t); return Promise.resolve(); },
   };
   let opened = null; const cmds = [];
+  const ctl0 = createBrowserControl({ getGuest: () => null, requestOpen: () => {}, isAllowedUrl: () => true, tabCommand: () => {} });
+  assert.ok((await ctl0.call("browser_status", {}, "/r")).content[0].text.includes("starting up"), "설정 동기화 전엔 거부");
   const ctl = createBrowserControl({ getGuest: (id) => (id === 7 ? fake : null), requestOpen: (cwd, url) => { opened = [cwd, url]; }, isAllowedUrl: (u) => /^https?:/.test(u), tabCommand: (id, a) => cmds.push([id, a]) });
+  ctl.setAgentEnabled(true); // 렌더러가 설정을 보낸 상태
   // 등록 전: 이동 요청 → 렌더러에 열기 요청, 끝내 안 생기면 실패(10초 대기를 줄이려 바로 등록)
   const p = ctl.call("browser_navigate", { url: "localhost:3000" }, "/r/app");
   await new Promise((r) => setTimeout(r, 300));
@@ -77,6 +80,8 @@ assert.ok(CENTER_SCRIPT('"); alert(1); ("').includes('"\\"); alert(1); (\\""'), 
   ctl.setAgentEnabled(false);
   const off = await ctl.call("browser_status", {}, "/r/app");
   assert.ok(off.isError && off.content[0].text.includes("turned off"));
+  ctl.setAgentEnabled(undefined);
+  assert.ok((await ctl.call("browser_status", {}, "/r/app")).isError, "undefined = 꺼짐");
   ctl.setAgentEnabled(true);
   assert.ok(!(await ctl.call("browser_status", {}, "/r/app")).isError);
   server.close();

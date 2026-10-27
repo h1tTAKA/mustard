@@ -14,6 +14,7 @@ assert.strictEqual(b("hello world", "google"), "https://www.google.com/search?q=
 assert.strictEqual(b("foo", "duckduckgo"), "https://duckduckgo.com/?q=foo");
 assert.strictEqual(b("c++ & 한글", "kagi"), "https://kagi.com/search?q=c%2B%2B%20%26%20%ED%95%9C%EA%B8%80");
 assert.strictEqual(b("x", "nope"), "https://www.google.com/search?q=x", "모르는 엔진 = google");
+assert.strictEqual(b("x", "constructor"), "https://www.google.com/search?q=x", "Object 기본 키도 google");
 assert.strictEqual(b("example.com", "bing"), "https://example.com/", "URL은 그대로");
 for (const bad of ["", "javascript:alert(1)", "file:///etc/passwd", "data:text/html,x"]) assert.strictEqual(b(bad, "google"), null, bad);
 console.log("browser url ok");

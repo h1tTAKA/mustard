@@ -26,9 +26,10 @@ function termOptionsFromSettings() {
 export const TERMINAL_LINK_EVENT = "mustard:terminal-link";
 export type TerminalLinkDetail = { cwd: string } & ({ kind: "url"; url: string } | { kind: "file"; path: string; line?: number });
 const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
+const isLinux = typeof navigator !== "undefined" && /Linux/i.test(navigator.platform) && !/Android/i.test(navigator.userAgent);
 const withMod = (ev: MouseEvent) => (isMac ? ev.metaKey : ev.ctrlKey);
 // #1209 여는 클릭 = ⌘/Ctrl+왼쪽 클릭 또는 가운데 클릭(브라우저 관례). ⌘⇧클릭 = 웹 링크를 설정과 반대쪽(앱 안 ↔ 외부)으로 이번만.
-const opens = (ev: MouseEvent) => ev.button === 1 || (ev.button === 0 && withMod(ev));
+const opens = (ev: MouseEvent) => (ev.button === 1 && !isLinux) || (ev.button === 0 && withMod(ev)); // 리눅스 가운데 클릭 = 붙여넣기 관례라 거기선 안 엶(리뷰)
 const flips = (ev: MouseEvent) => ev.button === 0 && ev.shiftKey;
 function openTerminalLink(cwd: string, l: TerminalLink | { kind: "url"; url: string }, flip = false) {
   const external = getSetting<string>(TKEYS.linkTarget, TERMINAL_DEFAULTS.linkTarget) === "external";

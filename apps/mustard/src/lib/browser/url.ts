@@ -20,6 +20,6 @@ export function browserTarget(input: string, engine: string): string | null {
   if (u) return u;
   const s = input.trim();
   if (!s || /^[a-z][a-z0-9+.-]*:(?!\d)\S/i.test(s)) return null;
-  const base = SEARCH_ENGINES[engine as SearchEngine] ?? SEARCH_ENGINES.google;
+  const base = Object.hasOwn(SEARCH_ENGINES, engine) ? SEARCH_ENGINES[engine as SearchEngine] : SEARCH_ENGINES.google; // 손으로 고친 값(__proto__ 등) 막기(리뷰)
   return base + encodeURIComponent(s);
 }

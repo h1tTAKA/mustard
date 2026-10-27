@@ -35,6 +35,8 @@ function nextZoom(cur, dir) {
   if (dir > 0) return ZOOMS.find((z) => z > cur + 0.001) ?? ZOOMS[ZOOMS.length - 1];
   return [...ZOOMS].reverse().find((z) => z < cur - 0.001) ?? ZOOMS[0];
 }
+// 웹뷰 포커스에선 이 조합이 앱 단축키보다 먼저 페이지 줌(브라우저 관례 — 터미널 ⌘K가 화면 지우기인 것과 같은 규칙).
+// 배율은 Chromium 규칙대로 같은 사이트끼리 공유되고 그 사이트에선 기본 줌보다 우선(Chrome과 같음), ⌘0 = 기본 줌으로.
 const ZOOM_CHORDS = { "Mod+=": 1, "Mod+Shift+=": 1, "Mod+-": -1, "Mod+0": 0 };
 
 // 붙여넣기 쓰기·전체화면만 허용, 나머지(카메라·마이크·위치·알림 등) 거부.
