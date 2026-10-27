@@ -63,6 +63,7 @@ assert.deepStrictEqual(parseEnv("A=x\ry\nB=\u0003\nC=ok"), { C: "ok" }, "제어�
 assert.strictEqual(launchLine("claude", { userEnv: "A=1", shell: "fish" }), "begin; set -lx A '1'; claude; end", "fish는 begin 블록 + set -lx");
 assert.strictEqual(launchLine("claude", { userEnv: "A=C:\\x\nB=it's\nC=end\\", shell: "fish" }), "begin; set -lx A 'C:\\\\x'; set -lx B 'it\\'s'; set -lx C 'end\\\\'; claude; end", "fish 따옴표 안 \\·'");
 assert.strictEqual(launchLine("goose", { choice: "full-access", shell: "fish" }), "begin; set -lx GOOSE_MODE 'auto'; goose; end");
+assert.strictEqual(launchLine("claude", { userEnv: "PATH=/a:/b", shell: "fish" }), "begin; set -lx PATH '/a' '/b'; claude; end", "fish PATH는 목록으로");
 assert.strictEqual(launchLine("claude", { userEnv: "A=1", shell: "zsh" }), "A='1' claude");
 assert.strictEqual(launchLine("goose", { choice: "full-access", userEnv: "X=1" }), "GOOSE_MODE=auto X='1' goose");
 assert.strictEqual(Object.keys(parseEnv(Array.from({ length: 60 }, (_, i) => `K${i}=1`).join("\n"))).length, 50, "50개까지");

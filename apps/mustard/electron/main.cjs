@@ -1310,10 +1310,12 @@ const procById = new Map();      // id → foreground 프로세스명(데몬 lis
 // #1197 잠자기 막기 — off | working(에이전트가 하나라도 일하는 동안) | always(앱이 켜져 있는 동안). 설정은 렌더러가 IPC로 알림.
 // prevent-app-suspension = 시스템만 안 잠듦(화면은 꺼져도 됨). lastScreen이 바뀌는 자리마다 updateAwake().
 let keepAwakeMode = "off", awakeId = null;
+const workSeenAt = new Map(); // id → 화면 파싱이 실제로 working을 본 마지막 시각
 function updateAwake() {
   // working이 2분 넘게 갱신 안 되면 빼고 셈 — 상태가 working으로 굳어도 무기한 안 잠드는 일 없게(리뷰). 작업 중이면 30초마다 갱신됨.
   const now = Date.now();
-  const want = keepAwakeMode === "always" || (keepAwakeMode === "working" && [...lastScreen.values()].some((s) => s.state === "working" && now - s.at < 120000));
+  // 근거 시각은 화면에서 실제로 working을 본 때(workSeenAt) — "판정 불가 → 직전 상태 유지"로 at만 갱신되는 건 안 셈(리뷰)
+  const want = keepAwakeMode === "always" || (keepAwakeMode === "working" && [...lastScreen].some(([id, s]) => s.state === "working" && now - (workSeenAt.get(id) || 0) < 120000));
   if (want && awakeId === null) awakeId = powerSaveBlocker.start("prevent-app-suspension");
   else if (!want && awakeId !== null) { powerSaveBlocker.stop(awakeId); awakeId = null; }
 }
@@ -1542,6 +1544,7 @@ async function pushScreenState(id, screen) {
   // #1031 해설 게이트용 — 마지막으로 "작업 중"이던 시각. 아래 30s 재POST 억제보다 먼저(#1045): 뒤에 두면 꾸준히 일하는 동안
   // 30초마다만 갱신돼 15초 게이트(NARR_WORK_GRACE)를 절반쯤 벗어나 출력이 해설 없이 "본 것"으로만 처리됐음.
   if (state === "working") narrWorkingAt.set(id, now);
+  if (state === "working" && parsed && parsed.state !== "unknown") workSeenAt.set(id, now); // #1197 잠자기 막기 근거
   if (!changed && prev && now - prev.at < 30000) return; // 같은 상태·제목유무면 30s마다만 재POST(TTL 유지, 과POST 억제)
   lastScreen.set(id, { state, agent, at: now, task });
   updateAwake();
@@ -1606,7 +1609,7 @@ const termClient = createDaemonClient({
   },
   onExit: (id) => {
     liveBuffers.delete(id); delete savedBuffers[id];
-    cwdById.delete(id); lastScreen.delete(id); updateAwake(); agentSticky.delete(id); launchRegistry.delete(id); inputBuf.delete(id); ensuredIds.delete(id); narrPending.delete(id); lastNarr.delete(id); narrInFlight.delete(id); narrSeeded.delete(id); narrOverflow.delete(id); narrWorkingAt.delete(id); lastDiffHash.delete(id); lastTaskById.delete(id); // #765·#803·#864·#870·#970 정리
+    cwdById.delete(id); lastScreen.delete(id); updateAwake(); agentSticky.delete(id); launchRegistry.delete(id); inputBuf.delete(id); ensuredIds.delete(id); narrPending.delete(id); lastNarr.delete(id); envSecrets.delete(id); workSeenAt.delete(id); narrInFlight.delete(id); narrSeeded.delete(id); narrOverflow.delete(id); narrWorkingAt.delete(id); lastDiffHash.delete(id); lastTaskById.delete(id); // #765·#803·#864·#870·#970 정리
     const tm = screenTimers.get(id); if (tm) { clearTimeout(tm); screenTimers.delete(id); }
     broadcast("terminal:exit", { id });
   },
@@ -1667,9 +1670,11 @@ ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, permission,
   // 터미널 테마에 맞춰 --settings로 세션 theme만 덮어씀(유저 전역 ~/.claude/settings.json은 안 건드림, auth 유지·병합).
   // 유저 지정 per-agent 추가 인자(#927) — 설정서 렌더러가 전달. 로컬 유저 인자라 그대로(권한 플래그는 카탈로그가 앞에).
   const user = [agent === "claude" && typeof dark === "boolean" ? `--settings '{"theme":"${dark ? "dark" : "light"}"}'` : "", typeof args === "string" ? args : typeof extraArgs === "string" ? extraArgs : ""].map((x) => x.trim()).filter(Boolean).join(" ");
-  const cmd = agentCatalog.launchLine(agent, { choice, userArgs: user, cmd: agentCmdOverride(agent), userEnv: typeof env === "string" ? env.slice(0, 64000) : "", shell: shellNameFor(id) }); // #1197 유저 환경변수 — 해석·따옴표는 카탈로그가, 셸 이름은 fish 문법 분기용
+  if (typeof env === "string" && env.length > 64000) return { ok: false, reason: "env too long" }; // 자르면 값 중간이 잘린 채 실행 — 거부(리뷰)
+  const cmd = agentCatalog.launchLine(agent, { choice, userArgs: user, cmd: agentCmdOverride(agent), userEnv: typeof env === "string" ? env : "", shell: shellNameFor(id) }); // #1197 유저 환경변수 — 해석·따옴표는 카탈로그가, 셸 이름은 fish 문법 분기용
   // 해설(학습 관찰)로 보내는 출력에서 이 값들을 가림 — 명령이 타이핑되면 에코로 화면 출력에 섞임(리뷰)
-  const secrets = Object.values(agentCatalog.parseEnv(typeof env === "string" ? env : "")).filter((v) => v.length >= 4);
+  // 에코는 따옴표 이스케이프된 모양으로 찍히니 원문 + 셸·fish 이스케이프 모양 모두(리뷰)
+  const secrets = [...new Set(Object.values(agentCatalog.parseEnv(typeof env === "string" ? env : "")).filter((v) => v.length >= 4).flatMap((v) => [v, agentCatalog.shq(v).slice(1, -1), agentCatalog.fishq(v).slice(1, -1)]))];
   if (secrets.length) envSecrets.set(id, secrets); else envSecrets.delete(id);
   launchRegistry.set(id, { agent, confirmed: false, at: Date.now() }); // 즉시 신원(아이콘). 부팅 중 셸이어도 유지.
   let ready = false;
@@ -1680,7 +1685,7 @@ ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, permission,
   return { ok: true };
 });
 ipcMain.on("terminal:resize", (_e, { id, cols, rows }) => termClient.resize({ id, cols, rows }));
-ipcMain.on("terminal:kill", (_e, { id }) => { termClient.kill({ id }); liveBuffers.delete(id); delete savedBuffers[id]; cwdById.delete(id); lastScreen.delete(id); updateAwake(); agentSticky.delete(id); launchRegistry.delete(id); inputBuf.delete(id); ensuredIds.delete(id); narrPending.delete(id); lastNarr.delete(id); narrInFlight.delete(id); narrSeeded.delete(id); narrOverflow.delete(id); narrWorkingAt.delete(id); lastDiffHash.delete(id); lastTaskById.delete(id); lastTitleRawById.delete(id); envSecrets.delete(id); }); // 탭 닫기 시 데몬 pty·저장분·상태·실행기록 정리
+ipcMain.on("terminal:kill", (_e, { id }) => { termClient.kill({ id }); liveBuffers.delete(id); delete savedBuffers[id]; cwdById.delete(id); lastScreen.delete(id); updateAwake(); agentSticky.delete(id); launchRegistry.delete(id); inputBuf.delete(id); ensuredIds.delete(id); narrPending.delete(id); lastNarr.delete(id); narrInFlight.delete(id); narrSeeded.delete(id); narrOverflow.delete(id); narrWorkingAt.delete(id); lastDiffHash.delete(id); lastTaskById.delete(id); lastTitleRawById.delete(id); envSecrets.delete(id); workSeenAt.delete(id); }); // 탭 닫기 시 데몬 pty·저장분·상태·실행기록 정리
 // 세션의 실행 중 에이전트 id | null(#803) — 터미널 탭 자동 이름·아이콘용.
 // 프로세스명만으론 node 래퍼 CLI(codex 등: 네이티브 자식을 spawn해 foreground pgrp 리더가 "node")를 못 잡아,
 // 버퍼 스크레이핑(parseAgentScreen)을 1순위로. 셸이면 종료로 간주(null). 버퍼 미판정이면 프로세스명 폴백.
