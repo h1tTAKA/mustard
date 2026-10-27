@@ -45,11 +45,15 @@ function detect(exists = (p) => fs.existsSync(p), roots = ROOTS()) {
   return out;
 }
 
-// 열 폴더 검사 — 절대 경로·존재하는 폴더·줄바꿈/NUL 없음. .app 같은 번들 폴더는 거부(열면 그 앱이 실행됨)(리뷰)
-function okDir(dir) {
-  if (typeof dir !== "string" || !dir || /[\r\n\0]/.test(dir) || !path.isAbsolute(dir)) return false;
-  if (/\.(app|bundle|framework|plugin|prefPane|kext|workflow|saver|appex)\/*$/i.test(dir)) return false;
-  try { return fs.statSync(dir).isDirectory(); } catch { return false; }
+// 열 폴더 검사 → 실제 경로 | null. 절대 경로·줄바꿈/NUL 없음 → realpath(., .., 심볼릭 링크 풀기) → 폴더인지 →
+// .app 같은 번들 폴더는 거부(Finder나 open으로 열면 그 앱·설치기가 실행됨)(리뷰). 열 때도 이 실제 경로를 씀.
+const BUNDLE = /\.(app|bundle|framework|plugin|prefPane|kext|workflow|saver|appex|pkg|mpkg|component|action|qlgenerator|mdimporter|xpc|colorPicker)$/i;
+function safeDir(dir) {
+  if (typeof dir !== "string" || !dir || /[\r\n\0]/.test(dir) || !path.isAbsolute(dir)) return null;
+  try {
+    const real = fs.realpathSync(dir);
+    return fs.statSync(real).isDirectory() && !BUNDLE.test(real) ? real : null;
+  } catch { return null; }
 }
 
-module.exports = { APPS, detect, okDir };
+module.exports = { APPS, detect, safeDir };
