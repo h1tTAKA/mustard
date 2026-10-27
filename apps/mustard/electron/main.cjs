@@ -1674,7 +1674,7 @@ ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, permission,
   const cmd = agentCatalog.launchLine(agent, { choice, userArgs: user, cmd: agentCmdOverride(agent), userEnv: typeof env === "string" ? env : "", shell: shellNameFor(id) }); // #1197 유저 환경변수 — 해석·따옴표는 카탈로그가, 셸 이름은 fish 문법 분기용
   // 해설(학습 관찰)로 보내는 출력에서 이 값들을 가림 — 명령이 타이핑되면 에코로 화면 출력에 섞임(리뷰)
   // 에코는 따옴표 이스케이프된 모양으로 찍히니 원문 + 셸·fish 이스케이프 모양 모두(리뷰)
-  const secrets = [...new Set(Object.values(agentCatalog.parseEnv(typeof env === "string" ? env : "")).filter((v) => v.length >= 4).flatMap((v) => [v, agentCatalog.shq(v).slice(1, -1), agentCatalog.fishq(v).slice(1, -1)]))];
+  const secrets = [...new Set(Object.entries(agentCatalog.parseEnv(typeof env === "string" ? env : "")).filter(([, v]) => v.length >= 4).flatMap(([k, v]) => [v, agentCatalog.shq(v).slice(1, -1), agentCatalog.fishVal(k, v).slice(1, -1)]))];
   if (secrets.length) envSecrets.set(id, secrets); else envSecrets.delete(id);
   launchRegistry.set(id, { agent, confirmed: false, at: Date.now() }); // 즉시 신원(아이콘). 부팅 중 셸이어도 유지.
   let ready = false;

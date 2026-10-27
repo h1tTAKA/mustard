@@ -273,7 +273,7 @@ function AgentRow({ a, logo, isDefault, path, all, guard }: { a: AgentDetect; lo
           {ok && (
             <label className="flex items-start gap-2">
               <span className="w-16 shrink-0 pt-1 text-xs text-zinc-500">{t("agents.env")}</span>
-              <textarea value={env ?? savedEnv} rows={2} spellCheck={false} onChange={(e) => setEnv(e.target.value)} onBlur={() => { if (env !== null) { setSetting(AKEYS.env(a.id), env.trim()); setEnv(null); } }} placeholder={t("agents.envPh")}
+              <textarea value={env ?? savedEnv} rows={2} maxLength={64000} spellCheck={false} onChange={(e) => setEnv(e.target.value)} onBlur={() => { if (env !== null) { setSetting(AKEYS.env(a.id), env.trim()); setEnv(null); } }} placeholder={t("agents.envPh")}
                 className="min-w-0 flex-1 resize-y rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-[12px] text-zinc-900 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
             </label>
           )}

@@ -84,6 +84,8 @@ function parseEnv(text) {
 // 셸이 해석 못 하게 작은따옴표로 — $·백틱·;도 그냥 글자. fish는 작은따옴표 안에서도 \\·\\'를 해석해서 따로(리뷰)
 const shq = (v) => `'${String(v).replace(/'/g, "'\\''")}'`;
 const fishq = (v) => `'${String(v).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+// fish set 값 — 경로 목록 변수(PATH·MANPATH·CDPATH·INFOPATH)는 fish에선 목록이라 `:`로 쪼갬(리뷰). 해설 가림도 이 모양을 씀.
+const fishVal = (k, v) => (/^(PATH|MANPATH|CDPATH|INFOPATH)$/.test(k) ? String(v).split(":") : [v]).map(fishq).join(" ");
 
 // 이 에이전트가 고를 수 있는 선택(own은 항상) — 고를 게 own뿐이면 화면에 권한 메뉴 없음
 const choicesOf = (id) => CHOICES.filter((c) => c === "own" || flagOf(id, c) || envOf(id, c));
@@ -131,8 +133,7 @@ function launchLine(id, { choice = "own", userArgs = "", cmd, userEnv = "", shel
   const cat = env ? Object.entries(env).filter(([k]) => !new RegExp(`(^|\\s)${k}=`).test(user)) : [];
   const line = `${base}${args ? ` ${args}` : ""}`;
   // fish는 `KEY=값 명령` 문법이 없음 → begin 블록 안에서 set -lx(함수·별칭도 그대로 먹게, 블록 끝나면 사라짐)(리뷰)
-  // 이름이 PATH로 끝나는 변수(PATH·MANPATH 등)는 fish에선 목록 — `:`로 쪼개 여러 값으로(리뷰)
-  if (shell === "fish" && (cat.length || mine.length)) return `begin; ${[...cat, ...mine].map(([k, v]) => `set -lx ${k} ${(/PATH$/.test(k) ? String(v).split(":") : [v]).map(fishq).join(" ")}; `).join("")}${line}; end`;
+  if (shell === "fish" && (cat.length || mine.length)) return `begin; ${[...cat, ...mine].map(([k, v]) => `set -lx ${k} ${fishVal(k, v)}; `).join("")}${line}; end`;
   const envPart = [...cat.map(([k, v]) => `${k}=${v}`), ...mine.map(([k, v]) => `${k}=${shq(v)}`)].join(" ");
   return `${envPart ? `${envPart} ` : ""}${line}`;
 }
@@ -167,4 +168,4 @@ const identityBins = () => AGENTS.flatMap((a) => a.bins.filter((b) => !GENERIC.h
 // 짧은 이름으로만 감지되는 에이전트 — 다른 도구일 수 있어 "자동" 고르기에선 뺌(직접 기본으로 고르거나 한 번 띄우면 OK, 리뷰)
 const weakDetect = (id) => (BY_ID.get(id)?.bins ?? []).every((b) => GENERIC.has(b));
 
-module.exports = { AGENTS, BY_ID, CHOICES, flagOf, envOf, parseEnv, shq, fishq, choicesOf, carriersOf, hasPermissionOption, launchLine, liftPermission, identityBins, weakDetect };
+module.exports = { AGENTS, BY_ID, CHOICES, flagOf, envOf, parseEnv, shq, fishVal, choicesOf, carriersOf, hasPermissionOption, launchLine, liftPermission, identityBins, weakDetect };
