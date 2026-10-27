@@ -34,6 +34,10 @@ export const TERMINAL_DEFAULTS = {
   osc52: true,                                 // #1196 프로그램이 클립보드에 쓰기(OSC 52, 읽기는 항상 막음)
   images: true,                                // #1196 인라인 이미지(sixel·iTerm), 새 탭부터
 };
+// 인앱 브라우저(#1209) — 검색 엔진(google·duckduckgo·bing·kagi)
+export const BROWSER_DEFAULTS = { searchEngine: "google" };
+export const BROWSER_KEYS = { searchEngine: "browser.searchEngine" } as const;
+
 // 업데이트 확인(#1200) — 자동 확인(앱 시작 때 하루 한 번) + 마지막 확인 시각(ms)
 export const UPDATE_KEYS = { auto: "update.autoCheck", lastAt: "update.lastCheckAt" } as const;
 

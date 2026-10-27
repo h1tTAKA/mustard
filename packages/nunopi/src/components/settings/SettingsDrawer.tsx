@@ -5,7 +5,8 @@ import { type LearnProviderMode, type ModeModels, type ModeProviders, LEARN_PROV
 import { XIcon } from "../learning/icons";
 import ShortcutsSection from "./ShortcutsSection";
 import UpdateSection from "./UpdateSection";
-import { IconKeyboard, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX } from "@tabler/icons-react";
+import BrowserSection from "./BrowserSection";
+import { IconKeyboard, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX } from "@tabler/icons-react";
 import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
 import ComputerUseSection from "./ComputerUseSection";
@@ -447,6 +448,7 @@ export default function SettingsDrawer({
     { id: "set-workspace", label: t("settings.workspaceSection"), Icon: IconFolder, show: workspaceSettings, group: t("settings.groupEnvironment") },
     { id: "set-git", label: t("settings.gitSection"), Icon: IconGitBranch, show: workspaceSettings, group: t("settings.groupEnvironment") },
     { id: "set-quick", label: t("quick.title"), Icon: IconBolt, show: workspaceSettings, group: t("settings.groupEnvironment") }, // #1194
+    { id: "set-browser", label: t("browser.section"), Icon: IconWorld, show: workspaceSettings, group: t("settings.groupEnvironment") }, // #1209
     { id: "set-shortcuts", label: t("settings.shortcutsSection"), Icon: IconKeyboard, show: true, group: t("settings.groupEnvironment") }, // #1027
     { id: "set-agents", label: t("settings.provider"), Icon: IconRobot, show: true, group: t("settings.groupAgents") },
     { id: "set-catchup", label: t("settings.catchupSection"), Icon: IconActivity, show: workspaceSettings, group: t("settings.groupAgents") }, // #1049
@@ -1123,6 +1125,7 @@ export default function SettingsDrawer({
           {/* 단축키(#1027) */}
           {activeSection === "set-shortcuts" && <ShortcutsSection />}
           {activeSection === "set-update" && <UpdateSection />}
+          {activeSection === "set-browser" && <BrowserSection />}
 
           {/* 연동(#958) — 소스 호스트 연결. 현재 GitHub(gh CLI + PAT). */}
           {activeSection === "set-integrations" && (

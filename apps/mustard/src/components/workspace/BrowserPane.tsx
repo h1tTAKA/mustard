@@ -5,8 +5,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { WebviewTag } from "electron";
 import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld, IconArrowsMinimize, IconPlus, IconPointer, IconLoader2 } from "@tabler/icons-react";
-import { useT, useSetting, appChords, SHORTCUT_OVERRIDES_KEY, type ShortcutOverrides } from "@mustard/core";
-import { normalizeBrowserUrl } from "@/lib/browser/url";
+import { useT, useSetting, appChords, SHORTCUT_OVERRIDES_KEY, type ShortcutOverrides, getSetting, BROWSER_KEYS, BROWSER_DEFAULTS } from "@mustard/core";
+import { browserTarget } from "@/lib/browser/url";
 import { PICK_SCRIPT, PICK_CANCEL, type PickedElement } from "@/lib/browser/pickScript";
 import { formatPickFeedback } from "@/lib/browser/feedback";
 import { sendToAgent } from "@/lib/browser/sendToAgent";
@@ -191,7 +191,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
   const go = (raw: string) => {
     // 빈 주소로 Enter = 페이지 닫고 처음 빈 화면으로(webview 제거, 저장 주소도 비움).
     if (!raw.trim()) { setDevtools(false); setCurrent(""); setDraft(""); setEditing(false); setNav({ back: false, fwd: false }); setLoading(false); onUrlChangeRef.current(""); onTitleRef.current(""); return; }
-    const u = normalizeBrowserUrl(raw);
+    const u = browserTarget(raw, getSetting<string>(BROWSER_KEYS.searchEngine, BROWSER_DEFAULTS.searchEngine)); // #1209 URL이 아니면 검색
     if (!u) return;
     setDraft(u); setEditing(false);
     const wv = viewRef.current;
