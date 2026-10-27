@@ -11,11 +11,11 @@ import WorkspaceView from "@/components/workspace/WorkspaceView";
 import WorkspaceModePane from "@/components/workspace/WorkspaceModePane";
 import RepoAvatar from "@/components/workspace/RepoAvatar";
 import WorkspaceAddMenu, { type AddKind } from "@/components/workspace/WorkspaceAddMenu";
-import RepoTabHoverCard from "@/components/workspace/RepoTabHoverCard";
+import RepoTabHoverCard, { OPEN_IN_LAST } from "@/components/workspace/RepoTabHoverCard";
 import NewWorkspaceDialog from "@/components/workspace/NewWorkspaceDialog";
 import WorktreeSwitcher from "@/components/workspace/WorktreeSwitcher";
 import RemoveWorkspaceDialog from "@/components/workspace/RemoveWorkspaceDialog";
-import { CLOSE_WORKSPACE_EVENT, NEW_WORKSPACE_EVENT, OPEN_REPO_TAB_EVENT, REMOVE_WORKSPACE_EVENT, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
+import { openNewWorkspace, CLOSE_WORKSPACE_EVENT, NEW_WORKSPACE_EVENT, OPEN_REPO_TAB_EVENT, REMOVE_WORKSPACE_EVENT, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
 import DaemonOutdatedNotice from "@/components/workspace/DaemonOutdatedNotice";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
 import { publishRepoSessions } from "@/lib/agentSessionStates";
@@ -405,6 +405,24 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     const k = d.id === "repo.next" ? keys[(i + 1) % keys.length] : d.id === "repo.prev" ? keys[(i - 1 + keys.length) % keys.length]
       : d.arg === 9 ? keys[keys.length - 1] : keys[(d.arg ?? 1) - 1] ?? keys[keys.length - 1];
     activate(k);
+  });
+
+  // #1200 레포 단축키 — 새 레포(⌘O)·지금 탭 닫기(⌘⇧W, 버튼과 같은 확인창)·새 작업공간(⌘⇧N)·마지막 쓴 앱으로 열기(⌘⇧O, 없으면 Finder)
+  useShortcut(["repo.new", "repo.close", "repo.newWorkspace", "repo.openIn"], (d) => {
+    if (!active) return false;
+    if (d.id === "repo.new") { void addRepoTab(); return; }
+    const tb = tabs.find((x) => tabKey(x) === activeKey);
+    if (!tb) return false;
+    if (d.id === "repo.close") {
+      const key = tabKey(tb);
+      void confirm({ skipKey: CKEYS.skipCloseTab, title: tb.type === "repo" ? basename(tb.path) : t(MODE_TAB[tb.type].labelKey), message: t("workspace.closeTabConfirm"), detail: t("workspace.closeTabConfirmDetail"), confirmText: t("workspace.closeTab"), tone: "warn" }).then((ok) => { if (ok) closeTab(key); });
+      return;
+    }
+    if (tb.type !== "repo") return false;
+    if (d.id === "repo.newWorkspace") { openNewWorkspace(tb.path); return; }
+    const dir = tb.wt ?? tb.path, last = getSetting<string>(OPEN_IN_LAST, "") || "finder";
+    void window.nunopiDesktop?.openIn?.(last, dir).then((r) => (r?.ok || last === "finder" ? r : window.nunopiDesktop?.openIn?.("finder", dir)))
+      .then((r) => { if (r && !r.ok) toast(t("openIn.failed", { app: "Finder" }), "error"); });
   });
 
   function activate(key: string) {

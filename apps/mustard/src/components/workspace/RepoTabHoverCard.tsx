@@ -19,7 +19,7 @@ interface SubInfo { id: string; agentType: string; description: string; depth: n
 
 const basename = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
 type OpenApp = { id: string; kind: string; name: string; icon: string | null }; // #1199 다른 앱에서 열기
-const OPEN_IN_LAST = "openIn.last"; // 마지막으로 연 앱 id
+export const OPEN_IN_LAST = "openIn.last"; // 마지막으로 연 앱 id(⌘⇧O 단축키도 씀)
 const norm = (p: string) => p.replace(/\/+$/, "");
 // 상대시각(간결) — "3s"/"5m"/"2h"/"4d". committedAt ISO 기준.
 function rel(iso: string): string {
