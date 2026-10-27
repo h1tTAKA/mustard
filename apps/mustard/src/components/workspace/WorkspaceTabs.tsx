@@ -3,7 +3,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { IconFiles, IconFolderOpen, IconPlus, IconX, IconMessages, IconFileCode, IconFileText, IconCards, IconBell, IconBellOff } from "@tabler/icons-react";
 import { useT, useShortcut } from "@mustard/core";
-import { getSetting, setSetting, subscribeSettings, useSetting, AKEYS, AGENT_DEFAULTS, UPDATE_KEYS, NKEYS, NOTIF_DEFAULTS, CKEYS, desktopNotify, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
+import { getSetting, setSetting, subscribeSettings, useSetting, AKEYS, AGENT_DEFAULTS, UPDATE_KEYS, BROWSER_KEYS, BROWSER_DEFAULTS, NKEYS, NOTIF_DEFAULTS, CKEYS, desktopNotify, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
 import { crewRoomOpen } from "./crew/crewUi";
 import { useToast } from "@mustard/core";
 import { useConfirm } from "@mustard/core";
@@ -165,6 +165,9 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 앱 시작 때 한 번
   }, []);
+  // #1209 에이전트 브라우저 조작 허용을 main에 — 앱 시작·바꿀 때(끄면 browser_* 도구 거부)
+  const agentBrowser = useSetting<boolean>(BROWSER_KEYS.agentControl, BROWSER_DEFAULTS.agentControl);
+  useEffect(() => { window.nunopiDesktop?.browser?.setAgentControl?.(agentBrowser); }, [agentBrowser]);
   // #1197 잠자기 막기 설정을 main에 — 앱 시작·바꿀 때
   const keepAwake = useSetting<string>(AKEYS.keepAwake, AGENT_DEFAULTS.keepAwake);
   useEffect(() => { window.nunopiDesktop?.setKeepAwake?.(keepAwake === "working" || keepAwake === "always" ? keepAwake : "off"); }, [keepAwake]);

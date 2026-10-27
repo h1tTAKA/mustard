@@ -11,6 +11,7 @@ export default function BrowserSection() {
   const t = useT();
   const engine = useSetting<string>(BROWSER_KEYS.searchEngine, BROWSER_DEFAULTS.searchEngine);
   const zoom = useSetting<number>(BROWSER_KEYS.defaultZoom, BROWSER_DEFAULTS.defaultZoom);
+  const agent = useSetting<boolean>(BROWSER_KEYS.agentControl, BROWSER_DEFAULTS.agentControl);
   const confirm = useConfirm(), toast = useToast();
   const [clearing, setClearing] = useState(false);
   // 쿠키·저장소·캐시 통째로 — 로그인은 모든 레포가 같이 쓰니 전부 로그아웃(확인창)
@@ -23,6 +24,13 @@ export default function BrowserSection() {
   };
   return (
     <section id="set-browser" className="scroll-mt-4 space-y-4 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+      <label className="flex items-center justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block text-sm text-zinc-700 dark:text-zinc-300">{t("browser.agentControl")}</span>
+          <span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("browser.agentControlDesc")}</span>
+        </span>
+        <input type="checkbox" checked={agent} onChange={(e) => setSetting(BROWSER_KEYS.agentControl, e.target.checked)} className="size-4 shrink-0 accent-mustard-500" />
+      </label>
       <label className="flex items-center justify-between gap-3">
         <span className="min-w-0">
           <span className="block text-sm text-zinc-700 dark:text-zinc-300">{t("browser.searchEngine")}</span>

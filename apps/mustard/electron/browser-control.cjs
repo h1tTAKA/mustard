@@ -111,9 +111,11 @@ function createBrowserControl(deps) {
   const entryOf = (g) => registry.get(g.id);
   const NONE = "No in-app browser tab is open for this repo in Mustard. Use browser_navigate to open one.";
 
+  let agentEnabled = true; // #1209 설정 > 브라우저 "에이전트 브라우저 조작"(렌더러 설정 → main)
   async function call(tool, args, cwd) {
     args = args || {};
     if (tool.startsWith("computer_") && deps.computer) return deps.computer(tool, args, cwd); // 컴퓨터 사용(#1175) — 같은 토큰·서버를 씀
+    if (!agentEnabled) return fail("Agent control of the in-app browser is turned off in Mustard settings (Settings > Browser). Ask the user to turn it on."); // 끄면 browser_* 전부 거부
     if (tool === "browser_status") {
       const mine = mineOf(cwd);
       const pick = pickGuest(mine, real(cwd));
@@ -204,7 +206,7 @@ function createBrowserControl(deps) {
     return new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", () => resolve({ server, port: server.address().port })); });
   }
 
-  return { register, unregister, call, listen };
+  return { register, unregister, call, listen, setAgentEnabled: (v) => { agentEnabled = v !== false; } };
 }
 
 module.exports = { createBrowserControl, pickGuest, normalizeUrl, READ_SCRIPT, CENTER_SCRIPT };

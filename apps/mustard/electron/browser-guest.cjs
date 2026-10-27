@@ -23,6 +23,9 @@ function hardenWebview(event, webPreferences, params) {
   webPreferences.zoomFactor = defaultZoom; // #1209 새 탭 기본 줌
 }
 
+// #1209 브라우저 ID — "… Chrome/x Mustard/0.1.0 Electron/y Safari/z"에서 앱·Electron 토큰만 뺌(나머지는 그대로)
+function cleanUserAgent(ua) { return String(ua || "").replace(/\s(?:Electron|Mustard|mustard|nunopi)\/\S+/g, "").replace(/\s{2,}/g, " ").trim(); }
+
 // #1209 페이지 줌 — 브라우저(웹뷰)에 포커스일 때 ⌘= / ⌘- / ⌘0(브라우저 관례, 터미널 글꼴 단축키보다 먼저). 단계는 Chrome과 같은 배율.
 const ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
 let defaultZoom = 1;
@@ -82,6 +85,7 @@ function wireGuest(guest) {
     hardenedSessions.add(ses);
     ses.setPermissionRequestHandler((_wc, perm, cb) => cb(ALLOWED_PERMISSIONS.has(perm)));
     ses.setPermissionCheckHandler((_wc, perm) => ALLOWED_PERMISSIONS.has(perm));
+    ses.setUserAgent(cleanUserAgent(ses.getUserAgent())); // #1209 브라우저 ID 정리 — Electron·앱 토큰 빼고 보통 Chrome처럼(일부 사이트가 Electron을 막음)
   }
   // 포커스된 guest는 별도 Chromium 프로세스라 키가 앱 렌더러에 안 온다 → 앱 단축키 조합만 페이지 대신 앱으로(#1034 리뷰).
   // 나머지 키(⌘C·⌘F 등)는 페이지가 그대로 받음. 조합 목록은 렌더러가 설정(덮어쓰기) 반영해 보내줌(setAppChords).
@@ -110,4 +114,4 @@ function installBrowserGuestPolicy(app) {
   });
 }
 
-module.exports = { PARTITION, setDefaultZoom, nextZoom, installBrowserGuestPolicy, hardenWebview, isAllowedUrl, setAppChords, trackChordHost, chordOf, forwardAppKeys, PARTITION };
+module.exports = { PARTITION, setDefaultZoom, nextZoom, cleanUserAgent, installBrowserGuestPolicy, hardenWebview, isAllowedUrl, setAppChords, trackChordHost, chordOf, forwardAppKeys, PARTITION };

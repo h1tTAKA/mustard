@@ -73,6 +73,12 @@ assert.ok(CENTER_SCRIPT('"); alert(1); ("').includes('"\\"); alert(1); (\\""'), 
   assert.strictEqual((await post("wrong-token!", {})).status, 403);
   const ok = await (await post("secret-token", { tool: "browser_status", cwd: "/r/app" })).json();
   assert.ok(ok.content[0].text.includes('"defaultTarget": true') && ok.content[0].text.includes('"tabId": 7'));
+  // #1209 에이전트 조작 끄기 — browser_* 거부, 다시 켜면 동작
+  ctl.setAgentEnabled(false);
+  const off = await ctl.call("browser_status", {}, "/r/app");
+  assert.ok(off.isError && off.content[0].text.includes("turned off"));
+  ctl.setAgentEnabled(true);
+  assert.ok(!(await ctl.call("browser_status", {}, "/r/app")).isError);
   server.close();
   console.log("browser-control ok");
 })().catch((e) => { console.error(e); process.exit(1); });

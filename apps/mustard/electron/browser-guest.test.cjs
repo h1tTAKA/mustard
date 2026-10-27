@@ -1,5 +1,5 @@
 const assert = require("node:assert");
-const { hardenWebview, isAllowedUrl, PARTITION, setDefaultZoom, nextZoom } = require("./browser-guest.cjs");
+const { hardenWebview, isAllowedUrl, PARTITION, setDefaultZoom, nextZoom, cleanUserAgent } = require("./browser-guest.cjs");
 
 for (const u of ["http://localhost:3000", "https://example.com/a?b", "about:blank"]) assert.ok(isAllowedUrl(u), u);
 for (const u of ["file:///etc/passwd", "javascript:alert(1)", "data:text/html,x", "", "nope"]) assert.ok(!isAllowedUrl(u), u);
@@ -34,4 +34,7 @@ assert.strictEqual(nextZoom(5, 1), 5); assert.strictEqual(nextZoom(0.25, -1), 0.
 setDefaultZoom(1.25); assert.strictEqual(nextZoom(2, 0), 1.25);
 { const wp = {}; hardenWebview({ preventDefault() {} }, wp, { src: "about:blank" }); assert.strictEqual(wp.zoomFactor, 1.25, "새 탭 기본 줌"); }
 setDefaultZoom(1.3); assert.strictEqual(nextZoom(2, 0), 1, "목록 밖 = 100%");
+// #1209 브라우저 ID — 앱·Electron 토큰만 빠짐
+assert.strictEqual(cleanUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Mustard/0.1.0 Chrome/140.0.0.0 Electron/43.0.0 Safari/537.36"),
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36");
 console.log("browser-guest chord ok");

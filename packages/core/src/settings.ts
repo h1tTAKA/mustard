@@ -35,8 +35,8 @@ export const TERMINAL_DEFAULTS = {
   images: true,                                // #1196 인라인 이미지(sixel·iTerm), 새 탭부터
 };
 // 인앱 브라우저(#1209) — 검색 엔진(google·duckduckgo·bing·kagi)
-export const BROWSER_DEFAULTS = { searchEngine: "google", defaultZoom: 100 };
-export const BROWSER_KEYS = { searchEngine: "browser.searchEngine", defaultZoom: "browser.defaultZoom" } as const; // defaultZoom = 새 탭 배율(%)
+export const BROWSER_DEFAULTS = { searchEngine: "google", defaultZoom: 100, agentControl: true };
+export const BROWSER_KEYS = { searchEngine: "browser.searchEngine", defaultZoom: "browser.defaultZoom", agentControl: "browser.agentControl" } as const; // defaultZoom = 새 탭 배율(%)
 
 // 업데이트 확인(#1200) — 자동 확인(앱 시작 때 하루 한 번) + 마지막 확인 시각(ms)
 export const UPDATE_KEYS = { auto: "update.autoCheck", lastAt: "update.lastCheckAt" } as const;
