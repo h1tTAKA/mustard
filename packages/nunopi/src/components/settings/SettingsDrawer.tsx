@@ -371,7 +371,7 @@ export default function SettingsDrawer({
   // 이동한 섹션에서 그 항목 이름 글자를 가진 가장 안쪽 요소 → 그 줄로 스크롤·강조(항목마다 id를 박지 않음)
   useEffect(() => {
     if (!jump) return;
-    let tries = 0, timer: ReturnType<typeof setTimeout> | undefined, flash: ReturnType<typeof setTimeout> | undefined, flashed: HTMLElement | null = null;
+    let tries = 0, timer: ReturnType<typeof setTimeout> | undefined, flash: ReturnType<typeof setTimeout> | undefined, flashed: HTMLElement | null = null, added: string[] = [];
     // 섹션 내용이 늦게 그려질 수 있어(감지·불러오기) 1초 동안 몇 번 더 찾음(리뷰)
     const find = () => {
       const root = contentRef.current; if (!root) return;
@@ -389,16 +389,19 @@ export default function SettingsDrawer({
       while (!row.matches("label, li, .justify-between") && row.parentElement && row.parentElement !== root && row.parentElement.childElementCount <= 3 && (row.parentElement.textContent ?? "").length < 300) row = row.parentElement;
       row.scrollIntoView({ block: "center", behavior: "smooth" });
       // 줄에 딱 붙은 테두리 대신 바깥으로 번지는 은은한 머스타드빛 + 배경, 1.4초 뒤 스르륵 사라짐(유저: 테두리가 너무 딱 맞아 별로)
+      // 줄에 원래 있던 클래스는 안 건드리게 — 새로 붙인 것만 기억했다가 그것만 뗌(리뷰)
       const GLOW = ["bg-mustard-400/10", "ring-[10px]", "ring-mustard-400/10"];
-      row.classList.add("rounded-xl", "transition-all", "duration-700", ...GLOW); flashed = row;
+      added = ["rounded-xl", "transition-all", "duration-700", ...GLOW].filter((c) => !row.classList.contains(c));
+      const glow = added.filter((c) => GLOW.includes(c)), rest = added.filter((c) => !GLOW.includes(c));
+      row.classList.add(...added); flashed = row;
       flash = setTimeout(() => {
-        row.classList.remove(...GLOW);
-        flash = setTimeout(() => { row.classList.remove("rounded-xl", "transition-all", "duration-700"); flashed = null; }, 700);
+        row.classList.remove(...glow);
+        flash = setTimeout(() => { row.classList.remove(...rest); flashed = null; }, 700);
       }, 1400);
     };
     const raf = requestAnimationFrame(find);
-    return () => { cancelAnimationFrame(raf); if (timer) clearTimeout(timer); if (flash) clearTimeout(flash); flashed?.classList.remove("bg-mustard-400/10", "ring-[10px]", "ring-mustard-400/10", "rounded-xl", "transition-all", "duration-700"); }; // 다음 이동·닫기 때 강조 정리(리뷰)
-  }, [jump, activeSection]);
+    return () => { cancelAnimationFrame(raf); if (timer) clearTimeout(timer); if (flash) clearTimeout(flash); flashed?.classList.remove(...added); }; // 다음 이동·닫기 때 강조 정리(리뷰)
+  }, [jump]); // 결과를 고를 때만(jump가 바뀔 때만) 찾음 — 섹션을 옮겨도 옛 이름으로 다시 찾지 않게(리뷰). rAF라 섹션이 그려진 뒤 찾음
 
   if (!isOpen) return null;
 
