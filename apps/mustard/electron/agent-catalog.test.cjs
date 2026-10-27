@@ -1,6 +1,6 @@
 // agent-catalog 점검 — node electron/agent-catalog.test.cjs
 const assert = require("node:assert");
-const { AGENTS, BY_ID, choicesOf, launchLine, liftPermission, hasPermissionOption, identityBins, carriersOf, weakDetect } = require("./agent-catalog.cjs");
+const { AGENTS, BY_ID, choicesOf, launchLine, parseEnv, liftPermission, hasPermissionOption, identityBins, carriersOf, weakDetect } = require("./agent-catalog.cjs");
 
 assert.strictEqual(AGENTS.length, 44, "카탈로그 44개(claude-agent-teams 제외)");
 assert.strictEqual(new Set(AGENTS.map((a) => a.id)).size, AGENTS.length, "id 겹침 없음");
@@ -53,4 +53,11 @@ assert.deepStrictEqual(liftPermission("devin", "--permission-mode bypass --model
 assert.strictEqual(liftPermission("codex", "-s danger-full-access").choice, "full-access");
 assert.strictEqual(liftPermission("codex", "--sandbox=danger-full-access").choice, "full-access");
 assert.ok(weakDetect("pi") && weakDetect("continue") && weakDetect("rovo") && !weakDetect("claude") && !weakDetect("dsh"), "짧은 이름으로만 감지");
+// 유저 환경변수(#1197) — 해석·따옴표·카탈로그 env와 겹침
+assert.deepStrictEqual(parseEnv("# 주석\n\nexport A=1\nB = \"x y\"\n1BAD=no\n=nope\nC='q'\nD=a=b"), { A: "1", B: "x y", C: "q", D: "a=b" });
+assert.strictEqual(launchLine("claude", { userEnv: "A=1\nB=$(rm -rf ~); echo" }), "A='1' B='$(rm -rf ~); echo' claude", "값은 작은따옴표 — 셸이 해석 안 함");
+assert.strictEqual(launchLine("claude", { userEnv: "Q=it's" }), "Q='it'\\''s' claude", "작은따옴표 이스케이프");
+assert.strictEqual(launchLine("goose", { choice: "full-access", userEnv: "GOOSE_MODE=chat\nX=1" }), "GOOSE_MODE='chat' X='1' goose", "같은 이름이면 유저 값");
+assert.strictEqual(launchLine("goose", { choice: "full-access", userEnv: "X=1" }), "GOOSE_MODE=auto X='1' goose");
+assert.strictEqual(Object.keys(parseEnv(Array.from({ length: 60 }, (_, i) => `K${i}=1`).join("\n"))).length, 50, "50개까지");
 console.log("agent-catalog.test ok");

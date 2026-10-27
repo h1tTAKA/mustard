@@ -61,6 +61,7 @@ export const AGENT_DEFAULTS = { default: "auto", perm: "own" };
 export const AKEYS = {
   default: "agent.default",
   args: (agentId: string) => `agent.args.${agentId}`,
+  env: (agentId: string) => `agent.env.${agentId}`, // #1197 한 줄에 KEY=값 글(해석은 main)
   perm: "agent.perm",
   permOf: (agentId: string) => `agent.perm.${agentId}`,
   off: (agentId: string) => `agent.off.${agentId}`,

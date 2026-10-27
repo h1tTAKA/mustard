@@ -1632,7 +1632,7 @@ ipcMain.on("terminal:input", (_e, { id, data }) => { termClient.input({ id, data
 // 새 탭은 렌더러가 Terminal 마운트→ensure까지 시간차가 있어, pty 준비(ensuredIds)를 최대 3s 대기 후 주입.
 const ensuredIds = new Set(); // ensure 완료된 세션 id
 // #1184 명령 = 카탈로그로 조립 — [env] 실행 명령(경로 지정) + 권한 플래그(permission) + 유저 인자(args). 옛 extraArgs = args.
-ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, permission, args, extraArgs, cwd }) => {
+ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, permission, args, extraArgs, cwd, env }) => {
   if (!id || typeof agent !== "string") return { ok: false, reason: "bad args" };
   if (!agentCatalog.BY_ID.has(agent)) return { ok: false, reason: "unknown agent" };
   const choice = agentCatalog.CHOICES.includes(permission) ? permission : "own";
@@ -1647,7 +1647,7 @@ ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, permission,
   // 터미널 테마에 맞춰 --settings로 세션 theme만 덮어씀(유저 전역 ~/.claude/settings.json은 안 건드림, auth 유지·병합).
   // 유저 지정 per-agent 추가 인자(#927) — 설정서 렌더러가 전달. 로컬 유저 인자라 그대로(권한 플래그는 카탈로그가 앞에).
   const user = [agent === "claude" && typeof dark === "boolean" ? `--settings '{"theme":"${dark ? "dark" : "light"}"}'` : "", typeof args === "string" ? args : typeof extraArgs === "string" ? extraArgs : ""].map((x) => x.trim()).filter(Boolean).join(" ");
-  const cmd = agentCatalog.launchLine(agent, { choice, userArgs: user, cmd: agentCmdOverride(agent) });
+  const cmd = agentCatalog.launchLine(agent, { choice, userArgs: user, cmd: agentCmdOverride(agent), userEnv: typeof env === "string" ? env.slice(0, 64000) : "" }); // #1197 유저 환경변수 — 해석·따옴표는 카탈로그가
   launchRegistry.set(id, { agent, confirmed: false, at: Date.now() }); // 즉시 신원(아이콘). 부팅 중 셸이어도 유지.
   let ready = false;
   for (let i = 0; i < 60; i++) { if (ensuredIds.has(id)) { ready = true; break; } await new Promise((r) => setTimeout(r, 50)); } // 최대 3s pty 대기

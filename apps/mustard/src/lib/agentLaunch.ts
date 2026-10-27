@@ -1,9 +1,9 @@
 // 에이전트 실행 설정(#1184) — 터미널 실행 때 main에 넘길 권한·유저 인자, 옛 추가 인자의 권한 플래그 옮기기.
 import { AKEYS, agentPermission, getSetting, setSetting } from "@mustard/core";
 
-// 실행 payload — 권한(덮어쓰기 > 전체), 유저 인자(+ 이번만 붙일 것). 플래그 조립은 main 카탈로그가.
+// 실행 payload — 권한(덮어쓰기 > 전체), 유저 인자(+ 이번만 붙일 것), 유저 환경변수 글(#1197). 해석·조립은 main 카탈로그가.
 export function launchOpts(agent: string, extra = "") {
-  return { permission: agentPermission(agent).choice, args: [getSetting<string>(AKEYS.args(agent), ""), extra].filter(Boolean).join(" ") };
+  return { permission: agentPermission(agent).choice, args: [getSetting<string>(AKEYS.args(agent), ""), extra].filter(Boolean).join(" "), env: getSetting<string>(AKEYS.env(agent), "") };
 }
 
 // 옛 추가 인자에 알려진 권한 플래그가 있으면 빼서 그 에이전트의 권한 덮어쓰기로 — 한 번만.
