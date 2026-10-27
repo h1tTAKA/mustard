@@ -81,8 +81,9 @@ function parseEnv(text) {
   }
   return out;
 }
-// 셸이 해석 못 하게 작은따옴표로 — $·백틱·;도 그냥 글자
+// 셸이 해석 못 하게 작은따옴표로 — $·백틱·;도 그냥 글자. fish는 작은따옴표 안에서도 \\·\\'를 해석해서 따로(리뷰)
 const shq = (v) => `'${String(v).replace(/'/g, "'\\''")}'`;
+const fishq = (v) => `'${String(v).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 
 // 이 에이전트가 고를 수 있는 선택(own은 항상) — 고를 게 own뿐이면 화면에 권한 메뉴 없음
 const choicesOf = (id) => CHOICES.filter((c) => c === "own" || flagOf(id, c) || envOf(id, c));
@@ -128,10 +129,11 @@ function launchLine(id, { choice = "own", userArgs = "", cmd, userEnv = "", shel
   const permKeys = Object.keys(BY_ID.get(id)?.env || {});
   const mine = Object.entries(parseEnv(userEnv)).filter(([k]) => !permKeys.includes(k));
   const cat = env ? Object.entries(env).filter(([k]) => !new RegExp(`(^|\\s)${k}=`).test(user)) : [];
+  const line = `${base}${args ? ` ${args}` : ""}`;
+  // fish는 `KEY=값 명령` 문법이 없음 → begin 블록 안에서 set -lx(함수·별칭도 그대로 먹게, 블록 끝나면 사라짐)(리뷰)
+  if (shell === "fish" && (cat.length || mine.length)) return `begin; ${[...cat, ...mine].map(([k, v]) => `set -lx ${k} ${fishq(v)}; `).join("")}${line}; end`;
   const envPart = [...cat.map(([k, v]) => `${k}=${v}`), ...mine.map(([k, v]) => `${k}=${shq(v)}`)].join(" ");
-  // fish는 `KEY=값 명령` 문법이 없어 env 명령으로(리뷰). 그 밖(zsh·bash 등)은 그대로 — 별칭·함수가 계속 먹게
-  const pre = envPart ? `${/^fish$/.test(shell) ? "env " : ""}${envPart} ` : "";
-  return `${pre}${base}${args ? ` ${args}` : ""}`;
+  return `${envPart ? `${envPart} ` : ""}${line}`;
 }
 
 // 유저가 인자에 알려진 권한 플래그를 쓰면 빼서 그 에이전트의 권한 선택으로 — { choice, rest } 또는 null

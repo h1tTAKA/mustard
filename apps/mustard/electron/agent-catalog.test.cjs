@@ -60,7 +60,9 @@ assert.strictEqual(launchLine("claude", { userEnv: "Q=it's" }), "Q='it'\\''s' cl
 assert.strictEqual(launchLine("goose", { choice: "full-access", userEnv: "GOOSE_MODE=chat\nX=1" }), "GOOSE_MODE=auto X='1' goose", "권한 env는 유저 환경변수로 못 바꿈");
 assert.strictEqual(launchLine("goose", { userEnv: "GOOSE_MODE=auto" }), "goose", "권한 env로 확인창 우회 안 됨");
 assert.deepStrictEqual(parseEnv("A=x\ry\nB=\u0003\nC=ok"), { C: "ok" }, "제어문자 줄은 건너뜀");
-assert.strictEqual(launchLine("claude", { userEnv: "A=1", shell: "fish" }), "env A='1' claude", "fish는 env 명령으로");
+assert.strictEqual(launchLine("claude", { userEnv: "A=1", shell: "fish" }), "begin; set -lx A '1'; claude; end", "fish는 begin 블록 + set -lx");
+assert.strictEqual(launchLine("claude", { userEnv: "A=C:\\x\nB=it's\nC=end\\", shell: "fish" }), "begin; set -lx A 'C:\\\\x'; set -lx B 'it\\'s'; set -lx C 'end\\\\'; claude; end", "fish 따옴표 안 \\·'");
+assert.strictEqual(launchLine("goose", { choice: "full-access", shell: "fish" }), "begin; set -lx GOOSE_MODE 'auto'; goose; end");
 assert.strictEqual(launchLine("claude", { userEnv: "A=1", shell: "zsh" }), "A='1' claude");
 assert.strictEqual(launchLine("goose", { choice: "full-access", userEnv: "X=1" }), "GOOSE_MODE=auto X='1' goose");
 assert.strictEqual(Object.keys(parseEnv(Array.from({ length: 60 }, (_, i) => `K${i}=1`).join("\n"))).length, 50, "50개까지");
