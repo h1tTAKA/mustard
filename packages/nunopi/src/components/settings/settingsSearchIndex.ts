@@ -13,7 +13,7 @@ export const SETTINGS_SEARCH: Record<string, SearchItem[]> = {
   "set-git": ["settings.gitPrBase", "settings.gitBranchPrefix", ["settings.gitPrDraft", "settings.gitPrDraftDesc"], ["settings.gitAutoFetch", "settings.gitAutoFetchDesc"]],
   "set-quick": [["quick.title", "quick.desc"], "quick.howTo"],
   "set-shortcuts": ["settings.shortcutsSearch"],
-  "set-agents": [["settings.defaultAgent", "settings.defaultAgentHint"], "agents.permTitle", "settings.agentExtraArgs", "settings.cliPath", "settings.model", "agents.installed", "agents.available"],
+  "set-agents": [["settings.defaultAgent", "settings.defaultAgentHint"], "agents.permTitle", ["agents.awakeTitle", "agents.awakeHint"], "settings.agentExtraArgs", ["agents.env", "agents.envHint"], "settings.cliPath", "settings.model", "agents.installed", "agents.available"],
   "set-catchup": [["settings.catchupEnabled", "settings.catchupEnabledDesc"], ["settings.catchupExplain", "settings.catchupExplainDesc"], ["settings.catchupCommands", "settings.catchupCommandsDesc"], ["settings.catchupDiff", "settings.catchupDiffDesc"],
     ["settings.catchupSessions", "settings.catchupSessionsDesc"], ["settings.catchupTerms", "settings.catchupTermsDesc"], ["settings.catchupChat", "settings.catchupChatDesc"], "settings.catchupChatCards"],
   "set-integrations": [{ text: "GitHub" }, ["settings.ghPat", "settings.ghPatHint"], ["settings.prReviewAi", "settings.prReviewAiDesc"], { text: "Linear" }, { text: "Jira" }, ["trackers.syncTitle", "trackers.syncHint"]],

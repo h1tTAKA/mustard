@@ -1,6 +1,6 @@
 // agent-catalog 점검 — node electron/agent-catalog.test.cjs
 const assert = require("node:assert");
-const { AGENTS, BY_ID, choicesOf, launchLine, liftPermission, hasPermissionOption, identityBins, carriersOf, weakDetect } = require("./agent-catalog.cjs");
+const { AGENTS, BY_ID, choicesOf, launchLine, parseEnv, liftPermission, hasPermissionOption, identityBins, carriersOf, weakDetect } = require("./agent-catalog.cjs");
 
 assert.strictEqual(AGENTS.length, 44, "카탈로그 44개(claude-agent-teams 제외)");
 assert.strictEqual(new Set(AGENTS.map((a) => a.id)).size, AGENTS.length, "id 겹침 없음");
@@ -53,4 +53,19 @@ assert.deepStrictEqual(liftPermission("devin", "--permission-mode bypass --model
 assert.strictEqual(liftPermission("codex", "-s danger-full-access").choice, "full-access");
 assert.strictEqual(liftPermission("codex", "--sandbox=danger-full-access").choice, "full-access");
 assert.ok(weakDetect("pi") && weakDetect("continue") && weakDetect("rovo") && !weakDetect("claude") && !weakDetect("dsh"), "짧은 이름으로만 감지");
+// 유저 환경변수(#1197) — 해석·따옴표·카탈로그 env와 겹침
+assert.deepStrictEqual(parseEnv("# 주석\n\nexport A=1\nB = \"x y\"\n1BAD=no\n=nope\nC='q'\nD=a=b"), { A: "1", B: "x y", C: "q", D: "a=b" });
+assert.strictEqual(launchLine("claude", { userEnv: "A=1\nB=$(rm -rf ~); echo" }), "A='1' B='$(rm -rf ~); echo' claude", "값은 작은따옴표 — 셸이 해석 안 함");
+assert.strictEqual(launchLine("claude", { userEnv: "Q=it's" }), "Q='it'\\''s' claude", "작은따옴표 이스케이프");
+assert.strictEqual(launchLine("goose", { choice: "full-access", userEnv: "GOOSE_MODE=chat\nX=1" }), "GOOSE_MODE=auto X='1' goose", "권한 env는 유저 환경변수로 못 바꿈");
+assert.strictEqual(launchLine("goose", { userEnv: "GOOSE_MODE=auto" }), "goose", "권한 env로 확인창 우회 안 됨");
+assert.deepStrictEqual(parseEnv("A=x\ry\nB=\u0003\nC=ok"), { C: "ok" }, "제어문자 줄은 건너뜀");
+assert.strictEqual(launchLine("claude", { userEnv: "A=1", shell: "fish" }), "begin; set -lx A '1'; claude; end", "fish는 begin 블록 + set -lx");
+assert.strictEqual(launchLine("claude", { userEnv: "A=C:\\x\nB=it's\nC=end\\", shell: "fish" }), "begin; set -lx A 'C:\\\\x'; set -lx B 'it\\'s'; set -lx C 'end\\\\'; claude; end", "fish 따옴표 안 \\·'");
+assert.strictEqual(launchLine("goose", { choice: "full-access", shell: "fish" }), "begin; set -lx GOOSE_MODE 'auto'; goose; end");
+assert.strictEqual(launchLine("claude", { userEnv: "PATH=/a:/b", shell: "fish" }), "begin; set -lx PATH '/a' '/b'; claude; end", "fish PATH는 목록으로");
+assert.strictEqual(launchLine("claude", { userEnv: "API_PATH=https://x", shell: "fish" }), "begin; set -lx API_PATH 'https://x'; claude; end", "PATH로 끝나도 목록 변수가 아니면 그대로");
+assert.strictEqual(launchLine("claude", { userEnv: "A=1", shell: "zsh" }), "A='1' claude");
+assert.strictEqual(launchLine("goose", { choice: "full-access", userEnv: "X=1" }), "GOOSE_MODE=auto X='1' goose");
+assert.strictEqual(Object.keys(parseEnv(Array.from({ length: 60 }, (_, i) => `K${i}=1`).join("\n"))).length, 50, "50개까지");
 console.log("agent-catalog.test ok");

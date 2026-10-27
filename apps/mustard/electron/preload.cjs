@@ -102,6 +102,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     syncGet: () => ipcRenderer.invoke("trackers:sync-get"),
     syncSet: (cfg) => ipcRenderer.invoke("trackers:sync-set", cfg),
   },
+  setKeepAwake: (mode) => ipcRenderer.send("power:keep-awake", mode), // #1197 잠자기 막기
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url), // #1193 터미널 링크 → 외부 브라우저(http·https만)
   // #1175 컴퓨터 사용 — 켜기·막는 앱·드라이버·권한·기록(조작 자체는 Mustard MCP → main)
   computer: {

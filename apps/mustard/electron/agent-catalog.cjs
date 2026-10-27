@@ -63,6 +63,30 @@ const CHOICES = ["own", "ask", "accept-edits", "auto", "full-access"];
 const KEY = { ask: "ask", "accept-edits": "edits", auto: "auto", "full-access": "full" };
 const flagOf = (id, choice) => (choice === "own" ? "" : BY_ID.get(id)?.p?.[KEY[choice]] ?? "");
 const envOf = (id, choice) => (choice === "full-access" ? BY_ID.get(id)?.env ?? null : null);
+// 유저 환경변수(#1197) — 설정 글(한 줄에 KEY=값, # 주석·빈 줄·앞의 export 허용) → { KEY: 값 }. 이름 규칙이 틀린 줄은 건너뜀.
+// 값은 양끝 짝 따옴표만 벗김. 50개·값 4000자까지(실행 명령 줄이 끝없이 길어지지 않게).
+function parseEnv(text) {
+  const out = {};
+  for (const raw of String(text || "").split(/\r?\n/)) {
+    const line = raw.trim().replace(/^export\s+/, "");
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    const k = line.slice(0, eq).trim();
+    if (eq < 1 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
+    let v = line.slice(eq + 1).trim();
+    if (v.length >= 2 && (v[0] === '"' || v[0] === "'") && v.at(-1) === v[0]) v = v.slice(1, -1);
+    if (v.length > 4000 || /[\x00-\x1f\x7f]/.test(v)) continue; // 제어문자(\r=Enter, \x03=Ctrl-C 등)는 터미널 입력으로 먹힘 — 줄째 건너뜀(리뷰)
+    out[k] = v;
+    if (Object.keys(out).length >= 50) break;
+  }
+  return out;
+}
+// 셸이 해석 못 하게 작은따옴표로 — $·백틱·;도 그냥 글자. fish는 작은따옴표 안에서도 \\·\\'를 해석해서 따로(리뷰)
+const shq = (v) => `'${String(v).replace(/'/g, "'\\''")}'`;
+const fishq = (v) => `'${String(v).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+// fish set 값 — 경로 목록 변수(PATH·MANPATH·CDPATH·INFOPATH)는 fish에선 목록이라 `:`로 쪼갬(리뷰). 해설 가림도 이 모양을 씀.
+const fishVal = (k, v) => (/^(PATH|MANPATH|CDPATH|INFOPATH)$/.test(k) ? String(v).split(":") : [v]).map(fishq).join(" ");
+
 // 이 에이전트가 고를 수 있는 선택(own은 항상) — 고를 게 own뿐이면 화면에 권한 메뉴 없음
 const choicesOf = (id) => CHOICES.filter((c) => c === "own" || flagOf(id, c) || envOf(id, c));
 
@@ -95,7 +119,7 @@ function hasPermissionOption(id, userArgs) {
 
 // 터미널에 칠 명령 — env 앞붙임 + 실행 명령(또는 경로 지정) + 권한 플래그(앞) + 유저 인자.
 // Mustard는 셸에 명령을 쳐 넣으니 env는 `KEY=값 명령` 앞붙임(프로세스 env와 결과 같음).
-function launchLine(id, { choice = "own", userArgs = "", cmd } = {}) {
+function launchLine(id, { choice = "own", userArgs = "", cmd, userEnv = "", shell = "" } = {}) {
   const a = BY_ID.get(id);
   if (!a) return null;
   const base = cmd || a.launch || a.cmd;
@@ -103,8 +127,15 @@ function launchLine(id, { choice = "own", userArgs = "", cmd } = {}) {
   const flag = flagOf(id, choice);
   const args = !flag || hasPermissionOption(id, user) ? user : user ? `${flag} ${user}` : flag;
   const env = envOf(id, choice);
-  const envPart = env && !Object.keys(env).some((k) => new RegExp(`(^|\\s)${k}=`).test(user)) ? `${Object.entries(env).map(([k, v]) => `${k}=${v}`).join(" ")} ` : "";
-  return `${envPart}${base}${args ? ` ${args}` : ""}`;
+  // 권한을 정하는 env(카탈로그 env 이름)는 유저 환경변수로 못 바꿈 — 권한은 권한 선택(확인창)으로만(리뷰)
+  const permKeys = Object.keys(BY_ID.get(id)?.env || {});
+  const mine = Object.entries(parseEnv(userEnv)).filter(([k]) => !permKeys.includes(k));
+  const cat = env ? Object.entries(env).filter(([k]) => !new RegExp(`(^|\\s)${k}=`).test(user)) : [];
+  const line = `${base}${args ? ` ${args}` : ""}`;
+  // fish는 `KEY=값 명령` 문법이 없음 → begin 블록 안에서 set -lx(함수·별칭도 그대로 먹게, 블록 끝나면 사라짐)(리뷰)
+  if (shell === "fish" && (cat.length || mine.length)) return `begin; ${[...cat, ...mine].map(([k, v]) => `set -lx ${k} ${fishVal(k, v)}; `).join("")}${line}; end`;
+  const envPart = [...cat.map(([k, v]) => `${k}=${v}`), ...mine.map(([k, v]) => `${k}=${shq(v)}`)].join(" ");
+  return `${envPart ? `${envPart} ` : ""}${line}`;
 }
 
 // 유저가 인자에 알려진 권한 플래그를 쓰면 빼서 그 에이전트의 권한 선택으로 — { choice, rest } 또는 null
@@ -137,4 +168,4 @@ const identityBins = () => AGENTS.flatMap((a) => a.bins.filter((b) => !GENERIC.h
 // 짧은 이름으로만 감지되는 에이전트 — 다른 도구일 수 있어 "자동" 고르기에선 뺌(직접 기본으로 고르거나 한 번 띄우면 OK, 리뷰)
 const weakDetect = (id) => (BY_ID.get(id)?.bins ?? []).every((b) => GENERIC.has(b));
 
-module.exports = { AGENTS, BY_ID, CHOICES, flagOf, envOf, choicesOf, carriersOf, hasPermissionOption, launchLine, liftPermission, identityBins, weakDetect };
+module.exports = { AGENTS, BY_ID, CHOICES, flagOf, envOf, parseEnv, shq, fishVal, choicesOf, carriersOf, hasPermissionOption, launchLine, liftPermission, identityBins, weakDetect };

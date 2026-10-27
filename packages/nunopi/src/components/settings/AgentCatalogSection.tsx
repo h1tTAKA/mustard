@@ -62,6 +62,7 @@ export default function AgentCatalogSection({ list, checking, onRefresh, agentLo
   const toast = useToast();
   const def = useSetting<string>(AKEYS.default, AGENT_DEFAULTS.default);
   const all = useSetting<string>(AKEYS.perm, AGENT_DEFAULTS.perm);
+  const awake = useSetting<string>(AKEYS.keepAwake, AGENT_DEFAULTS.keepAwake); // #1197
   useSetting<number>("agent.rev", 0); // 줄별 키(off·perm) 변경도 다시 그리게(아래 setAgent가 올림)
   const guard = useFullAccessGuard();
   const [showAvail, setShowAvail] = useState(false);
@@ -117,6 +118,17 @@ export default function AgentCatalogSection({ list, checking, onRefresh, agentLo
             <button type="button" onClick={followAll} className={`${btn} shrink-0 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>{t("agents.permFollowAll")}</button>
           </div>
         )}
+      </div>
+
+      {/* #1197 잠자기 막기 — 에이전트가 오래 일하는 동안 맥이 잠들지 않게(화면은 꺼져도 됨) */}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1 space-y-1">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t("agents.awakeTitle")}</h4>
+          <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("agents.awakeHint")}</p>
+        </div>
+        <div className="flex shrink-0 gap-0.5 rounded-xl border border-zinc-200 p-0.5 dark:border-zinc-700" role="radiogroup" aria-label={t("agents.awakeTitle")}>
+          {(["off", "working", "always"] as const).map((c) => <button key={c} type="button" role="radio" aria-checked={awake === c} onClick={() => setSetting(AKEYS.keepAwake, c)} className={seg(awake === c)}>{t(`agents.awake.${c}`)}</button>)}
+        </div>
       </div>
 
       {/* 설치됨 / 설치 가능 */}
@@ -178,6 +190,8 @@ function AgentRow({ a, logo, isDefault, path, all, guard }: { a: AgentDetect; lo
   const mine = useSetting<string>(AKEYS.permOf(a.id), "");
   const savedArgs = useSetting<string>(AKEYS.args(a.id), "");
   const [args, setArgs] = useState<string | null>(null); // 편집 중 값(blur 때 저장)
+  const savedEnv = useSetting<string>(AKEYS.env(a.id), ""); // #1197 환경변수 글(해석은 실행 때 main)
+  const [env, setEnv] = useState<string | null>(null);
   const choices = a.choices ?? ["own"];
   const eff = choices.includes(mine || all) ? mine || all : "own";
   const ok = a.status === "ok";
@@ -256,6 +270,14 @@ function AgentRow({ a, logo, isDefault, path, all, guard }: { a: AgentDetect; lo
                 className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-[12px] text-zinc-900 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
             </label>
           )}
+          {ok && (
+            <label className="flex items-start gap-2">
+              <span className="w-16 shrink-0 pt-1 text-xs text-zinc-500">{t("agents.env")}</span>
+              <textarea value={env ?? savedEnv} rows={2} spellCheck={false} onChange={(e) => setEnv(e.target.value)} onBlur={() => { if (env === null) return; if (env.length > 64000) { toast(t("agents.envTooLong"), "error"); return; } setSetting(AKEYS.env(a.id), env.trim()); setEnv(null); }} placeholder={t("agents.envPh")}
+                className="min-w-0 flex-1 resize-y rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-[12px] text-zinc-900 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+            </label>
+          )}
+          {ok && <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("agents.envHint")}</p>}
           {path && (
             <label className="flex items-center gap-2">
               <span className="w-16 shrink-0 text-xs text-zinc-500">{t("agents.setPath")}</span>
