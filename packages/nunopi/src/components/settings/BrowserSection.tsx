@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { useT, useSetting, setSetting, useConfirm, useToast, BROWSER_KEYS, BROWSER_DEFAULTS } from "@mustard/core";
 
+const ZOOMS = [25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300, 400, 500];
 const ENGINES = [["google", "Google"], ["duckduckgo", "DuckDuckGo"], ["bing", "Bing"], ["kagi", "Kagi"]] as const;
 const select = "min-w-0 shrink-0 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-900 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50";
 
 export default function BrowserSection() {
   const t = useT();
   const engine = useSetting<string>(BROWSER_KEYS.searchEngine, BROWSER_DEFAULTS.searchEngine);
+  const zoom = useSetting<number>(BROWSER_KEYS.defaultZoom, BROWSER_DEFAULTS.defaultZoom);
   const confirm = useConfirm(), toast = useToast();
   const [clearing, setClearing] = useState(false);
   // 쿠키·저장소·캐시 통째로 — 로그인은 모든 레포가 같이 쓰니 전부 로그아웃(확인창)
@@ -28,6 +30,15 @@ export default function BrowserSection() {
         </span>
         <select value={engine} onChange={(e) => setSetting(BROWSER_KEYS.searchEngine, e.target.value)} className={select}>
           {ENGINES.map(([v, name]) => <option key={v} value={v}>{name}</option>)}
+        </select>
+      </label>
+      <label className="flex items-center justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block text-sm text-zinc-700 dark:text-zinc-300">{t("browser.defaultZoom")}</span>
+          <span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("browser.defaultZoomDesc")}</span>
+        </span>
+        <select value={zoom} onChange={(e) => setSetting(BROWSER_KEYS.defaultZoom, Number(e.target.value))} className={select}>
+          {ZOOMS.map((z) => <option key={z} value={z}>{z}%</option>)}
         </select>
       </label>
       {typeof window !== "undefined" && window.nunopiDesktop?.clearBrowserData && (

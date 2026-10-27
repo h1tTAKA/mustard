@@ -20,7 +20,19 @@ function hardenWebview(event, webPreferences, params) {
   webPreferences.webSecurity = true;
   webPreferences.allowRunningInsecureContent = false;
   params.partition = PARTITION;
+  webPreferences.zoomFactor = defaultZoom; // #1209 새 탭 기본 줌
 }
+
+// #1209 페이지 줌 — 브라우저(웹뷰)에 포커스일 때 ⌘= / ⌘- / ⌘0(브라우저 관례, 터미널 글꼴 단축키보다 먼저). 단계는 Chrome과 같은 배율.
+const ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
+let defaultZoom = 1;
+function setDefaultZoom(f) { const n = Number(f); defaultZoom = ZOOMS.includes(n) ? n : 1; }
+function nextZoom(cur, dir) {
+  if (dir === 0) return defaultZoom;
+  if (dir > 0) return ZOOMS.find((z) => z > cur + 0.001) ?? ZOOMS[ZOOMS.length - 1];
+  return [...ZOOMS].reverse().find((z) => z < cur - 0.001) ?? ZOOMS[0];
+}
+const ZOOM_CHORDS = { "Mod+=": 1, "Mod+Shift+=": 1, "Mod+-": -1, "Mod+0": 0 };
 
 // 붙여넣기 쓰기·전체화면만 허용, 나머지(카메라·마이크·위치·알림 등) 거부.
 const ALLOWED_PERMISSIONS = new Set(["clipboard-sanitized-write", "fullscreen"]);
@@ -73,16 +85,17 @@ function wireGuest(guest) {
   }
   // 포커스된 guest는 별도 Chromium 프로세스라 키가 앱 렌더러에 안 온다 → 앱 단축키 조합만 페이지 대신 앱으로(#1034 리뷰).
   // 나머지 키(⌘C·⌘F 등)는 페이지가 그대로 받음. 조합 목록은 렌더러가 설정(덮어쓰기) 반영해 보내줌(setAppChords).
-  forwardAppKeys(guest, () => guest.hostWebContents);
+  forwardAppKeys(guest, () => guest.hostWebContents, true);
 }
 
 // 앱 단축키만 가로채 호스트 렌더러로 — webview guest + 창에 붙인 devtools 뷰(#1039 리뷰: 거기 포커스면 ⌘W 등이 죽었음)가 공유.
-function forwardAppKeys(contents, hostOf) {
+function forwardAppKeys(contents, hostOf, zoom = false) {
   contents.on("before-input-event", (e, input) => {
     if (input.type !== "keyDown") return;
+    const chord = chordOf(input, process.platform === "darwin");
+    if (zoom && chord && chord in ZOOM_CHORDS) { e.preventDefault(); contents.setZoomFactor(nextZoom(contents.getZoomFactor(), ZOOM_CHORDS[chord])); return; } // 페이지 줌(웹뷰만)
     const host = hostOf();
     if (!host || host.isDestroyed()) return;
-    const chord = chordOf(input, process.platform === "darwin");
     if (!chord || !appChordsByHost.get(host.id)?.has(chord)) return;
     e.preventDefault();
     host.send("browser:key", { code: input.code, key: input.key, metaKey: !!input.meta, ctrlKey: !!input.control, altKey: !!input.alt, shiftKey: !!input.shift });
@@ -97,4 +110,4 @@ function installBrowserGuestPolicy(app) {
   });
 }
 
-module.exports = { PARTITION, installBrowserGuestPolicy, hardenWebview, isAllowedUrl, setAppChords, trackChordHost, chordOf, forwardAppKeys, PARTITION };
+module.exports = { PARTITION, setDefaultZoom, nextZoom, installBrowserGuestPolicy, hardenWebview, isAllowedUrl, setAppChords, trackChordHost, chordOf, forwardAppKeys, PARTITION };

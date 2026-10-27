@@ -170,6 +170,7 @@ interface NunopiDesktopApi {
   browser?: {
     openWindow(payload: { url?: string; repo?: string; devtools?: boolean }): Promise<{ ok: boolean; reason?: string }>;
     setAppChords(list: string[]): void;
+    setDefaultZoom?(factor: number): void; // #1209
     openDevTools(guestId: number, rect: { x: number; y: number; w: number; h: number }): Promise<{ ok: boolean }>;
     devtoolsBounds(guestId: number, rect: { x: number; y: number; w: number; h: number }): void;
     closeDevTools(guestId: number): Promise<{ ok: boolean }>;

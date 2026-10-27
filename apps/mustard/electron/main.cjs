@@ -607,6 +607,7 @@ app.whenReady().then(() => browserControl.listen(BROWSER_TOKEN)).then(({ port })
   }).then((r) => console.log("[mustard-mcp]", JSON.stringify(r)));
 }).catch((err) => console.warn("[browser-control] setup failed:", String(err?.message || err)));
 ipcMain.on("browser:set-chords", (e, list) => { trackChordHost(e.sender); setAppChords(e.sender.id, list); });
+ipcMain.on("browser:set-default-zoom", (_e, f) => require("./browser-guest.cjs").setDefaultZoom(f)); // #1209 새 탭 기본 줌(설정은 렌더러)
 // 탭 쪽 모드 점유/해제/조회(#789) — 메인 창 렌더러가 모드 탭 추가·닫기·복원 시 호출.
 ipcMain.handle("mode:claim", (_e, kind) => ({ ok: claimMode(kind, "tab") }));
 ipcMain.handle("mode:release", (_e, kind) => { releaseMode(kind); return { ok: true }; });

@@ -298,6 +298,8 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
   const overrides = useSetting<ShortcutOverrides>(SHORTCUT_OVERRIDES_KEY, {});
   useEffect(() => { if (docked) return subscribeGuestKeys(); }, [docked]);
   useEffect(() => { if (docked) window.nunopiDesktop?.browser?.setAppChords(appChords(overrides)); }, [docked, overrides]);
+  const defaultZoom = useSetting<number>(BROWSER_KEYS.defaultZoom, BROWSER_DEFAULTS.defaultZoom); // #1209 새 탭 기본 줌 → main(웹뷰 붙일 때 적용)
+  useEffect(() => { window.nunopiDesktop?.browser?.setDefaultZoom?.(defaultZoom / 100); }, [defaultZoom]);
 
   // 이 레포 터미널에서 뜬 dev 서버 포트(#880 감지 재사용) — 10초마다, 탭들이 공유.
   useEffect(() => {
