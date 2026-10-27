@@ -178,6 +178,8 @@ function AgentRow({ a, logo, isDefault, path, all, guard }: { a: AgentDetect; lo
   const mine = useSetting<string>(AKEYS.permOf(a.id), "");
   const savedArgs = useSetting<string>(AKEYS.args(a.id), "");
   const [args, setArgs] = useState<string | null>(null); // 편집 중 값(blur 때 저장)
+  const savedEnv = useSetting<string>(AKEYS.env(a.id), ""); // #1197 환경변수 글(해석은 실행 때 main)
+  const [env, setEnv] = useState<string | null>(null);
   const choices = a.choices ?? ["own"];
   const eff = choices.includes(mine || all) ? mine || all : "own";
   const ok = a.status === "ok";
@@ -256,6 +258,14 @@ function AgentRow({ a, logo, isDefault, path, all, guard }: { a: AgentDetect; lo
                 className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-[12px] text-zinc-900 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
             </label>
           )}
+          {ok && (
+            <label className="flex items-start gap-2">
+              <span className="w-16 shrink-0 pt-1 text-xs text-zinc-500">{t("agents.env")}</span>
+              <textarea value={env ?? savedEnv} rows={2} spellCheck={false} onChange={(e) => setEnv(e.target.value)} onBlur={() => { if (env !== null) { setSetting(AKEYS.env(a.id), env.trim()); setEnv(null); } }} placeholder={t("agents.envPh")}
+                className="min-w-0 flex-1 resize-y rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-[12px] text-zinc-900 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+            </label>
+          )}
+          {ok && <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("agents.envHint")}</p>}
           {path && (
             <label className="flex items-center gap-2">
               <span className="w-16 shrink-0 text-xs text-zinc-500">{t("agents.setPath")}</span>
