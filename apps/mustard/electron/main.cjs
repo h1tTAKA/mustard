@@ -519,6 +519,20 @@ function syncComputerShortcut() {
 app.whenReady().then(syncComputerShortcut);
 const computerStatus = async (force) => ({ ...(await computerUse.status({ force })), defaults: computerUse.DEFAULT_BLOCKED, stopKey: STOP_KEY, stopKeyOk, platform: process.platform, log: computerUse.readLog(undefined, 30) });
 ipcMain.handle("clipboard:write-text", (_e, text) => { if (typeof text === "string" && text.length <= 1_000_000) clipboard.writeText(text); }); // #1196 터미널 OSC 52(창이 앞에 없어도 되게 main에서)
+// #1199 다른 앱에서 열기 — 설치된 앱만(매번 감지, 파일 존재 확인뿐이라 가벼움) + 아이콘. 열 폴더는 main이 검사, 앱은 목록 id로만.
+const openIn = require("./open-in.cjs");
+ipcMain.handle("open-in:list", async () => {
+  if (process.platform !== "darwin") return [{ id: "files", kind: "files", name: "", icon: null }];
+  const apps = [{ id: "finder", kind: "files", name: "Finder", appPath: "/System/Library/CoreServices/Finder.app" }, ...openIn.detect()];
+  return Promise.all(apps.map(async (a) => ({ id: a.id, kind: a.kind, name: a.name, icon: await app.getFileIcon(a.appPath, { size: "small" }).then((im) => im.toDataURL()).catch(() => null) })));
+});
+ipcMain.handle("open-in:open", async (_e, { id, dir } = {}) => {
+  if (!openIn.okDir(dir)) return { ok: false, reason: "bad dir" };
+  if (id === "finder" || id === "files") { const err = await shell.openPath(dir); return err ? { ok: false, reason: err } : { ok: true }; }
+  const a = process.platform === "darwin" ? openIn.detect().find((x) => x.id === id) : null;
+  if (!a) return { ok: false, reason: "not installed" };
+  return new Promise((res) => require("node:child_process").execFile("open", ["-a", a.appPath, dir], { timeout: 10000 }, (e) => res(e ? { ok: false, reason: String(e.message || e) } : { ok: true })));
+});
 ipcMain.handle("shell:open-external", (_e, url) => { if (typeof url === "string" && /^https?:\/\//i.test(url)) void shell.openExternal(url); }); // #1193 터미널 링크 — http(s)만
 ipcMain.handle("computer:status", (_e, { force } = {}) => computerStatus(!!force));
 ipcMain.handle("computer:set", (_e, patch = {}) => {
