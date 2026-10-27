@@ -3,7 +3,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { IconFiles, IconFolderOpen, IconPlus, IconX, IconMessages, IconFileCode, IconFileText, IconCards, IconBell, IconBellOff } from "@tabler/icons-react";
 import { useT, useShortcut } from "@mustard/core";
-import { getSetting, setSetting, subscribeSettings, NKEYS, NOTIF_DEFAULTS, CKEYS, desktopNotify, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
+import { getSetting, setSetting, subscribeSettings, useSetting, AKEYS, AGENT_DEFAULTS, NKEYS, NOTIF_DEFAULTS, CKEYS, desktopNotify, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
 import { crewRoomOpen } from "./crew/crewUi";
 import { useToast } from "@mustard/core";
 import { useConfirm } from "@mustard/core";
@@ -152,6 +152,9 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     setSetting(NKEYS.agentDone, next); // #928 설정 스토어로 이관(설정 페이지와 동기)
   };
   // 설정 페이지서 알림 토글 변경 시 인탭 벨 동기(#928).
+  // #1197 잠자기 막기 설정을 main에 — 앱 시작·바꿀 때
+  const keepAwake = useSetting<string>(AKEYS.keepAwake, AGENT_DEFAULTS.keepAwake);
+  useEffect(() => { window.nunopiDesktop?.setKeepAwake?.(keepAwake === "working" || keepAwake === "always" ? keepAwake : "off"); }, [keepAwake]);
   useEffect(() => subscribeSettings(() => {
     const v = getSetting<boolean>(NKEYS.agentDone, NOTIF_DEFAULTS.agentDone);
     notifyOnRef.current = v; setNotifyOn(v);

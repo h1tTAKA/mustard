@@ -10,7 +10,7 @@ require("./claude-env.cjs").stripParentClaudeEnv(process.env);
   const extra = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", require("node:path").join(require("node:os").homedir(), ".local", "bin")].filter((d) => !have.has(d));
   if (extra.length) process.env.PATH = [...have, ...extra].join(":");
 }
-const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents, WebContentsView, globalShortcut } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents, WebContentsView, globalShortcut, powerSaveBlocker } = require("electron");
 const { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, cpSync, chmodSync } = require("node:fs");
 const {
   startSnaServer,
@@ -1307,6 +1307,15 @@ const { parseAgentScreen, agentFromProcess, stripAnsi, recentTitle, lastTitle } 
 let appBase = null;              // Next 서버 베이스 URL(boot서 설정)
 const cwdById = new Map();       // id → cwd(레포 매핑)
 const procById = new Map();      // id → foreground 프로세스명(데몬 list) — 에이전트 종료(셸 복귀) 게이트
+// #1197 잠자기 막기 — off | working(에이전트가 하나라도 일하는 동안) | always(앱이 켜져 있는 동안). 설정은 렌더러가 IPC로 알림.
+// prevent-app-suspension = 시스템만 안 잠듦(화면은 꺼져도 됨). lastScreen이 바뀌는 자리마다 updateAwake().
+let keepAwakeMode = "off", awakeId = null;
+function updateAwake() {
+  const want = keepAwakeMode === "always" || (keepAwakeMode === "working" && [...lastScreen.values()].some((s) => s.state === "working"));
+  if (want && awakeId === null) awakeId = powerSaveBlocker.start("prevent-app-suspension");
+  else if (!want && awakeId !== null) { powerSaveBlocker.stop(awakeId); awakeId = null; }
+}
+ipcMain.on("power:keep-awake", (_e, mode) => { keepAwakeMode = mode === "working" || mode === "always" ? mode : "off"; updateAwake(); });
 const lastScreen = new Map();    // id → { state, agent, at, task }(변화·keep-alive 판단)
 const screenTimers = new Map();  // id → 디바운스 타이머
 const lastTitleRawById = new Map(); // #989 id → 마지막 OSC 타이틀 원문(스트림 전체 추적 — 16KB tail서 밀려도 상태 판정 유지)
@@ -1515,7 +1524,7 @@ async function pushScreenState(id, screen) {
     agentSticky.delete(id);
     lastTaskById.delete(id); // #970 셸 복귀(claude 종료) → 이전 세션 제목 폐기(재시작 시 옛 제목 누출 방지)
     lastTitleRawById.delete(id); // #989 같은 이유 — 옛 세션 스피너 타이틀로 새 세션을 working 오판 방지
-    if (lastScreen.has(id)) { lastScreen.delete(id); await postStatus({ cwd, sessionId: id, clear: true }); }
+    if (lastScreen.has(id)) { lastScreen.delete(id); updateAwake(); await postStatus({ cwd, sessionId: id, clear: true }); }
     return;
   }
   // #968/#970 세션 작업 제목 — 탭 라벨(terminal.list)과 동일하게 sessionTitleFor 재사용(16KB parse + onData 라이브 추적 lastTaskById).
@@ -1530,6 +1539,7 @@ async function pushScreenState(id, screen) {
   if (state === "working") narrWorkingAt.set(id, now);
   if (!changed && prev && now - prev.at < 30000) return; // 같은 상태·제목유무면 30s마다만 재POST(TTL 유지, 과POST 억제)
   lastScreen.set(id, { state, agent, at: now, task });
+  updateAwake();
   await postStatus({ cwd, agent, state, sessionId: id, source: "screen", task });
 }
 function scheduleScreenParse(id) {
@@ -1591,7 +1601,7 @@ const termClient = createDaemonClient({
   },
   onExit: (id) => {
     liveBuffers.delete(id); delete savedBuffers[id];
-    cwdById.delete(id); lastScreen.delete(id); agentSticky.delete(id); launchRegistry.delete(id); inputBuf.delete(id); ensuredIds.delete(id); narrPending.delete(id); lastNarr.delete(id); narrInFlight.delete(id); narrSeeded.delete(id); narrOverflow.delete(id); narrWorkingAt.delete(id); lastDiffHash.delete(id); lastTaskById.delete(id); // #765·#803·#864·#870·#970 정리
+    cwdById.delete(id); lastScreen.delete(id); updateAwake(); agentSticky.delete(id); launchRegistry.delete(id); inputBuf.delete(id); ensuredIds.delete(id); narrPending.delete(id); lastNarr.delete(id); narrInFlight.delete(id); narrSeeded.delete(id); narrOverflow.delete(id); narrWorkingAt.delete(id); lastDiffHash.delete(id); lastTaskById.delete(id); // #765·#803·#864·#870·#970 정리
     const tm = screenTimers.get(id); if (tm) { clearTimeout(tm); screenTimers.delete(id); }
     broadcast("terminal:exit", { id });
   },
@@ -1657,7 +1667,7 @@ ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, permission,
   return { ok: true };
 });
 ipcMain.on("terminal:resize", (_e, { id, cols, rows }) => termClient.resize({ id, cols, rows }));
-ipcMain.on("terminal:kill", (_e, { id }) => { termClient.kill({ id }); liveBuffers.delete(id); delete savedBuffers[id]; cwdById.delete(id); lastScreen.delete(id); agentSticky.delete(id); launchRegistry.delete(id); inputBuf.delete(id); ensuredIds.delete(id); narrPending.delete(id); lastNarr.delete(id); narrInFlight.delete(id); narrSeeded.delete(id); narrOverflow.delete(id); narrWorkingAt.delete(id); lastDiffHash.delete(id); lastTaskById.delete(id); lastTitleRawById.delete(id); }); // 탭 닫기 시 데몬 pty·저장분·상태·실행기록 정리
+ipcMain.on("terminal:kill", (_e, { id }) => { termClient.kill({ id }); liveBuffers.delete(id); delete savedBuffers[id]; cwdById.delete(id); lastScreen.delete(id); updateAwake(); agentSticky.delete(id); launchRegistry.delete(id); inputBuf.delete(id); ensuredIds.delete(id); narrPending.delete(id); lastNarr.delete(id); narrInFlight.delete(id); narrSeeded.delete(id); narrOverflow.delete(id); narrWorkingAt.delete(id); lastDiffHash.delete(id); lastTaskById.delete(id); lastTitleRawById.delete(id); }); // 탭 닫기 시 데몬 pty·저장분·상태·실행기록 정리
 // 세션의 실행 중 에이전트 id | null(#803) — 터미널 탭 자동 이름·아이콘용.
 // 프로세스명만으론 node 래퍼 CLI(codex 등: 네이티브 자식을 spawn해 foreground pgrp 리더가 "node")를 못 잡아,
 // 버퍼 스크레이핑(parseAgentScreen)을 1순위로. 셸이면 종료로 간주(null). 버퍼 미판정이면 프로세스명 폴백.

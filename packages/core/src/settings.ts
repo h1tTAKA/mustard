@@ -57,7 +57,7 @@ export const TKEYS = {
 // 에이전트 런치(#927, #1184) — 기본 에이전트("auto" = 감지되고 켜진 첫 에이전트, "blank" = 셸만, 아니면 id) + per-agent 유저 인자·권한·켜기.
 // 권한 = 전체(perm) + 에이전트별 덮어쓰기(perm.<id>, ""·없음 = 전체 따름). 값: own·ask·accept-edits·auto·full-access. 기본 own(플래그 안 붙임).
 // 키를 에이전트마다 따로 둠(객체 하나로 두면 useSetting 스냅샷이 매번 새 객체 — 무한 렌더).
-export const AGENT_DEFAULTS = { default: "auto", perm: "own" };
+export const AGENT_DEFAULTS = { default: "auto", perm: "own", keepAwake: "off" as "off" | "working" | "always" };
 export const AKEYS = {
   default: "agent.default",
   args: (agentId: string) => `agent.args.${agentId}`,
@@ -67,6 +67,7 @@ export const AKEYS = {
   off: (agentId: string) => `agent.off.${agentId}`,
   argsLifted: "agent.argsLifted",
   usedAt: (agentId: string) => `agent.used.${agentId}`, // 마지막으로 띄운 시각(ms) — 우리 규칙: 최근 쓴 순서·자동 = 마지막에 쓴 것
+  keepAwake: "agent.keepAwake", // #1197 잠자기 막기 off | working | always
   fullOk: "agent.fullAccessOk", // 전체 액세스 처음 고를 때 확인 — 한 번 확인하면 다시 안 물음
 } as const;
 export type AgentPermission = "own" | "ask" | "accept-edits" | "auto" | "full-access";

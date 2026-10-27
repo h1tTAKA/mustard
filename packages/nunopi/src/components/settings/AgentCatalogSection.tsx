@@ -62,6 +62,7 @@ export default function AgentCatalogSection({ list, checking, onRefresh, agentLo
   const toast = useToast();
   const def = useSetting<string>(AKEYS.default, AGENT_DEFAULTS.default);
   const all = useSetting<string>(AKEYS.perm, AGENT_DEFAULTS.perm);
+  const awake = useSetting<string>(AKEYS.keepAwake, AGENT_DEFAULTS.keepAwake); // #1197
   useSetting<number>("agent.rev", 0); // 줄별 키(off·perm) 변경도 다시 그리게(아래 setAgent가 올림)
   const guard = useFullAccessGuard();
   const [showAvail, setShowAvail] = useState(false);
@@ -117,6 +118,17 @@ export default function AgentCatalogSection({ list, checking, onRefresh, agentLo
             <button type="button" onClick={followAll} className={`${btn} shrink-0 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800`}>{t("agents.permFollowAll")}</button>
           </div>
         )}
+      </div>
+
+      {/* #1197 잠자기 막기 — 에이전트가 오래 일하는 동안 맥이 잠들지 않게(화면은 꺼져도 됨) */}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1 space-y-1">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t("agents.awakeTitle")}</h4>
+          <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("agents.awakeHint")}</p>
+        </div>
+        <div className="flex shrink-0 gap-0.5 rounded-xl border border-zinc-200 p-0.5 dark:border-zinc-700" role="radiogroup" aria-label={t("agents.awakeTitle")}>
+          {(["off", "working", "always"] as const).map((c) => <button key={c} type="button" role="radio" aria-checked={awake === c} onClick={() => setSetting(AKEYS.keepAwake, c)} className={seg(awake === c)}>{t(`agents.awake.${c}`)}</button>)}
+        </div>
       </div>
 
       {/* 설치됨 / 설치 가능 */}
