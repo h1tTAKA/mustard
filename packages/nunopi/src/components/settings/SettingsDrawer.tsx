@@ -1,14 +1,15 @@
-import { Fragment, useState, useEffect, useCallback, type ReactNode } from "react";
+import { Fragment, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import type { AgentProviderKind, AnalyzeMode, ProviderSettings } from "@mustard/core";
 import { PROVIDER_CATALOG } from "../../lib/agent/catalog";
 import { type LearnProviderMode, type ModeModels, type ModeProviders, LEARN_PROVIDER_MODES, resolveModeModel, resolveModeProvider } from "../../lib/modeProviders";
 import { XIcon } from "../learning/icons";
 import ShortcutsSection from "./ShortcutsSection";
-import { IconKeyboard, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt } from "@tabler/icons-react";
+import { IconKeyboard, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX } from "@tabler/icons-react";
 import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
 import ComputerUseSection from "./ComputerUseSection";
 import QuickCommandsSection from "./QuickCommandsSection";
+import { searchSettings } from "./settingsSearchIndex";
 import AgentCatalogSection from "./AgentCatalogSection";
 import { useLocale, useT, useToast } from "@mustard/core";
 import { LOCALES, type Locale } from "@mustard/core";
@@ -347,6 +348,41 @@ export default function SettingsDrawer({
   // 데스크톱이면 첫 화면부터 목록(확인 중 표시) — 옛 칸이 잠깐 보였다 바뀌지 않게(리뷰). 감지 실패(빈 목록)면 옛 칸.
   const statusList = !!desktop?.detectAgents && !(agentsDet?.length === 0 && !agentsChecking);
 
+  // 설정 검색(#1195) — 사이드바 맨 위 검색칸. 결과를 고르면 그 섹션으로 가서 그 항목 줄로 스크롤 + 잠깐 강조.
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState(0);
+  const [jump, setJump] = useState<{ label: string; n: number } | null>(null); // 이동 후 찾을 항목 이름(n = 같은 항목 다시 눌러도 다시 강조)
+  const searchRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  // ⌘F(Ctrl+F) = 검색칸 — 설정이 열려 있을 때만(설정은 전체 화면이라 터미널 ⌘F와 안 겹침)
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "f") { e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select(); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen]);
+  // 이동한 섹션에서 그 항목 이름 글자를 가진 가장 안쪽 요소 → 그 줄로 스크롤·강조(항목마다 id를 박지 않음)
+  useEffect(() => {
+    if (!jump) return;
+    const raf = requestAnimationFrame(() => {
+      const root = contentRef.current; if (!root) return;
+      const want = jump.label.trim();
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let hit: HTMLElement | null = null;
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const txt = (n.textContent ?? "").trim();
+        if (txt === want || (!hit && txt.startsWith(want))) { hit = n.parentElement; if (txt === want) break; }
+      }
+      if (!hit) { root.scrollTo({ top: 0 }); return; }
+      const row = (hit.closest("label, li, .justify-between, .space-y-1\\.5") as HTMLElement | null) ?? hit;
+      row.scrollIntoView({ block: "center", behavior: "smooth" });
+      const FLASH = ["ring-2", "ring-mustard-400", "ring-offset-2", "rounded-lg", "transition"];
+      row.classList.add(...FLASH);
+      setTimeout(() => row.classList.remove(...FLASH), 1600);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [jump, activeSection]);
+
   if (!isOpen) return null;
 
   // 즉시 적용(#924) — 저장 버튼 없이 입력 blur 시 자동 반영. onClose 호출 안 함.
@@ -393,6 +429,9 @@ export default function SettingsDrawer({
     { id: "set-computer", label: t("settings.computer"), Icon: IconDeviceDesktop, show: workspaceSettings && typeof window !== "undefined" && !!window.nunopiDesktop?.computer, group: t("settings.groupAgents") }, // #1175
     { id: "set-nunopi", label: t("settings.nunopiModule"), Icon: IconSparkles, show: !!onNunopiEnabledChange, group: t("settings.groupAgents") },
   ];
+  // #1195 검색 결과 — 섹션 이름은 SECTIONS에서, 안 보이는 섹션은 뺌. 결과는 싸서 매 렌더 계산(이 아래는 훅을 못 씀).
+  const hits = q.trim() ? searchSettings(q, (k) => t(k), (id) => SECTIONS.find((x) => x.id === id)?.label ?? id, (id) => !!SECTIONS.find((x) => x.id === id)?.show) : [];
+  const openHit = (h: { section: string; label: string }) => { setActiveSection(h.section); setJump((p) => ({ label: h.label, n: (p?.n ?? 0) + 1 })); };
   // 외관(#937) — 즉시 적용(저장 + 실제 반영).
   const setZoom = (v: number) => { const z = Math.min(1.4, Math.max(0.8, Math.round(v * 10) / 10)); setSetting(APKEYS.uiZoom, z); applyUiZoom(z); };
   const setFont = (f: UiFontPref) => { setSetting(APKEYS.uiFont, f); applyUiFont(f); };
@@ -437,7 +476,41 @@ export default function SettingsDrawer({
         <button type="button" onClick={onClose} className="mb-2 flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
           <IconArrowLeft size={16} stroke={2} aria-hidden /> {t("settings.backToApp")}
         </button>
-        {SECTIONS.filter((s) => s.show).map((s, i, arr) => {
+        {/* 설정 검색(#1195) */}
+        <label data-no-drag className="mb-2 flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 focus-within:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900">
+          <IconSearch size={14} className="shrink-0 text-zinc-400" aria-hidden />
+          <input ref={searchRef} value={q} onChange={(e) => { setQ(e.target.value); setSel(0); }} placeholder={t("settings.searchPh")} aria-label={t("settings.search")}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return; // 한글 조합 중
+              if (e.key === "ArrowDown") { e.preventDefault(); setSel((v) => Math.min(v + 1, Math.max(0, hits.length - 1))); }
+              else if (e.key === "ArrowUp") { e.preventDefault(); setSel((v) => Math.max(0, v - 1)); }
+              else if (e.key === "Enter" && hits[sel]) { e.preventDefault(); openHit(hits[sel]); }
+              else if (e.key === "Escape" && q) { e.preventDefault(); e.stopPropagation(); setQ(""); }
+            }}
+            className="min-w-0 flex-1 bg-transparent text-[13px] text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100" />
+          {q ? <button type="button" onClick={() => { setQ(""); searchRef.current?.focus(); }} aria-label={t("settings.searchClear")} className="rounded p-0.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"><IconX size={12} aria-hidden /></button>
+            : <kbd className="shrink-0 rounded border border-zinc-300 px-1 font-mono text-[10px] text-zinc-400 dark:border-zinc-600">{typeof navigator !== "undefined" && /Mac/i.test(navigator.platform) ? "⌘F" : "Ctrl+F"}</kbd>}
+        </label>
+        {q.trim() ? (
+          hits.length === 0 ? <p className="px-2.5 py-2 text-[12px] text-zinc-400 dark:text-zinc-500">{t("settings.searchNone")}</p> : (
+            <div data-no-drag className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+              {hits.map((h, i) => {
+                const secLabel = SECTIONS.find((x) => x.id === h.section)?.label;
+                const newSec = i === 0 || hits[i - 1].section !== h.section;
+                return (
+                  <Fragment key={`${h.section}:${h.label}:${i}`}>
+                    {newSec && <div className="px-2.5 pb-0.5 pt-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">{secLabel}</div>}
+                    <button type="button" onClick={() => { setSel(i); openHit(h); }} onMouseEnter={() => setSel(i)}
+                      className={`block w-full rounded-lg px-2.5 py-1.5 text-left transition ${i === sel ? "bg-zinc-100 dark:bg-zinc-800" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}>
+                      <span className="block truncate text-[13px] text-zinc-800 dark:text-zinc-100">{h.label}</span>
+                      {h.desc && <span className="block truncate text-[11px] text-zinc-400 dark:text-zinc-500">{h.desc}</span>}
+                    </button>
+                  </Fragment>
+                );
+              })}
+            </div>
+          )
+        ) : SECTIONS.filter((s) => s.show).map((s, i, arr) => {
           const on = activeSection === s.id;
           const header = i === 0 || arr[i - 1].group !== s.group;
           return (
@@ -469,7 +542,7 @@ export default function SettingsDrawer({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div ref={contentRef} className="flex-1 overflow-y-auto px-6 py-5">
         {/* 내용 폭 제한(#983) — 넓은 창서 카드가 끝까지 늘어나지 않게 가운데 정렬. */}
         <div className="mx-auto w-full max-w-3xl space-y-4">
           {/* 섹션 제목(#983) — 카드 밖 페이지 제목. 카드 안 중복 h3는 제거(하위 카드 제목은 유지). */}
