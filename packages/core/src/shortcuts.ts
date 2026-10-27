@@ -19,12 +19,18 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "term.next", group: "tabs", labelKey: "shortcut.termNext", defaults: ["Mod+Shift+]"], scope: "global" },
   { id: "term.prev", group: "tabs", labelKey: "shortcut.termPrev", defaults: ["Mod+Shift+["], scope: "global" },
   ...goto("term.goto", "tabs", "Mod", "shortcut.termGoto"), // term.goto9 = 마지막 탭(터미널 관례)
+  { id: "repo.new", group: "repos", labelKey: "shortcut.repoNew", defaults: ["Mod+O"], scope: "global" }, // #1200 새 레포 탭(폴더 고르기)
+  { id: "repo.close", group: "repos", labelKey: "shortcut.repoClose", defaults: ["Mod+Shift+W"], scope: "global" }, // 지금 탭 닫기(확인창 그대로)
+  { id: "repo.newWorkspace", group: "repos", labelKey: "shortcut.repoNewWorkspace", defaults: ["Mod+Shift+N"], scope: "global" }, // 새 작업공간(worktree)
+  { id: "repo.openIn", group: "repos", labelKey: "shortcut.repoOpenIn", defaults: ["Mod+Shift+O"], scope: "global" }, // 마지막에 쓴 앱으로 열기(#1199)
   { id: "repo.next", group: "repos", labelKey: "shortcut.repoNext", defaults: ["Mod+Alt+]"], scope: "global" },
   { id: "repo.prev", group: "repos", labelKey: "shortcut.repoPrev", defaults: ["Mod+Alt+["], scope: "global" },
   ...goto("repo.goto", "repos", "Mod+Alt", "shortcut.repoGoto"),
   { id: "view.left", group: "panels", labelKey: "shortcut.viewLeft", defaults: ["Mod+B"], scope: "global" },
   { id: "view.right", group: "panels", labelKey: "shortcut.viewRight", defaults: ["Mod+L"], scope: "global" },
   { id: "view.git", group: "panels", labelKey: "shortcut.viewGit", defaults: ["Mod+Shift+G"], scope: "global" },
+  { id: "view.browser", group: "panels", labelKey: "shortcut.viewBrowser", defaults: ["Mod+Shift+B"], scope: "global" }, // #1200 인앱 브라우저 열기/닫기
+  { id: "view.crew", group: "panels", labelKey: "shortcut.viewCrew", defaults: ["Mod+Shift+A"], scope: "global" }, // #1200 에이전트 팀 보드 열기/닫기
   { id: "term.clear", group: "terminal", labelKey: "shortcut.termClear", defaults: ["Mod+K"], scope: "terminal" },
   { id: "term.fontUp", group: "terminal", labelKey: "shortcut.termFontUp", defaults: ["Mod+="], scope: "global" },
   { id: "term.fontDown", group: "terminal", labelKey: "shortcut.termFontDown", defaults: ["Mod+-"], scope: "global" },

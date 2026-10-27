@@ -4,7 +4,8 @@ import { PROVIDER_CATALOG } from "../../lib/agent/catalog";
 import { type LearnProviderMode, type ModeModels, type ModeProviders, LEARN_PROVIDER_MODES, resolveModeModel, resolveModeProvider } from "../../lib/modeProviders";
 import { XIcon } from "../learning/icons";
 import ShortcutsSection from "./ShortcutsSection";
-import { IconKeyboard, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX } from "@tabler/icons-react";
+import UpdateSection from "./UpdateSection";
+import { IconKeyboard, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX } from "@tabler/icons-react";
 import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
 import ComputerUseSection from "./ComputerUseSection";
@@ -441,6 +442,7 @@ export default function SettingsDrawer({
     { id: "set-language", label: t("settings.language"), Icon: IconLanguage, show: true, group: t("settings.groupGeneral") },
     { id: "set-notifications", label: t("settings.notifications"), Icon: IconBell, show: true, group: t("settings.groupGeneral") },
     { id: "set-confirm", label: t("settings.confirmations"), Icon: IconShieldHalf, show: true, group: t("settings.groupGeneral") },
+    { id: "set-update", label: t("update.section"), Icon: IconRefresh, show: workspaceSettings && typeof window !== "undefined" && !!window.nunopiDesktop?.checkUpdate, group: t("settings.groupGeneral") }, // #1200
     { id: "set-terminal", label: t("settings.terminalSection"), Icon: IconTerminal2, show: workspaceSettings, group: t("settings.groupEnvironment") },
     { id: "set-workspace", label: t("settings.workspaceSection"), Icon: IconFolder, show: workspaceSettings, group: t("settings.groupEnvironment") },
     { id: "set-git", label: t("settings.gitSection"), Icon: IconGitBranch, show: workspaceSettings, group: t("settings.groupEnvironment") },
@@ -1120,6 +1122,7 @@ export default function SettingsDrawer({
 
           {/* 단축키(#1027) */}
           {activeSection === "set-shortcuts" && <ShortcutsSection />}
+          {activeSection === "set-update" && <UpdateSection />}
 
           {/* 연동(#958) — 소스 호스트 연결. 현재 GitHub(gh CLI + PAT). */}
           {activeSection === "set-integrations" && (

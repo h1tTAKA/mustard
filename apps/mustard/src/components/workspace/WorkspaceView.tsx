@@ -437,6 +437,11 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     } catch { /* ignore */ }
     setBrowserOpen(true);
   };
+  // #1200 인앱 브라우저·에이전트 팀 보드 열기/닫기 — 툴바 버튼과 같은 동작, 보이는 레포만
+  useShortcut(["view.browser", "view.crew"], (d) => {
+    if (!active) return false;
+    if (d.id === "view.browser") toggleBrowser(); else setCrewOpen((o) => !o);
+  });
 
   // 브라우저 통째로 별도 창으로(유저 요청) — 탭들을 browser-detached에 적어두면 분리 창이 그걸로 시작. 여긴 패널 닫고 탭 비움.
   const detachBrowser = async (state: BrowserState) => {

@@ -4,6 +4,7 @@ export type SearchItem = string | [string, string] | { text: string };
 export const SETTINGS_SEARCH: Record<string, SearchItem[]> = {
   "set-appearance": ["settings.theme", ["settings.uiZoom", "settings.uiZoomDesc"], "settings.uiFont"],
   "set-language": ["settings.selectLanguage"],
+  "set-update": [["update.check", "update.checkDesc"], ["update.auto", "update.autoDesc"]], // #1200
   "set-notifications": [["settings.notifMaster", "settings.notifMasterDesc"], ["settings.notifAgentDone", "settings.notifAgentDoneDesc"], ["settings.notifSuppress", "settings.notifSuppressDesc"], ["settings.notifSilent", "settings.notifSilentDesc"], "settings.notifTest"],
   "set-confirm": [["settings.confirmSkipDelete", "settings.confirmSkipDeleteDesc"], ["settings.confirmSkipCloseTab", "settings.confirmSkipCloseTabDesc"], ["settings.confirmCloseTerminal", "settings.confirmCloseTerminalDesc"]],
   "set-terminal": ["settings.terminalTheme", ["settings.terminalShell", "settings.terminalShellHint"], "settings.terminalFontSize", "settings.terminalFontFamily", "settings.terminalFontWeight", "settings.terminalLineHeight", "settings.terminalCursorStyle", "settings.terminalCursorBlink",
