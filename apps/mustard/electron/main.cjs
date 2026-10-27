@@ -527,7 +527,7 @@ function trimIcon(im) {
   let x0 = w, y0 = h, x1 = -1, y1 = -1;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (b[(y * w + x) * 4 + 3] > 24) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
   if (x1 < 0) return im.resize({ width: 32, height: 32 });
-  const s = Math.max(x1 - x0, y1 - y0) + 1;
+  const s = Math.min(w, h, Math.max(x1 - x0, y1 - y0) + 1); // 정사각이 아닌 이미지에서도 안 넘치게(리뷰)
   const x = Math.max(0, Math.min(w - s, Math.round((x0 + x1 + 1 - s) / 2))), y = Math.max(0, Math.min(h - s, Math.round((y0 + y1 + 1 - s) / 2)));
   return im.crop({ x, y, width: s, height: s }).resize({ width: 32, height: 32, quality: "best" });
 }
