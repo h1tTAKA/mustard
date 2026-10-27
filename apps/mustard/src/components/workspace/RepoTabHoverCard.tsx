@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { IconGitBranch, IconPlus, IconTrash, IconArrowUp, IconArrowDown, IconPencil, IconLoader2, IconCircleCheck, IconQuestionMark, IconAlertTriangle, IconPlugConnected, IconExternalLink } from "@tabler/icons-react";
-import { useT } from "@mustard/core";
+import { IconGitBranch, IconPlus, IconTrash, IconArrowUp, IconArrowDown, IconPencil, IconLoader2, IconCircleCheck, IconQuestionMark, IconAlertTriangle, IconPlugConnected, IconExternalLink, IconAppWindow } from "@tabler/icons-react";
+import { useT, useToast, getSetting, setSetting } from "@mustard/core";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import RepoAvatar from "@/components/workspace/RepoAvatar";
 import { openNewWorkspace, openRemoveWorkspace, openRepoTab } from "@/lib/repo/workspaceEvents";
@@ -18,6 +18,8 @@ interface Port { port: number; pid: number; cmd: string } // #880 이 레포가 
 interface SubInfo { id: string; agentType: string; description: string; depth: number; running: boolean; updatedAt: number } // #977 /api/agent/subagents
 
 const basename = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
+type OpenApp = { id: string; kind: string; name: string; icon: string | null }; // #1199 다른 앱에서 열기
+const OPEN_IN_LAST = "openIn.last"; // 마지막으로 연 앱 id
 const norm = (p: string) => p.replace(/\/+$/, "");
 // 상대시각(간결) — "3s"/"5m"/"2h"/"4d". committedAt ISO 기준.
 function rel(iso: string): string {
@@ -163,13 +165,48 @@ export default function RepoTabHoverCard({ path, left, top, onMouseEnter, onMous
     return () => { alive = false; clearInterval(iv); };
   }, [path]);
 
+  // #1199 다른 앱에서 열기 — 누르면 설치된 앱 목록(카드 안에 펼침). 마지막으로 쓴 앱이 맨 위(기본 앱 설정 대신).
+  const toast = useToast();
+  const [apps, setApps] = useState<OpenApp[] | null>(null);
+  const [appsOpen, setAppsOpen] = useState(false);
+  const toggleApps = () => {
+    if (appsOpen) { setAppsOpen(false); return; }
+    setAppsOpen(true);
+    if (!apps?.length) { setApps(null); void window.nunopiDesktop?.openInList?.().then(setApps).catch(() => setApps([])); } // 비었거나 실패했으면 다시 열 때 재요청(리뷰)
+  };
+  const openWith = async (a: OpenApp) => {
+    const r = await window.nunopiDesktop?.openIn?.(a.id, path).catch(() => null);
+    if (!r?.ok) { toast(t("openIn.failed", { app: a.name || t("openIn.files") }), "error"); return; }
+    setSetting(OPEN_IN_LAST, a.id); setAppsOpen(false);
+  };
+  const last = appsOpen ? getSetting<string>(OPEN_IN_LAST, "") : "";
+  const sortedApps = apps ? [...apps].sort((x, y) => Number(y.id === last) - Number(x.id === last)) : null;
+
   return (
     <div style={{ left, top }} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}
       className="fixed z-50 w-72 rounded-xl border border-zinc-200 bg-white p-3 shadow-xl dark:border-zinc-800 dark:bg-[var(--s-raise)]">
       <div className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold text-zinc-700 dark:text-zinc-200">
         <RepoAvatar path={path} size={14} iconClassName="shrink-0 text-mustard-600 dark:text-mustard-400" />
-        <span className="truncate">{basename(path)}</span>
+        <span className="min-w-0 flex-1 truncate">{basename(path)}</span>
+        {typeof window !== "undefined" && window.nunopiDesktop?.openInList && (
+          <button type="button" onClick={toggleApps} title={t("openIn.title")} aria-label={t("openIn.title")} aria-expanded={appsOpen} className="rounded p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconAppWindow size={12} stroke={2} aria-hidden /></button>
+        )}
       </div>
+      {appsOpen && (
+        <div className="mb-2 flex flex-col gap-0.5 rounded-lg border border-zinc-100 p-1 dark:border-zinc-800">
+          {sortedApps === null ? <div className="flex items-center gap-1.5 px-1.5 py-1 text-[11px] text-zinc-400"><IconLoader2 size={11} className="animate-spin" aria-hidden />{t("openIn.loading")}</div>
+            : sortedApps.length === 0 ? <div className="px-1.5 py-1 text-[11px] text-zinc-400">{t("openIn.none")}</div>
+            : sortedApps.map((a) => (
+              <button key={a.id} type="button" onClick={() => void openWith(a)}
+                className="flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-[11px] text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">
+                {/* eslint-disable-next-line @next/next/no-img-element -- 앱 아이콘 data URL */}
+                {a.icon ? <img src={a.icon} alt="" className="size-4 shrink-0 rounded-[4px] ring-1 ring-black/10 dark:ring-white/15" /> : <IconAppWindow size={14} stroke={1.75} className="shrink-0 text-zinc-400" aria-hidden />}
+                <span className="min-w-0 flex-1 truncate">{a.name || t("openIn.files")}</span>
+                {a.id === last && <span className="shrink-0 text-[10px] text-zinc-400 dark:text-zinc-500">{t("openIn.recent")}</span>}
+              </button>
+            ))}
+        </div>
+      )}
 
       {/* 에이전트(#968) — 그 레포 세션 전부를 [상태 아이콘 + 로고 + 작업 제목 + 시각]으로 나열 */}
       <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
