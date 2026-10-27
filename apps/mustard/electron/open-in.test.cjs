@@ -8,5 +8,6 @@ const have = new Set(["/Applications/Cursor.app", "/Users/x/Applications/Zed.app
 const got = detect((p) => have.has(p), ["/Applications", "/System/Applications/Utilities", "/Users/x/Applications"]);
 assert.deepStrictEqual(got.map((a) => a.id), ["cursor", "zed", "pycharm", "terminal"], "설치된 것만, 목록 순서");
 assert.strictEqual(got.find((a) => a.id === "pycharm").appPath, "/Applications/PyCharm CE.app", "이름 후보");
+assert.ok(!okDir("/System/Applications/Calculator.app") && !okDir("/System/Applications/Calculator.app/"), "앱 번들 폴더는 거부");
 assert.ok(okDir(os.tmpdir()) && !okDir("relative/dir") && !okDir("/no/such/dir/x") && !okDir(`${os.tmpdir()}\n`) && !okDir(__filename), "폴더 검사");
 console.log("open-in.test ok");

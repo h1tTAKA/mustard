@@ -172,7 +172,7 @@ export default function RepoTabHoverCard({ path, left, top, onMouseEnter, onMous
   const toggleApps = () => {
     if (appsOpen) { setAppsOpen(false); return; }
     setAppsOpen(true);
-    if (!apps) void window.nunopiDesktop?.openInList?.().then(setApps).catch(() => setApps([]));
+    if (!apps?.length) { setApps(null); void window.nunopiDesktop?.openInList?.().then(setApps).catch(() => setApps([])); } // 비었거나 실패했으면 다시 열 때 재요청(리뷰)
   };
   const openWith = async (a: OpenApp) => {
     const r = await window.nunopiDesktop?.openIn?.(a.id, path).catch(() => null);
@@ -195,6 +195,7 @@ export default function RepoTabHoverCard({ path, left, top, onMouseEnter, onMous
       {appsOpen && (
         <div className="mb-2 flex flex-col gap-0.5 rounded-lg border border-zinc-100 p-1 dark:border-zinc-800">
           {sortedApps === null ? <div className="flex items-center gap-1.5 px-1.5 py-1 text-[11px] text-zinc-400"><IconLoader2 size={11} className="animate-spin" aria-hidden />{t("openIn.loading")}</div>
+            : sortedApps.length === 0 ? <div className="px-1.5 py-1 text-[11px] text-zinc-400">{t("openIn.none")}</div>
             : sortedApps.map((a) => (
               <button key={a.id} type="button" onClick={() => void openWith(a)}
                 className="flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-[11px] text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">

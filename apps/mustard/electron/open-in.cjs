@@ -45,9 +45,10 @@ function detect(exists = (p) => fs.existsSync(p), roots = ROOTS()) {
   return out;
 }
 
-// 열 폴더 검사 — 절대 경로·존재하는 폴더·줄바꿈/NUL 없음
+// 열 폴더 검사 — 절대 경로·존재하는 폴더·줄바꿈/NUL 없음. .app 같은 번들 폴더는 거부(열면 그 앱이 실행됨)(리뷰)
 function okDir(dir) {
   if (typeof dir !== "string" || !dir || /[\r\n\0]/.test(dir) || !path.isAbsolute(dir)) return false;
+  if (/\.(app|bundle|framework|plugin|prefPane|kext|workflow|saver|appex)\/*$/i.test(dir)) return false;
   try { return fs.statSync(dir).isDirectory(); } catch { return false; }
 }
 
