@@ -518,6 +518,7 @@ function syncComputerShortcut() {
 }
 app.whenReady().then(syncComputerShortcut);
 const computerStatus = async (force) => ({ ...(await computerUse.status({ force })), defaults: computerUse.DEFAULT_BLOCKED, stopKey: STOP_KEY, stopKeyOk, platform: process.platform, log: computerUse.readLog(undefined, 30) });
+ipcMain.handle("clipboard:write-text", (_e, text) => { if (typeof text === "string" && text.length <= 1_000_000) clipboard.writeText(text); }); // #1196 터미널 OSC 52(창이 앞에 없어도 되게 main에서)
 ipcMain.handle("shell:open-external", (_e, url) => { if (typeof url === "string" && /^https?:\/\//i.test(url)) void shell.openExternal(url); }); // #1193 터미널 링크 — http(s)만
 ipcMain.handle("computer:status", (_e, { force } = {}) => computerStatus(!!force));
 ipcMain.handle("computer:set", (_e, patch = {}) => {

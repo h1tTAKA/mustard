@@ -173,6 +173,8 @@ export default function SettingsDrawer({
   const tFontSize = useSetting<number>(TKEYS.fontSize, TERMINAL_DEFAULTS.fontSize);
   const tFontFamily = useSetting<string>(TKEYS.fontFamily, TERMINAL_DEFAULTS.fontFamily);
   const tShell = useSetting<string>(TKEYS.shell, TERMINAL_DEFAULTS.shell); // #1196
+  const tOsc52 = useSetting<boolean>(TKEYS.osc52, TERMINAL_DEFAULTS.osc52);
+  const tImages = useSetting<boolean>(TKEYS.images, TERMINAL_DEFAULTS.images);
   const tLineHeight = useSetting<number>(TKEYS.lineHeight, TERMINAL_DEFAULTS.lineHeight);
   const tCursorStyle = useSetting<TerminalCursorStyle>(TKEYS.cursorStyle, TERMINAL_DEFAULTS.cursorStyle);
   const tCursorBlink = useSetting<boolean>(TKEYS.cursorBlink, TERMINAL_DEFAULTS.cursorBlink);
@@ -754,6 +756,8 @@ export default function SettingsDrawer({
               { key: TKEYS.rightClickPaste, on: tRightClickPaste, label: t("settings.terminalRightClickPaste") },
               { key: TKEYS.gpu, on: tGpu, label: t("settings.terminalGpu") },
               { key: TKEYS.focusFollowsMouse, on: tFocusFollowsMouse, label: t("settings.terminalFocusFollowsMouse") },
+              { key: TKEYS.osc52, on: tOsc52, label: t("settings.terminalOsc52") }, // #1196
+              { key: TKEYS.images, on: tImages, label: t("settings.terminalImages") }, // #1196
               { key: TKEYS.macOptionIsMeta, on: tMacOptionIsMeta, label: t("settings.terminalMacOptionIsMeta") },
             ]).map((row) => (
               <div key={row.key} className="flex items-center justify-between gap-3">

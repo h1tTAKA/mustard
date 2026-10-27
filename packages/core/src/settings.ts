@@ -31,6 +31,8 @@ export const TERMINAL_DEFAULTS = {
   focusFollowsMouse: false,                    // 마우스 올리면 포커스
   linkTarget: "app" as "app" | "external",     // #1193 터미널 웹 링크 ⌘+클릭 = 앱 안 브라우저 / 외부 브라우저
   shell: "",                                   // #1196 셸 절대 경로(비우면 로그인 셸), 새 탭부터
+  osc52: true,                                 // #1196 프로그램이 클립보드에 쓰기(OSC 52, 읽기는 항상 막음)
+  images: true,                                // #1196 인라인 이미지(sixel·iTerm), 새 탭부터
 };
 export const TKEYS = {
   fontSize: "terminal.fontSize",
@@ -48,6 +50,8 @@ export const TKEYS = {
   focusFollowsMouse: "terminal.focusFollowsMouse",
   linkTarget: "terminal.linkTarget",
   shell: "terminal.shell",
+  osc52: "terminal.osc52",
+  images: "terminal.images",
 } as const;
 
 // 에이전트 런치(#927, #1184) — 기본 에이전트("auto" = 감지되고 켜진 첫 에이전트, "blank" = 셸만, 아니면 id) + per-agent 유저 인자·권한·켜기.
