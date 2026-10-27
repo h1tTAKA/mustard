@@ -85,11 +85,11 @@ function createDaemonClient(opts) {
 
   return {
     info: () => daemonInfo, // #1036
-    async ensure({ id, cwd, cols, rows, dark }) {
+    async ensure({ id, cwd, cols, rows, dark, shell }) {
       if (!(await ensureConnected())) return { ok: false, reason: "daemon unavailable" };
       return await new Promise((resolve) => {
         ensured.set(id, resolve);
-        socket.write(JSON.stringify({ t: "ensure", id, cwd, cols, rows, dark }) + "\n");
+        socket.write(JSON.stringify({ t: "ensure", id, cwd, cols, rows, dark, shell }) + "\n"); // #1196 shell = 유저가 고른 셸(데몬이 검사)
         setTimeout(() => { if (ensured.has(id)) { ensured.delete(id); resolve({ ok: false, reason: "ensure timeout" }); } }, 5000);
       });
     },

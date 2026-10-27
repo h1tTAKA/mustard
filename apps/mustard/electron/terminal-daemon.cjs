@@ -33,10 +33,16 @@ function shutdown() {
 function send(sock, msg) { try { sock.write(JSON.stringify(msg) + "\n"); } catch { /* ignore */ } }
 function broadcast(msg) { for (const c of clients) send(c, msg); }
 
-function ensure({ id, cwd, cols, rows, dark }) {
+// #1196 유저가 고른 셸 — 절대 경로이고 실행할 수 있는 파일일 때만(이상한 값으로 터미널이 안 열리는 일 없게), 아니면 기본 셸
+function pickShell(want) {
+  const def = process.env.NUNOPI_TERM_SHELL || process.env.SHELL || "/bin/bash";
+  if (typeof want !== "string" || !want || !require("path").isAbsolute(want)) return def;
+  try { fs.accessSync(want, fs.constants.X_OK); return fs.statSync(want).isFile() ? want : def; } catch { return def; }
+}
+function ensure({ id, cwd, cols, rows, dark, shell: wantShell }) {
   let s = ptys.get(id);
   if (!s) {
-    const shell = process.env.NUNOPI_TERM_SHELL || process.env.SHELL || "/bin/bash";
+    const shell = pickShell(wantShell);
     const env = { ...process.env };
     delete env.npm_config_prefix; delete env.NPM_CONFIG_PREFIX; // nvm 경고 방지(#674)
     // #979 부모 Claude Code 런타임 env 제거 — Mustard를 claude 세션 안에서 띄우면 CLAUDE_CODE_CHILD_SESSION 등이 상속돼

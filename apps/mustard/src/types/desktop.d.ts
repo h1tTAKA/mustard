@@ -145,7 +145,7 @@ interface NunopiDesktopApi {
   };
   // 터미널(pty) — id별 세션(#647·#678 멀티탭). cwd는 spawn 작업 디렉터리. ensure는 세션 확보 + 재생용 scrollback 반환.
   terminal: {
-    ensure(opts: { id: string; cwd: string; cols: number; rows: number; dark?: boolean }): Promise<{ ok: boolean; buffer?: string; reason?: string }>;
+    ensure(opts: { id: string; cwd: string; cols: number; rows: number; dark?: boolean; shell?: string }): Promise<{ ok: boolean; buffer?: string; reason?: string }>;
     input(payload: { id: string; data: string }): void;
     shellInput?(payload: { id: string; cwd: string; data: string }): Promise<{ ok: true; id: string } | { ok: false; reason: "bad-args" | "error" | "no-terminal" | "busy" | "multiline" }>; // #1194
     resize(payload: { id: string; cols: number; rows: number }): void;
