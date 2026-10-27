@@ -519,6 +519,9 @@ function syncComputerShortcut() {
 app.whenReady().then(syncComputerShortcut);
 const computerStatus = async (force) => ({ ...(await computerUse.status({ force })), defaults: computerUse.DEFAULT_BLOCKED, stopKey: STOP_KEY, stopKeyOk, platform: process.platform, log: computerUse.readLog(undefined, 30) });
 ipcMain.handle("clipboard:write-text", (_e, text) => { if (typeof text === "string" && text.length <= 1_000_000) clipboard.writeText(text); }); // #1196 터미널 OSC 52(창이 앞에 없어도 되게 main에서)
+// #1200 업데이트 확인 — GitHub 최신 릴리스와 앱 버전 비교(설치는 배포 채널 생기면). 실패는 ok:false로.
+const updateCheck = require("./update-check.cjs");
+ipcMain.handle("update:check", () => updateCheck.check(app.getVersion(), "h1tTAKA/mustard").catch((e) => ({ ok: false, current: app.getVersion(), reason: String((e && e.message) || e) })));
 // #1199 다른 앱에서 열기 — 설치된 앱만(매번 감지, 파일 존재 확인뿐이라 가벼움) + 앱 아이콘. 열 폴더는 main이 검사, 앱은 목록 id로만.
 const openIn = require("./open-in.cjs");
 // 아이콘 둘레 투명 여백을 잘라 32px로 — 앱마다 같은 크기로 꽉 차게(화면은 둥근 테두리를 둘러 어두운 아이콘도 경계가 보이게)(앱 확인)

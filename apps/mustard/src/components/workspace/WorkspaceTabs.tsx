@@ -3,7 +3,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { IconFiles, IconFolderOpen, IconPlus, IconX, IconMessages, IconFileCode, IconFileText, IconCards, IconBell, IconBellOff } from "@tabler/icons-react";
 import { useT, useShortcut } from "@mustard/core";
-import { getSetting, setSetting, subscribeSettings, useSetting, AKEYS, AGENT_DEFAULTS, NKEYS, NOTIF_DEFAULTS, CKEYS, desktopNotify, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
+import { getSetting, setSetting, subscribeSettings, useSetting, AKEYS, AGENT_DEFAULTS, UPDATE_KEYS, NKEYS, NOTIF_DEFAULTS, CKEYS, desktopNotify, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
 import { crewRoomOpen } from "./crew/crewUi";
 import { useToast } from "@mustard/core";
 import { useConfirm } from "@mustard/core";
@@ -152,6 +152,19 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     setSetting(NKEYS.agentDone, next); // #928 설정 스토어로 이관(설정 페이지와 동기)
   };
   // 설정 페이지서 알림 토글 변경 시 인탭 벨 동기(#928).
+  // #1200 업데이트 자동 확인 — 앱 시작 때 하루 한 번(설정으로 끔), 새 버전이면 알림(누르면 릴리스 페이지)
+  useEffect(() => {
+    if (!getSetting<boolean>(UPDATE_KEYS.auto, true) || Date.now() - getSetting<number>(UPDATE_KEYS.lastAt, 0) < 86400000) return;
+    const id = setTimeout(() => {
+      void window.nunopiDesktop?.checkUpdate?.().then((r) => {
+        if (!r?.ok) return;
+        setSetting(UPDATE_KEYS.lastAt, Date.now());
+        if (r.newer && r.url) toast(t("update.available", { v: r.latest ?? "" }), "success", { label: t("update.open"), onClick: () => void window.nunopiDesktop?.openExternal?.(r.url!) });
+      }).catch(() => {});
+    }, 10000); // 부팅 직후 말고 조금 뒤
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 앱 시작 때 한 번
+  }, []);
   // #1197 잠자기 막기 설정을 main에 — 앱 시작·바꿀 때
   const keepAwake = useSetting<string>(AKEYS.keepAwake, AGENT_DEFAULTS.keepAwake);
   useEffect(() => { window.nunopiDesktop?.setKeepAwake?.(keepAwake === "working" || keepAwake === "always" ? keepAwake : "off"); }, [keepAwake]);
