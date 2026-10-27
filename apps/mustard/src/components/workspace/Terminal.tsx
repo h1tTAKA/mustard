@@ -105,6 +105,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
     let selDisp: { dispose(): void } | null = null;
     let linkDisp: { dispose(): void } | null = null;
     let oscDisp: { dispose(): void } | null = null;
+    let osc52Disp: { dispose(): void } | null = null;
     // 셸의 지금 폴더 — 셸이 OSC 7(file://호스트/경로)을 보내면 따라감(cd 뒤 상대 경로 링크용, 리뷰). 안 보내면 터미널을 연 폴더.
     let shellCwd = cwd;
     // #1027 ⌘K(터미널 포커스) = 화면 지우기 — 포커스가 이 터미널 안일 때만 처리(다른 터미널·탭이면 false로 넘김).
@@ -115,8 +116,9 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
     let onPaste: ((ev: ClipboardEvent) => void | Promise<void>) | undefined;
 
     (async () => {
-      const [{ Terminal: XTerm }, { FitAddon }, webgl] = await Promise.all([
+      const [{ Terminal: XTerm }, { FitAddon }, webgl, imageMod] = await Promise.all([
         import("@xterm/xterm"), import("@xterm/addon-fit"), import("@xterm/addon-webgl"),
+        getSetting<boolean>(TKEYS.images, TERMINAL_DEFAULTS.images) ? import("@xterm/addon-image") : Promise.resolve(null), // #1196 꺼져 있으면 안 불러옴
       ]);
       if (disposed) return;
       // OSC 8 하이퍼링크(요즘 CLI가 찍는 숨은 링크)도 같은 규칙 — http(s)만
@@ -125,6 +127,20 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.open(host);
+      // #1196 인라인 이미지(sixel·iTerm 그림) — 새 탭부터
+      if (imageMod) { try { term.loadAddon(new imageMod.ImageAddon()); } catch { /* 지원 안 함 */ } }
+      // #1196 OSC 52 = 프로그램(tmux·neovim·ssh 너머)이 클립보드에 쓰기. 쓰기만(읽기 요청 "?"는 무시 — 클립보드가 새지 않게), 1MB까지(base64 1,333,336자 = 1MB = main 상한과 같음).
+      osc52Disp = term.parser.registerOscHandler(52, (data) => {
+        if (!getSetting<boolean>(TKEYS.osc52, TERMINAL_DEFAULTS.osc52)) return true;
+        const b64 = data.slice(data.indexOf(";") + 1);
+        if (!b64 || b64 === "?" || b64.length > 1_333_336) return true;
+        try {
+          const bin = atob(b64);
+          const text = new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0)));
+          void window.nunopiDesktop?.writeClipboardText?.(text);
+        } catch { /* base64 아님 */ }
+        return true;
+      });
       oscDisp = term.parser.registerOscHandler(7, (data) => {
         // 터미널을 연 폴더 안쪽일 때만 따라감 — 원격 셸이나 출력에 섞인 값이 다른 레포로 보내지 않게(리뷰)
         // . .. 을 먼저 정리하고 검사(리뷰)
@@ -240,7 +256,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       const firstEnsure = async () => {
         if (disposed || !term) return;
         try {
-          const r = await nd.terminal.ensure({ id, cwd, cols: term.cols, rows: term.rows, dark: isTerminalDark(getTerminalThemePref()) });
+          const r = await nd.terminal.ensure({ id, cwd, cols: term.cols, rows: term.rows, dark: isTerminalDark(getTerminalThemePref()), shell: getSetting<string>(TKEYS.shell, TERMINAL_DEFAULTS.shell) }); // #1196 새 세션만 셸 적용(있는 세션은 그대로)
           if (disposed || !term) return;
           if (!r.ok) { term.write(`\r\n[${tRef.current("terminal.startFailed", { reason: r.reason ? `: ${r.reason}` : "" })}]\r\n`); return; }
           if (r.buffer) term.write(stripTermQueries(r.buffer)); // 정확한 cols 확보 후 재생(줄바꿈 안 굳음). 질의 시퀀스 제거(에코 방지 #807)
@@ -267,7 +283,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       fallback = setTimeout(() => { if (!ensured && !disposed && term) { ensured = true; void firstEnsure(); } }, 1500);
     })();
 
-    return () => { offClear(); disposed = true; if (fallback) clearTimeout(fallback); if (onPaste) host.removeEventListener("paste", onPaste, true); offData?.(); offExit?.(); ro?.disconnect(); mo?.disconnect(); offTheme?.(); offSettings?.(); selDisp?.dispose(); linkDisp?.dispose(); oscDisp?.dispose(); if (onCtx) host.removeEventListener("contextmenu", onCtx); if (onEnter) host.removeEventListener("mouseenter", onEnter); term?.dispose(); term = null; };
+    return () => { offClear(); disposed = true; if (fallback) clearTimeout(fallback); if (onPaste) host.removeEventListener("paste", onPaste, true); offData?.(); offExit?.(); ro?.disconnect(); mo?.disconnect(); offTheme?.(); offSettings?.(); selDisp?.dispose(); linkDisp?.dispose(); oscDisp?.dispose(); osc52Disp?.dispose(); if (onCtx) host.removeEventListener("contextmenu", onCtx); if (onEnter) host.removeEventListener("mouseenter", onEnter); term?.dispose(); term = null; };
   }, [id, cwd]);
 
   // 초기 배경도 현재 터미널 테마에 맞춰(라이트 앱 첫 프레임 다크 깜빡임 방지). 클라이언트 전용 pane이라 안전.

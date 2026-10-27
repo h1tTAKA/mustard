@@ -172,6 +172,9 @@ export default function SettingsDrawer({
   // 터미널 설정(#926) — useSetting으로 구독(변경 즉시 반영). 모든 훅은 early-return 위.
   const tFontSize = useSetting<number>(TKEYS.fontSize, TERMINAL_DEFAULTS.fontSize);
   const tFontFamily = useSetting<string>(TKEYS.fontFamily, TERMINAL_DEFAULTS.fontFamily);
+  const tShell = useSetting<string>(TKEYS.shell, TERMINAL_DEFAULTS.shell); // #1196
+  const tOsc52 = useSetting<boolean>(TKEYS.osc52, TERMINAL_DEFAULTS.osc52);
+  const tImages = useSetting<boolean>(TKEYS.images, TERMINAL_DEFAULTS.images);
   const tLineHeight = useSetting<number>(TKEYS.lineHeight, TERMINAL_DEFAULTS.lineHeight);
   const tCursorStyle = useSetting<TerminalCursorStyle>(TKEYS.cursorStyle, TERMINAL_DEFAULTS.cursorStyle);
   const tCursorBlink = useSetting<boolean>(TKEYS.cursorBlink, TERMINAL_DEFAULTS.cursorBlink);
@@ -700,6 +703,13 @@ export default function SettingsDrawer({
                 onChange={(e) => setSetting(TKEYS.fontSize, Math.min(28, Math.max(9, Number(e.target.value) || TERMINAL_DEFAULTS.fontSize)))}
                 className="w-24 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
             </div>
+            {/* 셸(#1196) — 비우면 로그인 셸, 새 탭부터 */}
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalShell")}</span>
+              <input type="text" value={tShell} onChange={(e) => setSetting(TKEYS.shell, e.target.value)} placeholder={t("settings.terminalShellPh")} spellCheck={false}
+                className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-mono text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.terminalShellHint")}</p>
+            </label>
             {/* 폰트 패밀리 */}
             <label className="block space-y-1.5">
               <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalFontFamily")}</span>
@@ -746,6 +756,8 @@ export default function SettingsDrawer({
               { key: TKEYS.rightClickPaste, on: tRightClickPaste, label: t("settings.terminalRightClickPaste") },
               { key: TKEYS.gpu, on: tGpu, label: t("settings.terminalGpu") },
               { key: TKEYS.focusFollowsMouse, on: tFocusFollowsMouse, label: t("settings.terminalFocusFollowsMouse") },
+              { key: TKEYS.osc52, on: tOsc52, label: t("settings.terminalOsc52") }, // #1196
+              { key: TKEYS.images, on: tImages, label: t("settings.terminalImages") }, // #1196
               { key: TKEYS.macOptionIsMeta, on: tMacOptionIsMeta, label: t("settings.terminalMacOptionIsMeta") },
             ]).map((row) => (
               <div key={row.key} className="flex items-center justify-between gap-3">
