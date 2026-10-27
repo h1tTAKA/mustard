@@ -10,7 +10,7 @@ require("./claude-env.cjs").stripParentClaudeEnv(process.env);
   const extra = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", require("node:path").join(require("node:os").homedir(), ".local", "bin")].filter((d) => !have.has(d));
   if (extra.length) process.env.PATH = [...have, ...extra].join(":");
 }
-const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents, WebContentsView, globalShortcut, powerSaveBlocker } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents, WebContentsView, globalShortcut, powerSaveBlocker, nativeImage } = require("electron");
 const { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, cpSync, chmodSync } = require("node:fs");
 const {
   startSnaServer,
@@ -519,12 +519,12 @@ function syncComputerShortcut() {
 app.whenReady().then(syncComputerShortcut);
 const computerStatus = async (force) => ({ ...(await computerUse.status({ force })), defaults: computerUse.DEFAULT_BLOCKED, stopKey: STOP_KEY, stopKeyOk, platform: process.platform, log: computerUse.readLog(undefined, 30) });
 ipcMain.handle("clipboard:write-text", (_e, text) => { if (typeof text === "string" && text.length <= 1_000_000) clipboard.writeText(text); }); // #1196 터미널 OSC 52(창이 앞에 없어도 되게 main에서)
-// #1199 다른 앱에서 열기 — 설치된 앱만(매번 감지, 파일 존재 확인뿐이라 가벼움) + 아이콘. 열 폴더는 main이 검사, 앱은 목록 id로만.
+// #1199 다른 앱에서 열기 — 설치된 앱만(매번 감지, 파일 존재 확인뿐이라 가벼움) + 앱 아이콘. 열 폴더는 main이 검사, 앱은 목록 id로만.
 const openIn = require("./open-in.cjs");
 ipcMain.handle("open-in:list", async () => {
   if (process.platform !== "darwin") return [{ id: "files", kind: "files", name: "", icon: null }];
   const apps = [{ id: "finder", kind: "files", name: "Finder", appPath: "/System/Library/CoreServices/Finder.app" }, ...openIn.detect()];
-  return Promise.all(apps.map(async (a) => ({ id: a.id, kind: a.kind, name: a.name, icon: await app.getFileIcon(a.appPath, { size: "small" }).then((im) => im.toDataURL()).catch(() => null) })));
+  return Promise.all(apps.map(async (a) => ({ id: a.id, kind: a.kind, name: a.name, icon: await nativeImage.createThumbnailFromPath(a.appPath, { width: 32, height: 32 }).then((im) => (im.isEmpty() ? null : im.toDataURL())).catch(() => null) }))); // 앱 진짜 아이콘(getFileIcon은 .app에 빈 네모를 줌 — 앱 확인)
 });
 ipcMain.handle("open-in:open", async (_e, { id, dir } = {}) => {
   const real = openIn.safeDir(dir); // 실제 경로(., .., 링크 푼 것) — 번들 폴더면 null
