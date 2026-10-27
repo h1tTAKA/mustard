@@ -15,6 +15,7 @@ export default function ShortcutsSection() {
   const t = useT();
   const overrides = useSetting<ShortcutOverrides>(SHORTCUT_OVERRIDES_KEY, {});
   const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<"all" | "changed" | "conflict">("all"); // #1200 전체 / 바꾼 것 / 충돌
   const [recording, setRecording] = useState<string | null>(null); // 녹화 중인 동작 id
   const mac = isMac();
   const label = (d: ShortcutDef) => t(d.labelKey, { n: d.arg ?? 0 });
@@ -44,7 +45,9 @@ export default function ShortcutsSection() {
   }, [recording]);
 
   const ql = q.trim().toLowerCase();
-  const visible = SHORTCUTS.filter((d) => !ql || label(d).toLowerCase().includes(ql) || bindingsOf(d, overrides).some((c) => formatChord(c, mac).toLowerCase().includes(ql)));
+  const changedIds = new Set(Object.keys(overrides)), clashIds = new Set(conflicts.flatMap((c) => c.ids));
+  const counts = { all: SHORTCUTS.length, changed: SHORTCUTS.filter((d) => changedIds.has(d.id)).length, conflict: SHORTCUTS.filter((d) => clashIds.has(d.id)).length };
+  const visible = SHORTCUTS.filter((d) => (filter === "all" || (filter === "changed" ? changedIds : clashIds).has(d.id)) && (!ql || label(d).toLowerCase().includes(ql) || bindingsOf(d, overrides).some((c) => formatChord(c, mac).toLowerCase().includes(ql))));
   const nameOf = (id: string) => { const d = SHORTCUTS.find((x) => x.id === id); return d ? label(d) : id; };
   const btn = "rounded px-1.5 py-0.5 text-[11px] text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200";
 
@@ -53,6 +56,15 @@ export default function ShortcutsSection() {
       <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.shortcutsDesc")}</p>
       <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("settings.shortcutsSearch")}
         className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+      <div className="inline-flex rounded-lg border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-900" role="radiogroup" aria-label={t("settings.shortcutsFilter")}>
+        {(["all", "changed", "conflict"] as const).map((f) => (
+          <button key={f} type="button" role="radio" aria-checked={filter === f} onClick={() => setFilter(f)}
+            className={`rounded-md px-2.5 py-1 text-[12px] font-medium transition ${filter === f ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
+            {t(`settings.shortcutsFilter.${f}`)} <span className={`tabular-nums ${f === "conflict" && counts.conflict ? "text-amber-600 dark:text-amber-500" : "text-zinc-400"}`}>{counts[f]}</span>
+          </button>
+        ))}
+      </div>
+      {visible.length === 0 && <p className="px-2 py-3 text-[12px] text-zinc-400 dark:text-zinc-500">{t("settings.shortcutsEmpty")}</p>}
       {GROUPS.map((g) => {
         const rows = visible.filter((d) => d.group === g);
         if (!rows.length) return null;
