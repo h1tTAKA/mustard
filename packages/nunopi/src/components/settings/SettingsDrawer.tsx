@@ -357,14 +357,23 @@ export default function SettingsDrawer({
   // ⌘F(Ctrl+F) = 검색칸 — 설정이 열려 있을 때만(설정은 전체 화면이라 터미널 ⌘F와 안 겹침)
   useEffect(() => {
     if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "f") { e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select(); } };
+    // 맥은 ⌘F만(Ctrl+F는 커서 이동), 그 밖은 Ctrl+F. 글자 말고 키 위치로(한글 입력 상태에서도). 다른 입력칸에 있으면 그 칸 기본 동작(리뷰)
+    const mac = /Mac/i.test(navigator.platform);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "KeyF" || e.shiftKey || e.altKey || (mac ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey)) return;
+      const tg = e.target as HTMLElement | null;
+      if (tg && tg !== searchRef.current && (tg.closest("input, textarea, [contenteditable='true']"))) return;
+      e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen]);
   // 이동한 섹션에서 그 항목 이름 글자를 가진 가장 안쪽 요소 → 그 줄로 스크롤·강조(항목마다 id를 박지 않음)
   useEffect(() => {
     if (!jump) return;
-    const raf = requestAnimationFrame(() => {
+    let tries = 0, timer: ReturnType<typeof setTimeout> | undefined;
+    // 섹션 내용이 늦게 그려질 수 있어(감지·불러오기) 1초 동안 몇 번 더 찾음(리뷰)
+    const find = () => {
       const root = contentRef.current; if (!root) return;
       const want = jump.label.trim();
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -373,14 +382,17 @@ export default function SettingsDrawer({
         const txt = (n.textContent ?? "").trim();
         if (txt === want || (!hit && txt.startsWith(want))) { hit = n.parentElement; if (txt === want) break; }
       }
-      if (!hit) { root.scrollTo({ top: 0 }); return; }
-      const row = (hit.closest("label, li, .justify-between, .space-y-1\\.5") as HTMLElement | null) ?? hit;
+      if (!hit) { if (++tries < 10) timer = setTimeout(find, 100); else root.scrollTo({ top: 0 }); return; }
+      // 그 줄 = 항목 글자에서 위로 — 글자가 적고 자식이 몇 개 안 되는 블록까지만(묶음 전체를 강조하지 않게, 리뷰)
+      let row: HTMLElement = hit;
+      while (row.parentElement && row.parentElement !== root && row.parentElement.childElementCount <= 3 && (row.parentElement.textContent ?? "").length < 300) row = row.parentElement;
       row.scrollIntoView({ block: "center", behavior: "smooth" });
       const FLASH = ["ring-2", "ring-mustard-400", "ring-offset-2", "rounded-lg", "transition"];
       row.classList.add(...FLASH);
       setTimeout(() => row.classList.remove(...FLASH), 1600);
-    });
-    return () => cancelAnimationFrame(raf);
+    };
+    const raf = requestAnimationFrame(find);
+    return () => { cancelAnimationFrame(raf); if (timer) clearTimeout(timer); };
   }, [jump, activeSection]);
 
   if (!isOpen) return null;
