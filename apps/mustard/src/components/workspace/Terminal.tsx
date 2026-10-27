@@ -129,11 +129,11 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       term.open(host);
       // #1196 인라인 이미지(sixel·iTerm 그림) — 새 탭부터
       if (imageMod) { try { term.loadAddon(new imageMod.ImageAddon()); } catch { /* 지원 안 함 */ } }
-      // #1196 OSC 52 = 프로그램(tmux·neovim·ssh 너머)이 클립보드에 쓰기. 쓰기만(읽기 요청 "?"는 무시 — 클립보드가 새지 않게), 1MB까지.
+      // #1196 OSC 52 = 프로그램(tmux·neovim·ssh 너머)이 클립보드에 쓰기. 쓰기만(읽기 요청 "?"는 무시 — 클립보드가 새지 않게), 1MB까지(base64 1,333,336자 = 1MB = main 상한과 같음).
       osc52Disp = term.parser.registerOscHandler(52, (data) => {
         if (!getSetting<boolean>(TKEYS.osc52, TERMINAL_DEFAULTS.osc52)) return true;
         const b64 = data.slice(data.indexOf(";") + 1);
-        if (!b64 || b64 === "?" || b64.length > 1_400_000) return true;
+        if (!b64 || b64 === "?" || b64.length > 1_333_336) return true;
         try {
           const bin = atob(b64);
           const text = new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0)));
