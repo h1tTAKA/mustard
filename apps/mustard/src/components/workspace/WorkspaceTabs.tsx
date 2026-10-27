@@ -433,6 +433,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     }
     if (tb.type !== "repo") return false;
     if (d.id === "repo.newWorkspace") { openNewWorkspace(tb.path); return; }
+    if (!window.nunopiDesktop?.openIn) return false; // 데스크톱 앱이 아니면(웹) 아무것도 안 함(리뷰)
     if (document.activeElement?.closest?.(".monaco-editor")) return false; // 코드 편집기 안 ⌘⇧O(심볼 이동)는 편집기 몫(리뷰)
     const dir = tb.wt ?? tb.path, last = getSetting<string>(OPEN_IN_LAST, "") || "finder";
     // 마지막 앱 → 실패(거부·예외 모두)면 Finder로 한 번 더, 그래도 안 되면 알림(리뷰)
