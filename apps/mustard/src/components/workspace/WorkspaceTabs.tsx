@@ -435,9 +435,9 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     if (d.id === "repo.newWorkspace") { openNewWorkspace(tb.path); return; }
     if (document.activeElement?.closest?.(".monaco-editor")) return false; // 코드 편집기 안 ⌘⇧O(심볼 이동)는 편집기 몫(리뷰)
     const dir = tb.wt ?? tb.path, last = getSetting<string>(OPEN_IN_LAST, "") || "finder";
-    void window.nunopiDesktop?.openIn?.(last, dir).then((r) => (r?.ok || last === "finder" ? r : window.nunopiDesktop?.openIn?.("finder", dir)))
-      .then((r) => { if (r && !r.ok) toast(t("openIn.failed", { app: "Finder" }), "error"); })
-      .catch(() => toast(t("openIn.failed", { app: "Finder" }), "error")); // IPC 예외도 알림(리뷰)
+    // 마지막 앱 → 실패(거부·예외 모두)면 Finder로 한 번 더, 그래도 안 되면 알림(리뷰)
+    const open = (id: string) => window.nunopiDesktop?.openIn?.(id, dir).then((r) => !!r?.ok, () => false) ?? Promise.resolve(false);
+    void open(last).then((ok) => ok || (last !== "finder" && open("finder"))).then((ok) => { if (!ok) toast(t("openIn.failed", { app: "Finder" }), "error"); });
   });
 
   function activate(key: string) {
