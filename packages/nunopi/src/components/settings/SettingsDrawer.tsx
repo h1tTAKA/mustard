@@ -388,12 +388,16 @@ export default function SettingsDrawer({
       // 줄 모양(label·좌우 배치·목록 항목)을 만나면 거기서 멈춤(리뷰)
       while (!row.matches("label, li, .justify-between") && row.parentElement && row.parentElement !== root && row.parentElement.childElementCount <= 3 && (row.parentElement.textContent ?? "").length < 300) row = row.parentElement;
       row.scrollIntoView({ block: "center", behavior: "smooth" });
-      const FLASH = ["ring-2", "ring-mustard-400", "ring-offset-2", "rounded-lg", "transition"];
-      row.classList.add(...FLASH); flashed = row;
-      flash = setTimeout(() => { row.classList.remove(...FLASH); flashed = null; }, 1600);
+      // 줄에 딱 붙은 테두리 대신 바깥으로 번지는 은은한 머스타드빛 + 배경, 1.4초 뒤 스르륵 사라짐(유저: 테두리가 너무 딱 맞아 별로)
+      const GLOW = ["bg-mustard-400/10", "ring-[10px]", "ring-mustard-400/10"];
+      row.classList.add("rounded-xl", "transition-all", "duration-700", ...GLOW); flashed = row;
+      flash = setTimeout(() => {
+        row.classList.remove(...GLOW);
+        flash = setTimeout(() => { row.classList.remove("rounded-xl", "transition-all", "duration-700"); flashed = null; }, 700);
+      }, 1400);
     };
     const raf = requestAnimationFrame(find);
-    return () => { cancelAnimationFrame(raf); if (timer) clearTimeout(timer); if (flash) clearTimeout(flash); flashed?.classList.remove("ring-2", "ring-mustard-400", "ring-offset-2", "rounded-lg", "transition"); }; // 다음 이동·닫기 때 강조 정리(리뷰)
+    return () => { cancelAnimationFrame(raf); if (timer) clearTimeout(timer); if (flash) clearTimeout(flash); flashed?.classList.remove("bg-mustard-400/10", "ring-[10px]", "ring-mustard-400/10", "rounded-xl", "transition-all", "duration-700"); }; // 다음 이동·닫기 때 강조 정리(리뷰)
   }, [jump, activeSection]);
 
   if (!isOpen) return null;
@@ -508,16 +512,26 @@ export default function SettingsDrawer({
           hits.length === 0 ? <p className="px-2.5 py-2 text-[12px] text-zinc-400 dark:text-zinc-500">{t("settings.searchNone")}</p> : (
             <div data-no-drag className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
               {hits.map((h, i) => {
-                const secLabel = SECTIONS.find((x) => x.id === h.section)?.label;
+                const sec = SECTIONS.find((x) => x.id === h.section);
                 const newSec = i === 0 || hits[i - 1].section !== h.section;
                 return (
                   <Fragment key={`${h.section}:${h.label}:${i}`}>
-                    {newSec && <div className="px-2.5 pb-0.5 pt-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">{secLabel}</div>}
-                    <button type="button" onClick={() => { setSel(i); openHit(h); }} onMouseEnter={() => setSel(i)}
-                      className={`block w-full rounded-lg px-2.5 py-1.5 text-left transition ${i === sel ? "bg-zinc-100 dark:bg-zinc-800" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}>
-                      <span className="block truncate text-[13px] text-zinc-800 dark:text-zinc-100">{h.label}</span>
-                      {h.desc && <span className="block truncate text-[11px] text-zinc-400 dark:text-zinc-500">{h.desc}</span>}
-                    </button>
+                    {/* 섹션 줄 — 왼쪽 메뉴와 같은 아이콘·이름, 누르면 그 섹션으로 */}
+                    {newSec && sec && (
+                      <button type="button" onClick={() => setActiveSection(sec.id)}
+                        className={`mt-1.5 flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] font-semibold transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${activeSection === sec.id ? "text-zinc-900 dark:text-zinc-50" : "text-zinc-600 dark:text-zinc-300"}`}>
+                        <sec.Icon size={16} stroke={1.75} className={`shrink-0 ${activeSection === sec.id ? "text-mustard-500" : "text-zinc-400 dark:text-zinc-500"}`} aria-hidden />{sec.label}
+                      </button>
+                    )}
+                    {/* 항목 — 들여 쓰고 왼쪽 안내선, 고른 것은 안내선이 머스타드색 */}
+                    <div className="ml-[17px] border-l border-zinc-200 pl-2 dark:border-zinc-700/80">
+                      <button type="button" onClick={() => { setSel(i); openHit(h); }} onMouseEnter={() => setSel(i)}
+                        className={`relative block w-full rounded-lg px-2.5 py-1.5 text-left transition ${i === sel ? "bg-zinc-100 dark:bg-zinc-800" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}>
+                        {i === sel && <span className="absolute -left-[9px] top-1.5 bottom-1.5 w-0.5 rounded-full bg-mustard-500" aria-hidden />}
+                        <span className="block truncate text-[12.5px] text-zinc-700 dark:text-zinc-200">{h.label}</span>
+                        {h.desc && <span className="block truncate text-[11px] text-zinc-400 dark:text-zinc-500">{h.desc}</span>}
+                      </button>
+                    </div>
                   </Fragment>
                 );
               })}
