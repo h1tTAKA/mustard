@@ -19,7 +19,9 @@ export default function BrowserSection() {
   const ua = useSetting<string>(BROWSER_KEYS.userAgent, BROWSER_DEFAULTS.userAgent);
   const linkTarget = useSetting<string>(TKEYS.linkTarget, TERMINAL_DEFAULTS.linkTarget);
   const linkBg = useSetting<boolean>(BROWSER_KEYS.linkBackground, BROWSER_DEFAULTS.linkBackground);
-  const saveHome = () => { if (home === null) return; setSetting(BROWSER_KEYS.homePage, home.trim()); setHome(null); };
+  // 주소로 못 알아들으면 저장 안 하고 알림(빈 값 = 빈 탭은 허용) — 조용히 빈 탭이 뜨지 않게(리뷰)
+  const okHome = (h: string) => { if (!h) return true; if (/\s/.test(h)) return false; try { return /^https?:$/.test(new URL(/^https?:\/\//i.test(h) ? h : `https://${h}`).protocol); } catch { return false; } };
+  const saveHome = () => { if (home === null) return; const h = home.trim(); if (!okHome(h)) { toast(t("browser.homeInvalid"), "error"); return; } setSetting(BROWSER_KEYS.homePage, h); setHome(null); };
   const row = (title: string, desc: string, control: ReactNode) => (
     <div className="flex items-center justify-between gap-3">
       <span className="min-w-0"><span className="block text-sm text-zinc-700 dark:text-zinc-300">{title}</span><span className="block text-xs text-zinc-400 dark:text-zinc-500">{desc}</span></span>

@@ -325,12 +325,14 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
   useEffect(() => { onTabsChangeRef.current?.(tabs.map((x) => x.url), activeIdx); }, [urlsKey, activeIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // at: 넣을 자리(분리했다 돌아온 탭은 원래 자리로). 없으면 끝에.
-  // background = 지금 보는 탭은 그대로 두고 뒤에 추가(#1209 링크를 백그라운드에서 열기) — 지금 탭이 빈 탭이면 그냥 그 자리로
+  // background = 지금 보는 탭은 그대로 두고 뒤에 추가(#1209 링크를 백그라운드에서 열기).
+  // 주소를 들고 온 탭인데 지금 탭이 빈 탭이면 그 빈 탭 자리에 넣음(빈 탭이 남지 않게 — 여러 탭 경로와 같은 규칙, 리뷰)
   const addTab = (url = "", at?: number, devtools?: boolean, background = false) => {
     const tab: Tab = { id: ++tabSeq, url, title: "", devtools };
     setSt((p) => {
-      const i = at === undefined ? p.tabs.length : Math.min(Math.max(at, 0), p.tabs.length);
       const cur = p.tabs.find((x) => x.id === p.activeId);
+      if (url && at === undefined && cur && !cur.url) return { tabs: p.tabs.map((x) => (x.id === cur.id ? tab : x)), activeId: tab.id };
+      const i = at === undefined ? p.tabs.length : Math.min(Math.max(at, 0), p.tabs.length);
       return { tabs: [...p.tabs.slice(0, i), tab, ...p.tabs.slice(i)], activeId: background && cur?.url ? p.activeId : tab.id };
     });
   };
