@@ -6,6 +6,7 @@ import { XIcon } from "../learning/icons";
 import ShortcutsSection from "./ShortcutsSection";
 import UpdateSection from "./UpdateSection";
 import BrowserSection from "./BrowserSection";
+import TerminalSessionsSection from "./TerminalSessionsSection";
 import { IconKeyboard, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX } from "@tabler/icons-react";
 import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
@@ -807,6 +808,7 @@ export default function SettingsDrawer({
                 ))}
               </div>
             </div>
+            <TerminalSessionsSection />{/* #1211 세션 관리 — 데스크톱 앱에서만 보임 */}
           </section>
           )}
 
