@@ -40,13 +40,16 @@ export default function BrowserSection() {
   };
   return (
     <section id="set-browser" className="scroll-mt-4 space-y-4 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
-      <label className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         <span className="min-w-0">
           <span className="block text-sm text-zinc-700 dark:text-zinc-300">{t("browser.agentControl")}</span>
           <span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("browser.agentControlDesc")}</span>
         </span>
-        <input type="checkbox" checked={agent} onChange={(e) => setSetting(BROWSER_KEYS.agentControl, e.target.checked)} className="size-4 shrink-0 accent-mustard-500" />
-      </label>
+        <button type="button" role="switch" aria-checked={agent} aria-label={t("browser.agentControl")} onClick={() => setSetting(BROWSER_KEYS.agentControl, !agent)}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition ${agent ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${agent ? "left-[22px]" : "left-0.5"}`} />
+        </button>
+      </div>
       {row(t("browser.homePage"), t("browser.homePageDesc"), (
         <span className="flex shrink-0 items-center gap-1.5">
           <input type="text" value={home ?? savedHome} onChange={(e) => setHome(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveHome(); }} placeholder="https://localhost:3000" spellCheck={false}
@@ -59,13 +62,16 @@ export default function BrowserSection() {
           {(["app", "external"] as const).map((v) => <button key={v} type="button" role="radio" aria-checked={linkTarget === v} onClick={() => setSetting(TKEYS.linkTarget, v)} className={seg(linkTarget === v)}>{t(`settings.terminalLink.${v}`)}</button>)}
         </div>
       ))}
-      <label className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         <span className="min-w-0">
           <span className="block text-sm text-zinc-700 dark:text-zinc-300">{t("browser.linkBackground")}</span>
           <span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("browser.linkBackgroundDesc")}</span>
         </span>
-        <input type="checkbox" checked={linkBg} onChange={(e) => setSetting(BROWSER_KEYS.linkBackground, e.target.checked)} className="size-4 shrink-0 accent-mustard-500" />
-      </label>
+        <button type="button" role="switch" aria-checked={linkBg} aria-label={t("browser.linkBackground")} onClick={() => setSetting(BROWSER_KEYS.linkBackground, !linkBg)}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition ${linkBg ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${linkBg ? "left-[22px]" : "left-0.5"}`} />
+        </button>
+      </div>
       {row(t("browser.userAgent"), t("browser.userAgentDesc"), (
         <div className={segWrap} role="radiogroup" aria-label={t("browser.userAgent")}>
           {(["clean", "default"] as const).map((v) => <button key={v} type="button" role="radio" aria-checked={ua === v} onClick={() => setSetting(BROWSER_KEYS.userAgent, v)} className={seg(ua === v)}>{t(`browser.userAgent.${v}`)}</button>)}
