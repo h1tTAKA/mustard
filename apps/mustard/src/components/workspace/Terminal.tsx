@@ -41,14 +41,14 @@ function openTerminalLink(cwd: string, l: TerminalLink | { kind: "url"; url: str
 // 버퍼 한 줄 → 글자와 "글자 위치 → 화면 칸" 표(한글·이모지는 두 칸이라 문자열 위치와 칸이 다름)
 // #1212 복사할 글 — 설정이 켜져 있으면(기본) 모든 줄에 공통인 왼쪽 여백을 자름(에이전트 TUI의 들여 그린 본문)
 // 첫 줄에서 선택 시작 앞에 있던 화면 글자 — 들여쓰기 안에서 시작했는지/줄 중간부터인지 가리는 데 씀(리뷰).
-// x는 문서상 1-based지만 버전마다 달라, 첫 줄 글이 실제로 이어지는 칸을 x-1·x 중에서 찾음(못 찾으면 undefined = 글만으로 판단).
+// start.x는 0-based 칸(xterm 6 소스 selectionStart 그대로 — 타입 주석의 1-based와 다름, 리뷰). 그 칸부터 첫 줄 글이 이어질 때만 믿고, 아니면 undefined = 글만으로 판단.
 function selectionPrefix(term: import("@xterm/xterm").Terminal, sel: string): string | undefined {
   const pos = term.getSelectionPosition();
   const line = pos ? term.buffer.active.getLine(pos.start.y)?.translateToString(false) : undefined;
   if (!pos || line === undefined) return undefined;
   const first = sel.split("\n")[0].replace(/\r$/, "").trimEnd();
-  for (const c of [pos.start.x - 1, pos.start.x]) if (c >= 0 && line.slice(c).startsWith(first)) return line.slice(0, c);
-  return undefined;
+  const c = pos.start.x;
+  return c >= 0 && line.slice(c).startsWith(first) ? line.slice(0, c) : undefined;
 }
 const copyText = (term: import("@xterm/xterm").Terminal) => {
   const sel = term.getSelection();
