@@ -1809,8 +1809,9 @@ ipcMain.handle("daemon:restart", async () => {
   setTimeout(() => app.quit(), 300);
   return { ok: true };
 });
-ipcMain.handle("terminal:list", async () => {
-  const ss = await termClient.list(); // 세션 목록(#764) — 레포탭 호버 카드 + 탭 이름(#803) + 세션 제목(#970)
+ipcMain.handle("terminal:list", async (_e, opts) => {
+  const ss = await termClient.list({ strict: !!opts?.strict }); // 세션 목록(#764) — 레포탭 호버 카드 + 탭 이름(#803) + 세션 제목(#970). strict(#1211 설정 세션 관리)면 조회 실패 = null
+  if (!ss) return null;
   // 비활성 탭도 검출: 데몬 screen(buffer tail)을 힌트로 agentForId에 전달(#836/#840). screen은 검출용, 렌더러 미전송(누출 방지).
   return ss.map(({ screen, ...s }) => ({ ...s, agent: agentForId(s.id, s.process, screen), sessionTitle: sessionTitleFor(s.id, s.process, screen) }));
 });

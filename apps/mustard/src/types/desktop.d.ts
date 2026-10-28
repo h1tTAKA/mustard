@@ -159,7 +159,7 @@ interface NunopiDesktopApi {
     // 세션 목록(#764) — 레포탭 호버 카드용. process=foreground 프로세스명(claude/codex/zsh…), cwd=spawn 디렉터리.
     // agent(#803)=실행 중 에이전트 id | null(버퍼 파싱 우선 → node 래퍼 CLI도 감지). 탭 자동 이름·아이콘용.
     // sessionTitle(#970)=세션 작업 제목(OSC 타이틀 요약) | ""(셸·미판정). 탭 라벨·호버 이름용.
-    list(): Promise<{ id: string; cwd: string; process: string; pid: number; agent: string | null; sessionTitle: string }[]>;
+    list(opts?: { strict?: boolean }): Promise<{ id: string; cwd: string; process: string; pid: number; agent: string | null; sessionTitle: string }[]>; // strict면 실패 시 null(설정 세션 관리만 사용 — 그쪽은 자체 타입)
     clearSaved?(): Promise<{ ok: boolean; cleared: number }>; // #1211
     killSession?(id: string): Promise<boolean>; // #1211
     // 에이전트 직접 실행(#864) — 신원을 실행 기록에 확정 + pty에 실행 커맨드 주입. 이후 탭 아이콘/이름=이 에이전트.

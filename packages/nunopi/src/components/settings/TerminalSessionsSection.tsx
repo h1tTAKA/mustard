@@ -6,7 +6,7 @@ import { IconRefresh, IconX, IconLoader2, IconTrash } from "@tabler/icons-react"
 import { useT, useConfirm, useToast } from "@mustard/core";
 
 type Session = { id: string; cwd: string; process: string; pid: number; agent: string | null; sessionTitle: string };
-type TermApi = { list(): Promise<Session[]>; killSession?(id: string): Promise<boolean>; clearSaved?(): Promise<{ ok: boolean; cleared: number }>; onExit?(cb: (p: { id: string }) => void): () => void };
+type TermApi = { list(opts?: { strict?: boolean }): Promise<Session[] | null>; killSession?(id: string): Promise<boolean>; clearSaved?(): Promise<{ ok: boolean; cleared: number }>; onExit?(cb: (p: { id: string }) => void): () => void };
 type DaemonApi = { restart(): Promise<{ ok: boolean; reason?: string }> };
 const desk = () => (typeof window === "undefined" ? undefined : (window.nunopiDesktop as unknown as { terminal?: TermApi; daemon?: DaemonApi } | undefined));
 const termApi = (): TermApi | undefined => desk()?.terminal;
@@ -27,7 +27,7 @@ export default function TerminalSessionsSection() {
   const seq = useRef(0); // 겹친 요청 중 마지막 응답만(늦게 온 옛 목록이 덮어쓰지 않게, 리뷰)
   const refresh = useCallback(() => {
     const n = ++seq.current;
-    void termApi()?.list().then((l) => { if (n === seq.current) setList(l); }).catch(() => { if (n === seq.current) setList([]); });
+    void termApi()?.list().then((l) => { if (n === seq.current) setList(l ?? []); }).catch(() => { if (n === seq.current) setList([]); });
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
   // 세션이 실제로 끝나면(끄기·셸 종료) 목록 다시 — 고정 대기 대신 exit 신호로(리뷰)
@@ -43,7 +43,7 @@ export default function TerminalSessionsSection() {
   // 전부 끄기 — 에이전트가 일하는 세션도 함께라 개수와 함께 확인
   // 확인 전에 목록을 새로 받아(그 사이 생긴 세션까지) 그 목록을 끔. 에이전트가 도는 세션은 이름을 보여 줌(리뷰)
   const killAll = async () => {
-    const ss = await termApi()?.list().catch(() => null);
+    const ss = await termApi()?.list({ strict: true }).catch(() => null); // 실패(null)와 빈 목록 구분(리뷰)
     if (!ss) { toast(t("sessions.killFailed"), "error"); refresh(); return; } // 목록 조회 자체가 실패
     if (!ss.length) { refresh(); return; } // 그 사이 다 끝남 — 화면만 갱신(리뷰)
     const agents = ss.filter((s) => s.agent).map((s) => `${s.agent} · ${shortCwd(s.cwd)}`);
