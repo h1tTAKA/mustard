@@ -3,7 +3,7 @@
 // 데스크톱 앱(Mustard)에만 있는 IPC라 타입은 여기서만 좁혀 씀(nunopi 단독 앱 타입엔 terminal이 없음).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconRefresh, IconX, IconLoader2, IconTrash } from "@tabler/icons-react";
-import { useT, useConfirm, useToast } from "@mustard/core";
+import { useT, useConfirm, useToast, useSetting, setSetting, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
 
 type Session = { id: string; cwd: string; process: string; pid: number; agent: string | null; sessionTitle: string };
 type TermApi = { list(opts?: { strict?: boolean }): Promise<Session[] | null>; killSession?(id: string): Promise<boolean>; clearSaved?(): Promise<{ ok: boolean; cleared: number }>; onExit?(cb: (p: { id: string }) => void): () => void };
@@ -23,6 +23,7 @@ export default function TerminalSessionsSection() {
   const t = useT();
   const confirm = useConfirm(), toast = useToast();
   const [busy, setBusy] = useState(false);
+  const killOnClose = useSetting<boolean>(WKEYS.killTerminalsOnClose, WORKSPACE_DEFAULTS.killTerminalsOnClose); // 레포 탭 닫을 때 세션도 끄기
   const [list, setList] = useState<Session[] | null>(null);
   const seq = useRef(0); // 겹친 요청 중 마지막 응답만(늦게 온 옛 목록이 덮어쓰지 않게, 리뷰)
   const refresh = useCallback(() => {
@@ -81,6 +82,13 @@ export default function TerminalSessionsSection() {
         </button>
       </div>
       <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("sessions.desc")}</p>
+      <div className="flex items-center justify-between gap-3 py-1">
+        <span className="min-w-0"><span className="block text-sm text-zinc-700 dark:text-zinc-300">{t("settings.killTerminalsOnClose")}</span><span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("settings.killTerminalsOnCloseDesc")}</span></span>
+        <button type="button" role="switch" aria-checked={killOnClose} aria-label={t("settings.killTerminalsOnClose")} onClick={() => setSetting(WKEYS.killTerminalsOnClose, !killOnClose)}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition ${killOnClose ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${killOnClose ? "left-[22px]" : "left-0.5"}`} />
+        </button>
+      </div>
       <div className="max-h-72 divide-y divide-zinc-100 overflow-y-auto rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-700">
         {list === null ? <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-zinc-400"><IconLoader2 size={12} className="animate-spin" aria-hidden />{t("sessions.loading")}</div>
           : list.length === 0 ? <div className="px-3 py-2 text-xs text-zinc-400">{t("sessions.empty")}</div>
