@@ -44,11 +44,11 @@ function openTerminalLink(cwd: string, l: TerminalLink | { kind: "url"; url: str
 // start.x는 0-based 칸(xterm 6 소스 selectionStart 그대로 — 타입 주석의 1-based와 다름, 리뷰). 그 칸부터 첫 줄 글이 이어질 때만 믿고, 아니면 undefined = 글만으로 판단.
 function selectionPrefix(term: import("@xterm/xterm").Terminal, sel: string): string | undefined {
   const pos = term.getSelectionPosition();
-  const line = pos ? term.buffer.active.getLine(pos.start.y)?.translateToString(false) : undefined;
-  if (!pos || line === undefined) return undefined;
+  const line = pos ? term.buffer.active.getLine(pos.start.y) : undefined;
+  if (!pos || !line || pos.start.x < 0) return undefined;
+  // 칸 번호로 잘라야 함 — 한글 같은 두 칸 글자가 있으면 문자열 위치와 칸이 어긋남(리뷰). translateToString(_, 시작칸, 끝칸)은 칸 기준.
   const first = sel.split("\n")[0].replace(/\r$/, "").trimEnd();
-  const c = pos.start.x;
-  return c >= 0 && line.slice(c).startsWith(first) ? line.slice(0, c) : undefined;
+  return line.translateToString(false, pos.start.x).startsWith(first) ? line.translateToString(false, 0, pos.start.x) : undefined;
 }
 const copyText = (term: import("@xterm/xterm").Terminal) => {
   const sel = term.getSelection();
