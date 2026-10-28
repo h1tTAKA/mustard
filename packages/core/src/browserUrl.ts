@@ -1,4 +1,4 @@
-// 인앱 브라우저 주소창 입력 → 이동할 URL(#1034). 못 알아들으면 null(이동 안 함).
+// 인앱 브라우저 주소창 입력 → 이동할 URL(#1034). core에 둠 — 앱(주소창·홈 페이지)과 설정 화면(홈 페이지 검사)이 같은 판정을 쓰게(#1209 리뷰). 못 알아들으면 null(이동 안 함).
 // localhost·IP·포트만(":3000") → http, 그 외 도메인 → https. 검색어는 아래 browserTarget이 검색 URL로(#1209).
 export function normalizeBrowserUrl(input: string): string | null {
   const s = input.trim();

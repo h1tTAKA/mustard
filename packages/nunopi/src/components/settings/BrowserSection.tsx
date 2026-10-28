@@ -1,7 +1,7 @@
 "use client";
 // 설정 > 브라우저(#1209) — 인앱 브라우저 옵션. 로그인(쿠키)은 레포끼리 공유(유저 결정).
 import { useState, type ReactNode } from "react";
-import { useT, useSetting, setSetting, useConfirm, useToast, BROWSER_KEYS, BROWSER_DEFAULTS, TKEYS, TERMINAL_DEFAULTS } from "@mustard/core";
+import { useT, useSetting, setSetting, useConfirm, useToast, BROWSER_KEYS, BROWSER_DEFAULTS, TKEYS, TERMINAL_DEFAULTS, normalizeBrowserUrl } from "@mustard/core";
 
 const ZOOMS = [25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300, 400, 500];
 const ENGINES = [["google", "Google"], ["duckduckgo", "DuckDuckGo"], ["bing", "Bing"], ["kagi", "Kagi"]] as const;
@@ -20,7 +20,7 @@ export default function BrowserSection() {
   const linkTarget = useSetting<string>(TKEYS.linkTarget, TERMINAL_DEFAULTS.linkTarget);
   const linkBg = useSetting<boolean>(BROWSER_KEYS.linkBackground, BROWSER_DEFAULTS.linkBackground);
   // 주소로 못 알아들으면 저장 안 하고 알림(빈 값 = 빈 탭은 허용) — 조용히 빈 탭이 뜨지 않게(리뷰)
-  const okHome = (h: string) => { if (!h) return true; if (/\s/.test(h)) return false; try { return /^https?:$/.test(new URL(/^https?:\/\//i.test(h) ? h : `https://${h}`).protocol); } catch { return false; } };
+  const okHome = (h: string) => !h || normalizeBrowserUrl(h) !== null; // 실제로 새 탭이 쓰는 판정과 같은 함수(리뷰)
   const saveHome = () => { if (home === null) return; const h = home.trim(); if (!okHome(h)) { toast(t("browser.homeInvalid"), "error"); return; } setSetting(BROWSER_KEYS.homePage, h); setHome(null); };
   const row = (title: string, desc: string, control: ReactNode) => (
     <div className="flex items-center justify-between gap-3">

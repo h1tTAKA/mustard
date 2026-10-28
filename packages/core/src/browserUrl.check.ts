@@ -1,6 +1,6 @@
-// normalizeBrowserUrl self-check — 실행: node --experimental-strip-types src/lib/browser/url.check.ts
+// normalizeBrowserUrl self-check — 실행: node --experimental-strip-types packages/core/src/browserUrl.check.ts
 import assert from "node:assert";
-import { normalizeBrowserUrl as n, browserTarget as b } from "./url.ts";
+import { normalizeBrowserUrl as n, browserTarget as b } from "./browserUrl.ts";
 
 assert.strictEqual(n("localhost:3000"), "http://localhost:3000/");
 assert.strictEqual(n(":5173"), "http://localhost:5173/");

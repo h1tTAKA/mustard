@@ -5,8 +5,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { WebviewTag } from "electron";
 import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld, IconArrowsMinimize, IconPlus, IconPointer, IconLoader2 } from "@tabler/icons-react";
-import { useT, useSetting, appChords, SHORTCUT_OVERRIDES_KEY, type ShortcutOverrides, getSetting, BROWSER_KEYS, BROWSER_DEFAULTS } from "@mustard/core";
-import { browserTarget, normalizeBrowserUrl } from "@/lib/browser/url";
+import { useT, useSetting, appChords, SHORTCUT_OVERRIDES_KEY, type ShortcutOverrides, getSetting, BROWSER_KEYS, BROWSER_DEFAULTS, browserTarget, normalizeBrowserUrl } from "@mustard/core";
 import { PICK_SCRIPT, PICK_CANCEL, type PickedElement } from "@/lib/browser/pickScript";
 import { formatPickFeedback } from "@/lib/browser/feedback";
 import { sendToAgent } from "@/lib/browser/sendToAgent";
