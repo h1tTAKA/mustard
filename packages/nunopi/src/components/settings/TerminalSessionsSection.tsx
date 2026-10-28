@@ -44,7 +44,8 @@ export default function TerminalSessionsSection() {
   // 확인 전에 목록을 새로 받아(그 사이 생긴 세션까지) 그 목록을 끔. 에이전트가 도는 세션은 이름을 보여 줌(리뷰)
   const killAll = async () => {
     const ss = await termApi()?.list().catch(() => null);
-    if (!ss?.length) { if ((list?.length ?? 0) > 0) toast(t("sessions.killFailed"), "error"); refresh(); return; } // 보이던 세션이 있는데 목록을 못 받음 = 데몬 연결 문제
+    if (!ss) { toast(t("sessions.killFailed"), "error"); refresh(); return; } // 목록 조회 자체가 실패
+    if (!ss.length) { refresh(); return; } // 그 사이 다 끝남 — 화면만 갱신(리뷰)
     const agents = ss.filter((s) => s.agent).map((s) => `${s.agent} · ${shortCwd(s.cwd)}`);
     const detail = agents.length ? t("sessions.killAllAgents", { list: agents.slice(0, 5).join(", ") + (agents.length > 5 ? ` +${agents.length - 5}` : "") }) : undefined;
     if (!(await confirm({ title: t("sessions.killAllTitle"), message: t("sessions.killAllConfirm", { n: ss.length }), detail, confirmText: t("sessions.killAll"), tone: "warn" }))) return;
