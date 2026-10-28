@@ -1670,10 +1670,10 @@ ipcMain.handle("terminal:clear-saved", async () => {
 setInterval(persistBuffers, 5000); // 크래시 대비 주기 저장(before-quit은 아래 quit 훅서)
 setInterval(saveRegistry, 3000);   // #864 실행 기록 영속(재시작 생존 세션 신원 복원용)
 
-ipcMain.handle("terminal:ensure", async (_e, { id, cwd, cols, rows, dark, shell }) => {
+ipcMain.handle("terminal:ensure", async (_e, { id, cwd, cols, rows, dark, shell, shellArgs }) => {
   cwdById.set(id, cwd); // #765 버퍼 파서 상태를 이 레포에 매핑
   try { removeRepoHooks(cwd, app.getPath("userData")); } catch { /* 무시 */ } // #765 예전 #764 훅 주입분 정리(버퍼 스크레이핑이 대체)
-  const r = await termClient.ensure({ id, cwd, cols, rows, dark, shell: typeof shell === "string" ? shell.trim().slice(0, 500) : "" }); // #914 배경 밝기 힌트(COLORFGBG) 전달, #1196 셸
+  const r = await termClient.ensure({ id, cwd, cols, rows, dark, shell: typeof shell === "string" ? shell.trim().slice(0, 500) : "", shellArgs }); // #914 배경 밝기 힌트(COLORFGBG) 전달, #1196 셸, #1213 셸 인자(데몬이 검사)
   if (!r.ok) return { ok: false, reason: r.reason || "daemon unavailable" };
   let buffer = r.buffer || "";
   // 콜드 스타트(데몬 buffer 빔)인데 디스크 저장분 있으면 이전 내용 재생 시드(#680). warm 재접속이면 skip.

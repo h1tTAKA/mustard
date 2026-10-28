@@ -176,6 +176,7 @@ export default function SettingsDrawer({
   // 터미널 설정(#926) — useSetting으로 구독(변경 즉시 반영). 모든 훅은 early-return 위.
   const tFontSize = useSetting<number>(TKEYS.fontSize, TERMINAL_DEFAULTS.fontSize);
   const tFontFamily = useSetting<string>(TKEYS.fontFamily, TERMINAL_DEFAULTS.fontFamily);
+  const tShellArgs = useSetting<string>(TKEYS.shellArgs, TERMINAL_DEFAULTS.shellArgs); // #1213
   const tShell = useSetting<string>(TKEYS.shell, TERMINAL_DEFAULTS.shell); // #1196
   const tOsc52 = useSetting<boolean>(TKEYS.osc52, TERMINAL_DEFAULTS.osc52);
   const tImages = useSetting<boolean>(TKEYS.images, TERMINAL_DEFAULTS.images);
@@ -721,6 +722,13 @@ export default function SettingsDrawer({
               <input type="text" value={tShell} onChange={(e) => setSetting(TKEYS.shell, e.target.value)} placeholder={t("settings.terminalShellPh")} spellCheck={false}
                 className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-mono text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
               <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.terminalShellHint")}</p>
+            </label>
+            {/* 셸 인자(#1213) — 한 줄에 하나, 새 탭부터 */}
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalShellArgs")}</span>
+              <textarea rows={2} value={tShellArgs} onChange={(e) => setSetting(TKEYS.shellArgs, e.target.value)} placeholder="-l" spellCheck={false}
+                className="w-full resize-y rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-mono text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.terminalShellArgsHint")}</p>
             </label>
             {/* 폰트 패밀리 */}
             <label className="block space-y-1.5">

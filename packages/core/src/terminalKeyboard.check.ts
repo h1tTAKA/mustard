@@ -1,6 +1,6 @@
 // terminalKeyboard 점검 — node --experimental-strip-types packages/core/src/terminalKeyboard.check.ts
 import assert from "node:assert";
-import { effectiveMacOptionAsAlt as eff, readMacOptionAsAlt as read, altCharForCode as ch, isUsInputSource as us, jisYenInput as yen } from "./terminalKeyboard.ts";
+import { effectiveMacOptionAsAlt as eff, readMacOptionAsAlt as read, altCharForCode as ch, isUsInputSource as us, jisYenInput as yen, parseShellArgs as args } from "./terminalKeyboard.ts";
 
 assert.ok(us("com.apple.keylayout.US") && us("com.apple.keylayout.ABC"));
 assert.ok(!us("com.apple.inputmethod.Korean.2SetKorean") && !us("com.apple.keylayout.USInternational-PC") && !us(null));
@@ -24,4 +24,6 @@ assert.strictEqual(yen(k({}), false), null, "꺼져 있으면 그대로");
 assert.strictEqual(yen(k({ shiftKey: true }), true), null, "수식키 같이 누르면 그대로");
 assert.strictEqual(yen(k({ keyCode: 229 }), true), null, "IME 조합 중은 그대로");
 assert.strictEqual(yen(k({ code: "Backslash" }), true), null, "물리 ¥ 키만");
+assert.deepStrictEqual(args("-l\n\n--login\r\n-c foo"), ["-l", "--login", "-c foo"], "줄마다 하나, 빈 줄 뺌, 따옴표·공백 해석 없음");
+assert.deepStrictEqual(args(""), []);
 console.log("terminalKeyboard ok");

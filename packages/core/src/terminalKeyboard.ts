@@ -37,5 +37,8 @@ export function jisYenInput(e: YenKeyEvent, enabled: boolean): "input" | "suppre
   return e.type === "keypress" || e.type === "keyup" ? "suppress" : null;
 }
 
+// 셸 인자 — 한 줄에 인자 하나(따옴표 해석 없음, 그대로 넘김). 빈 줄은 뺌.
+export const parseShellArgs = (text: string): string[] => text.split("\n").map((l) => l.replace(/\r$/, "")).filter((l) => l.length > 0);
+
 // 더블클릭 단어 구분 기호 기본값(xterm 기본과 같음) — 설정이 비면 이걸.
 export const DEFAULT_WORD_SEPARATOR = " ()[]{}',\"`";

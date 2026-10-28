@@ -4,7 +4,7 @@
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { findLinks, resolvePath, type TerminalLink } from "@/lib/terminalLinks";
-import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, readMacOptionAsAlt, effectiveMacOptionAsAlt, altCharForCode, jisYenInput, DEFAULT_WORD_SEPARATOR, type TerminalFontWeight } from "@mustard/core";
+import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, readMacOptionAsAlt, effectiveMacOptionAsAlt, altCharForCode, jisYenInput, DEFAULT_WORD_SEPARATOR, parseShellArgs, type TerminalFontWeight } from "@mustard/core";
 import { inputSourceId, refreshInputSource, subscribeInputSource } from "@/lib/inputSource";
 
 // 터미널 설정(#926) — 스토어서 읽어 xterm 옵션 구성. copyOnSelect/rightClickPaste는 핸들러서 별도.
@@ -324,7 +324,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       const firstEnsure = async () => {
         if (disposed || !term) return;
         try {
-          const r = await nd.terminal.ensure({ id, cwd, cols: term.cols, rows: term.rows, dark: isTerminalDark(getTerminalThemePref()), shell: getSetting<string>(TKEYS.shell, TERMINAL_DEFAULTS.shell) }); // #1196 새 세션만 셸 적용(있는 세션은 그대로)
+          const r = await nd.terminal.ensure({ id, cwd, cols: term.cols, rows: term.rows, dark: isTerminalDark(getTerminalThemePref()), shell: getSetting<string>(TKEYS.shell, TERMINAL_DEFAULTS.shell), shellArgs: parseShellArgs(getSetting<string>(TKEYS.shellArgs, TERMINAL_DEFAULTS.shellArgs)) }); // #1196 새 세션만 셸 적용(있는 세션은 그대로), #1213 셸 인자
           if (disposed || !term) return;
           if (!r.ok) { term.write(`\r\n[${tRef.current("terminal.startFailed", { reason: r.reason ? `: ${r.reason}` : "" })}]\r\n`); return; }
           if (r.buffer) term.write(stripTermQueries(r.buffer)); // 정확한 cols 확보 후 재생(줄바꿈 안 굳음). 질의 시퀀스 제거(에코 방지 #807)
