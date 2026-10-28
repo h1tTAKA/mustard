@@ -87,8 +87,8 @@ function OnboardingInner({ onDone }: { onDone: () => void }) {
                   </div>
                   <button type="button" role="switch" aria-checked={nunopi} aria-label={t("onboarding.nunopiLabel")}
                     onClick={() => setNunopi((v) => !v)}
-                    className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${nunopi ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
-                    <span className={`absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-all ${nunopi ? "left-[18px]" : "left-0.5"}`} />
+                    className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${nunopi ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                    <span className={`absolute top-0.5 size-4 rounded-full shadow-sm transition-all ${nunopi ? "left-[18px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
                   </button>
                 </div>
                 <p className="mt-2 text-xs leading-relaxed text-zinc-500">{t("onboarding.nunopiDesc")}</p>

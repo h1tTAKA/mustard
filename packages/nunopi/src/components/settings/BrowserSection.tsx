@@ -46,8 +46,8 @@ export default function BrowserSection() {
           <span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("browser.agentControlDesc")}</span>
         </span>
         <button type="button" role="switch" aria-checked={agent} aria-label={t("browser.agentControl")} onClick={() => setSetting(BROWSER_KEYS.agentControl, !agent)}
-          className={`relative h-6 w-11 shrink-0 rounded-full transition ${agent ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
-          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${agent ? "left-[22px]" : "left-0.5"}`} />
+          className={`relative h-6 w-11 shrink-0 rounded-full transition ${agent ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${agent ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
         </button>
       </div>
       {row(t("browser.homePage"), t("browser.homePageDesc"), (
@@ -68,8 +68,8 @@ export default function BrowserSection() {
           <span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("browser.linkBackgroundDesc")}</span>
         </span>
         <button type="button" role="switch" aria-checked={linkBg} aria-label={t("browser.linkBackground")} onClick={() => setSetting(BROWSER_KEYS.linkBackground, !linkBg)}
-          className={`relative h-6 w-11 shrink-0 rounded-full transition ${linkBg ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
-          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${linkBg ? "left-[22px]" : "left-0.5"}`} />
+          className={`relative h-6 w-11 shrink-0 rounded-full transition ${linkBg ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${linkBg ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
         </button>
       </div>
       {row(t("browser.userAgent"), t("browser.userAgentDesc"), (
