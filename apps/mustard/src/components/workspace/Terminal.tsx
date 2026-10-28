@@ -4,7 +4,7 @@
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { findLinks, resolvePath, type TerminalLink } from "@/lib/terminalLinks";
-import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, readMacOptionAsAlt, effectiveMacOptionAsAlt, altCharForCode, type TerminalFontWeight } from "@mustard/core";
+import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, readMacOptionAsAlt, effectiveMacOptionAsAlt, altCharForCode, jisYenInput, DEFAULT_WORD_SEPARATOR, type TerminalFontWeight } from "@mustard/core";
 import { inputSourceId, refreshInputSource, subscribeInputSource } from "@/lib/inputSource";
 
 // 터미널 설정(#926) — 스토어서 읽어 xterm 옵션 구성. copyOnSelect/rightClickPaste는 핸들러서 별도.
@@ -23,6 +23,7 @@ function termOptionsFromSettings() {
     fontWeight: getSetting<TerminalFontWeight>(TKEYS.fontWeight, TERMINAL_DEFAULTS.fontWeight),
     scrollSensitivity: getSetting<number>(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity),
     fastScrollSensitivity: getSetting<number>(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity), // #1212 ⌥ 누른 채
+    wordSeparator: getSetting<string>(TKEYS.wordSeparator, TERMINAL_DEFAULTS.wordSeparator) || DEFAULT_WORD_SEPARATOR, // #1213 더블클릭 단어 구분
     macOptionIsMeta: macOptionMode() === "both", // #1213 양쪽만 xterm이 처리, 한쪽만은 키 핸들러가 ESC+글자
   };
 }
@@ -213,6 +214,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
         term.options.scrollSensitivity = o.scrollSensitivity;
         term.options.fastScrollSensitivity = o.fastScrollSensitivity;
         term.options.macOptionIsMeta = o.macOptionIsMeta;
+        term.options.wordSeparator = o.wordSeparator;
         try { fit.fit(); } catch { /* ignore */ }
       };
       offSettings = subscribeSettings(applyTermSettings);
@@ -275,6 +277,9 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       let optBits = 0;
       term.textarea?.addEventListener("blur", () => { optBits = 0; });
       term.attachCustomKeyEventHandler((e) => {
+        // #1213 JIS ¥ 키 → 백슬래시(keydown에 넣고 keypress·keyup은 삼킴)
+        const yen = isMac ? jisYenInput(e, getSetting<boolean>(TKEYS.jisYenToBackslash, TERMINAL_DEFAULTS.jisYenToBackslash)) : null;
+        if (yen) { e.preventDefault(); if (yen === "input") nd.terminal.input({ id, data: "\\" }); return false; }
         if (e.key === "Alt") {
           const bit = e.location === 1 ? 1 : e.location === 2 ? 2 : 0;
           if (e.type === "keydown") { optBits = bit ? optBits | bit : 0; refreshInputSource(); }

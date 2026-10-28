@@ -1,4 +1,4 @@
-// #1213 맥 Option을 Alt로 — 자동(입력 소스가 US·ABC면 양쪽, 아니면 끄기) / 양쪽 / 왼쪽만 / 오른쪽만 / 끄기.
+// #1213 터미널 키보드 — 맥 Option을 Alt로 — 자동(입력 소스가 US·ABC면 양쪽, 아니면 끄기) / 양쪽 / 왼쪽만 / 오른쪽만 / 끄기.
 export type MacOptionAsAlt = "auto" | "both" | "left" | "right" | "off";
 export const MAC_OPTION_AS_ALT: readonly MacOptionAsAlt[] = ["auto", "both", "left", "right", "off"];
 
@@ -27,3 +27,15 @@ export function altCharForCode(code: string): string | null {
   if (/^Digit[0-9]$/.test(code)) return code.slice(5);
   return PUNCT[code] ?? null;
 }
+
+// JIS 키보드 ¥ 키 → \ — 물리 ¥ 키(IntlYen)를 수식키 없이 눌렀을 때만. keydown은 \ 입력, 같이 오는 keypress·keyup은 삼켜 ¥가 안 들어가게.
+// IME 조합 중(229)은 그대로.
+export type YenKeyEvent = { type: string; code: string; key: string; keyCode: number; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean };
+export function jisYenInput(e: YenKeyEvent, enabled: boolean): "input" | "suppress" | null {
+  if (!enabled || e.keyCode === 229 || e.code !== "IntlYen" || e.key !== "¥" || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return null;
+  if (e.type === "keydown") return "input";
+  return e.type === "keypress" || e.type === "keyup" ? "suppress" : null;
+}
+
+// 더블클릭 단어 구분 기호 기본값(xterm 기본과 같음) — 설정이 비면 이걸.
+export const DEFAULT_WORD_SEPARATOR = " ()[]{}',\"`";
