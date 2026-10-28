@@ -7,7 +7,7 @@ import ShortcutsSection from "./ShortcutsSection";
 import UpdateSection from "./UpdateSection";
 import BrowserSection from "./BrowserSection";
 import TerminalSessionsSection from "./TerminalSessionsSection";
-import { IconKeyboard, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX } from "@tabler/icons-react";
+import { IconKeyboard, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus } from "@tabler/icons-react";
 import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
 import ComputerUseSection from "./ComputerUseSection";
@@ -182,12 +182,19 @@ export default function SettingsDrawer({
   const tCursorStyle = useSetting<TerminalCursorStyle>(TKEYS.cursorStyle, TERMINAL_DEFAULTS.cursorStyle);
   const tCursorBlink = useSetting<boolean>(TKEYS.cursorBlink, TERMINAL_DEFAULTS.cursorBlink);
   const tScrollback = useSetting<number>(TKEYS.scrollback, TERMINAL_DEFAULTS.scrollback);
+  const [scrollbackCustom, setScrollbackCustom] = useState(false); // #1212 "사용자 지정"을 눌렀으면 숫자 칸(프리셋 값이 아니면 자동으로 보임)
+  const showScrollbackInput = scrollbackCustom || ![5000, 10000, 25000, 50000].includes(tScrollback);
+  const [scrollbackDraft, setScrollbackDraft] = useState<string | null>(null); // 치는 중에는 저장 안 함 — 칸을 벗어나거나 Enter 때 범위 맞춰 저장(리뷰)
+  const commitScrollback = () => { if (scrollbackDraft === null) return; const n = Number(scrollbackDraft); if (scrollbackDraft.trim() && Number.isFinite(n)) setSetting(TKEYS.scrollback, Math.min(100000, Math.max(100, Math.round(n)))); setScrollbackDraft(null); };
   const tCopyOnSelect = useSetting<boolean>(TKEYS.copyOnSelect, TERMINAL_DEFAULTS.copyOnSelect);
+  const tCopyTrim = useSetting<boolean>(TKEYS.copyTrimGutter, TERMINAL_DEFAULTS.copyTrimGutter); // #1212
   const tRightClickPaste = useSetting<boolean>(TKEYS.rightClickPaste, TERMINAL_DEFAULTS.rightClickPaste);
   const tGpu = useSetting<boolean>(TKEYS.gpu, TERMINAL_DEFAULTS.gpu);
   // 터미널 심화(#941)
   const tFontWeight = useSetting<string>(TKEYS.fontWeight, TERMINAL_DEFAULTS.fontWeight);
   const tScrollSensitivity = useSetting<number>(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity);
+  const tFastScroll = useSetting<number>(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity); // #1212
+  const tTuiScroll = useSetting<number>(TKEYS.tuiScrollSensitivity, TERMINAL_DEFAULTS.tuiScrollSensitivity);
   const tMacOptionIsMeta = useSetting<boolean>(TKEYS.macOptionIsMeta, TERMINAL_DEFAULTS.macOptionIsMeta);
   const tFocusFollowsMouse = useSetting<boolean>(TKEYS.focusFollowsMouse, TERMINAL_DEFAULTS.focusFollowsMouse);
   const tLinkTarget = useSetting<"app" | "external">(TKEYS.linkTarget, TERMINAL_DEFAULTS.linkTarget); // #1193
@@ -758,6 +765,7 @@ export default function SettingsDrawer({
             {([
               { key: TKEYS.cursorBlink, on: tCursorBlink, label: t("settings.terminalCursorBlink") },
               { key: TKEYS.copyOnSelect, on: tCopyOnSelect, label: t("settings.terminalCopyOnSelect") },
+              { key: TKEYS.copyTrimGutter, on: tCopyTrim, label: t("settings.terminalCopyTrimGutter") }, // #1212
               { key: TKEYS.rightClickPaste, on: tRightClickPaste, label: t("settings.terminalRightClickPaste") },
               { key: TKEYS.gpu, on: tGpu, label: t("settings.terminalGpu") },
               { key: TKEYS.focusFollowsMouse, on: tFocusFollowsMouse, label: t("settings.terminalFocusFollowsMouse") },
@@ -769,20 +777,34 @@ export default function SettingsDrawer({
                 <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{row.label}</span>
                 <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
                   onClick={() => setSetting(row.key, !row.on)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                   <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${row.on ? "left-[22px]" : "left-0.5"}`} />
                 </button>
               </div>
             ))}
-            {/* 스크롤백 */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalScrollback")}</span>
-                <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.terminalScrollbackHint")}</p>
+            {/* 스크롤백(#1212) — 5k/10k/25k/50k/사용자 지정. 새 탭부터 */}
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalScrollback")}</span>
+                  <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.terminalScrollbackHint")}</p>
+                </div>
+                <div className="inline-flex shrink-0 rounded-xl border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-900" role="radiogroup" aria-label={t("settings.terminalScrollback")}>
+                  {[5000, 10000, 25000, 50000].map((n) => (
+                    <button key={n} type="button" role="radio" aria-checked={!scrollbackCustom && tScrollback === n} onClick={() => { setScrollbackCustom(false); setScrollbackDraft(null); setSetting(TKEYS.scrollback, n); }}
+                      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${!scrollbackCustom && tScrollback === n ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>{n / 1000}k</button>
+                  ))}
+                  <button type="button" role="radio" aria-checked={showScrollbackInput} onClick={() => setScrollbackCustom(true)}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${showScrollbackInput ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>{t("settings.scrollbackCustom")}</button>
+                </div>
               </div>
-              <input type="number" min={100} max={100000} step={100} value={tScrollback}
-                onChange={(e) => setSetting(TKEYS.scrollback, Math.min(100000, Math.max(100, Number(e.target.value) || TERMINAL_DEFAULTS.scrollback)))}
-                className="w-28 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+              {showScrollbackInput && (
+                <div className="flex justify-end">
+                  <input type="number" min={100} max={100000} step={100} value={scrollbackDraft ?? tScrollback} aria-label={t("settings.scrollbackCustom")}
+                    onChange={(e) => setScrollbackDraft(e.target.value)} onBlur={commitScrollback} onKeyDown={(e) => { if (e.key === "Enter") commitScrollback(); }}
+                    className="w-32 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+                </div>
+              )}
             </div>
             {/* 폰트 굵기(#941) */}
             <div className="space-y-1.5">
@@ -796,16 +818,32 @@ export default function SettingsDrawer({
                 ))}
               </div>
             </div>
-            {/* 스크롤 속도(#941) — scrollSensitivity는 값이 높을수록 빠름(한 틱에 더 많이 이동) */}
-            <div className="space-y-1.5">
-              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalScrollSpeed")}</span>
-              <div className="inline-flex w-full rounded-xl border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-900">
-                {([{ v: 0.5, k: "slow" }, { v: 1, k: "normal" }, { v: 3, k: "fast" }] as const).map((opt) => (
-                  <button key={opt.k} type="button" onClick={() => setSetting(TKEYS.scrollSensitivity, opt.v)}
-                    className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${tScrollSensitivity === opt.v ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
-                    {t(`settings.scrollSpeed.${opt.k}`)}
-                  </button>
-                ))}
+            {/* 스크롤 속도(#941·#1212) — 줄마다 − 값 + 로 한 단계씩 + 전체 기본값 */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="min-w-0"><span className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalScrollSpeed")}</span><span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("settings.scrollSpeedDesc")}</span></span>
+                <button type="button" onClick={() => { setSetting(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity); setSetting(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity); setSetting(TKEYS.tuiScrollSensitivity, TERMINAL_DEFAULTS.tuiScrollSensitivity); }}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconRotate size={12} stroke={2} aria-hidden />{t("settings.scrollSpeedReset")}</button>
+              </div>
+              <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                {([
+                  { k: "normal", key: TKEYS.scrollSensitivity, v: tScrollSensitivity, min: 0.5, max: 3, step: 0.25 },
+                  { k: "fast", key: TKEYS.fastScrollSensitivity, v: tFastScroll, min: 1, max: 10, step: 1 },
+                  { k: "tui", key: TKEYS.tuiScrollSensitivity, v: tTuiScroll, min: 1, max: 10, step: 1 },
+                ] as const).map((r) => {
+                  const go = (d: number) => setSetting(r.key, Math.min(r.max, Math.max(r.min, Math.round(r.v / r.step) * r.step + d * r.step)));
+                  const name = t(`settings.scrollSpeed3.${r.k}`);
+                  return (
+                    <div key={r.k} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                      <span className="min-w-0"><span className="block text-sm text-zinc-700 dark:text-zinc-300">{name}</span><span className="block text-xs text-zinc-400 dark:text-zinc-500">{t(`settings.scrollSpeed3.${r.k}Desc`)}</span></span>
+                      <span className="flex shrink-0 items-center rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800" role="group" aria-label={name}>
+                        <button type="button" onClick={() => go(-1)} aria-disabled={r.v <= r.min} aria-label={`${name} −`} className="grid size-7 place-items-center rounded-md text-zinc-600 transition hover:bg-white aria-disabled:opacity-30 aria-disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-700"><IconMinus size={14} stroke={2} aria-hidden /></button>
+                        <span className="w-12 text-center font-mono text-xs tabular-nums text-zinc-800 dark:text-zinc-100" aria-live="polite">{Number(r.v.toFixed(2))}x</span>
+                        <button type="button" onClick={() => go(1)} aria-disabled={r.v >= r.max} aria-label={`${name} +`} className="grid size-7 place-items-center rounded-md text-zinc-600 transition hover:bg-white aria-disabled:opacity-30 aria-disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-700"><IconPlus size={14} stroke={2} aria-hidden /></button>
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <TerminalSessionsSection />{/* #1211 세션 관리 — 데스크톱 앱에서만 보임 */}
@@ -983,7 +1021,7 @@ export default function SettingsDrawer({
                 </div>
                 <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
                   onClick={() => setSetting(row.key, !row.on)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                   <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${row.on ? "left-[22px]" : "left-0.5"}`} />
                 </button>
               </div>
@@ -1010,7 +1048,7 @@ export default function SettingsDrawer({
                 </div>
                 <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
                   onClick={() => setSetting(row.key, !row.on)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                   <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${row.on ? "left-[22px]" : "left-0.5"}`} />
                 </button>
               </div>
@@ -1067,7 +1105,7 @@ export default function SettingsDrawer({
                 </div>
                 <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
                   onClick={() => setSetting(row.key, !row.on)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                   <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${row.on ? "left-[22px]" : "left-0.5"}`} />
                 </button>
               </div>
@@ -1086,7 +1124,7 @@ export default function SettingsDrawer({
               </div>
               <button type="button" role="switch" aria-checked={cuOn} aria-label={t("settings.catchupEnabled")}
                 onClick={() => setSetting(CUKEYS.enabled, !cuOn)}
-                className={`relative h-6 w-11 shrink-0 rounded-full transition ${cuOn ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                className={`relative h-6 w-11 shrink-0 rounded-full transition ${cuOn ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                 <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${cuOn ? "left-[22px]" : "left-0.5"}`} />
               </button>
             </div>
@@ -1113,7 +1151,7 @@ export default function SettingsDrawer({
                       <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">{cap}</span>
                       <button type="button" role="switch" aria-checked={on} aria-label={`${row.label} ${cap}`} disabled={!cuOn}
                         onClick={() => setSetting(key, !stored)}
-                        className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                        className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                         <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
                       </button>
                     </div>
@@ -1252,7 +1290,7 @@ export default function SettingsDrawer({
               </div>
               <button type="button" role="switch" aria-checked={!!nunopiEnabled} aria-label={t("settings.nunopiModule")}
                 onClick={() => onNunopiEnabledChange?.(!nunopiEnabled)}
-                className={`relative h-6 w-11 shrink-0 rounded-full transition ${nunopiEnabled ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                className={`relative h-6 w-11 shrink-0 rounded-full transition ${nunopiEnabled ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                 <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${nunopiEnabled ? "left-[22px]" : "left-0.5"}`} />
               </button>
             </div>
@@ -1335,7 +1373,7 @@ export default function SettingsDrawer({
                   </div>
                   <button type="button" role="switch" aria-checked={cardFlyAnimation} aria-label={t("settings.cardFlyAnimation")}
                     onClick={() => onCardFlyAnimationChange?.(!cardFlyAnimation)}
-                    className={`relative h-6 w-11 shrink-0 rounded-full transition ${cardFlyAnimation ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                    className={`relative h-6 w-11 shrink-0 rounded-full transition ${cardFlyAnimation ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                     <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${cardFlyAnimation ? "left-[22px]" : "left-0.5"}`} />
                   </button>
                 </div>

@@ -42,7 +42,7 @@ export default function UpdateSection() {
           <span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("update.autoDesc")}</span>
         </span>
         <button type="button" role="switch" aria-checked={auto} aria-label={t("update.auto")} onClick={() => setSetting(UPDATE_KEYS.auto, !auto)}
-          className={`relative h-6 w-11 shrink-0 rounded-full transition ${auto ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+          className={`relative h-6 w-11 shrink-0 rounded-full transition ${auto ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
           <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${auto ? "left-[22px]" : "left-0.5"}`} />
         </button>
       </div>

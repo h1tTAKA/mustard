@@ -20,13 +20,16 @@ export const TERMINAL_DEFAULTS = {
   lineHeight: 1.0,
   cursorStyle: "bar" as TerminalCursorStyle,
   cursorBlink: true,
-  scrollback: 1000,
+  scrollback: 5000,                            // #1212 1000 → 5000(에이전트 출력엔 1000이 짧음, 저장값 있으면 그대로)
   copyOnSelect: false,
+  copyTrimGutter: true,                        // #1212 복사할 때 공통 왼쪽 여백 자르기
   rightClickPaste: false,
   gpu: true,
   // 심화(#941)
   fontWeight: "normal" as TerminalFontWeight, // xterm fontWeight
   scrollSensitivity: 1,                        // 높을수록 빠름(한 틱에 더 많이 이동)
+  fastScrollSensitivity: 5,                    // #1212 ⌥ 누른 채 휠 배율(1~10)
+  tuiScrollSensitivity: 1,                     // #1212 전체 화면 프로그램(마우스 추적 중) 휠 배율(정수 1~10)
   macOptionIsMeta: false,                      // mac Option→Alt
   focusFollowsMouse: false,                    // 마우스 올리면 포커스
   linkTarget: "app" as "app" | "external",     // #1193 터미널 웹 링크 ⌘+클릭 = 앱 안 브라우저 / 외부 브라우저
@@ -49,10 +52,13 @@ export const TKEYS = {
   cursorBlink: "terminal.cursorBlink",
   scrollback: "terminal.scrollback",
   copyOnSelect: "terminal.copyOnSelect",
+  copyTrimGutter: "terminal.copyTrimGutter",
   rightClickPaste: "terminal.rightClickPaste",
   gpu: "terminal.gpu",
   fontWeight: "terminal.fontWeight",
   scrollSensitivity: "terminal.scrollSensitivity",
+  fastScrollSensitivity: "terminal.fastScrollSensitivity",
+  tuiScrollSensitivity: "terminal.tuiScrollSensitivity",
   macOptionIsMeta: "terminal.macOptionIsMeta",
   focusFollowsMouse: "terminal.focusFollowsMouse",
   linkTarget: "terminal.linkTarget",
