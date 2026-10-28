@@ -1,0 +1,29 @@
+// #1213 맥 Option을 Alt로 — 자동(입력 소스가 US·ABC면 양쪽, 아니면 끄기) / 양쪽 / 왼쪽만 / 오른쪽만 / 끄기.
+export type MacOptionAsAlt = "auto" | "both" | "left" | "right" | "off";
+export const MAC_OPTION_AS_ALT: readonly MacOptionAsAlt[] = ["auto", "both", "left", "right", "off"];
+
+// US·ABC 배열만 Option 조합 글자(å·∑ 등)를 거의 안 씀 → Alt로. 한국어·일본어·US 확장 등은 ⌥로 글자를 치므로 그대로. 모름(null)도 그대로.
+export function isUsInputSource(id: string | null | undefined): boolean {
+  const s = (id ?? "").toLowerCase();
+  return s === "com.apple.keylayout.us" || s === "com.apple.keylayout.abc";
+}
+
+export function effectiveMacOptionAsAlt(setting: MacOptionAsAlt, inputSourceId: string | null | undefined): Exclude<MacOptionAsAlt, "auto"> {
+  if (setting !== "auto") return setting;
+  return isUsInputSource(inputSourceId) ? "both" : "off";
+}
+
+// 저장값 읽기 — 새 키가 없으면 옛 스위치(켜짐 = 양쪽)에서 옮김, 이상한 값은 자동.
+export function readMacOptionAsAlt(stored: unknown, legacyOn: unknown): MacOptionAsAlt {
+  if (typeof stored === "string" && (MAC_OPTION_AS_ALT as readonly string[]).includes(stored)) return stored as MacOptionAsAlt;
+  return legacyOn === true ? "both" : "auto";
+}
+
+// 한쪽 ⌥만 Alt일 때 보낼 글자 — 그 키를 Option 없이 친 글자(물리 위치 기준, US 배열).
+// ponytail: US 배열 고정, 다른 배열의 왼쪽/오른쪽 모드가 필요해지면 navigator.keyboard.getLayoutMap()으로.
+const PUNCT: Record<string, string> = { Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]", Backslash: "\\", Semicolon: ";", Quote: "'", Comma: ",", Period: ".", Slash: "/", Backquote: "`" };
+export function altCharForCode(code: string): string | null {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  return PUNCT[code] ?? null;
+}

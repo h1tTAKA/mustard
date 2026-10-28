@@ -17,6 +17,7 @@ export * from "./theme";
 export * from "./settings";
 export * from "./browserUrl";
 export * from "./terminalSelection";
+export * from "./macOptionAlt";
 export * from "./appearance";
 export * from "./notify";
 export * from "./shortcuts";
