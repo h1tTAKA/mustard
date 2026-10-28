@@ -6,7 +6,7 @@ import { IconRefresh, IconX, IconLoader2, IconTrash } from "@tabler/icons-react"
 import { useT, useConfirm, useToast } from "@mustard/core";
 
 type Session = { id: string; cwd: string; process: string; pid: number; agent: string | null; sessionTitle: string };
-type TermApi = { list(): Promise<Session[]>; kill(p: { id: string }): void; clearSaved?(): Promise<{ ok: boolean; cleared: number }> };
+type TermApi = { list(): Promise<Session[]>; killSession?(id: string): Promise<boolean>; clearSaved?(): Promise<{ ok: boolean; cleared: number }>; onExit?(cb: (p: { id: string }) => void): () => void };
 type DaemonApi = { restart(): Promise<{ ok: boolean; reason?: string }> };
 const desk = () => (typeof window === "undefined" ? undefined : (window.nunopiDesktop as unknown as { terminal?: TermApi; daemon?: DaemonApi } | undefined));
 const termApi = (): TermApi | undefined => desk()?.terminal;
@@ -26,20 +26,27 @@ export default function TerminalSessionsSection() {
   const [list, setList] = useState<Session[] | null>(null);
   const refresh = useCallback(() => { setList(null); void termApi()?.list().then(setList).catch(() => setList([])); }, []);
   useEffect(() => { refresh(); }, [refresh]);
+  // 세션이 실제로 끝나면(끄기·셸 종료) 목록 다시 — 고정 대기 대신 exit 신호로(리뷰)
+  useEffect(() => { const off = termApi()?.onExit?.(() => refresh()); return () => { off?.(); }; }, [refresh]);
   if (!termApi()) return null;
 
   const kill = async (s: Session) => {
     if (!(await confirm({ title: t("sessions.killTitle"), message: t("sessions.killConfirm", { name: s.agent || s.process || shortCwd(s.cwd) }), confirmText: t("sessions.kill"), tone: "warn" }))) return;
-    termApi()?.kill({ id: s.id });
-    setTimeout(refresh, 400); // 데몬이 pty를 정리한 뒤 다시 읽음
+    const ok = await termApi()?.killSession?.(s.id).catch(() => false);
+    if (!ok) toast(t("sessions.killFailed"), "error");
   };
 
   // 전부 끄기 — 에이전트가 일하는 세션도 함께라 개수와 함께 확인
+  // 확인 전에 목록을 새로 받아(그 사이 생긴 세션까지) 그 목록을 끔. 에이전트가 도는 세션은 이름을 보여 줌(리뷰)
   const killAll = async () => {
-    const ss = list ?? [];
-    if (!ss.length || !(await confirm({ title: t("sessions.killAllTitle"), message: t("sessions.killAllConfirm", { n: ss.length }), confirmText: t("sessions.killAll"), tone: "warn" }))) return;
-    for (const s of ss) termApi()?.kill({ id: s.id });
-    setTimeout(refresh, 600);
+    const ss = await termApi()?.list().catch(() => null);
+    if (!ss?.length) { refresh(); return; }
+    const agents = ss.filter((s) => s.agent).map((s) => `${s.agent} · ${shortCwd(s.cwd)}`);
+    const detail = agents.length ? t("sessions.killAllAgents", { list: agents.slice(0, 5).join(", ") + (agents.length > 5 ? ` +${agents.length - 5}` : "") }) : undefined;
+    if (!(await confirm({ title: t("sessions.killAllTitle"), message: t("sessions.killAllConfirm", { n: ss.length }), detail, confirmText: t("sessions.killAll"), tone: "warn" }))) return;
+    const results = await Promise.all(ss.map((s) => termApi()?.killSession?.(s.id).catch(() => false)));
+    if (results.some((r) => !r)) toast(t("sessions.killFailed"), "error");
+    refresh();
   };
   // 저장된 스크롤백 — 닫힌 탭이 남긴 화면 기록(앱을 다시 켜면 탭에 다시 보이는 것). 살아 있는 세션은 그대로.
   const clearSaved = async () => {

@@ -104,7 +104,7 @@ function createDaemonClient(opts) {
     },
     input({ id, data }) { if (socket && ready) { try { socket.write(JSON.stringify({ t: "input", id, data }) + "\n"); } catch { /* ignore */ } } },
     resize({ id, cols, rows }) { if (socket && ready) { try { socket.write(JSON.stringify({ t: "resize", id, cols, rows }) + "\n"); } catch { /* ignore */ } } },
-    kill({ id }) { if (socket && ready) { try { socket.write(JSON.stringify({ t: "kill", id }) + "\n"); } catch { /* ignore */ } } },
+    kill({ id }) { if (socket && ready) { try { socket.write(JSON.stringify({ t: "kill", id }) + "\n"); return true; } catch { /* ignore */ } } return false; }, // #1211 보냈는지(데몬 연결 없으면 false)
   };
 }
 

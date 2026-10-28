@@ -1656,8 +1656,14 @@ function persistBuffers() {
   for (const [id, b] of liveBuffers) out[id] = b.slice(-PTY_BUFFER_MAX);
   try { mkdirSync(app.getPath("userData"), { recursive: true }); writeFileSync(bufFile(), JSON.stringify(out)); } catch { /* ignore */ }
 }
-// #1211 저장된 스크롤백 지우기 — 다시 붙지 않은(닫힌) 탭의 저장분만. 살아 있는 세션 화면(liveBuffers)은 그대로 다시 저장.
-ipcMain.handle("terminal:clear-saved", () => { const n = Object.keys(savedBuffers).length; savedBuffers = {}; persistBuffers(); return { ok: true, cleared: n }; });
+// #1211 저장된 스크롤백 지우기 — 데몬에 세션이 없는 탭(닫혔거나 끝난 세션)의 저장 화면만. 살아 있는 세션 것은 그대로.
+ipcMain.handle("terminal:clear-saved", async () => {
+  let live;
+  try { live = new Set((await termClient.list()).map((x) => x.id)); } catch { return { ok: false, cleared: 0 }; }
+  // 데몬에 살아 있는 세션의 저장분은 남김(데몬이 나중에 재시작돼도 그 탭 화면 복원이 사라지지 않게, 리뷰)
+  let n = 0; for (const id of Object.keys(savedBuffers)) if (!live.has(id)) { delete savedBuffers[id]; n++; }
+  persistBuffers(); return { ok: true, cleared: n };
+});
 setInterval(persistBuffers, 5000); // 크래시 대비 주기 저장(before-quit은 아래 quit 훅서)
 setInterval(saveRegistry, 3000);   // #864 실행 기록 영속(재시작 생존 세션 신원 복원용)
 
@@ -1723,7 +1729,10 @@ ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, permission,
   return { ok: true };
 });
 ipcMain.on("terminal:resize", (_e, { id, cols, rows }) => termClient.resize({ id, cols, rows }));
-ipcMain.on("terminal:kill", (_e, { id }) => { termClient.kill({ id }); liveBuffers.delete(id); delete savedBuffers[id]; cwdById.delete(id); lastScreen.delete(id); updateAwake(); agentSticky.delete(id); launchRegistry.delete(id); inputBuf.delete(id); ensuredIds.delete(id); narrPending.delete(id); lastNarr.delete(id); narrInFlight.delete(id); narrSeeded.delete(id); narrOverflow.delete(id); narrWorkingAt.delete(id); lastDiffHash.delete(id); lastTaskById.delete(id); lastTitleRawById.delete(id); envSecrets.delete(id); workSeenAt.delete(id); }); // 탭 닫기 시 데몬 pty·저장분·상태·실행기록 정리
+// 세션 끄기 — 설정에서 끌 때는 데몬에 보낸 경우에만 main 상태 정리(연결이 없으면 pty가 살아 있는데 상태만 잊는 일 없게, #1211 리뷰)
+function killSession(id, force = false) { if (!termClient.kill({ id }) && !force) return false; liveBuffers.delete(id); delete savedBuffers[id]; cwdById.delete(id); lastScreen.delete(id); updateAwake(); agentSticky.delete(id); launchRegistry.delete(id); inputBuf.delete(id); ensuredIds.delete(id); narrPending.delete(id); lastNarr.delete(id); narrInFlight.delete(id); narrSeeded.delete(id); narrOverflow.delete(id); narrWorkingAt.delete(id); lastDiffHash.delete(id); lastTaskById.delete(id); lastTitleRawById.delete(id); envSecrets.delete(id); workSeenAt.delete(id); return true; }
+ipcMain.on("terminal:kill", (_e, { id }) => { killSession(id, true); }); // 탭 닫기 = 데몬이 없어도 앱 쪽 기록은 정리(예전 동작) // 탭 닫기 시 데몬 pty·저장분·상태·실행기록 정리
+ipcMain.handle("terminal:kill-session", (_e, { id } = {}) => (typeof id === "string" && id ? killSession(id) : false)); // #1211 설정 > 세션 관리(보냈는지 돌려줌)
 // 세션의 실행 중 에이전트 id | null(#803) — 터미널 탭 자동 이름·아이콘용.
 // 프로세스명만으론 node 래퍼 CLI(codex 등: 네이티브 자식을 spawn해 foreground pgrp 리더가 "node")를 못 잡아,
 // 버퍼 스크레이핑(parseAgentScreen)을 1순위로. 셸이면 종료로 간주(null). 버퍼 미판정이면 프로세스명 폴백.
