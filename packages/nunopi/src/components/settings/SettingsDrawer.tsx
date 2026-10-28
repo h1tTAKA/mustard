@@ -777,7 +777,7 @@ export default function SettingsDrawer({
                 <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{row.label}</span>
                 <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
                   onClick={() => setSetting(row.key, !row.on)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                   <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${row.on ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
                 </button>
               </div>
@@ -823,7 +823,7 @@ export default function SettingsDrawer({
               <div className="flex items-center justify-between gap-3">
                 <span className="min-w-0"><span className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalScrollSpeed")}</span><span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("settings.scrollSpeedDesc")}</span></span>
                 <button type="button" onClick={() => { setSetting(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity); setSetting(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity); setSetting(TKEYS.tuiScrollSensitivity, TERMINAL_DEFAULTS.tuiScrollSensitivity); }}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconRotate size={12} stroke={2} aria-hidden />{t("settings.scrollSpeedReset")}</button>
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconRotate size={12} stroke={2} aria-hidden />{t("settings.scrollSpeedReset")}</button>
               </div>
               <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
                 {([
@@ -831,15 +831,15 @@ export default function SettingsDrawer({
                   { k: "fast", key: TKEYS.fastScrollSensitivity, v: tFastScroll, min: 1, max: 10, step: 1 },
                   { k: "tui", key: TKEYS.tuiScrollSensitivity, v: tTuiScroll, min: 1, max: 10, step: 1 },
                 ] as const).map((r) => {
-                  const go = (d: number) => setSetting(r.key, Math.min(r.max, Math.max(r.min, Math.round((r.v + d * r.step) / r.step) * r.step)));
+                  const go = (d: number) => setSetting(r.key, Math.min(r.max, Math.max(r.min, Math.round(r.v / r.step) * r.step + d * r.step)));
                   const name = t(`settings.scrollSpeed3.${r.k}`);
                   return (
                     <div key={r.k} className="flex items-center justify-between gap-3 px-3 py-2.5">
                       <span className="min-w-0"><span className="block text-sm text-zinc-700 dark:text-zinc-300">{name}</span><span className="block text-xs text-zinc-400 dark:text-zinc-500">{t(`settings.scrollSpeed3.${r.k}Desc`)}</span></span>
                       <span className="flex shrink-0 items-center rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800" role="group" aria-label={name}>
-                        <button type="button" onClick={() => go(-1)} disabled={r.v <= r.min} aria-label={`${name} −`} className="grid size-7 place-items-center rounded-md text-zinc-600 transition hover:bg-white disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-700"><IconMinus size={14} stroke={2} aria-hidden /></button>
+                        <button type="button" onClick={() => go(-1)} aria-disabled={r.v <= r.min} aria-label={`${name} −`} className="grid size-7 place-items-center rounded-md text-zinc-600 transition hover:bg-white aria-disabled:opacity-30 aria-disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-700"><IconMinus size={14} stroke={2} aria-hidden /></button>
                         <span className="w-12 text-center font-mono text-xs tabular-nums text-zinc-800 dark:text-zinc-100" aria-live="polite">{Number(r.v.toFixed(2))}x</span>
-                        <button type="button" onClick={() => go(1)} disabled={r.v >= r.max} aria-label={`${name} +`} className="grid size-7 place-items-center rounded-md text-zinc-600 transition hover:bg-white disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-700"><IconPlus size={14} stroke={2} aria-hidden /></button>
+                        <button type="button" onClick={() => go(1)} aria-disabled={r.v >= r.max} aria-label={`${name} +`} className="grid size-7 place-items-center rounded-md text-zinc-600 transition hover:bg-white aria-disabled:opacity-30 aria-disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-700"><IconPlus size={14} stroke={2} aria-hidden /></button>
                       </span>
                     </div>
                   );
@@ -1021,7 +1021,7 @@ export default function SettingsDrawer({
                 </div>
                 <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
                   onClick={() => setSetting(row.key, !row.on)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                   <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${row.on ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
                 </button>
               </div>
@@ -1048,7 +1048,7 @@ export default function SettingsDrawer({
                 </div>
                 <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
                   onClick={() => setSetting(row.key, !row.on)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                   <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${row.on ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
                 </button>
               </div>
@@ -1105,7 +1105,7 @@ export default function SettingsDrawer({
                 </div>
                 <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
                   onClick={() => setSetting(row.key, !row.on)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                   <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${row.on ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
                 </button>
               </div>
@@ -1124,7 +1124,7 @@ export default function SettingsDrawer({
               </div>
               <button type="button" role="switch" aria-checked={cuOn} aria-label={t("settings.catchupEnabled")}
                 onClick={() => setSetting(CUKEYS.enabled, !cuOn)}
-                className={`relative h-6 w-11 shrink-0 rounded-full transition ${cuOn ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                className={`relative h-6 w-11 shrink-0 rounded-full transition ${cuOn ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                 <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${cuOn ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
               </button>
             </div>
@@ -1151,7 +1151,7 @@ export default function SettingsDrawer({
                       <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">{cap}</span>
                       <button type="button" role="switch" aria-checked={on} aria-label={`${row.label} ${cap}`} disabled={!cuOn}
                         onClick={() => setSetting(key, !stored)}
-                        className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                        className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                         <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${on ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
                       </button>
                     </div>
@@ -1290,7 +1290,7 @@ export default function SettingsDrawer({
               </div>
               <button type="button" role="switch" aria-checked={!!nunopiEnabled} aria-label={t("settings.nunopiModule")}
                 onClick={() => onNunopiEnabledChange?.(!nunopiEnabled)}
-                className={`relative h-6 w-11 shrink-0 rounded-full transition ${nunopiEnabled ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                className={`relative h-6 w-11 shrink-0 rounded-full transition ${nunopiEnabled ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                 <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${nunopiEnabled ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
               </button>
             </div>
@@ -1373,7 +1373,7 @@ export default function SettingsDrawer({
                   </div>
                   <button type="button" role="switch" aria-checked={cardFlyAnimation} aria-label={t("settings.cardFlyAnimation")}
                     onClick={() => onCardFlyAnimationChange?.(!cardFlyAnimation)}
-                    className={`relative h-6 w-11 shrink-0 rounded-full transition ${cardFlyAnimation ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                    className={`relative h-6 w-11 shrink-0 rounded-full transition ${cardFlyAnimation ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                     <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${cardFlyAnimation ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
                   </button>
                 </div>
