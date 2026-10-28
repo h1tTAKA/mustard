@@ -1656,6 +1656,16 @@ function persistBuffers() {
   for (const [id, b] of liveBuffers) out[id] = b.slice(-PTY_BUFFER_MAX);
   try { mkdirSync(app.getPath("userData"), { recursive: true }); writeFileSync(bufFile(), JSON.stringify(out)); } catch { /* ignore */ }
 }
+// #1211 저장된 스크롤백 지우기 — 데몬에 세션이 없는 탭(닫혔거나 끝난 세션)의 저장 화면만. 살아 있는 세션 것은 그대로.
+ipcMain.handle("terminal:clear-saved", async () => {
+  // 목록 응답은 FIFO라 앞서 타임아웃된 요청의 늦은 스냅샷(최대 ~1.2초 전)을 받을 수 있음 — 그 사이 새로 생긴 세션은 저장분이 없어 영향 없음(리뷰)
+  const ss = await termClient.list({ strict: true }).catch(() => null);
+  if (!ss) return { ok: false, cleared: 0 }; // 데몬을 못 물어보면 아무것도 안 지움(살아 있는 세션 것까지 지우지 않게)
+  const live = new Set(ss.map((x) => x.id));
+  // 데몬에 살아 있는 세션의 저장분은 남김(데몬이 나중에 재시작돼도 그 탭 화면 복원이 사라지지 않게, 리뷰)
+  let n = 0; for (const id of Object.keys(savedBuffers)) if (!live.has(id)) { delete savedBuffers[id]; n++; }
+  persistBuffers(); return { ok: true, cleared: n };
+});
 setInterval(persistBuffers, 5000); // 크래시 대비 주기 저장(before-quit은 아래 quit 훅서)
 setInterval(saveRegistry, 3000);   // #864 실행 기록 영속(재시작 생존 세션 신원 복원용)
 
@@ -1721,7 +1731,10 @@ ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, permission,
   return { ok: true };
 });
 ipcMain.on("terminal:resize", (_e, { id, cols, rows }) => termClient.resize({ id, cols, rows }));
-ipcMain.on("terminal:kill", (_e, { id }) => { termClient.kill({ id }); liveBuffers.delete(id); delete savedBuffers[id]; cwdById.delete(id); lastScreen.delete(id); updateAwake(); agentSticky.delete(id); launchRegistry.delete(id); inputBuf.delete(id); ensuredIds.delete(id); narrPending.delete(id); lastNarr.delete(id); narrInFlight.delete(id); narrSeeded.delete(id); narrOverflow.delete(id); narrWorkingAt.delete(id); lastDiffHash.delete(id); lastTaskById.delete(id); lastTitleRawById.delete(id); envSecrets.delete(id); workSeenAt.delete(id); }); // 탭 닫기 시 데몬 pty·저장분·상태·실행기록 정리
+// 세션 끄기 — 설정에서 끌 때는 데몬에 보낸 경우에만 main 상태 정리(연결이 없으면 pty가 살아 있는데 상태만 잊는 일 없게, #1211 리뷰)
+function killSession(id, force = false) { if (!termClient.kill({ id }) && !force) return false; liveBuffers.delete(id); delete savedBuffers[id]; cwdById.delete(id); lastScreen.delete(id); updateAwake(); agentSticky.delete(id); launchRegistry.delete(id); inputBuf.delete(id); ensuredIds.delete(id); narrPending.delete(id); lastNarr.delete(id); narrInFlight.delete(id); narrSeeded.delete(id); narrOverflow.delete(id); narrWorkingAt.delete(id); lastDiffHash.delete(id); lastTaskById.delete(id); lastTitleRawById.delete(id); envSecrets.delete(id); workSeenAt.delete(id); return true; }
+ipcMain.on("terminal:kill", (_e, { id }) => { killSession(id, true); }); // 탭 닫기 = 데몬이 없어도 앱 쪽 기록은 정리(예전 동작) // 탭 닫기 시 데몬 pty·저장분·상태·실행기록 정리
+ipcMain.handle("terminal:kill-session", (_e, { id } = {}) => (typeof id === "string" && id ? killSession(id) : false)); // #1211 설정 > 세션 관리(보냈는지 돌려줌)
 // 세션의 실행 중 에이전트 id | null(#803) — 터미널 탭 자동 이름·아이콘용.
 // 프로세스명만으론 node 래퍼 CLI(codex 등: 네이티브 자식을 spawn해 foreground pgrp 리더가 "node")를 못 잡아,
 // 버퍼 스크레이핑(parseAgentScreen)을 1순위로. 셸이면 종료로 간주(null). 버퍼 미판정이면 프로세스명 폴백.
@@ -1796,20 +1809,22 @@ ipcMain.handle("daemon:restart", async () => {
   setTimeout(() => app.quit(), 300);
   return { ok: true };
 });
-ipcMain.handle("terminal:list", async () => {
-  const ss = await termClient.list(); // 세션 목록(#764) — 레포탭 호버 카드 + 탭 이름(#803) + 세션 제목(#970)
+ipcMain.handle("terminal:list", async (_e, opts) => {
+  const ss = await termClient.list({ strict: !!opts?.strict }); // 세션 목록(#764) — 레포탭 호버 카드 + 탭 이름(#803) + 세션 제목(#970). strict(#1211 설정 세션 관리)면 조회 실패 = null
+  if (!ss) return null;
   // 비활성 탭도 검출: 데몬 screen(buffer tail)을 힌트로 agentForId에 전달(#836/#840). screen은 검출용, 렌더러 미전송(누출 방지).
   return ss.map(({ screen, ...s }) => ({ ...s, agent: agentForId(s.id, s.process, screen), sessionTitle: sessionTitleFor(s.id, s.process, screen) }));
 });
 
 // 인앱 브라우저 피드백 → 에이전트 터미널(#1037 리뷰). 페이지 글이 들어가므로 **지금 포그라운드가 셸이면 절대 안 보냄**
 // (에이전트가 죽고 zsh로 돌아왔는데 신원만 남은 경우 → 붙여넣기+Enter가 셸 명령으로 실행됨). 판단은 main이 직전에.
-ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, text } = {}) => {
+ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, ids, text } = {}) => {
   const root = String(cwd || "").replace(/\/+$/, "");
+  const allow = Array.isArray(ids) ? new Set(ids.filter((x) => typeof x === "string")) : null; // #1211 이 레포 탭의 세션만(닫힌 레포 세션 제외)
   if (!root || typeof text !== "string" || !text.trim()) return { ok: false, reason: "bad-args" };
   const live = async () => (await termClient.list()).filter((s) => {
     const c = String(s.cwd || "").replace(/\/+$/, "");
-    return (c === root || c.startsWith(root + "/")) && s.process !== undefined && !isShellProc(s.process) && agentForId(s.id, s.process, s.screen);
+    return (c === root || c.startsWith(root + "/")) && (!allow || allow.has(s.id)) && s.process !== undefined && !isShellProc(s.process) && agentForId(s.id, s.process, s.screen);
   });
   let ss;
   try { ss = await live(); } catch { return { ok: false, reason: "error" }; } // 데몬·목록 실패는 "터미널 없음"과 구분(#1129 리뷰)

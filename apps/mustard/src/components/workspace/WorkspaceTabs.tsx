@@ -433,7 +433,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     if (!tb) return false;
     if (d.id === "repo.close") {
       const key = tabKey(tb);
-      void confirm({ skipKey: CKEYS.skipCloseTab, title: tb.type === "repo" ? basename(tb.path) : t(MODE_TAB[tb.type].labelKey), message: t("workspace.closeTabConfirm"), detail: t("workspace.closeTabConfirmDetail"), confirmText: t("workspace.closeTab"), tone: "warn" }).then((ok) => { if (ok) closeTab(key); });
+      void confirm({ skipKey: CKEYS.skipCloseTab, title: tb.type === "repo" ? basename(tb.path) : t(MODE_TAB[tb.type].labelKey), message: t("workspace.closeTabConfirm"), detail: t(getSetting<boolean>(WKEYS.killTerminalsOnClose, WORKSPACE_DEFAULTS.killTerminalsOnClose) ? "workspace.closeTabConfirmDetailKill" : "workspace.closeTabConfirmDetail"), confirmText: t("workspace.closeTab"), tone: "warn" }).then((ok) => { if (ok) closeTab(key); });
       return;
     }
     if (tb.type !== "repo") return false;
@@ -601,7 +601,9 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     if (idx < 0) return;
     const closing = tabs[idx];
     if (closing.type !== "repo") desktop?.modeRelease?.(closing.type); // 모드 탭 닫으면 레지스트리 해제(#789)
-    else { killRepoTerminals(closing.path); if (closing.wt) killRepoTerminals(closing.wt); } // #968 레포 탭 명시적 닫기 → 그 repo 터미널 pty kill(유령 세션 방지). 앱 재시작 생존(#682)은 별개.
+    // #1211 기본은 터미널 세션을 살려 둠 — 다시 열면 같은 탭 id로 붙어 에이전트가 그대로(정리는 설정 > 터미널 > 세션 관리).
+    // 설정 "레포 탭 닫을 때 터미널 세션도 끄기"를 켜면 예전(#968)처럼 그 레포 터미널 pty kill.
+    else if (getSetting<boolean>(WKEYS.killTerminalsOnClose, WORKSPACE_DEFAULTS.killTerminalsOnClose)) { killRepoTerminals(closing.path); if (closing.wt) killRepoTerminals(closing.wt); }
     const next = tabs.filter((x) => tabKey(x) !== key);
     if (activeKey === key) {
       // 활성 탭을 닫으면 이웃으로 활성 이동.
@@ -649,7 +651,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
             <span className="max-w-[12rem] truncate whitespace-nowrap font-medium">{label}</span>
             {/* #1170 레포 탭 안 작업 폴더 전환 — 활성 탭이거나 worktree를 보고 있을 때 */}
             {tab.type === "repo" && (on || tab.wt) && <WorktreeSwitcher root={tab.path} current={tab.wt} onPick={(w) => { setTabs((prev) => prev.map((x) => (tabKey(x) === key && x.type === "repo" ? (w ? { type: "repo", path: x.path, wt: w } : { type: "repo", path: x.path }) : x))); activate(key); }} />}
-            <button type="button" onClick={async (e) => { e.stopPropagation(); if (await confirm({ skipKey: CKEYS.skipCloseTab, title: label, message: t("workspace.closeTabConfirm"), detail: t("workspace.closeTabConfirmDetail"), confirmText: t("workspace.closeTab"), tone: "warn" })) closeTab(key); }} title={t("workspace.closeTab")} aria-label={t("workspace.closeTab")}
+            <button type="button" onClick={async (e) => { e.stopPropagation(); if (await confirm({ skipKey: CKEYS.skipCloseTab, title: label, message: t("workspace.closeTabConfirm"), detail: t(getSetting<boolean>(WKEYS.killTerminalsOnClose, WORKSPACE_DEFAULTS.killTerminalsOnClose) ? "workspace.closeTabConfirmDetailKill" : "workspace.closeTabConfirmDetail"), confirmText: t("workspace.closeTab"), tone: "warn" })) closeTab(key); }} title={t("workspace.closeTab")} aria-label={t("workspace.closeTab")}
               className={`ml-0.5 shrink-0 rounded p-0.5 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200 ${on ? "" : "opacity-0 group-hover:opacity-100"}`}>
               <IconX size={12} stroke={2.5} aria-hidden />
             </button>
