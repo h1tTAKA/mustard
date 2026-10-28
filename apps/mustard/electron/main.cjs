@@ -1818,12 +1818,13 @@ ipcMain.handle("terminal:list", async (_e, opts) => {
 
 // 인앱 브라우저 피드백 → 에이전트 터미널(#1037 리뷰). 페이지 글이 들어가므로 **지금 포그라운드가 셸이면 절대 안 보냄**
 // (에이전트가 죽고 zsh로 돌아왔는데 신원만 남은 경우 → 붙여넣기+Enter가 셸 명령으로 실행됨). 판단은 main이 직전에.
-ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, text } = {}) => {
+ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, ids, text } = {}) => {
   const root = String(cwd || "").replace(/\/+$/, "");
+  const allow = Array.isArray(ids) ? new Set(ids.filter((x) => typeof x === "string")) : null; // #1211 이 레포 탭의 세션만(닫힌 레포 세션 제외)
   if (!root || typeof text !== "string" || !text.trim()) return { ok: false, reason: "bad-args" };
   const live = async () => (await termClient.list()).filter((s) => {
     const c = String(s.cwd || "").replace(/\/+$/, "");
-    return (c === root || c.startsWith(root + "/")) && s.process !== undefined && !isShellProc(s.process) && agentForId(s.id, s.process, s.screen);
+    return (c === root || c.startsWith(root + "/")) && (!allow || allow.has(s.id)) && s.process !== undefined && !isShellProc(s.process) && agentForId(s.id, s.process, s.screen);
   });
   let ss;
   try { ss = await live(); } catch { return { ok: false, reason: "error" }; } // 데몬·목록 실패는 "터미널 없음"과 구분(#1129 리뷰)

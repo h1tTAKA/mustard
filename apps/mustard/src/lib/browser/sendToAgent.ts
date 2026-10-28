@@ -4,7 +4,12 @@
 export async function sendToAgent(repo: string, text: string): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
   const api = typeof window !== "undefined" ? window.nunopiDesktop?.browser : undefined;
   if (!api) return { ok: false, reason: "no-api" };
-  let preferId: string | undefined;
-  try { preferId = JSON.parse(localStorage.getItem(`nunopi:ws-terms:${repo}`) || "null")?.activeId; } catch { /* ignore */ } // TerminalPane과 같은 키
-  return api.sendToAgent({ cwd: repo, preferId, text });
+  let preferId: string | undefined, ids: string[] | undefined;
+  try {
+    const d = JSON.parse(localStorage.getItem(`nunopi:ws-terms:${repo}`) || "null"); // TerminalPane과 같은 키
+    preferId = d?.activeId;
+    if (Array.isArray(d?.tabs)) ids = d.tabs.map((x: { id?: unknown }) => x?.id).filter((x: unknown): x is string => typeof x === "string");
+  } catch { /* ignore */ }
+  // #1211 이 레포 터미널 탭의 세션만 — 레포 탭을 닫아도 세션이 살아 있어서, 닫힌 하위 레포의 에이전트로 가지 않게(리뷰)
+  return api.sendToAgent({ cwd: repo, preferId, ids, text });
 }
