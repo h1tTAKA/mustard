@@ -791,7 +791,7 @@ export default function SettingsDrawer({
                 </div>
                 <div className="inline-flex shrink-0 rounded-xl border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-900" role="radiogroup" aria-label={t("settings.terminalScrollback")}>
                   {[5000, 10000, 25000, 50000].map((n) => (
-                    <button key={n} type="button" role="radio" aria-checked={!scrollbackCustom && tScrollback === n} onClick={() => { setScrollbackCustom(false); setSetting(TKEYS.scrollback, n); }}
+                    <button key={n} type="button" role="radio" aria-checked={!scrollbackCustom && tScrollback === n} onClick={() => { setScrollbackCustom(false); setScrollbackDraft(null); setSetting(TKEYS.scrollback, n); }}
                       className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${!scrollbackCustom && tScrollback === n ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>{n / 1000}k</button>
                   ))}
                   <button type="button" role="radio" aria-checked={showScrollbackInput} onClick={() => setScrollbackCustom(true)}
