@@ -40,6 +40,7 @@ interface NunopiDesktopApi {
   // #1171 에이전트 CLI 상태 — status: ok(설치·실행됨) / broken(찾았는데 실행 실패) / missing, auth: authenticated / unauthenticated / unknown
   setKeepAwake?(mode: "off" | "working" | "always"): void; // #1197
   checkUpdate?(): Promise<{ ok: boolean; current: string; latest?: string | null; newer?: boolean; url?: string | null; reason?: string }>; // #1200
+  clearBrowserData?(): Promise<{ ok: boolean; reason?: string }>; // #1209
   openInList?(): Promise<{ id: string; kind: "files" | "editor" | "terminal" | "git"; name: string; icon: string | null }[]>; // #1199
   openIn?(id: string, dir: string): Promise<{ ok: boolean; reason?: string }>;
   openExternal?(url: string): Promise<void>; // #1193
@@ -169,6 +170,9 @@ interface NunopiDesktopApi {
   browser?: {
     openWindow(payload: { url?: string; repo?: string; devtools?: boolean }): Promise<{ ok: boolean; reason?: string }>;
     setAppChords(list: string[]): void;
+    setDefaultZoom?(factor: number): void; // #1209
+    setAgentControl?(on: boolean): void; // #1209
+    setUserAgentMode?(mode: "clean" | "default"): void; // #1209
     openDevTools(guestId: number, rect: { x: number; y: number; w: number; h: number }): Promise<{ ok: boolean }>;
     devtoolsBounds(guestId: number, rect: { x: number; y: number; w: number; h: number }): void;
     closeDevTools(guestId: number): Promise<{ ok: boolean }>;

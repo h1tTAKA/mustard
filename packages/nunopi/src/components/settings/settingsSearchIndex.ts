@@ -13,6 +13,7 @@ export const SETTINGS_SEARCH: Record<string, SearchItem[]> = {
   "set-workspace": [["settings.defaultFolder", "settings.defaultFolderDesc"]],
   "set-git": ["settings.gitPrBase", "settings.gitBranchPrefix", ["settings.gitPrDraft", "settings.gitPrDraftDesc"], ["settings.gitAutoFetch", "settings.gitAutoFetchDesc"]],
   "set-quick": [["quick.title", "quick.desc"], "quick.howTo"],
+  "set-browser": [["browser.agentControl", "browser.agentControlDesc"], ["browser.homePage", "browser.homePageDesc"], ["settings.terminalLinkTarget", "browser.linkTargetDesc"], ["browser.linkBackground", "browser.linkBackgroundDesc"], ["browser.userAgent", "browser.userAgentDesc"], ["browser.searchEngine", "browser.searchEngineDesc"], ["browser.defaultZoom", "browser.defaultZoomDesc"], ["browser.clearData", "browser.clearDataDesc"]], // #1209
   "set-shortcuts": ["settings.shortcutsSearch"],
   "set-agents": [["settings.defaultAgent", "settings.defaultAgentHint"], "agents.permTitle", ["agents.awakeTitle", "agents.awakeHint"], "settings.agentExtraArgs", ["agents.env", "agents.envHint"], "settings.cliPath", "settings.model", "agents.installed", "agents.available"],
   "set-catchup": [["settings.catchupEnabled", "settings.catchupEnabledDesc"], ["settings.catchupExplain", "settings.catchupExplainDesc"], ["settings.catchupCommands", "settings.catchupCommandsDesc"], ["settings.catchupDiff", "settings.catchupDiffDesc"],

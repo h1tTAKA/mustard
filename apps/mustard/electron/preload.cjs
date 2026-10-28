@@ -104,6 +104,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
   },
   setKeepAwake: (mode) => ipcRenderer.send("power:keep-awake", mode), // #1197 잠자기 막기
   checkUpdate: () => ipcRenderer.invoke("update:check"), // #1200
+  clearBrowserData: () => ipcRenderer.invoke("browser:clear-data"), // #1209
   openInList: () => ipcRenderer.invoke("open-in:list"), // #1199 설치된 편집기·터미널·git 앱
   openIn: (id, dir) => ipcRenderer.invoke("open-in:open", { id, dir }),
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url), // #1193 터미널 링크 → 외부 브라우저(http·https만)
@@ -131,6 +132,9 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
   browser: { // #1034 인앱 브라우저 — 분리 창 열기 + 포커스된 guest가 넘겨준 단축키 구독(해제 함수 반환)
     openWindow: (payload) => ipcRenderer.invoke("browser-window:open", payload),
     setAppChords: (list) => ipcRenderer.send("browser:set-chords", list),
+    setDefaultZoom: (factor) => ipcRenderer.send("browser:set-default-zoom", factor), // #1209
+    setAgentControl: (on) => ipcRenderer.send("browser:set-agent-control", on), // #1209
+    setUserAgentMode: (mode) => ipcRenderer.send("browser:set-user-agent", mode), // #1209
     // devtools 자리(CSS px) → 창 DIP — UI 줌(webFrame)을 여기서 곱함(main 쪽 줌 값은 늦을 수 있음).
     openDevTools: (guestId, rect) => ipcRenderer.invoke("browser:devtools-open", { guestId, rect: zoomRect(rect) }),
     devtoolsBounds: (guestId, rect) => ipcRenderer.send("browser:devtools-bounds", { guestId, rect: zoomRect(rect) }),

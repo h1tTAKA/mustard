@@ -26,9 +26,14 @@ function termOptionsFromSettings() {
 export const TERMINAL_LINK_EVENT = "mustard:terminal-link";
 export type TerminalLinkDetail = { cwd: string } & ({ kind: "url"; url: string } | { kind: "file"; path: string; line?: number });
 const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
+const isLinux = typeof navigator !== "undefined" && /Linux/i.test(navigator.platform) && !/Android/i.test(navigator.userAgent);
 const withMod = (ev: MouseEvent) => (isMac ? ev.metaKey : ev.ctrlKey);
-function openTerminalLink(cwd: string, l: TerminalLink | { kind: "url"; url: string }) {
-  if (l.kind === "url" && getSetting<string>(TKEYS.linkTarget, TERMINAL_DEFAULTS.linkTarget) === "external") { void window.nunopiDesktop?.openExternal?.(l.url); return; }
+// #1209 여는 클릭 = ⌘/Ctrl+왼쪽 클릭 또는 가운데 클릭(브라우저 관례). ⌘⇧클릭 = 웹 링크를 설정과 반대쪽(앱 안 ↔ 외부)으로 이번만.
+const opens = (ev: MouseEvent) => (ev.button === 1 && !isLinux) || (ev.button === 0 && withMod(ev)); // 리눅스 가운데 클릭 = 붙여넣기 관례라 거기선 안 엶(리뷰)
+const flips = (ev: MouseEvent) => ev.button === 0 && ev.shiftKey;
+function openTerminalLink(cwd: string, l: TerminalLink | { kind: "url"; url: string }, flip = false) {
+  const external = getSetting<string>(TKEYS.linkTarget, TERMINAL_DEFAULTS.linkTarget) === "external";
+  if (l.kind === "url" && external !== flip) { void window.nunopiDesktop?.openExternal?.(l.url); return; }
   const detail: TerminalLinkDetail = l.kind === "url" ? { cwd, kind: "url", url: l.url } : { cwd, kind: "file", path: l.path, line: l.line };
   window.dispatchEvent(new CustomEvent(TERMINAL_LINK_EVENT, { detail }));
 }
@@ -122,7 +127,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       ]);
       if (disposed) return;
       // OSC 8 하이퍼링크(요즘 CLI가 찍는 숨은 링크)도 같은 규칙 — http(s)만
-      term = new XTerm({ ...termOptionsFromSettings(), theme: buildTermTheme(), linkHandler: { activate: (ev, uri) => { if (withMod(ev) && /^https?:\/\//i.test(uri)) openTerminalLink(shellCwd, { kind: "url", url: uri }); } } });
+      term = new XTerm({ ...termOptionsFromSettings(), theme: buildTermTheme(), linkHandler: { activate: (ev, uri) => { if (opens(ev) && /^https?:\/\//i.test(uri)) openTerminalLink(shellCwd, { kind: "url", url: uri }, flips(ev)); } } });
       if (host) host.style.background = buildTermTheme().background;
       const fit = new FitAddon();
       term.loadAddon(fit);
@@ -157,7 +162,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
             text: l.text,
             range: { start: { x: col[l.start] + 1, y }, end: { x: col[l.start + l.text.length - 1] + wid[l.start + l.text.length - 1], y } }, // 끝 글자가 두 칸이면 둘째 칸까지(리뷰)
             decorations: { underline: true, pointerCursor: true },
-            activate: (ev: MouseEvent) => { if (withMod(ev)) openTerminalLink(shellCwd, l); },
+            activate: (ev: MouseEvent) => { if (opens(ev)) openTerminalLink(shellCwd, l, flips(ev)); },
           }));
           cb(links.length ? links : undefined);
         },

@@ -519,6 +519,11 @@ function syncComputerShortcut() {
 app.whenReady().then(syncComputerShortcut);
 const computerStatus = async (force) => ({ ...(await computerUse.status({ force })), defaults: computerUse.DEFAULT_BLOCKED, stopKey: STOP_KEY, stopKeyOk, platform: process.platform, log: computerUse.readLog(undefined, 30) });
 ipcMain.handle("clipboard:write-text", (_e, text) => { if (typeof text === "string" && text.length <= 1_000_000) clipboard.writeText(text); }); // #1196 터미널 OSC 52(창이 앞에 없어도 되게 main에서)
+// #1209 브라우저 데이터 지우기 — 인앱 브라우저 세션(모든 레포 공유) 쿠키·저장소·캐시. 열린 페이지는 다시 불러오면 로그아웃 상태.
+ipcMain.handle("browser:clear-data", async () => {
+  try { const ses = require("electron").session.fromPartition(require("./browser-guest.cjs").PARTITION); await ses.clearStorageData(); await ses.clearCache(); return { ok: true }; }
+  catch (e) { return { ok: false, reason: String((e && e.message) || e) }; }
+});
 // #1200 업데이트 확인 — GitHub 최신 릴리스와 앱 버전 비교(설치는 배포 채널 생기면). 실패는 ok:false로.
 const updateCheck = require("./update-check.cjs");
 ipcMain.handle("update:check", () => updateCheck.check(app.getVersion(), "h1tTAKA/mustard").catch((e) => ({ ok: false, current: app.getVersion(), reason: String((e && e.message) || e) })));
@@ -602,6 +607,9 @@ app.whenReady().then(() => browserControl.listen(BROWSER_TOKEN)).then(({ port })
   }).then((r) => console.log("[mustard-mcp]", JSON.stringify(r)));
 }).catch((err) => console.warn("[browser-control] setup failed:", String(err?.message || err)));
 ipcMain.on("browser:set-chords", (e, list) => { trackChordHost(e.sender); setAppChords(e.sender.id, list); });
+ipcMain.on("browser:set-default-zoom", (_e, f) => require("./browser-guest.cjs").setDefaultZoom(f)); // #1209 새 탭 기본 줌(설정은 렌더러)
+ipcMain.on("browser:set-agent-control", (_e, on) => browserControl.setAgentEnabled(on === true)); // #1209 에이전트 브라우저 조작 켬/끔(설정은 렌더러)
+ipcMain.on("browser:set-user-agent", (_e, mode) => require("./browser-guest.cjs").setUserAgentMode(mode)); // #1209 브라우저 ID 정리됨/기본
 // 탭 쪽 모드 점유/해제/조회(#789) — 메인 창 렌더러가 모드 탭 추가·닫기·복원 시 호출.
 ipcMain.handle("mode:claim", (_e, kind) => ({ ok: claimMode(kind, "tab") }));
 ipcMain.handle("mode:release", (_e, kind) => { releaseMode(kind); return { ok: true }; });
