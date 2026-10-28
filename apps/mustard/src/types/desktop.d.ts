@@ -160,6 +160,7 @@ interface NunopiDesktopApi {
     // agent(#803)=실행 중 에이전트 id | null(버퍼 파싱 우선 → node 래퍼 CLI도 감지). 탭 자동 이름·아이콘용.
     // sessionTitle(#970)=세션 작업 제목(OSC 타이틀 요약) | ""(셸·미판정). 탭 라벨·호버 이름용.
     list(): Promise<{ id: string; cwd: string; process: string; pid: number; agent: string | null; sessionTitle: string }[]>;
+    clearSaved?(): Promise<{ ok: boolean; cleared: number }>; // #1211
     // 에이전트 직접 실행(#864) — 신원을 실행 기록에 확정 + pty에 실행 커맨드 주입. 이후 탭 아이콘/이름=이 에이전트.
     launchAgent(payload: { id: string; agent: string; dark?: boolean; permission?: string; args?: string; extraArgs?: string; cwd?: string; env?: string }): Promise<{ ok: boolean; reason?: string }>; // cwd = #1110 Crew 넘겨받기
     onData(cb: (p: { id: string; data: string }) => void): () => void;

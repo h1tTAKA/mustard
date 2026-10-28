@@ -125,6 +125,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     resize: (payload) => ipcRenderer.send("terminal:resize", payload),
     kill: (payload) => ipcRenderer.send("terminal:kill", payload),
     list: () => ipcRenderer.invoke("terminal:list"),
+    clearSaved: () => ipcRenderer.invoke("terminal:clear-saved"), // #1211 저장된 스크롤백 지우기
     launchAgent: (payload) => ipcRenderer.invoke("terminal:launchAgent", payload), // #864 에이전트 직접 실행(신원 확정)
     onData: (cb) => { const h = (_e, p) => cb(p); ipcRenderer.on("terminal:data", h); return () => ipcRenderer.removeListener("terminal:data", h); },
     onExit: (cb) => { const h = (_e, p) => cb(p); ipcRenderer.on("terminal:exit", h); return () => ipcRenderer.removeListener("terminal:exit", h); },

@@ -1656,6 +1656,8 @@ function persistBuffers() {
   for (const [id, b] of liveBuffers) out[id] = b.slice(-PTY_BUFFER_MAX);
   try { mkdirSync(app.getPath("userData"), { recursive: true }); writeFileSync(bufFile(), JSON.stringify(out)); } catch { /* ignore */ }
 }
+// #1211 저장된 스크롤백 지우기 — 다시 붙지 않은(닫힌) 탭의 저장분만. 살아 있는 세션 화면(liveBuffers)은 그대로 다시 저장.
+ipcMain.handle("terminal:clear-saved", () => { const n = Object.keys(savedBuffers).length; savedBuffers = {}; persistBuffers(); return { ok: true, cleared: n }; });
 setInterval(persistBuffers, 5000); // 크래시 대비 주기 저장(before-quit은 아래 quit 훅서)
 setInterval(saveRegistry, 3000);   // #864 실행 기록 영속(재시작 생존 세션 신원 복원용)
 
