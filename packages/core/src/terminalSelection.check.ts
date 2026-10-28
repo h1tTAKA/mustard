@@ -14,4 +14,8 @@ assert.strictEqual(t("   "), "   ", "공백뿐이면 그대로");
 assert.strictEqual(t("\tx\n\ty"), "\tx\n\ty", "탭은 건드리지 않음");
 assert.strictEqual(t("    한글\n    줄"), "한글\n줄");
 assert.strictEqual(t("  a\n    b"), "a\n  b", "첫 줄도 들여쓰기가 있으면 판단에 넣음");
+// 선택 시작 앞 화면 글자(firstPrefix)
+assert.strictEqual(t("  a\n    b", "  "), "a\nb", "들여쓰기 안 2번째 칸부터 — 첫 줄 실제 4칸으로 판단");
+assert.strictEqual(t("1 + x\n    y\n      z", "a = "), "1 + x\ny\n  z", "줄 중간(글자 뒤)부터 — 첫 줄은 판단·자르기에서 뺌");
+assert.strictEqual(t("def f():\n    return 1", ""), "def f():\n    return 1", "줄 처음부터 고른 코드는 그대로");
 console.log("terminalSelection ok");

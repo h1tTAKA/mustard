@@ -40,7 +40,20 @@ function openTerminalLink(cwd: string, l: TerminalLink | { kind: "url"; url: str
 }
 // 버퍼 한 줄 → 글자와 "글자 위치 → 화면 칸" 표(한글·이모지는 두 칸이라 문자열 위치와 칸이 다름)
 // #1212 복사할 글 — 설정이 켜져 있으면(기본) 모든 줄에 공통인 왼쪽 여백을 자름(에이전트 TUI의 들여 그린 본문)
-const copyText = (sel: string) => (getSetting<boolean>(TKEYS.copyTrimGutter, TERMINAL_DEFAULTS.copyTrimGutter) ? trimSelectionGutter(sel) : sel);
+// 첫 줄에서 선택 시작 앞에 있던 화면 글자 — 들여쓰기 안에서 시작했는지/줄 중간부터인지 가리는 데 씀(리뷰).
+// x는 문서상 1-based지만 버전마다 달라, 첫 줄 글이 실제로 이어지는 칸을 x-1·x 중에서 찾음(못 찾으면 undefined = 글만으로 판단).
+function selectionPrefix(term: import("@xterm/xterm").Terminal, sel: string): string | undefined {
+  const pos = term.getSelectionPosition();
+  const line = pos ? term.buffer.active.getLine(pos.start.y)?.translateToString(false) : undefined;
+  if (!pos || line === undefined) return undefined;
+  const first = sel.split("\n")[0].replace(/\r$/, "").trimEnd();
+  for (const c of [pos.start.x - 1, pos.start.x]) if (c >= 0 && line.slice(c).startsWith(first)) return line.slice(0, c);
+  return undefined;
+}
+const copyText = (term: import("@xterm/xterm").Terminal) => {
+  const sel = term.getSelection();
+  return getSetting<boolean>(TKEYS.copyTrimGutter, TERMINAL_DEFAULTS.copyTrimGutter) ? trimSelectionGutter(sel, selectionPrefix(term, sel)) : sel;
+};
 function lineText(line: import("@xterm/xterm").IBufferLine) {
   let text = ""; const col: number[] = [], wid: number[] = [];
   for (let x = 0; x < line.length; x++) {
@@ -199,7 +212,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       };
       offSettings = subscribeSettings(applyTermSettings);
       // 선택 시 복사(copyOnSelect) / 우클릭 붙여넣기(rightClickPaste) — 설정 시.
-      const onSelChange = () => { if (!term) return; if (!getSetting<boolean>(TKEYS.copyOnSelect, TERMINAL_DEFAULTS.copyOnSelect)) return; const sel = copyText(term.getSelection()); if (sel) navigator.clipboard?.writeText(sel).catch(() => {}); };
+      const onSelChange = () => { if (!term) return; if (!getSetting<boolean>(TKEYS.copyOnSelect, TERMINAL_DEFAULTS.copyOnSelect)) return; const sel = copyText(term); if (sel) navigator.clipboard?.writeText(sel).catch(() => {}); };
       onCtx = (e: MouseEvent) => { if (!getSetting<boolean>(TKEYS.rightClickPaste, TERMINAL_DEFAULTS.rightClickPaste)) return; e.preventDefault(); navigator.clipboard?.readText().then((txt) => { if (txt) nd.terminal.input({ id, data: txt }); }).catch(() => {}); };
       selDisp = term.onSelectionChange(onSelChange);
       host.addEventListener("contextmenu", onCtx);
@@ -232,7 +245,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       // #1212 ⌘C·Ctrl+Shift+C 복사도 여백 자르기 — xterm이 textarea에서 copy를 처리하기 전에(캡처) 같은 글로 바꿔 씀
       onCopy = (e: ClipboardEvent) => {
         if (!term?.hasSelection() || !e.clipboardData) return;
-        e.clipboardData.setData("text/plain", copyText(term.getSelection()));
+        e.clipboardData.setData("text/plain", copyText(term));
         e.preventDefault(); e.stopImmediatePropagation();
       };
       host.addEventListener("copy", onCopy, true);
