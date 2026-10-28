@@ -20,7 +20,7 @@ export const TERMINAL_DEFAULTS = {
   lineHeight: 1.0,
   cursorStyle: "bar" as TerminalCursorStyle,
   cursorBlink: true,
-  scrollback: 1000,
+  scrollback: 5000,                            // #1212 1000 → 5000(에이전트 출력엔 1000이 짧음, 저장값 있으면 그대로)
   copyOnSelect: false,
   rightClickPaste: false,
   gpu: true,

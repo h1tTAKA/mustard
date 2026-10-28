@@ -182,6 +182,8 @@ export default function SettingsDrawer({
   const tCursorStyle = useSetting<TerminalCursorStyle>(TKEYS.cursorStyle, TERMINAL_DEFAULTS.cursorStyle);
   const tCursorBlink = useSetting<boolean>(TKEYS.cursorBlink, TERMINAL_DEFAULTS.cursorBlink);
   const tScrollback = useSetting<number>(TKEYS.scrollback, TERMINAL_DEFAULTS.scrollback);
+  const [scrollbackCustom, setScrollbackCustom] = useState(false); // #1212 "사용자 지정"을 눌렀으면 숫자 칸(프리셋 값이 아니면 자동으로 보임)
+  const showScrollbackInput = scrollbackCustom || ![5000, 10000, 25000, 50000].includes(tScrollback);
   const tCopyOnSelect = useSetting<boolean>(TKEYS.copyOnSelect, TERMINAL_DEFAULTS.copyOnSelect);
   const tRightClickPaste = useSetting<boolean>(TKEYS.rightClickPaste, TERMINAL_DEFAULTS.rightClickPaste);
   const tGpu = useSetting<boolean>(TKEYS.gpu, TERMINAL_DEFAULTS.gpu);
@@ -776,15 +778,29 @@ export default function SettingsDrawer({
                 </button>
               </div>
             ))}
-            {/* 스크롤백 */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalScrollback")}</span>
-                <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.terminalScrollbackHint")}</p>
+            {/* 스크롤백(#1212) — 5k/10k/25k/50k/사용자 지정. 새 탭부터 */}
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalScrollback")}</span>
+                  <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.terminalScrollbackHint")}</p>
+                </div>
+                <div className="inline-flex shrink-0 rounded-xl border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-900" role="radiogroup" aria-label={t("settings.terminalScrollback")}>
+                  {[5000, 10000, 25000, 50000].map((n) => (
+                    <button key={n} type="button" role="radio" aria-checked={!scrollbackCustom && tScrollback === n} onClick={() => { setScrollbackCustom(false); setSetting(TKEYS.scrollback, n); }}
+                      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${!scrollbackCustom && tScrollback === n ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>{n / 1000}k</button>
+                  ))}
+                  <button type="button" role="radio" aria-checked={showScrollbackInput} onClick={() => setScrollbackCustom(true)}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${showScrollbackInput ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>{t("settings.scrollbackCustom")}</button>
+                </div>
               </div>
-              <input type="number" min={100} max={100000} step={100} value={tScrollback}
-                onChange={(e) => setSetting(TKEYS.scrollback, Math.min(100000, Math.max(100, Number(e.target.value) || TERMINAL_DEFAULTS.scrollback)))}
-                className="w-28 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+              {showScrollbackInput && (
+                <div className="flex justify-end">
+                  <input type="number" min={100} max={100000} step={100} value={tScrollback} aria-label={t("settings.scrollbackCustom")}
+                    onChange={(e) => setSetting(TKEYS.scrollback, Math.min(100000, Math.max(100, Number(e.target.value) || TERMINAL_DEFAULTS.scrollback)))}
+                    className="w-32 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+                </div>
+              )}
             </div>
             {/* 폰트 굵기(#941) */}
             <div className="space-y-1.5">
