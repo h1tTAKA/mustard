@@ -6,7 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type { WebviewTag } from "electron";
 import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld, IconArrowsMinimize, IconPlus, IconPointer, IconLoader2 } from "@tabler/icons-react";
 import { useT, useSetting, appChords, SHORTCUT_OVERRIDES_KEY, type ShortcutOverrides, getSetting, BROWSER_KEYS, BROWSER_DEFAULTS } from "@mustard/core";
-import { browserTarget } from "@/lib/browser/url";
+import { browserTarget, normalizeBrowserUrl } from "@/lib/browser/url";
 import { PICK_SCRIPT, PICK_CANCEL, type PickedElement } from "@/lib/browser/pickScript";
 import { formatPickFeedback } from "@/lib/browser/feedback";
 import { sendToAgent } from "@/lib/browser/sendToAgent";
@@ -270,10 +270,16 @@ export type BrowserState = { urls: string[]; active: number; devtools: boolean }
 let tabSeq = 0;
 const hostOf = (u: string) => { try { return new URL(u).host; } catch { return u; } };
 
+// #1209 기본 홈 페이지 — 새 탭(+ 버튼·처음 열 때)이 갈 주소. 비었거나 못 알아들으면 빈 탭.
+function homeUrl(): string {
+  const h = getSetting<string>(BROWSER_KEYS.homePage, BROWSER_DEFAULTS.homePage).trim();
+  return h ? normalizeBrowserUrl(h) ?? "" : "";
+}
+
 export default function BrowserPane({ repo, initial, incoming, onTabsChange, onDetach, onDock, onEmpty }: {
   repo: string;
   initial: { urls: string[]; active: number; devtools?: boolean }; // 처음 탭들(레포별 저장분). devtools = 활성 탭에 개발자 도구(분리 창용)
-  incoming?: { url: string; n: number; devtools?: boolean; urls?: string[]; active?: number } | null; // 바깥에서 탭 밀어넣기(에이전트 열기 요청 = url 하나, 분리 창 → 앱 = urls 전부). n이 바뀔 때마다
+  incoming?: { url: string; n: number; devtools?: boolean; urls?: string[]; active?: number; background?: boolean } | null; // 바깥에서 탭 밀어넣기(에이전트 열기 요청 = url 하나, 분리 창 → 앱 = urls 전부). n이 바뀔 때마다
   onTabsChange?: (urls: string[], active: number) => void; // 저장용
   // 창 분리·앱 안으로는 탭 하나가 아니라 브라우저 통째로(유저 요청) — 탭 주소들·활성 탭·활성 탭 devtools.
   onDetach?: (state: BrowserState) => void;                // 앱 → 별도 창(부모가 창 열고 패널 닫음)
@@ -283,7 +289,7 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
   const t = useT();
   // 탭 목록과 활성 탭은 한 state — 지우기·추가가 둘을 같이 바꿔서, 따로 두면 업데이트 순서에 기대게 됨(#1034 리뷰).
   const [st, setSt] = useState<{ tabs: Tab[]; activeId: number }>(() => {
-    const tabs: Tab[] = (initial.urls.length ? initial.urls : [""]).map((url) => ({ id: ++tabSeq, url, title: "" }));
+    const tabs: Tab[] = (initial.urls.length ? initial.urls : [homeUrl()]).map((url) => ({ id: ++tabSeq, url, title: "" }));
     const active = tabs[Math.min(Math.max(initial.active, 0), tabs.length - 1)];
     if (initial.devtools) active.devtools = true;
     return { tabs, activeId: active.id };
@@ -319,9 +325,14 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
   useEffect(() => { onTabsChangeRef.current?.(tabs.map((x) => x.url), activeIdx); }, [urlsKey, activeIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // at: 넣을 자리(분리했다 돌아온 탭은 원래 자리로). 없으면 끝에.
-  const addTab = (url = "", at?: number, devtools?: boolean) => {
+  // background = 지금 보는 탭은 그대로 두고 뒤에 추가(#1209 링크를 백그라운드에서 열기) — 지금 탭이 빈 탭이면 그냥 그 자리로
+  const addTab = (url = "", at?: number, devtools?: boolean, background = false) => {
     const tab: Tab = { id: ++tabSeq, url, title: "", devtools };
-    setSt((p) => { const i = at === undefined ? p.tabs.length : Math.min(Math.max(at, 0), p.tabs.length); return { tabs: [...p.tabs.slice(0, i), tab, ...p.tabs.slice(i)], activeId: tab.id }; });
+    setSt((p) => {
+      const i = at === undefined ? p.tabs.length : Math.min(Math.max(at, 0), p.tabs.length);
+      const cur = p.tabs.find((x) => x.id === p.activeId);
+      return { tabs: [...p.tabs.slice(0, i), tab, ...p.tabs.slice(i)], activeId: background && cur?.url ? p.activeId : tab.id };
+    });
   };
   const lastIncoming = useRef(0);
   useEffect(() => {
@@ -335,7 +346,7 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
       setSt((p) => ({ tabs: [...p.tabs.filter((x) => x.url), ...add], activeId: act.id })); // 빈 탭은 버림
       return;
     }
-    addTab(incoming.url, undefined, incoming.devtools); // 바깥 신호(n 변경)로 탭 추가
+    addTab(incoming.url, undefined, incoming.devtools, !!incoming.background); // 바깥 신호(n 변경)로 탭 추가
   }, [incoming]);
 
   // 탭 제거 — 함수형 업데이트(창 분리는 await 뒤에 불려서, 그 사이 바뀐 탭·제목을 덮어쓰면 안 됨, #1034 리뷰).
@@ -377,7 +388,7 @@ export default function BrowserPane({ repo, initial, incoming, onTabsChange, onD
             );
           })}
         </div>
-        <button type="button" onClick={() => addTab()} title={t("browser.newTab")} aria-label={t("browser.newTab")}
+        <button type="button" onClick={() => addTab(homeUrl())} title={t("browser.newTab")} aria-label={t("browser.newTab")}
           className="flex shrink-0 items-center px-2 text-zinc-400 transition hover:text-zinc-700 dark:hover:text-zinc-200">
           <IconPlus size={13} stroke={2} aria-hidden />
         </button>

@@ -172,6 +172,7 @@ interface NunopiDesktopApi {
     setAppChords(list: string[]): void;
     setDefaultZoom?(factor: number): void; // #1209
     setAgentControl?(on: boolean): void; // #1209
+    setUserAgentMode?(mode: "clean" | "default"): void; // #1209
     openDevTools(guestId: number, rect: { x: number; y: number; w: number; h: number }): Promise<{ ok: boolean }>;
     devtoolsBounds(guestId: number, rect: { x: number; y: number; w: number; h: number }): void;
     closeDevTools(guestId: number): Promise<{ ok: boolean }>;

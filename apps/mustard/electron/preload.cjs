@@ -134,6 +134,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     setAppChords: (list) => ipcRenderer.send("browser:set-chords", list),
     setDefaultZoom: (factor) => ipcRenderer.send("browser:set-default-zoom", factor), // #1209
     setAgentControl: (on) => ipcRenderer.send("browser:set-agent-control", on), // #1209
+    setUserAgentMode: (mode) => ipcRenderer.send("browser:set-user-agent", mode), // #1209
     // devtools 자리(CSS px) → 창 DIP — UI 줌(webFrame)을 여기서 곱함(main 쪽 줌 값은 늦을 수 있음).
     openDevTools: (guestId, rect) => ipcRenderer.invoke("browser:devtools-open", { guestId, rect: zoomRect(rect) }),
     devtoolsBounds: (guestId, rect) => ipcRenderer.send("browser:devtools-bounds", { guestId, rect: zoomRect(rect) }),

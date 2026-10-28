@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld, IconLayoutKanban, IconMessageChatbot } from "@tabler/icons-react";
 import { isNunopiEnabled } from "@/lib/product";
 import { NunopiGlyph } from "@/components/brand/ModeSwapToggle";
-import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, GKEYS, withModel } from "@mustard/core";
+import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, GKEYS, withModel, BROWSER_KEYS, BROWSER_DEFAULTS } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
 import FileTree from "@/components/workspace/FileTree";
 import CodePane from "@/components/workspace/CodePane";
@@ -132,7 +132,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     window.addEventListener(CREW_OPEN_TASK_EVENT, on); return () => window.removeEventListener(CREW_OPEN_TASK_EVENT, on);
   }, [path]); // 인앱 브라우저 패널(#1034) — 레포별 저장
   const [browserTabs, setBrowserTabs] = useState<{ urls: string[]; active: number }>({ urls: [], active: 0 }); // 탭 주소들(레포별)
-  const [browserIncoming, setBrowserIncoming] = useState<{ url: string; n: number; devtools?: boolean; urls?: string[]; active?: number } | null>(null); // 에이전트 열기 요청·분리 창에서 돌아온 탭들
+  const [browserIncoming, setBrowserIncoming] = useState<{ url: string; n: number; devtools?: boolean; urls?: string[]; active?: number; background?: boolean } | null>(null); // 에이전트 열기 요청·분리 창에서 돌아온 탭들
   const [browserRect, setBrowserRect] = useState<SlotRect | null>(null); // dock 속 브라우저 자리(고정 레이어 위치)
   const dockRef = useRef<HTMLElement>(null);
   const browserPrevRef = useRef(false); // 증분 이펙트가 본 마지막 browserOpen
@@ -241,7 +241,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       const d = (e as CustomEvent<TerminalLinkDetail>).detail;
       if (!d || !inside(root, d.cwd)) return; // 다른 레포 터미널
       if ([...OPEN_ROOTS.keys()].some((r) => r.length > root.length && inside(r, d.cwd))) return; // 더 깊은 레포가 맡음
-      if (d.kind === "url") { setBrowserIncoming((prev) => ({ url: d.url, n: (prev?.n ?? 0) + 1 })); setBrowserOpen(true); return; }
+      if (d.kind === "url") { setBrowserIncoming((prev) => ({ url: d.url, n: (prev?.n ?? 0) + 1, background: getSetting<boolean>(BROWSER_KEYS.linkBackground, BROWSER_DEFAULTS.linkBackground) })); setBrowserOpen(true); return; } // #1209 백그라운드면 지금 탭 그대로
       if (treeLoading) { toast(t("ws.linkFilesLoading")); return; } // 목록을 불러오는 중 — "없는 파일"이라고 잘못 알리지 않음(리뷰). 실패·빈 레포는 아래 "못 찾음"
       const rel = findRepoFile(files, root, d.cwd, d.path, filesCapped);
       if (!rel) { toast(t("ws.linkFileMissing", { path: d.path })); return; }

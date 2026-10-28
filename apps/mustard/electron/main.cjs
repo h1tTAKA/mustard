@@ -609,6 +609,7 @@ app.whenReady().then(() => browserControl.listen(BROWSER_TOKEN)).then(({ port })
 ipcMain.on("browser:set-chords", (e, list) => { trackChordHost(e.sender); setAppChords(e.sender.id, list); });
 ipcMain.on("browser:set-default-zoom", (_e, f) => require("./browser-guest.cjs").setDefaultZoom(f)); // #1209 새 탭 기본 줌(설정은 렌더러)
 ipcMain.on("browser:set-agent-control", (_e, on) => browserControl.setAgentEnabled(on === true)); // #1209 에이전트 브라우저 조작 켬/끔(설정은 렌더러)
+ipcMain.on("browser:set-user-agent", (_e, mode) => require("./browser-guest.cjs").setUserAgentMode(mode)); // #1209 브라우저 ID 정리됨/기본
 // 탭 쪽 모드 점유/해제/조회(#789) — 메인 창 렌더러가 모드 탭 추가·닫기·복원 시 호출.
 ipcMain.handle("mode:claim", (_e, kind) => ({ ok: claimMode(kind, "tab") }));
 ipcMain.handle("mode:release", (_e, kind) => { releaseMode(kind); return { ok: true }; });
