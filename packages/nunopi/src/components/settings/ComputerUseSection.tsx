@@ -17,8 +17,8 @@ const keysOf = (k: string, mac: boolean) => k.split("+").map((p) => (mac ? ({ Co
 function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)}
-      className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
-      <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${on ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
+      className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-mustard-600" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
     </button>
   );
 }

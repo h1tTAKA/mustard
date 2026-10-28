@@ -85,8 +85,8 @@ export default function TerminalSessionsSection() {
       <div className="flex items-center justify-between gap-3 py-1">
         <span className="min-w-0"><span className="block text-sm text-zinc-700 dark:text-zinc-300">{t("settings.killTerminalsOnClose")}</span><span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("settings.killTerminalsOnCloseDesc")}</span></span>
         <button type="button" role="switch" aria-checked={killOnClose} aria-label={t("settings.killTerminalsOnClose")} onClick={() => setSetting(WKEYS.killTerminalsOnClose, !killOnClose)}
-          className={`relative h-6 w-11 shrink-0 rounded-full transition ${killOnClose ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
-          <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${killOnClose ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
+          className={`relative h-6 w-11 shrink-0 rounded-full transition ${killOnClose ? "bg-mustard-600" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${killOnClose ? "left-[22px]" : "left-0.5"}`} />
         </button>
       </div>
       <div className="max-h-72 divide-y divide-zinc-100 overflow-y-auto rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-700">

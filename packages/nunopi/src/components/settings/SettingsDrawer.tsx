@@ -777,8 +777,8 @@ export default function SettingsDrawer({
                 <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{row.label}</span>
                 <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
                   onClick={() => setSetting(row.key, !row.on)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
-                  <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${row.on ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-600" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${row.on ? "left-[22px]" : "left-0.5"}`} />
                 </button>
               </div>
             ))}
@@ -1021,8 +1021,8 @@ export default function SettingsDrawer({
                 </div>
                 <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
                   onClick={() => setSetting(row.key, !row.on)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
-                  <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${row.on ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-600" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${row.on ? "left-[22px]" : "left-0.5"}`} />
                 </button>
               </div>
             ))}
@@ -1048,8 +1048,8 @@ export default function SettingsDrawer({
                 </div>
                 <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
                   onClick={() => setSetting(row.key, !row.on)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
-                  <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${row.on ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-600" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${row.on ? "left-[22px]" : "left-0.5"}`} />
                 </button>
               </div>
             ))}
@@ -1105,8 +1105,8 @@ export default function SettingsDrawer({
                 </div>
                 <button type="button" role="switch" aria-checked={row.on} aria-label={row.label}
                   onClick={() => setSetting(row.key, !row.on)}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
-                  <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${row.on ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${row.on ? "bg-mustard-600" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${row.on ? "left-[22px]" : "left-0.5"}`} />
                 </button>
               </div>
             ))}
@@ -1124,8 +1124,8 @@ export default function SettingsDrawer({
               </div>
               <button type="button" role="switch" aria-checked={cuOn} aria-label={t("settings.catchupEnabled")}
                 onClick={() => setSetting(CUKEYS.enabled, !cuOn)}
-                className={`relative h-6 w-11 shrink-0 rounded-full transition ${cuOn ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
-                <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${cuOn ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
+                className={`relative h-6 w-11 shrink-0 rounded-full transition ${cuOn ? "bg-mustard-600" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${cuOn ? "left-[22px]" : "left-0.5"}`} />
               </button>
             </div>
             <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.catchupDesc")}</p>
@@ -1151,8 +1151,8 @@ export default function SettingsDrawer({
                       <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">{cap}</span>
                       <button type="button" role="switch" aria-checked={on} aria-label={`${row.label} ${cap}`} disabled={!cuOn}
                         onClick={() => setSetting(key, !stored)}
-                        className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
-                        <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${on ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
+                        className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-mustard-600" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
                       </button>
                     </div>
                   ); })}
@@ -1290,8 +1290,8 @@ export default function SettingsDrawer({
               </div>
               <button type="button" role="switch" aria-checked={!!nunopiEnabled} aria-label={t("settings.nunopiModule")}
                 onClick={() => onNunopiEnabledChange?.(!nunopiEnabled)}
-                className={`relative h-6 w-11 shrink-0 rounded-full transition ${nunopiEnabled ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
-                <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${nunopiEnabled ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
+                className={`relative h-6 w-11 shrink-0 rounded-full transition ${nunopiEnabled ? "bg-mustard-600" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${nunopiEnabled ? "left-[22px]" : "left-0.5"}`} />
               </button>
             </div>
             <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.nunopiModuleApply")}</p>
@@ -1373,8 +1373,8 @@ export default function SettingsDrawer({
                   </div>
                   <button type="button" role="switch" aria-checked={cardFlyAnimation} aria-label={t("settings.cardFlyAnimation")}
                     onClick={() => onCardFlyAnimationChange?.(!cardFlyAnimation)}
-                    className={`relative h-6 w-11 shrink-0 rounded-full transition ${cardFlyAnimation ? "bg-zinc-900 dark:bg-zinc-100" : "bg-zinc-400 dark:bg-zinc-700"}`}>
-                    <span className={`absolute top-0.5 h-5 w-5 rounded-full shadow transition-all ${cardFlyAnimation ? "left-[22px] bg-white dark:bg-zinc-900" : "left-0.5 bg-white"}`} />
+                    className={`relative h-6 w-11 shrink-0 rounded-full transition ${cardFlyAnimation ? "bg-mustard-600" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${cardFlyAnimation ? "left-[22px]" : "left-0.5"}`} />
                   </button>
                 </div>
               </div>
