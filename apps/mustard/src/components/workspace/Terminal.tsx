@@ -4,7 +4,7 @@
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { findLinks, resolvePath, type TerminalLink } from "@/lib/terminalLinks";
-import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, type TerminalFontWeight } from "@mustard/core";
+import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, type TerminalFontWeight } from "@mustard/core";
 
 // 터미널 설정(#926) — 스토어서 읽어 xterm 옵션 구성. copyOnSelect/rightClickPaste는 핸들러서 별도.
 function termOptionsFromSettings() {
@@ -39,6 +39,8 @@ function openTerminalLink(cwd: string, l: TerminalLink | { kind: "url"; url: str
   window.dispatchEvent(new CustomEvent(TERMINAL_LINK_EVENT, { detail }));
 }
 // 버퍼 한 줄 → 글자와 "글자 위치 → 화면 칸" 표(한글·이모지는 두 칸이라 문자열 위치와 칸이 다름)
+// #1212 복사할 글 — 설정이 켜져 있으면(기본) 모든 줄에 공통인 왼쪽 여백을 자름(에이전트 TUI의 들여 그린 본문)
+const copyText = (sel: string) => (getSetting<boolean>(TKEYS.copyTrimGutter, TERMINAL_DEFAULTS.copyTrimGutter) ? trimSelectionGutter(sel) : sel);
 function lineText(line: import("@xterm/xterm").IBufferLine) {
   let text = ""; const col: number[] = [], wid: number[] = [];
   for (let x = 0; x < line.length; x++) {
@@ -117,6 +119,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
     // #1027 ⌘K(터미널 포커스) = 화면 지우기 — 포커스가 이 터미널 안일 때만 처리(다른 터미널·탭이면 false로 넘김).
     const offClear = registerShortcut(["term.clear"], () => { if (!term || !host.contains(document.activeElement)) return false; term.clear(); });
     let onCtx: ((e: MouseEvent) => void) | null = null;
+    let onCopy: ((e: ClipboardEvent) => void) | null = null;
     let onEnter: (() => void) | null = null;
     let fallback: ReturnType<typeof setTimeout> | null = null;
     let onPaste: ((ev: ClipboardEvent) => void | Promise<void>) | undefined;
@@ -196,7 +199,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       };
       offSettings = subscribeSettings(applyTermSettings);
       // 선택 시 복사(copyOnSelect) / 우클릭 붙여넣기(rightClickPaste) — 설정 시.
-      const onSelChange = () => { if (!term) return; if (!getSetting<boolean>(TKEYS.copyOnSelect, TERMINAL_DEFAULTS.copyOnSelect)) return; const sel = term.getSelection(); if (sel) navigator.clipboard?.writeText(sel).catch(() => {}); };
+      const onSelChange = () => { if (!term) return; if (!getSetting<boolean>(TKEYS.copyOnSelect, TERMINAL_DEFAULTS.copyOnSelect)) return; const sel = copyText(term.getSelection()); if (sel) navigator.clipboard?.writeText(sel).catch(() => {}); };
       onCtx = (e: MouseEvent) => { if (!getSetting<boolean>(TKEYS.rightClickPaste, TERMINAL_DEFAULTS.rightClickPaste)) return; e.preventDefault(); navigator.clipboard?.readText().then((txt) => { if (txt) nd.terminal.input({ id, data: txt }); }).catch(() => {}); };
       selDisp = term.onSelectionChange(onSelChange);
       host.addEventListener("contextmenu", onCtx);
@@ -225,6 +228,14 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       };
       term.parser.registerOscHandler(10, (d) => (d === "?" ? oscColorReply(10) : false));
       term.parser.registerOscHandler(11, (d) => (d === "?" ? oscColorReply(11) : false));
+
+      // #1212 ⌘C·Ctrl+Shift+C 복사도 여백 자르기 — xterm이 textarea에서 copy를 처리하기 전에(캡처) 같은 글로 바꿔 씀
+      onCopy = (e: ClipboardEvent) => {
+        if (!term?.hasSelection() || !e.clipboardData) return;
+        e.clipboardData.setData("text/plain", copyText(term.getSelection()));
+        e.preventDefault(); e.stopImmediatePropagation();
+      };
+      host.addEventListener("copy", onCopy, true);
 
       // #1212 TUI 휠 배율 — 마우스를 추적하는 전체 화면 프로그램(Claude Code·vim·less)에는 휠 한 번이 보고 한 번이라
       // scrollSensitivity가 안 먹음 → 배율-1번 같은 휠을 더 보냄. 복제는 표시해 다시 늘리지 않음.
@@ -301,7 +312,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       fallback = setTimeout(() => { if (!ensured && !disposed && term) { ensured = true; void firstEnsure(); } }, 1500);
     })();
 
-    return () => { offClear(); disposed = true; if (fallback) clearTimeout(fallback); if (onPaste) host.removeEventListener("paste", onPaste, true); offData?.(); offExit?.(); ro?.disconnect(); mo?.disconnect(); offTheme?.(); offSettings?.(); selDisp?.dispose(); linkDisp?.dispose(); oscDisp?.dispose(); osc52Disp?.dispose(); if (onCtx) host.removeEventListener("contextmenu", onCtx); if (onEnter) host.removeEventListener("mouseenter", onEnter); term?.dispose(); term = null; };
+    return () => { offClear(); disposed = true; if (fallback) clearTimeout(fallback); if (onPaste) host.removeEventListener("paste", onPaste, true); if (onCopy) host.removeEventListener("copy", onCopy, true); offData?.(); offExit?.(); ro?.disconnect(); mo?.disconnect(); offTheme?.(); offSettings?.(); selDisp?.dispose(); linkDisp?.dispose(); oscDisp?.dispose(); osc52Disp?.dispose(); if (onCtx) host.removeEventListener("contextmenu", onCtx); if (onEnter) host.removeEventListener("mouseenter", onEnter); term?.dispose(); term = null; };
   }, [id, cwd]);
 
   // 초기 배경도 현재 터미널 테마에 맞춰(라이트 앱 첫 프레임 다크 깜빡임 방지). 클라이언트 전용 pane이라 안전.

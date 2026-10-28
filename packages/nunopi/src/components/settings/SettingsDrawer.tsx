@@ -185,6 +185,7 @@ export default function SettingsDrawer({
   const [scrollbackCustom, setScrollbackCustom] = useState(false); // #1212 "사용자 지정"을 눌렀으면 숫자 칸(프리셋 값이 아니면 자동으로 보임)
   const showScrollbackInput = scrollbackCustom || ![5000, 10000, 25000, 50000].includes(tScrollback);
   const tCopyOnSelect = useSetting<boolean>(TKEYS.copyOnSelect, TERMINAL_DEFAULTS.copyOnSelect);
+  const tCopyTrim = useSetting<boolean>(TKEYS.copyTrimGutter, TERMINAL_DEFAULTS.copyTrimGutter); // #1212
   const tRightClickPaste = useSetting<boolean>(TKEYS.rightClickPaste, TERMINAL_DEFAULTS.rightClickPaste);
   const tGpu = useSetting<boolean>(TKEYS.gpu, TERMINAL_DEFAULTS.gpu);
   // 터미널 심화(#941)
@@ -762,6 +763,7 @@ export default function SettingsDrawer({
             {([
               { key: TKEYS.cursorBlink, on: tCursorBlink, label: t("settings.terminalCursorBlink") },
               { key: TKEYS.copyOnSelect, on: tCopyOnSelect, label: t("settings.terminalCopyOnSelect") },
+              { key: TKEYS.copyTrimGutter, on: tCopyTrim, label: t("settings.terminalCopyTrimGutter") }, // #1212
               { key: TKEYS.rightClickPaste, on: tRightClickPaste, label: t("settings.terminalRightClickPaste") },
               { key: TKEYS.gpu, on: tGpu, label: t("settings.terminalGpu") },
               { key: TKEYS.focusFollowsMouse, on: tFocusFollowsMouse, label: t("settings.terminalFocusFollowsMouse") },

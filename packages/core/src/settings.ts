@@ -22,6 +22,7 @@ export const TERMINAL_DEFAULTS = {
   cursorBlink: true,
   scrollback: 5000,                            // #1212 1000 → 5000(에이전트 출력엔 1000이 짧음, 저장값 있으면 그대로)
   copyOnSelect: false,
+  copyTrimGutter: true,                        // #1212 복사할 때 공통 왼쪽 여백 자르기
   rightClickPaste: false,
   gpu: true,
   // 심화(#941)
@@ -51,6 +52,7 @@ export const TKEYS = {
   cursorBlink: "terminal.cursorBlink",
   scrollback: "terminal.scrollback",
   copyOnSelect: "terminal.copyOnSelect",
+  copyTrimGutter: "terminal.copyTrimGutter",
   rightClickPaste: "terminal.rightClickPaste",
   gpu: "terminal.gpu",
   fontWeight: "terminal.fontWeight",
