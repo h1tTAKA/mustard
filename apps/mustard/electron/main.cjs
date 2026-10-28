@@ -1658,8 +1658,9 @@ function persistBuffers() {
 }
 // #1211 저장된 스크롤백 지우기 — 데몬에 세션이 없는 탭(닫혔거나 끝난 세션)의 저장 화면만. 살아 있는 세션 것은 그대로.
 ipcMain.handle("terminal:clear-saved", async () => {
-  let live;
-  try { live = new Set((await termClient.list()).map((x) => x.id)); } catch { return { ok: false, cleared: 0 }; }
+  const ss = await termClient.list({ strict: true }).catch(() => null);
+  if (!ss) return { ok: false, cleared: 0 }; // 데몬을 못 물어보면 아무것도 안 지움(살아 있는 세션 것까지 지우지 않게)
+  const live = new Set(ss.map((x) => x.id));
   // 데몬에 살아 있는 세션의 저장분은 남김(데몬이 나중에 재시작돼도 그 탭 화면 복원이 사라지지 않게, 리뷰)
   let n = 0; for (const id of Object.keys(savedBuffers)) if (!live.has(id)) { delete savedBuffers[id]; n++; }
   persistBuffers(); return { ok: true, cleared: n };

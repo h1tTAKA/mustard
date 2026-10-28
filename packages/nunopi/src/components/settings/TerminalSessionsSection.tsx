@@ -1,7 +1,7 @@
 "use client";
 // 설정 > 터미널 > 세션 관리(#1211) — 데몬이 들고 있는 터미널 세션(앱을 꺼도 살아 있음) 목록과 끄기.
 // 데스크톱 앱(Mustard)에만 있는 IPC라 타입은 여기서만 좁혀 씀(nunopi 단독 앱 타입엔 terminal이 없음).
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { IconRefresh, IconX, IconLoader2, IconTrash } from "@tabler/icons-react";
 import { useT, useConfirm, useToast } from "@mustard/core";
 
@@ -24,7 +24,11 @@ export default function TerminalSessionsSection() {
   const confirm = useConfirm(), toast = useToast();
   const [busy, setBusy] = useState(false);
   const [list, setList] = useState<Session[] | null>(null);
-  const refresh = useCallback(() => { setList(null); void termApi()?.list().then(setList).catch(() => setList([])); }, []);
+  const seq = useRef(0); // 겹친 요청 중 마지막 응답만(늦게 온 옛 목록이 덮어쓰지 않게, 리뷰)
+  const refresh = useCallback(() => {
+    const n = ++seq.current;
+    void termApi()?.list().then((l) => { if (n === seq.current) setList(l); }).catch(() => { if (n === seq.current) setList([]); });
+  }, []);
   useEffect(() => { refresh(); }, [refresh]);
   // 세션이 실제로 끝나면(끄기·셸 종료) 목록 다시 — 고정 대기 대신 exit 신호로(리뷰)
   useEffect(() => { const off = termApi()?.onExit?.(() => refresh()); return () => { off?.(); }; }, [refresh]);
@@ -40,7 +44,7 @@ export default function TerminalSessionsSection() {
   // 확인 전에 목록을 새로 받아(그 사이 생긴 세션까지) 그 목록을 끔. 에이전트가 도는 세션은 이름을 보여 줌(리뷰)
   const killAll = async () => {
     const ss = await termApi()?.list().catch(() => null);
-    if (!ss?.length) { refresh(); return; }
+    if (!ss?.length) { if ((list?.length ?? 0) > 0) toast(t("sessions.killFailed"), "error"); refresh(); return; } // 보이던 세션이 있는데 목록을 못 받음 = 데몬 연결 문제
     const agents = ss.filter((s) => s.agent).map((s) => `${s.agent} · ${shortCwd(s.cwd)}`);
     const detail = agents.length ? t("sessions.killAllAgents", { list: agents.slice(0, 5).join(", ") + (agents.length > 5 ? ` +${agents.length - 5}` : "") }) : undefined;
     if (!(await confirm({ title: t("sessions.killAllTitle"), message: t("sessions.killAllConfirm", { n: ss.length }), detail, confirmText: t("sessions.killAll"), tone: "warn" }))) return;
