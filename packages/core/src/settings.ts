@@ -119,8 +119,8 @@ export const NKEYS = {
 } as const;
 
 // 워크스페이스/일반(#939)
-export const WORKSPACE_DEFAULTS = { defaultFolder: "" };
-export const WKEYS = { defaultFolder: "workspace.defaultFolder" } as const;
+export const WORKSPACE_DEFAULTS = { defaultFolder: "", killTerminalsOnClose: false };
+export const WKEYS = { defaultFolder: "workspace.defaultFolder", killTerminalsOnClose: "workspace.killTerminalsOnClose" } as const; // #1211 레포 탭 닫을 때 터미널 세션도 끄기(기본 끔 = 다시 열면 그대로)
 
 // 확인 다이얼로그(#929) — 파괴적 액션 confirm 토글.
 // skipDelete/skipCloseTab: 이미 confirm 있는 액션의 확인을 "건너뛰기"(기본 false=확인 유지).

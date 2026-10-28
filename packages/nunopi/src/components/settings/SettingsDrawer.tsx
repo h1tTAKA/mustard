@@ -197,6 +197,7 @@ export default function SettingsDrawer({
   const nMaster = useSetting<boolean>(NKEYS.master, NOTIF_DEFAULTS.master);   // #939
   const nSilent = useSetting<boolean>(NKEYS.silent, NOTIF_DEFAULTS.silent);   // #939
   const wDefaultFolder = useSetting<string>(WKEYS.defaultFolder, WORKSPACE_DEFAULTS.defaultFolder); // #939
+  const wKillOnClose = useSetting<boolean>(WKEYS.killTerminalsOnClose, WORKSPACE_DEFAULTS.killTerminalsOnClose); // #1211
   // git/소스컨트롤(#954)
   const gPrBase = useSetting<string>(GKEYS.prBaseDefault, GIT_DEFAULTS.prBaseDefault);
   const gPrDraft = useSetting<boolean>(GKEYS.prDraftDefault, GIT_DEFAULTS.prDraftDefault);
@@ -1035,6 +1036,14 @@ export default function SettingsDrawer({
                     className="shrink-0 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] text-zinc-500 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">{t("settings.clear")}</button>
                 ) : null}
               </div>
+            </div>
+            {/* #1211 레포 탭 닫을 때 터미널 세션 — 기본은 살려 둠(다시 열면 그대로) */}
+            <div className="flex items-center justify-between gap-3">
+              <span className="min-w-0"><span className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.killTerminalsOnClose")}</span><span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("settings.killTerminalsOnCloseDesc")}</span></span>
+              <button type="button" role="switch" aria-checked={wKillOnClose} aria-label={t("settings.killTerminalsOnClose")} onClick={() => setSetting(WKEYS.killTerminalsOnClose, !wKillOnClose)}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition ${wKillOnClose ? "bg-mustard-500" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${wKillOnClose ? "left-[22px]" : "left-0.5"}`} />
+              </button>
             </div>
           </section>
           )}

@@ -10,7 +10,7 @@ export const SETTINGS_SEARCH: Record<string, SearchItem[]> = {
   "set-terminal": [["sessions.title", "sessions.desc"], "sessions.killAll", "sessions.clearSaved", "sessions.restart", "settings.terminalTheme", ["settings.terminalShell", "settings.terminalShellHint"], "settings.terminalFontSize", "settings.terminalFontFamily", "settings.terminalFontWeight", "settings.terminalLineHeight", "settings.terminalCursorStyle", "settings.terminalCursorBlink",
     ["settings.terminalLinkTarget", "settings.terminalLinkHint"], "settings.terminalCopyOnSelect", "settings.terminalRightClickPaste", "settings.terminalGpu", "settings.terminalFocusFollowsMouse", "settings.terminalOsc52", "settings.terminalImages", "settings.terminalMacOptionIsMeta",
     ["settings.terminalScrollback", "settings.terminalScrollbackHint"], "settings.terminalScrollSpeed"],
-  "set-workspace": [["settings.defaultFolder", "settings.defaultFolderDesc"]],
+  "set-workspace": [["settings.defaultFolder", "settings.defaultFolderDesc"], ["settings.killTerminalsOnClose", "settings.killTerminalsOnCloseDesc"]],
   "set-git": ["settings.gitPrBase", "settings.gitBranchPrefix", ["settings.gitPrDraft", "settings.gitPrDraftDesc"], ["settings.gitAutoFetch", "settings.gitAutoFetchDesc"]],
   "set-quick": [["quick.title", "quick.desc"], "quick.howTo"],
   "set-browser": [["browser.agentControl", "browser.agentControlDesc"], ["browser.homePage", "browser.homePageDesc"], ["settings.terminalLinkTarget", "browser.linkTargetDesc"], ["browser.linkBackground", "browser.linkBackgroundDesc"], ["browser.userAgent", "browser.userAgentDesc"], ["browser.searchEngine", "browser.searchEngineDesc"], ["browser.defaultZoom", "browser.defaultZoomDesc"], ["browser.clearData", "browser.clearDataDesc"]], // #1209
