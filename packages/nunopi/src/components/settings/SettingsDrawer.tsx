@@ -184,6 +184,8 @@ export default function SettingsDrawer({
   const tScrollback = useSetting<number>(TKEYS.scrollback, TERMINAL_DEFAULTS.scrollback);
   const [scrollbackCustom, setScrollbackCustom] = useState(false); // #1212 "사용자 지정"을 눌렀으면 숫자 칸(프리셋 값이 아니면 자동으로 보임)
   const showScrollbackInput = scrollbackCustom || ![5000, 10000, 25000, 50000].includes(tScrollback);
+  const [scrollbackDraft, setScrollbackDraft] = useState<string | null>(null); // 치는 중에는 저장 안 함 — 칸을 벗어나거나 Enter 때 범위 맞춰 저장(리뷰)
+  const commitScrollback = () => { if (scrollbackDraft === null) return; const n = Number(scrollbackDraft); if (scrollbackDraft.trim() && Number.isFinite(n)) setSetting(TKEYS.scrollback, Math.min(100000, Math.max(100, Math.round(n)))); setScrollbackDraft(null); };
   const tCopyOnSelect = useSetting<boolean>(TKEYS.copyOnSelect, TERMINAL_DEFAULTS.copyOnSelect);
   const tCopyTrim = useSetting<boolean>(TKEYS.copyTrimGutter, TERMINAL_DEFAULTS.copyTrimGutter); // #1212
   const tRightClickPaste = useSetting<boolean>(TKEYS.rightClickPaste, TERMINAL_DEFAULTS.rightClickPaste);
@@ -798,8 +800,8 @@ export default function SettingsDrawer({
               </div>
               {showScrollbackInput && (
                 <div className="flex justify-end">
-                  <input type="number" min={100} max={100000} step={100} value={tScrollback} aria-label={t("settings.scrollbackCustom")}
-                    onChange={(e) => setSetting(TKEYS.scrollback, Math.min(100000, Math.max(100, Number(e.target.value) || TERMINAL_DEFAULTS.scrollback)))}
+                  <input type="number" min={100} max={100000} step={100} value={scrollbackDraft ?? tScrollback} aria-label={t("settings.scrollbackCustom")}
+                    onChange={(e) => setScrollbackDraft(e.target.value)} onBlur={commitScrollback} onKeyDown={(e) => { if (e.key === "Enter") commitScrollback(); }}
                     className="w-32 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
                 </div>
               )}
