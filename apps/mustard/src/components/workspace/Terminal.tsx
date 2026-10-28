@@ -18,6 +18,7 @@ function termOptionsFromSettings() {
     // 심화(#941)
     fontWeight: getSetting<TerminalFontWeight>(TKEYS.fontWeight, TERMINAL_DEFAULTS.fontWeight),
     scrollSensitivity: getSetting<number>(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity),
+    fastScrollSensitivity: getSetting<number>(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity), // #1212 ⌥ 누른 채
     macOptionIsMeta: getSetting<boolean>(TKEYS.macOptionIsMeta, TERMINAL_DEFAULTS.macOptionIsMeta),
   };
 }
@@ -189,6 +190,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
         // 심화(#941) 라이브 반영
         term.options.fontWeight = o.fontWeight;
         term.options.scrollSensitivity = o.scrollSensitivity;
+        term.options.fastScrollSensitivity = o.fastScrollSensitivity;
         term.options.macOptionIsMeta = o.macOptionIsMeta;
         try { fit.fit(); } catch { /* ignore */ }
       };
@@ -223,6 +225,17 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       };
       term.parser.registerOscHandler(10, (d) => (d === "?" ? oscColorReply(10) : false));
       term.parser.registerOscHandler(11, (d) => (d === "?" ? oscColorReply(11) : false));
+
+      // #1212 TUI 휠 배율 — 마우스를 추적하는 전체 화면 프로그램(Claude Code·vim·less)에는 휠 한 번이 보고 한 번이라
+      // scrollSensitivity가 안 먹음 → 배율-1번 같은 휠을 더 보냄. 복제는 표시해 다시 늘리지 않음.
+      const replayed = new WeakSet<Event>();
+      term.attachCustomWheelEventHandler((ev) => {
+        if (replayed.has(ev) || !term || term.modes.mouseTrackingMode === "none") return true;
+        const k = Math.min(10, Math.max(1, Math.round(getSetting<number>(TKEYS.tuiScrollSensitivity, TERMINAL_DEFAULTS.tuiScrollSensitivity))));
+        const tgt = ev.target;
+        for (let i = 1; i < k && tgt; i++) { const c = new WheelEvent(ev.type, ev); replayed.add(c); queueMicrotask(() => tgt.dispatchEvent(c)); }
+        return true;
+      });
 
       // Shift+Enter(#799) — CSI-u(kitty/fixterms)로 인코딩된 "Shift+Enter" 키 이벤트를 전송.
       // \x1b[13;2u = Enter(13) + Shift 수정자(2). 에이전트 CLI(Claude Code 등)가 이를 진짜 개행 키로

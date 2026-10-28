@@ -27,6 +27,8 @@ export const TERMINAL_DEFAULTS = {
   // 심화(#941)
   fontWeight: "normal" as TerminalFontWeight, // xterm fontWeight
   scrollSensitivity: 1,                        // 높을수록 빠름(한 틱에 더 많이 이동)
+  fastScrollSensitivity: 5,                    // #1212 ⌥ 누른 채 휠 배율(1~10)
+  tuiScrollSensitivity: 1,                     // #1212 전체 화면 프로그램(마우스 추적 중) 휠 배율(정수 1~10)
   macOptionIsMeta: false,                      // mac Option→Alt
   focusFollowsMouse: false,                    // 마우스 올리면 포커스
   linkTarget: "app" as "app" | "external",     // #1193 터미널 웹 링크 ⌘+클릭 = 앱 안 브라우저 / 외부 브라우저
@@ -53,6 +55,8 @@ export const TKEYS = {
   gpu: "terminal.gpu",
   fontWeight: "terminal.fontWeight",
   scrollSensitivity: "terminal.scrollSensitivity",
+  fastScrollSensitivity: "terminal.fastScrollSensitivity",
+  tuiScrollSensitivity: "terminal.tuiScrollSensitivity",
   macOptionIsMeta: "terminal.macOptionIsMeta",
   focusFollowsMouse: "terminal.focusFollowsMouse",
   linkTarget: "terminal.linkTarget",

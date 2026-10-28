@@ -7,7 +7,7 @@ import ShortcutsSection from "./ShortcutsSection";
 import UpdateSection from "./UpdateSection";
 import BrowserSection from "./BrowserSection";
 import TerminalSessionsSection from "./TerminalSessionsSection";
-import { IconKeyboard, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX } from "@tabler/icons-react";
+import { IconKeyboard, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX } from "@tabler/icons-react";
 import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
 import ComputerUseSection from "./ComputerUseSection";
@@ -188,6 +188,8 @@ export default function SettingsDrawer({
   // 터미널 심화(#941)
   const tFontWeight = useSetting<string>(TKEYS.fontWeight, TERMINAL_DEFAULTS.fontWeight);
   const tScrollSensitivity = useSetting<number>(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity);
+  const tFastScroll = useSetting<number>(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity); // #1212
+  const tTuiScroll = useSetting<number>(TKEYS.tuiScrollSensitivity, TERMINAL_DEFAULTS.tuiScrollSensitivity);
   const tMacOptionIsMeta = useSetting<boolean>(TKEYS.macOptionIsMeta, TERMINAL_DEFAULTS.macOptionIsMeta);
   const tFocusFollowsMouse = useSetting<boolean>(TKEYS.focusFollowsMouse, TERMINAL_DEFAULTS.focusFollowsMouse);
   const tLinkTarget = useSetting<"app" | "external">(TKEYS.linkTarget, TERMINAL_DEFAULTS.linkTarget); // #1193
@@ -796,15 +798,25 @@ export default function SettingsDrawer({
                 ))}
               </div>
             </div>
-            {/* 스크롤 속도(#941) — scrollSensitivity는 값이 높을수록 빠름(한 틱에 더 많이 이동) */}
-            <div className="space-y-1.5">
-              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalScrollSpeed")}</span>
-              <div className="inline-flex w-full rounded-xl border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-900">
-                {([{ v: 0.5, k: "slow" }, { v: 1, k: "normal" }, { v: 3, k: "fast" }] as const).map((opt) => (
-                  <button key={opt.k} type="button" onClick={() => setSetting(TKEYS.scrollSensitivity, opt.v)}
-                    className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${tScrollSensitivity === opt.v ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
-                    {t(`settings.scrollSpeed.${opt.k}`)}
-                  </button>
+            {/* 스크롤 속도(#941·#1212) — 일반·빠름(⌥)·TUI 슬라이더 3개 + 재설정 */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="min-w-0"><span className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalScrollSpeed")}</span><span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("settings.scrollSpeedDesc")}</span></span>
+                <button type="button" onClick={() => { setSetting(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity); setSetting(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity); setSetting(TKEYS.tuiScrollSensitivity, TERMINAL_DEFAULTS.tuiScrollSensitivity); }}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"><IconRotate size={12} stroke={2} aria-hidden />{t("settings.scrollSpeedReset")}</button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {([
+                  { k: "normal", key: TKEYS.scrollSensitivity, v: tScrollSensitivity, min: 0.5, max: 3, step: 0.05 },
+                  { k: "fast", key: TKEYS.fastScrollSensitivity, v: tFastScroll, min: 1, max: 10, step: 1 },
+                  { k: "tui", key: TKEYS.tuiScrollSensitivity, v: tTuiScroll, min: 1, max: 10, step: 1 },
+                ] as const).map((r) => (
+                  <label key={r.k} className="space-y-1.5 rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
+                    <span className="flex items-center justify-between gap-2"><span className="text-sm text-zinc-700 dark:text-zinc-300">{t(`settings.scrollSpeed3.${r.k}`)}</span><span className="rounded-md border border-zinc-200 px-1.5 py-0.5 font-mono text-[11px] text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">{Number(r.v.toFixed(2))}x</span></span>
+                    <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">{t(`settings.scrollSpeed3.${r.k}Desc`)}</span>
+                    <input type="range" min={r.min} max={r.max} step={r.step} value={r.v} onChange={(e) => setSetting(r.key, Number(e.target.value))} aria-label={t(`settings.scrollSpeed3.${r.k}`)} className="w-full accent-mustard-500" />
+                    <span className="flex justify-between font-mono text-[10px] text-zinc-400"><span>{r.min}</span><span>{r.max}</span></span>
+                  </label>
                 ))}
               </div>
             </div>
