@@ -17,4 +17,9 @@ assert.strictEqual(b("x", "nope"), "https://www.google.com/search?q=x", "모르�
 assert.strictEqual(b("x", "constructor"), "https://www.google.com/search?q=x", "Object 기본 키도 google");
 assert.strictEqual(b("example.com", "bing"), "https://example.com/", "URL은 그대로");
 for (const bad of ["", "javascript:alert(1)", "file:///etc/passwd", "data:text/html,x"]) assert.strictEqual(b(bad, "google"), null, bad);
+// main(electron/browser-control.cjs)은 TS를 못 불러 같은 판정을 따로 들고 있음 — 둘이 어긋나지 않게 같은 입력으로 맞춰 봄(#1209 리뷰)
+import { createRequire } from "node:module";
+const { normalizeUrl: mainNormalize } = createRequire(import.meta.url)("../../../apps/mustard/electron/browser-control.cjs");
+for (const s of ["localhost:3000", ":5173", "127.0.0.1:8080/a?b=1", "example.com", "https://example.com/x", "HTTP://Localhost:3000", "", "  ", "hello world", "javascript:alert(1)", "file:///etc/passwd", "foo", "ftp://x.com", "[::1]:3000"])
+  assert.strictEqual(mainNormalize(s), n(s), `main 판정 어긋남: ${JSON.stringify(s)}`);
 console.log("browser url ok");
