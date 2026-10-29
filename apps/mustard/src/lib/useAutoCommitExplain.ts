@@ -45,7 +45,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     const stateKey = `nunopi:auto-explain:${root}`;
     if (!on) { try { localStorage.removeItem(stateKey); } catch { /* ignore */ } return; } // 다시 켜면 그때부터
     // pending = 세션 턴이 아직 안 끝나 카드를 미룬 커밋(#1064) — 다음 주기마다 다시, 20분 지나면 그대로 만듦
-    type Pend = { hash: string; ts: number; subject: string; branch: string; at: number; merge?: boolean; errAt?: number };
+    type Pend = { hash: string; ts: number; subject: string; branch: string; at: number; merge?: boolean; errAt?: number; rv?: 1 }; // rv = 되살리기로 넣은 것(새 커밋 뒤에 처리)
     type State = { since: number; done: string[]; pending?: Pend[]; revived?: number; reviveTries?: number; reviveAt?: number };
     const read = (): State | null => { try { return JSON.parse(localStorage.getItem(stateKey) || "null") as State | null; } catch { return null; } };
     const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
@@ -99,7 +99,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     const flushPending = async () => {
       const st0 = read(); if (!st0?.pending?.length) return;
       const keep: Pend[] = [], skipped: Pend[] = []; // skipped = 이번 주기에 못 본 것 — 다음엔 먼저(오래 열린 세션들이 몫을 계속 차지하지 않게)
-      for (const pd of st0.pending) {
+      for (const pd of [...st0.pending.filter((p) => !p.rv), ...st0.pending.filter((p) => p.rv)]) { // 새 커밋 먼저, 되살리기는 몫이 남을 때(리뷰)
         if (!alive) return;
         if (budget <= 0) { skipped.push(pd); continue; } // 이번 주기 몫 다 씀 — 다음 주기에
         if (!cfg.current.sessOn) continue; // 세션 분석 꺼짐 — 미룬 것도 버림
@@ -107,7 +107,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         const { spid: sp, sps: sset, locale: sl } = cfg.current;
         budget--;
         const r = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, Date.now() - pd.at > 20 * 60_000, !!pd.merge).catch(() => "error" as const);
-        if (r === "wait") { keep.push(pd); continue; }
+        if (r === "wait") { keep.push({ ...pd, errAt: undefined }); continue; } // 오류 창은 연속 오류만(옛 오류 시각이 남아 나중 한 번에 버려지지 않게, 리뷰)
         if (r === "error") { const at = pd.errAt ?? Date.now(); if (Date.now() - at < 5 * 60_000) keep.push({ ...pd, errAt: at }); continue; } // 서버 오류 — 처음 실패부터 5분까지만 다시(리뷰)
         if (r !== "none" && alive) {
           void post("/api/repo/stream", { root, items: [r] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
@@ -161,10 +161,11 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
             if (saved?.ok !== true) { failed = true; continue; } // 확인 못 함 — 이번엔 건너뛰고 다음에 다시
             if (saved.session) continue; // 이미 카드 있음
             if (add.length >= 20) break; // 한 번에 20개까지(5개/주기라 2분 안에 처리 — 1시간 만료에 안 걸리게, 리뷰)
-            add.push({ hash: c.hash, ts: c.ts, subject: c.subject ?? "", branch: c.branch || back.branch || "", at: Date.now(), merge: !!c.merge });
+            add.push({ hash: c.hash, ts: c.ts, subject: c.subject ?? "", branch: c.branch || back.branch || "", at: Date.now(), merge: !!c.merge, rv: 1 });
           }
           if (!alive) return; // 꺼진 뒤 옛 상태로 덮어쓰지 않게(리뷰)
           // 일시 오류면 끝으로 찍지 않음 — 5분 뒤 다시, 3번까지(몇 분 이어지는 오류도 견디고, 계속 실패해도 매 주기 훑지 않게, 리뷰)
+          //  되살리기 조회(대화 기록 파일 읽기)는 주기 몫 밖 — 레포마다 한 번(실패 시 3번), 로컬 파일이라 감수.
           //  한계: 세션 파일은 있는데 카드가 없는 커밋(턴이 1시간 넘게 안 끝나 버린 것 등)은 "있음"으로 보고 되살리지 않음.
           const cur = read() ?? st, tries = (cur.reviveTries ?? 0) + 1;
           st = { ...cur, ...(failed && tries < 3 ? { reviveTries: tries, reviveAt: Date.now() + 5 * 60_000 } : { revived: 1 }), pending: [...(cur.pending ?? []), ...add.filter((a) => !cur.pending?.some((p) => p.hash === a.hash))] };
