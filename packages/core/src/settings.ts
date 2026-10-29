@@ -30,12 +30,15 @@ export const TERMINAL_DEFAULTS = {
   scrollSensitivity: 1,                        // 높을수록 빠름(한 틱에 더 많이 이동)
   fastScrollSensitivity: 5,                    // #1212 ⌥ 누른 채 휠 배율(1~10)
   tuiScrollSensitivity: 1,                     // #1212 전체 화면 프로그램(마우스 추적 중) 휠 배율(정수 1~10)
-  macOptionIsMeta: false,                      // mac Option→Alt
+  macOptionIsMeta: false,                      // mac Option→Alt(옛 스위치 — #1213부터 macOptionAsAlt로 옮겨 읽음)
   focusFollowsMouse: false,                    // 마우스 올리면 포커스
   linkTarget: "app" as "app" | "external",     // #1193 터미널 웹 링크 ⌘+클릭 = 앱 안 브라우저 / 외부 브라우저
   shell: "",                                   // #1196 셸 절대 경로(비우면 로그인 셸), 새 탭부터
   osc52: true,                                 // #1196 프로그램이 클립보드에 쓰기(OSC 52, 읽기는 항상 막음)
   images: true,                                // #1196 인라인 이미지(sixel·iTerm), 새 탭부터
+  shellArgs: "",                               // #1213 셸 인자(한 줄에 하나), 새 탭부터
+  jisYenToBackslash: false,                    // #1213 JIS 키보드 ¥ 키 → 백슬래시(맥)
+  wordSeparator: "",                           // #1213 더블클릭 단어 구분 기호(비우면 기본값)
 };
 // 인앱 브라우저(#1209) — 검색 엔진(google·duckduckgo·bing·kagi)
 export const BROWSER_DEFAULTS = { searchEngine: "google", defaultZoom: 100, agentControl: true, homePage: "", userAgent: "clean" as "clean" | "default", linkBackground: false };
@@ -60,11 +63,15 @@ export const TKEYS = {
   fastScrollSensitivity: "terminal.fastScrollSensitivity",
   tuiScrollSensitivity: "terminal.tuiScrollSensitivity",
   macOptionIsMeta: "terminal.macOptionIsMeta",
+  macOptionAsAlt: "terminal.macOptionAsAlt", // #1213 auto·both·left·right·off(없으면 옛 스위치에서)
   focusFollowsMouse: "terminal.focusFollowsMouse",
   linkTarget: "terminal.linkTarget",
   shell: "terminal.shell",
   osc52: "terminal.osc52",
   images: "terminal.images",
+  shellArgs: "terminal.shellArgs",
+  jisYenToBackslash: "terminal.jisYenToBackslash",
+  wordSeparator: "terminal.wordSeparator",
 } as const;
 
 // 에이전트 런치(#927, #1184) — 기본 에이전트("auto" = 감지되고 켜진 첫 에이전트, "blank" = 셸만, 아니면 id) + per-agent 유저 인자·권한·켜기.

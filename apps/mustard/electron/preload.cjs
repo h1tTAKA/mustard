@@ -104,6 +104,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
   },
   setKeepAwake: (mode) => ipcRenderer.send("power:keep-awake", mode), // #1197 잠자기 막기
   checkUpdate: () => ipcRenderer.invoke("update:check"), // #1200
+  keyboardInputSource: () => ipcRenderer.invoke("keyboard:input-source"), // #1213 지금 입력 소스 ID(맥, 못 읽으면 null)
   clearBrowserData: () => ipcRenderer.invoke("browser:clear-data"), // #1209
   openInList: () => ipcRenderer.invoke("open-in:list"), // #1199 설치된 편집기·터미널·git 앱
   openIn: (id, dir) => ipcRenderer.invoke("open-in:open", { id, dir }),

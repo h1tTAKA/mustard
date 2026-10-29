@@ -39,7 +39,11 @@ function pickShell(want) {
   if (typeof want !== "string" || !want || !require("path").isAbsolute(want)) return def;
   try { fs.accessSync(want, fs.constants.X_OK); return fs.statSync(want).isFile() ? want : def; } catch { return def; }
 }
-function ensure({ id, cwd, cols, rows, dark, shell: wantShell }) {
+// #1213 셸 인자 — 문자열 배열(최대 32개·각 1024자·NUL 없음)일 때만, 아니면 인자 없음(지금처럼).
+function pickArgs(a) {
+  return Array.isArray(a) && a.length <= 32 && a.every((x) => typeof x === "string" && x.length <= 1024 && !x.includes("\0")) ? a : [];
+}
+function ensure({ id, cwd, cols, rows, dark, shell: wantShell, shellArgs }) {
   let s = ptys.get(id);
   if (!s) {
     const shell = pickShell(wantShell);
@@ -56,7 +60,7 @@ function ensure({ id, cwd, cols, rows, dark, shell: wantShell }) {
     env.COLORFGBG = dark === false ? "0;15" : "15;0";
     let proc;
     // cols 하한 20 클램프(#832) — 레이아웃 미확정 폭으로 극소 cols가 새 나가도 셸 출력이 세로로 깨지지 않게(FE 폭 가드 백스톱).
-    try { proc = pty.spawn(shell, [], { name: "xterm-256color", cols: Math.max(cols || 80, 20), rows: rows || 24, cwd, env }); }
+    try { proc = pty.spawn(shell, pickArgs(shellArgs), { name: "xterm-256color", cols: Math.max(cols || 80, 20), rows: rows || 24, cwd, env }); }
     catch (e) { return { id, ok: false, reason: String((e && e.message) || e) }; }
     s = { proc, buffer: "", cwd };
     proc.onData((data) => {

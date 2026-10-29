@@ -39,6 +39,7 @@ interface NunopiDesktopApi {
   setRuntimePaths(paths: { claudeCode?: string; codex?: string; opencode?: string }): Promise<{ ok: boolean; saved: Record<string, string> }>;
   // #1171 에이전트 CLI 상태 — status: ok(설치·실행됨) / broken(찾았는데 실행 실패) / missing, auth: authenticated / unauthenticated / unknown
   setKeepAwake?(mode: "off" | "working" | "always"): void; // #1197
+  keyboardInputSource?(): Promise<string | null>; // #1213 맥 입력 소스 ID
   checkUpdate?(): Promise<{ ok: boolean; current: string; latest?: string | null; newer?: boolean; url?: string | null; reason?: string }>; // #1200
   clearBrowserData?(): Promise<{ ok: boolean; reason?: string }>; // #1209
   openInList?(): Promise<{ id: string; kind: "files" | "editor" | "terminal" | "git"; name: string; icon: string | null }[]>; // #1199
@@ -151,7 +152,7 @@ interface NunopiDesktopApi {
   };
   // 터미널(pty) — id별 세션(#647·#678 멀티탭). cwd는 spawn 작업 디렉터리. ensure는 세션 확보 + 재생용 scrollback 반환.
   terminal: {
-    ensure(opts: { id: string; cwd: string; cols: number; rows: number; dark?: boolean; shell?: string }): Promise<{ ok: boolean; buffer?: string; reason?: string }>;
+    ensure(opts: { id: string; cwd: string; cols: number; rows: number; dark?: boolean; shell?: string; shellArgs?: string[] }): Promise<{ ok: boolean; buffer?: string; reason?: string }>;
     input(payload: { id: string; data: string }): void;
     shellInput?(payload: { id: string; cwd: string; data: string }): Promise<{ ok: true; id: string } | { ok: false; reason: "bad-args" | "error" | "no-terminal" | "busy" | "multiline" }>; // #1194
     resize(payload: { id: string; cols: number; rows: number }): void;

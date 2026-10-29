@@ -7,6 +7,7 @@ import ShortcutsSection from "./ShortcutsSection";
 import UpdateSection from "./UpdateSection";
 import BrowserSection from "./BrowserSection";
 import TerminalSessionsSection from "./TerminalSessionsSection";
+import TerminalKeyboardSection from "./TerminalKeyboardSection";
 import { IconKeyboard, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus } from "@tabler/icons-react";
 import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
@@ -175,6 +176,7 @@ export default function SettingsDrawer({
   // 터미널 설정(#926) — useSetting으로 구독(변경 즉시 반영). 모든 훅은 early-return 위.
   const tFontSize = useSetting<number>(TKEYS.fontSize, TERMINAL_DEFAULTS.fontSize);
   const tFontFamily = useSetting<string>(TKEYS.fontFamily, TERMINAL_DEFAULTS.fontFamily);
+  const tShellArgs = useSetting<string>(TKEYS.shellArgs, TERMINAL_DEFAULTS.shellArgs); // #1213
   const tShell = useSetting<string>(TKEYS.shell, TERMINAL_DEFAULTS.shell); // #1196
   const tOsc52 = useSetting<boolean>(TKEYS.osc52, TERMINAL_DEFAULTS.osc52);
   const tImages = useSetting<boolean>(TKEYS.images, TERMINAL_DEFAULTS.images);
@@ -195,7 +197,6 @@ export default function SettingsDrawer({
   const tScrollSensitivity = useSetting<number>(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity);
   const tFastScroll = useSetting<number>(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity); // #1212
   const tTuiScroll = useSetting<number>(TKEYS.tuiScrollSensitivity, TERMINAL_DEFAULTS.tuiScrollSensitivity);
-  const tMacOptionIsMeta = useSetting<boolean>(TKEYS.macOptionIsMeta, TERMINAL_DEFAULTS.macOptionIsMeta);
   const tFocusFollowsMouse = useSetting<boolean>(TKEYS.focusFollowsMouse, TERMINAL_DEFAULTS.focusFollowsMouse);
   const tLinkTarget = useSetting<"app" | "external">(TKEYS.linkTarget, TERMINAL_DEFAULTS.linkTarget); // #1193
   // 알림(#928)
@@ -722,6 +723,13 @@ export default function SettingsDrawer({
                 className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-mono text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
               <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.terminalShellHint")}</p>
             </label>
+            {/* 셸 인자(#1213) — 한 줄에 하나, 새 탭부터 */}
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalShellArgs")}</span>
+              <textarea rows={2} value={tShellArgs} onChange={(e) => setSetting(TKEYS.shellArgs, e.target.value)} placeholder="-l" spellCheck={false}
+                className="w-full resize-y rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-mono text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.terminalShellArgsHint")}</p>
+            </label>
             {/* 폰트 패밀리 */}
             <label className="block space-y-1.5">
               <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalFontFamily")}</span>
@@ -771,7 +779,6 @@ export default function SettingsDrawer({
               { key: TKEYS.focusFollowsMouse, on: tFocusFollowsMouse, label: t("settings.terminalFocusFollowsMouse") },
               { key: TKEYS.osc52, on: tOsc52, label: t("settings.terminalOsc52") }, // #1196
               { key: TKEYS.images, on: tImages, label: t("settings.terminalImages") }, // #1196
-              { key: TKEYS.macOptionIsMeta, on: tMacOptionIsMeta, label: t("settings.terminalMacOptionIsMeta") },
             ]).map((row) => (
               <div key={row.key} className="flex items-center justify-between gap-3">
                 <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{row.label}</span>
@@ -782,6 +789,7 @@ export default function SettingsDrawer({
                 </button>
               </div>
             ))}
+            <TerminalKeyboardSection />{/* #1213 Option을 Alt로 — 맥에서만 보임 */}
             {/* 스크롤백(#1212) — 5k/10k/25k/50k/사용자 지정. 새 탭부터 */}
             <div className="space-y-1.5">
               <div className="flex flex-wrap items-center justify-between gap-3">

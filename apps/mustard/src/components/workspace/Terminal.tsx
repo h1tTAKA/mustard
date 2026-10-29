@@ -4,9 +4,13 @@
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { findLinks, resolvePath, type TerminalLink } from "@/lib/terminalLinks";
-import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, type TerminalFontWeight } from "@mustard/core";
+import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, readMacOptionAsAlt, effectiveMacOptionAsAlt, altCharForCode, jisYenInput, DEFAULT_WORD_SEPARATOR, parseShellArgs, type TerminalFontWeight } from "@mustard/core";
+import { inputSourceId, refreshInputSource, subscribeInputSource } from "@/lib/inputSource";
 
 // 터미널 설정(#926) — 스토어서 읽어 xterm 옵션 구성. copyOnSelect/rightClickPaste는 핸들러서 별도.
+// #1213 지금 Option을 Alt로 — 자동이면 입력 소스(US·ABC = 양쪽, 그 외·모름 = 끄기)로 정함.
+const macOptionMode = () => effectiveMacOptionAsAlt(readMacOptionAsAlt(getSetting<unknown>(TKEYS.macOptionAsAlt, undefined), getSetting<unknown>(TKEYS.macOptionIsMeta, undefined)), inputSourceId()); // 새 키 없으면 옛 스위치(켜짐 = 양쪽)
+
 function termOptionsFromSettings() {
   return {
     fontSize: getSetting<number>(TKEYS.fontSize, TERMINAL_DEFAULTS.fontSize),
@@ -19,7 +23,8 @@ function termOptionsFromSettings() {
     fontWeight: getSetting<TerminalFontWeight>(TKEYS.fontWeight, TERMINAL_DEFAULTS.fontWeight),
     scrollSensitivity: getSetting<number>(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity),
     fastScrollSensitivity: getSetting<number>(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity), // #1212 ⌥ 누른 채
-    macOptionIsMeta: getSetting<boolean>(TKEYS.macOptionIsMeta, TERMINAL_DEFAULTS.macOptionIsMeta),
+    wordSeparator: getSetting<string>(TKEYS.wordSeparator, TERMINAL_DEFAULTS.wordSeparator) || DEFAULT_WORD_SEPARATOR, // #1213 더블클릭 단어 구분
+    macOptionIsMeta: macOptionMode() === "both", // #1213 양쪽만 xterm이 처리, 한쪽만은 키 핸들러가 ESC+글자
   };
 }
 
@@ -123,6 +128,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
     let mo: MutationObserver | null = null;
     let offTheme: (() => void) | null = null;
     let offSettings: (() => void) | null = null;
+    let offInputSource: (() => void) | null = null;
     let selDisp: { dispose(): void } | null = null;
     let linkDisp: { dispose(): void } | null = null;
     let oscDisp: { dispose(): void } | null = null;
@@ -208,9 +214,11 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
         term.options.scrollSensitivity = o.scrollSensitivity;
         term.options.fastScrollSensitivity = o.fastScrollSensitivity;
         term.options.macOptionIsMeta = o.macOptionIsMeta;
+        term.options.wordSeparator = o.wordSeparator;
         try { fit.fit(); } catch { /* ignore */ }
       };
       offSettings = subscribeSettings(applyTermSettings);
+      offInputSource = subscribeInputSource(applyTermSettings); // #1213 입력 소스가 바뀌면 자동 판단 다시
       // 선택 시 복사(copyOnSelect) / 우클릭 붙여넣기(rightClickPaste) — 설정 시.
       const onSelChange = () => { if (!term) return; if (!getSetting<boolean>(TKEYS.copyOnSelect, TERMINAL_DEFAULTS.copyOnSelect)) return; const sel = copyText(term); if (sel) navigator.clipboard?.writeText(sel).catch(() => {}); };
       onCtx = (e: MouseEvent) => { if (!getSetting<boolean>(TKEYS.rightClickPaste, TERMINAL_DEFAULTS.rightClickPaste)) return; e.preventDefault(); navigator.clipboard?.readText().then((txt) => { if (txt) nd.terminal.input({ id, data: txt }); }).catch(() => {}); };
@@ -264,7 +272,26 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       // Shift+Enter(#799) — CSI-u(kitty/fixterms)로 인코딩된 "Shift+Enter" 키 이벤트를 전송.
       // \x1b[13;2u = Enter(13) + Shift 수정자(2). 에이전트 CLI(Claude Code 등)가 이를 진짜 개행 키로
       // 파싱해 멀티라인·백스페이스 정상(생 \n/ESC+CR은 리터럴로 오처리돼 1줄만/백스페이스 깨짐). false로 CR 제출 차단.
+      // #1213 한쪽 ⌥만 Alt — 어느 ⌥가 눌렸는지(location 1 왼쪽, 2 오른쪽) 기억했다가 그쪽이면 ESC+그 키 글자를 직접 보냄.
+      // preventDefault로 브라우저가 å 같은 조합 글자를 넣지 않게(⇧ 같이 누르면 ESC+대문자·⇧기호). IME 조합 중은 건드리지 않음.
+      let optBits = 0;
+      term.textarea?.addEventListener("blur", () => { optBits = 0; });
       term.attachCustomKeyEventHandler((e) => {
+        // #1213 JIS ¥ 키 → 백슬래시(keydown에 넣고 keypress·keyup은 삼킴)
+        const yen = isMac ? jisYenInput(e, getSetting<boolean>(TKEYS.jisYenToBackslash, TERMINAL_DEFAULTS.jisYenToBackslash)) : null;
+        if (yen) { e.preventDefault(); if (yen === "input") nd.terminal.input({ id, data: "\\" }); return false; }
+        if (e.key === "Alt") {
+          const bit = e.location === 1 ? 1 : e.location === 2 ? 2 : 0;
+          if (e.type === "keydown") { optBits = bit ? optBits | bit : 0; refreshInputSource(); }
+          else if (e.type === "keyup") optBits = bit ? optBits & ~bit : 0;
+          return true;
+        }
+        if (isMac && e.type === "keydown" && e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.keyCode !== 229) {
+          // xterm에 넣어 둔 값이 양쪽이면 xterm이 처리(입력 소스가 막 바뀐 순간에도 두 경로가 겹치지 않게 같은 값을 봄 — 리뷰)
+          const mode = term?.options.macOptionIsMeta ? "both" : macOptionMode();
+          const ch = (mode === "left" && optBits & 1) || (mode === "right" && optBits & 2) ? altCharForCode(e.code, e.shiftKey) : null;
+          if (ch) { e.preventDefault(); nd.terminal.input({ id, data: "\x1b" + ch }); return false; }
+        }
         if (e.type === "keydown" && e.key === "Enter" && e.shiftKey) {
           e.preventDefault(); // 브라우저가 Enter를 textarea에 넣어 xterm이 CR을 또 보내는 것 차단(개행 후 CR 제출로 되돌아가던 원인)
           nd.terminal.input({ id, data: "\x1b[13;2u" });
@@ -298,7 +325,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       const firstEnsure = async () => {
         if (disposed || !term) return;
         try {
-          const r = await nd.terminal.ensure({ id, cwd, cols: term.cols, rows: term.rows, dark: isTerminalDark(getTerminalThemePref()), shell: getSetting<string>(TKEYS.shell, TERMINAL_DEFAULTS.shell) }); // #1196 새 세션만 셸 적용(있는 세션은 그대로)
+          const r = await nd.terminal.ensure({ id, cwd, cols: term.cols, rows: term.rows, dark: isTerminalDark(getTerminalThemePref()), shell: getSetting<string>(TKEYS.shell, TERMINAL_DEFAULTS.shell), shellArgs: parseShellArgs(getSetting<string>(TKEYS.shellArgs, TERMINAL_DEFAULTS.shellArgs)) }); // #1196 새 세션만 셸 적용(있는 세션은 그대로), #1213 셸 인자
           if (disposed || !term) return;
           if (!r.ok) { term.write(`\r\n[${tRef.current("terminal.startFailed", { reason: r.reason ? `: ${r.reason}` : "" })}]\r\n`); return; }
           if (r.buffer) term.write(stripTermQueries(r.buffer)); // 정확한 cols 확보 후 재생(줄바꿈 안 굳음). 질의 시퀀스 제거(에코 방지 #807)
@@ -325,7 +352,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       fallback = setTimeout(() => { if (!ensured && !disposed && term) { ensured = true; void firstEnsure(); } }, 1500);
     })();
 
-    return () => { offClear(); disposed = true; if (fallback) clearTimeout(fallback); if (onPaste) host.removeEventListener("paste", onPaste, true); if (onCopy) host.removeEventListener("copy", onCopy, true); offData?.(); offExit?.(); ro?.disconnect(); mo?.disconnect(); offTheme?.(); offSettings?.(); selDisp?.dispose(); linkDisp?.dispose(); oscDisp?.dispose(); osc52Disp?.dispose(); if (onCtx) host.removeEventListener("contextmenu", onCtx); if (onEnter) host.removeEventListener("mouseenter", onEnter); term?.dispose(); term = null; };
+    return () => { offClear(); disposed = true; if (fallback) clearTimeout(fallback); if (onPaste) host.removeEventListener("paste", onPaste, true); if (onCopy) host.removeEventListener("copy", onCopy, true); offData?.(); offExit?.(); ro?.disconnect(); mo?.disconnect(); offTheme?.(); offSettings?.(); offInputSource?.(); selDisp?.dispose(); linkDisp?.dispose(); oscDisp?.dispose(); osc52Disp?.dispose(); if (onCtx) host.removeEventListener("contextmenu", onCtx); if (onEnter) host.removeEventListener("mouseenter", onEnter); term?.dispose(); term = null; };
   }, [id, cwd]);
 
   // 초기 배경도 현재 터미널 테마에 맞춰(라이트 앱 첫 프레임 다크 깜빡임 방지). 클라이언트 전용 pane이라 안전.

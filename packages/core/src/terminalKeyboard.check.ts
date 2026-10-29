@@ -1,0 +1,36 @@
+// terminalKeyboard 점검 — node --experimental-strip-types packages/core/src/terminalKeyboard.check.ts
+import assert from "node:assert";
+import { effectiveMacOptionAsAlt as eff, readMacOptionAsAlt as read, altCharForCode as ch, isUsInputSource as us, jisYenInput as yen, parseShellArgs as args } from "./terminalKeyboard.ts";
+
+assert.ok(us("com.apple.keylayout.US") && us("com.apple.keylayout.ABC"));
+assert.ok(!us("com.apple.inputmethod.Korean.2SetKorean") && !us("com.apple.keylayout.USInternational-PC") && !us(null));
+assert.strictEqual(eff("auto", "com.apple.keylayout.ABC"), "both");
+assert.strictEqual(eff("auto", "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese"), "off");
+assert.strictEqual(eff("auto", null), "off", "모르면 Option 그대로");
+assert.strictEqual(eff("left", null), "left");
+assert.strictEqual(read(undefined, true), "both", "옛 스위치 켜짐 = 양쪽");
+assert.strictEqual(read(undefined, false), "auto");
+assert.strictEqual(read("right", true), "right", "새 값이 있으면 그걸");
+assert.strictEqual(read("nope", false), "auto");
+assert.strictEqual(ch("KeyB"), "b");
+assert.strictEqual(ch("Digit3"), "3");
+assert.strictEqual(ch("Period"), ".");
+assert.strictEqual(ch("ArrowLeft"), null);
+assert.strictEqual(ch("KeyB", true), "B");
+assert.strictEqual(ch("Digit1", true), "!");
+assert.strictEqual(ch("Period", true), ">");
+const k = (o: Partial<Parameters<typeof yen>[0]>) => ({ type: "keydown", code: "IntlYen", key: "¥", keyCode: 220, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...o });
+assert.strictEqual(yen(k({}), true), "input");
+assert.strictEqual(yen(k({ type: "keypress" }), true), "suppress");
+assert.strictEqual(yen(k({ type: "keyup" }), true), "suppress");
+assert.strictEqual(yen(k({}), false), null, "꺼져 있으면 그대로");
+assert.strictEqual(yen(k({ shiftKey: true }), true), null, "수식키 같이 누르면 그대로");
+assert.strictEqual(yen(k({ keyCode: 229 }), true), null, "IME 조합 중은 그대로");
+assert.strictEqual(yen(k({ code: "Backslash" }), true), null, "물리 ¥ 키만");
+assert.deepStrictEqual(args("-l\n\n--login\r\n-c foo"), ["-l", "--login", "-c foo"], "줄마다 하나, 빈 줄 뺌, 따옴표·공백 해석 없음");
+assert.deepStrictEqual(args(""), []);
+assert.strictEqual(args(Array(40).fill("x").join("\n")).length, 32, "데몬 상한 32개로 자름");
+assert.strictEqual(args("y".repeat(2000))[0].length, 1024);
+assert.strictEqual(args("y".repeat(1023) + "😀")[0], "y".repeat(1023), "이모지 반쪽은 안 보냄");
+assert.deepStrictEqual(args("a\0b"), ["ab"], "NUL은 뺌");
+console.log("terminalKeyboard ok");
