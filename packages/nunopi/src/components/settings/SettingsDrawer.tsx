@@ -9,6 +9,7 @@ import BrowserSection from "./BrowserSection";
 import TerminalSessionsSection from "./TerminalSessionsSection";
 import TerminalKeyboardSection from "./TerminalKeyboardSection";
 import TerminalRenderSection from "./TerminalRenderSection";
+import TerminalThemeSection from "./TerminalThemeSection";
 import { IconKeyboard, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus } from "@tabler/icons-react";
 import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
@@ -19,7 +20,6 @@ import AgentCatalogSection from "./AgentCatalogSection";
 import { useLocale, useT, useToast } from "@mustard/core";
 import { LOCALES, type Locale } from "@mustard/core";
 import { THEMES, type ThemeId } from "@mustard/core";
-import { type TerminalThemePref, getTerminalThemePref, setTerminalThemePref } from "@mustard/core";
 // 테마 미리보기 스와치(배경/도트) — 피커 버튼용. 실제 색은 globals.css [data-theme] 블록서 온다.
 const THEME_SWATCH: Record<ThemeId, { bg: string; dot: string }> = {
   dark: { bg: "#111219", dot: "#d4a017" },
@@ -154,8 +154,6 @@ export default function SettingsDrawer({
     } catch { toast(t("settings.notifTestFailed"), "error"); }
   };
   // 터미널 테마(#914) — 앱 테마와 분리. getTerminalThemePref는 localStorage try/catch라 SSR 안전.
-  const [termPref, setTermPref] = useState<TerminalThemePref>(() => getTerminalThemePref());
-  const changeTermPref = (p: TerminalThemePref) => { setTermPref(p); setTerminalThemePref(p); };
   const [activeSection, setActiveSection] = useState("set-appearance"); // 좌측 선택 = 우측 그 섹션만 렌더(#925). 훅은 early-return 위에.
   // 모델 목록(#987) — nunopi 섹션 열릴 때 쓰이는 provider만 /api/agent/models로 1회 조회(세션 내 캐시).
   type ModelList = { models: { id: string; label: string; latest?: boolean }[]; defaultModel: string } | "loading" | "error";
@@ -683,31 +681,7 @@ export default function SettingsDrawer({
           {/* 터미널 설정 카드(#926) — 폰트·커서·스크롤백·클립보드·GPU */}
           {activeSection === "set-terminal" && (
           <section id="set-terminal" className="scroll-mt-4 space-y-4 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
-            {/* 터미널 테마(#914) — 앱 테마와 분리(CLI TUI가 다크 전제라 기본 auto). */}
-            <div className="space-y-1.5">
-              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalTheme")}</span>
-              <div role="radiogroup" aria-label={t("settings.terminalTheme")} className="inline-flex w-full rounded-xl border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-900">
-                {([
-                  { value: "dark", label: t("settings.dark") },
-                  { value: "gray", label: t("settings.gray") },
-                  { value: "light", label: t("settings.light") },
-                  { value: "auto", label: t("settings.themeAuto") },
-                ] as const).map((opt) => {
-                  const selected = termPref === opt.value;
-                  return (
-                    <button key={opt.value} type="button" role="radio" aria-checked={selected}
-                      onClick={() => changeTermPref(opt.value)}
-                      className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                        selected
-                          ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
-                          : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-                      }`}>
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <TerminalThemeSection />{/* #1215 다크용·라이트용 테마 카드 */}
             {/* 폰트 크기 */}
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalFontSize")}</span>
