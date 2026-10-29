@@ -8,6 +8,7 @@ const net = require("node:net");
 let DAEMON_VERSION = 0;
 try { ({ DAEMON_VERSION } = require("./daemon-version.cjs")); } catch { /* 터미널은 살림 */ }
 const fs = require("node:fs");
+const { applyTerminalEnv } = require("./terminal-env.cjs");
 
 const SOCK = process.env.NUNOPI_TERM_SOCK;   // 소켓 경로
 const TOKEN = process.env.NUNOPI_TERM_TOKEN; // 인증 토큰
@@ -58,6 +59,7 @@ function ensure({ id, cwd, cols, rows, dark, shell: wantShell, shellArgs }) {
     // 터미널 배경 밝기 힌트(#914) — CLI TUI(claude 등)가 라이트/다크 색을 스스로 고르게. "fg;bg" ANSI 인덱스.
     // 라이트=bg 15(밝음)→"0;15", 다크=bg 0(어두움)→"15;0". OSC11 응답과 병행(env만 보는 도구 커버).
     env.COLORFGBG = dark === false ? "0;15" : "15;0";
+    applyTerminalEnv(env); // #1226 색 능력(COLORTERM=truecolor 등) — 앱을 켠 방식과 상관없이 같게(diff 줄 배경)
     let proc;
     // cols 하한 20 클램프(#832) — 레이아웃 미확정 폭으로 극소 cols가 새 나가도 셸 출력이 세로로 깨지지 않게(FE 폭 가드 백스톱).
     try { proc = pty.spawn(shell, pickArgs(shellArgs), { name: "xterm-256color", cols: Math.max(cols || 80, 20), rows: rows || 24, cwd, env }); }

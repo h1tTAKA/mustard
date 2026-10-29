@@ -33,6 +33,8 @@ extraResources:
   # (RUN_AS_NODE는 asar 미지원 → asar 안 스크립트는 require 불가). resources/electron/에 동봉.
   - from: electron/terminal-daemon.cjs
     to: electron/terminal-daemon.cjs
+  - from: electron/terminal-env.cjs      # #1226 데몬이 require — 빠지면 새 데몬이 켜자마자 죽음
+    to: electron/terminal-env.cjs
   - from: electron/daemon-version.cjs   # #1036 데몬이 require — 빠지면 새 데몬이 켜자마자 죽음(실측)
     to: electron/daemon-version.cjs
   # 컴퓨터 사용 도우미(#1189) — 자기 번들 id를 가진 .app이라 macOS 권한이 이 도우미에 붙음. package-app.mjs가 먼저 만듦.
