@@ -2,7 +2,7 @@
 // 워크스페이스 모드(#647) — 누노피 안에서 화면전환 없이 에이전트 코딩+즉시 학습.
 // 골격(커밋1): 4존 셸 [파일트리 | 터미널 | 코드 | 챗]. 각 존은 후속 커밋서 채움(트리·코드·챗·pty터미널).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld, IconLayoutKanban, IconMessageChatbot } from "@tabler/icons-react";
+import { IconRefresh, IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld, IconLayoutKanban, IconMessageChatbot } from "@tabler/icons-react";
 import { isNunopiEnabled } from "@/lib/product";
 import { NunopiGlyph } from "@/components/brand/ModeSwapToggle";
 import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, GKEYS, withModel, BROWSER_KEYS, BROWSER_DEFAULTS } from "@mustard/core";
@@ -770,7 +770,14 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
         {leftOpen && (
         <aside ref={asideRef} style={{ width: treeW }} className="flex shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
           {treeOpen && (
-            <div className="min-h-0 flex-1 overflow-hidden">
+            <div className="group/tree relative min-h-0 flex-1 overflow-hidden">
+              {/* #1225 수동 새로고침 — 마우스 올릴 때(파일 감시가 멈춰도 바로 다시 읽기) */}
+              {path && !treeLoading && (
+                <button type="button" onClick={() => { void loadGitStatus(path); setTreeNonce((n) => n + 1); }} aria-label={t("workspace.treeRefresh")} title={t("workspace.treeRefresh")}
+                  className="absolute right-1.5 top-1 z-10 rounded-md p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-100 hover:text-zinc-700 focus-visible:opacity-100 group-hover/tree:opacity-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 [@media(hover:none)]:opacity-100">
+                  <IconRefresh size={13} stroke={2} aria-hidden />
+                </button>
+              )}
               {treeLoading ? (
                 <div className="flex h-full items-center justify-center text-zinc-400"><IconLoader2 size={16} stroke={2} className="animate-spin" aria-hidden /></div>
               ) : files.length > 0 ? (
