@@ -40,7 +40,9 @@ export function jisYenInput(e: YenKeyEvent, enabled: boolean): "input" | "suppre
 
 // 셸 인자 — 한 줄에 인자 하나(따옴표 해석 없음, 그대로 넘김). 빈 줄은 뺌.
 // 데몬 상한(32개·각 1024자)에 맞춰 잘라서 보냄 — 넘으면 데몬이 통째로 버리기 때문(리뷰).
-export const parseShellArgs = (text: string): string[] => text.split("\n").map((l) => l.replace(/\r$/, "").slice(0, 1024)).filter((l) => l.length > 0).slice(0, 32);
+// NUL은 빼고(데몬이 배열째 버림), 1024에서 자를 땐 글자(코드포인트) 중간을 끊지 않음(재리뷰).
+const cut1024 = (l: string) => { let out = ""; for (const c of l) { if (out.length + c.length > 1024) break; out += c; } return out; };
+export const parseShellArgs = (text: string): string[] => text.split("\n").map((l) => cut1024(l.replace(/\r$/, "").replace(/\0/g, ""))).filter((l) => l.length > 0).slice(0, 32);
 
 // 더블클릭 단어 구분 기호 기본값(xterm 기본과 같음) — 설정이 비면 이걸.
 export const DEFAULT_WORD_SEPARATOR = " ()[]{}',\"`";

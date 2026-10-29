@@ -31,4 +31,6 @@ assert.deepStrictEqual(args("-l\n\n--login\r\n-c foo"), ["-l", "--login", "-c fo
 assert.deepStrictEqual(args(""), []);
 assert.strictEqual(args(Array(40).fill("x").join("\n")).length, 32, "데몬 상한 32개로 자름");
 assert.strictEqual(args("y".repeat(2000))[0].length, 1024);
+assert.strictEqual(args("y".repeat(1023) + "😀")[0], "y".repeat(1023), "이모지 반쪽은 안 보냄");
+assert.deepStrictEqual(args("a\0b"), ["ab"], "NUL은 뺌");
 console.log("terminalKeyboard ok");
