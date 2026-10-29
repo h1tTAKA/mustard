@@ -4,7 +4,7 @@
 // 가져오기 = Ghostty·iTerm2·JSON·Warp YAML 파일(256KB까지), 내보내기 = 지금 테마 JSON.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconSearch, IconCheck, IconUpload, IconDownload, IconX, IconRotate } from "@tabler/icons-react";
-import { useT, useToast, useSetting, setSetting, TKEYS, getTerminalThemePref, resolveTermThemes, unpackTheme, isLightColor, readStoredTheme, parseThemeFile, addCustomThemes, readOverrides, BUILTIN_TERMINAL_THEMES, ANSI_KEYS, BASE_KEYS, THEME_FILE_MAX, type TermTheme, type TermColorKey } from "@mustard/core";
+import { useT, useToast, useSetting, setSetting, getSetting, TKEYS, getTerminalThemePref, resolveTermThemes, unpackTheme, isLightColor, readStoredTheme, parseThemeFile, addCustomThemes, readOverrides, BUILTIN_TERMINAL_THEMES, ANSI_KEYS, BASE_KEYS, THEME_FILE_MAX, type TermTheme, type TermColorKey } from "@mustard/core";
 import { Segmented, SettingRow } from "./settingsControls";
 
 const PAGE = 48;
@@ -13,7 +13,7 @@ function loadCatalog(): Promise<TermTheme[]> {
   catalog ??= fetch("/terminal-themes.json")
     .then((r) => (r.ok ? r.json() : { themes: [] }))
     .then((d: { themes?: unknown[] }) => (Array.isArray(d.themes) ? d.themes.flatMap((p) => { const t = unpackTheme(p); return t ? [t] : []; }) : []))
-    .catch(() => []);
+    .catch(() => { catalog = null; return []; }); // 실패는 기억하지 않음 — 다음에 다시 시도(리뷰)
   return catalog;
 }
 
@@ -23,7 +23,7 @@ function ThemeCard({ theme, selected, onPick, onRemove, removeLabel }: { theme: 
     <div className="group relative min-w-0">
     {onRemove && (
       <button type="button" onClick={onRemove} aria-label={removeLabel} title={removeLabel}
-        className="absolute -right-1.5 -top-1.5 z-10 grid size-5 place-items-center rounded-full bg-zinc-200 text-zinc-600 opacity-0 shadow transition hover:bg-zinc-300 focus-visible:opacity-100 group-hover:opacity-100 dark:bg-zinc-700 dark:text-zinc-200">
+        className="absolute -right-1.5 -top-1.5 z-10 grid size-5 place-items-center rounded-full bg-zinc-200 text-zinc-600 opacity-0 shadow transition hover:bg-zinc-300 focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100 dark:bg-zinc-700 dark:text-zinc-200">
         <IconX size={11} stroke={2.5} aria-hidden />
       </button>
     )}
@@ -57,6 +57,8 @@ export default function TerminalThemeSection() {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const storedCustom = useSetting<unknown>(TKEYS.customThemes, undefined);
+  const storedOverDark = useSetting<unknown>(TKEYS.colorOverridesDark, undefined);
+  const storedOverLight = useSetting<unknown>(TKEYS.colorOverridesLight, undefined);
   const custom = useMemo(() => (Array.isArray(storedCustom) ? storedCustom.flatMap((v) => { const th = readStoredTheme(v); return th ? [th] : []; }) : []), [storedCustom]);
   const [all, setAll] = useState<TermTheme[]>([...BUILTIN_TERMINAL_THEMES]);
   const [q, setQ] = useState("");
@@ -83,9 +85,10 @@ export default function TerminalThemeSection() {
     toast(t("settings.termTheme.imported", { n: got.length, name: got[0].name }));
   };
   const exportCurrent = () => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify({ name: current.name, colors: current.colors }, null, 2)], { type: "application/json" }));
+    const colors = { ...current.colors, ...readOverrides(target === "dark" ? storedOverDark : storedOverLight) }; // 화면에 보이는 그대로(덮어쓰기 포함, 리뷰)
+    const url = URL.createObjectURL(new Blob([JSON.stringify({ name: current.name, colors }, null, 2)], { type: "application/json" }));
     const a = document.createElement("a");
-    a.href = url; a.download = `${current.name.replace(/[^\w.-]+/g, "-")}.json`; a.click();
+    a.href = url; a.download = `${current.name.replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^[.-]+/, "") || "theme"}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const removeCustom = (name: string) => setSetting(TKEYS.customThemes, custom.filter((th) => th.name !== name));
@@ -141,7 +144,23 @@ function ColorOverrides({ theme, slot }: { theme: TermTheme; slot: "dark" | "lig
   const key = slot === "dark" ? TKEYS.colorOverridesDark : TKEYS.colorOverridesLight;
   const over = readOverrides(useSetting<unknown>(key, undefined));
   const count = Object.keys(over).length;
-  const set = (k: TermColorKey, v: string | null) => { const next = { ...over }; if (v) next[k] = v; else delete next[k]; setSetting(key, next); };
+  const set = (k: TermColorKey, v: string | null) => { const next = { ...readOverrides(getSetting<unknown>(key, undefined)) }; if (v) next[k] = v; else delete next[k]; setSetting(key, next); };
+  // 색 고르기 창을 끄는 동안 값이 연달아 오므로, 화면은 바로 바꾸고 저장은 멈춘 뒤 한 번(리뷰)
+  const [draft, setDraft] = useState<Partial<Record<TermColorKey, string>>>({});
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pending = useRef<Partial<Record<TermColorKey, string>>>({});
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const drag = (k: TermColorKey, v: string) => {
+    pending.current = { ...pending.current, [k]: v };
+    setDraft(pending.current);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      const d = pending.current;
+      pending.current = {};
+      for (const [dk, dv] of Object.entries(d)) set(dk as TermColorKey, dv);
+      setDraft({});
+    }, 150);
+  };
   return (
     <details className="rounded-xl border border-zinc-200 dark:border-zinc-800">
       <summary className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -155,11 +174,11 @@ function ColorOverrides({ theme, slot }: { theme: TermTheme; slot: "dark" | "lig
             <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{t(`settings.termTheme.group.${g.k}`)}</span>
             <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
               {g.keys.map((k) => {
-                const v = over[k] ?? theme.colors[k] ?? theme.colors.foreground;
+                const v = draft[k] ?? over[k] ?? theme.colors[k] ?? theme.colors.foreground;
                 const label = t(`settings.termTheme.color.${k}`);
                 return (
                   <label key={k} className="flex min-w-0 items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
-                    <input type="color" value={v} onChange={(e) => set(k, e.target.value)} aria-label={label} className="size-6 shrink-0 cursor-pointer rounded border border-zinc-200 bg-transparent p-0 dark:border-zinc-700" />
+                    <input type="color" value={v} onChange={(e) => drag(k, e.target.value)} aria-label={label} className="size-6 shrink-0 cursor-pointer rounded border border-zinc-200 bg-transparent p-0 dark:border-zinc-700" />
                     <span className={`truncate ${over[k] ? "font-semibold" : ""}`}>{label}</span>
                     {over[k] && <button type="button" onClick={(e) => { e.preventDefault(); set(k, null); }} aria-label={t("settings.termTheme.overrideUndo", { name: label })} className="shrink-0 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"><IconRotate size={11} stroke={2} aria-hidden /></button>}
                   </label>

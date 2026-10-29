@@ -84,7 +84,7 @@ export function readStoredTheme(v: unknown): TermTheme | null {
   if (!v || typeof v !== "object") return null;
   const { name, colors } = v as { name?: unknown; colors?: Record<string, unknown> };
   if (typeof name !== "string" || !colors || typeof colors !== "object") return null;
-  return unpackTheme([name, ...COLOR_KEYS.map((k) => (typeof colors[k] === "string" ? colors[k] : ""))]);
+  return unpackTheme([clean(name) || "Theme", ...COLOR_KEYS.map((k) => (typeof colors[k] === "string" ? colors[k] : ""))]);
 }
 
 // 다크 모드용·라이트 모드용 테마 + "라이트 모드에도 다크용 쓰기". 새 설정이 없으면 옛 값(#914 dark·gray·light·auto)에서.
@@ -110,12 +110,17 @@ const byte = (n: number) => Math.round(Math.min(1, Math.max(0, n)) * 255).toStri
 const ITERM_KEYS: Record<string, TermColorKey> = { "Background Color": "background", "Foreground Color": "foreground", "Cursor Color": "cursor", "Cursor Text Color": "cursorAccent", "Selection Color": "selectionBackground", "Selected Text Color": "selectionForeground" };
 export function parseItermColors(text: string): Part {
   const out: Part = {};
-  const re = /<key>([^<]+)<\/key>\s*<dict>([\s\S]*?)<\/dict>/g;
-  for (let m; (m = re.exec(text)); ) {
-    const ansi = /^Ansi (\d+) Color$/.exec(m[1]);
-    const key = ansi ? (Number(ansi[1]) < 16 ? ANSI_KEYS[Number(ansi[1])] : undefined) : ITERM_KEYS[m[1]];
+  // <dict>마다 한 번 자르고 indexOf로 끝을 찾음 — 닫는 태그가 없는 입력도 한 번 훑기로 끝(정규식 되돌아보기 반복 없음, 리뷰)
+  const parts = text.split("<dict>");
+  for (let i = 1; i < parts.length; i++) {
+    const head = /<key>([^<]{1,80})<\/key>\s*$/.exec(parts[i - 1].slice(-200));
+    const end = parts[i].indexOf("</dict>");
+    if (!head || end < 0) continue;
+    const body = parts[i].slice(0, end);
+    const ansi = /^Ansi (\d+) Color$/.exec(head[1]);
+    const key = ansi ? (Number(ansi[1]) < 16 ? ANSI_KEYS[Number(ansi[1])] : undefined) : ITERM_KEYS[head[1]];
     if (!key) continue;
-    const comp = (c: string) => { const v = new RegExp(`<key>${c} Component</key>\\s*<(?:real|integer)>([^<]+)</`).exec(m![2]); return v ? Number(v[1]) : NaN; };
+    const comp = (c: string) => { const v = new RegExp(`<key>${c} Component</key>\\s*<(?:real|integer)>([^<]{1,40})</`).exec(body); return v ? Number(v[1]) : NaN; };
     const [r, g, b] = [comp("Red"), comp("Green"), comp("Blue")];
     if ([r, g, b].every(Number.isFinite)) out[key] = `#${byte(r)}${byte(g)}${byte(b)}`;
   }
@@ -184,8 +189,9 @@ export function parseThemeFile(fileName: string, text: string, isLight: (hex: st
 // 사용자 테마 목록에 넣기 — 같은 이름은 바꿔 끼움, 최대 개수.
 export function addCustomThemes(list: unknown, add: TermTheme[]): TermTheme[] {
   const cur = Array.isArray(list) ? list.flatMap((v) => { const t = readStoredTheme(v); return t ? [t] : []; }) : [];
-  const names = new Set(add.map((t) => t.name));
-  return [...add, ...cur.filter((t) => !names.has(t.name))].slice(0, CUSTOM_THEMES_MAX);
+  const fresh = [...new Map(add.map((t) => [t.name, t])).values()]; // 한 번에 같은 이름이 여럿이면 뒤에 온 것(리뷰)
+  const names = new Set(fresh.map((t) => t.name));
+  return [...fresh, ...cur.filter((t) => !names.has(t.name))].slice(0, CUSTOM_THEMES_MAX);
 }
 
 // ── #1215 색 하나씩 덮어쓰기 — 모드별(다크용·라이트용). hex만 남기고, 테마 위에 덮음.

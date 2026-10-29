@@ -72,4 +72,7 @@ assert.deepStrictEqual(readOverrides({ red: "#F00", blue: "nope", hacker: "#000"
 assert.deepStrictEqual(readOverrides(null), {});
 assert.strictEqual(pickTermSlot(resolve(undefined, undefined, undefined, "auto"), false), "light");
 assert.strictEqual(pickTermSlot(resolve(undefined, undefined, false, "auto"), false), "dark", "라이트에도 다크용이면 다크 덮어쓰기");
+assert.deepStrictEqual(addCustom([], [{ name: "A", colors: MUSTARD_DARK.colors }, { name: "A", colors: MUSTARD_LIGHT.colors }]).map((t) => t.colors.background), [MUSTARD_LIGHT.colors.background], "한 번에 같은 이름은 하나로(뒤에 온 것)");
+assert.strictEqual(stored({ name: "x\u0007" + "y".repeat(200), colors: MUSTARD_DARK.colors })!.name.length, 80, "저장된 이름도 제어문자·길이 정리");
+const t0 = Date.now(); parse("evil.itermcolors", "<dict>".repeat(40000), light); assert.ok(Date.now() - t0 < 500, "닫는 태그 없는 큰 입력도 빨리 끝");
 console.log("terminalThemes ok");
