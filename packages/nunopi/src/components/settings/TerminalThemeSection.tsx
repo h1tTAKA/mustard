@@ -11,7 +11,7 @@ const PAGE = 48;
 let catalog: Promise<TermTheme[]> | null = null; // 한 번만 불러옴
 function loadCatalog(): Promise<TermTheme[]> {
   catalog ??= fetch("/terminal-themes.json")
-    .then((r) => (r.ok ? r.json() : { themes: [] }))
+    .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); }) // 404·500도 실패로(다시 시도)
     .then((d: { themes?: unknown[] }) => (Array.isArray(d.themes) ? d.themes.flatMap((p) => { const t = unpackTheme(p); return t ? [t] : []; }) : []))
     .catch(() => { catalog = null; return []; }); // 실패는 기억하지 않음 — 다음에 다시 시도(리뷰)
   return catalog;
@@ -79,8 +79,9 @@ export default function TerminalThemeSection() {
     }
     if (fileRef.current) fileRef.current.value = "";
     if (!got.length) { toast(t("settings.termTheme.importNone"), "error"); return; }
-    setSetting(TKEYS.customThemes, addCustomThemes(storedCustom, got));
-    pick(got[0]);
+    const saved = addCustomThemes(storedCustom, got);
+    setSetting(TKEYS.customThemes, saved);
+    pick(saved.find((th) => th.name === got[0].name) ?? got[0]); // 같은 이름이 여럿이면 목록에 남은 것과 같게(리뷰)
     setQ("");
     toast(t("settings.termTheme.imported", { n: got.length, name: got[0].name }));
   };
@@ -144,28 +145,37 @@ function ColorOverrides({ theme, slot }: { theme: TermTheme; slot: "dark" | "lig
   const key = slot === "dark" ? TKEYS.colorOverridesDark : TKEYS.colorOverridesLight;
   const over = readOverrides(useSetting<unknown>(key, undefined));
   const count = Object.keys(over).length;
-  const set = (k: TermColorKey, v: string | null) => { const next = { ...readOverrides(getSetting<unknown>(key, undefined)) }; if (v) next[k] = v; else delete next[k]; setSetting(key, next); };
-  // 색 고르기 창을 끄는 동안 값이 연달아 오므로, 화면은 바로 바꾸고 저장은 멈춘 뒤 한 번(리뷰)
+  const write = (storeKey: string, k: TermColorKey, v: string | null) => { const next = { ...readOverrides(getSetting<unknown>(storeKey, undefined)) }; if (v) next[k] = v; else delete next[k]; setSetting(storeKey, next); };
+  // 색 고르기 창을 끄는 동안 값이 연달아 오므로, 화면은 바로 바꾸고 저장은 멈춘 뒤 한 번(리뷰).
+  // 고를 때의 저장 키를 같이 기억(탭이 바뀌어도 맞는 쪽에), 닫힐 때·되돌릴 때 남은 값 정리.
   const [draft, setDraft] = useState<Partial<Record<TermColorKey, string>>>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pending = useRef<Partial<Record<TermColorKey, string>>>({});
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const pending = useRef<{ key: string; colors: Partial<Record<TermColorKey, string>> } | null>(null);
+  const flush = () => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    const p = pending.current;
+    pending.current = null;
+    if (p) for (const [dk, dv] of Object.entries(p.colors)) write(p.key, dk as TermColorKey, dv);
+  };
+  const drop = () => { if (timer.current) clearTimeout(timer.current); timer.current = null; pending.current = null; setDraft({}); };
+  useEffect(() => () => flush(), []); // eslint-disable-line react-hooks/exhaustive-deps -- 닫힐 때 마지막 색 저장
+  useEffect(() => { flush(); setDraft({}); }, [key]); // eslint-disable-line react-hooks/exhaustive-deps -- 탭 바뀌면 전 탭 값 먼저 저장
   const drag = (k: TermColorKey, v: string) => {
-    pending.current = { ...pending.current, [k]: v };
-    setDraft(pending.current);
+    pending.current = { key, colors: { ...(pending.current?.key === key ? pending.current.colors : {}), [k]: v } };
+    setDraft(pending.current.colors);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      const d = pending.current;
-      pending.current = {};
-      for (const [dk, dv] of Object.entries(d)) set(dk as TermColorKey, dv);
-      setDraft({});
-    }, 150);
+    timer.current = setTimeout(() => { flush(); setDraft({}); }, 150);
+  };
+  // 하나 되돌리기 — 그 색의 남은 값만 버림(다른 색은 그대로 저장 대기)
+  const set = (k: TermColorKey, v: string | null) => {
+    if (pending.current?.key === key) { const { [k]: _gone, ...rest } = pending.current.colors; pending.current = { key, colors: rest }; setDraft(rest); }
+    write(key, k, v);
   };
   return (
     <details className="rounded-xl border border-zinc-200 dark:border-zinc-800">
       <summary className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
         <span>{t("settings.termTheme.overrides")}{count > 0 && <span className="ml-1.5 text-xs font-normal text-zinc-400">{t("settings.termTheme.overridesCount", { n: count })}</span>}</span>
-        {count > 0 && <button type="button" onClick={(e) => { e.preventDefault(); setSetting(key, {}); }} className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-normal text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconRotate size={12} stroke={2} aria-hidden />{t("settings.termTheme.overridesReset")}</button>}
+        {count > 0 && <button type="button" onClick={(e) => { e.preventDefault(); drop(); setSetting(key, {}); }} className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-normal text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconRotate size={12} stroke={2} aria-hidden />{t("settings.termTheme.overridesReset")}</button>}
       </summary>
       <div className="space-y-3 border-t border-zinc-200 px-3 py-3 dark:border-zinc-800">
         <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.termTheme.overridesDesc", { name: theme.name })}</p>
