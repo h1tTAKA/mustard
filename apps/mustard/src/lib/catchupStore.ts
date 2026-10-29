@@ -7,7 +7,7 @@ import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSyn
 import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { isFailedNote } from "./failText.ts";
-import { collectFacets, tagMatches, type Facet, type TagType } from "./catchupMeta.ts";
+import { byNewest, collectFacets, tagMatches, type Facet, type TagType } from "./catchupMeta.ts";
 
 export type CatchupKind = "symbol" | "file" | "query" | "repo" | "edit" | "narration" | "diff" | "session"; // session = 커밋을 만든 에이전트 세션(#1064) // diff = 커밋 변경 자동 설명(#1056)
 // #1181 wt·br = 메인이 아닌 작업 폴더(git worktree)에서 쌓인 항목 — 그 폴더 경로와 그때 브랜치(폴더를 지워도 브랜치 이름으로 보이게). 메인 항목엔 없음.
@@ -200,7 +200,7 @@ export function readDay(root: string, day: string, all = false): CatchupItem[] {
   if (!DAY_RE.test(day)) return [];
   migrate(root);
   const items = readDayFile(join(repoDir(root), `${day}.jsonl`));
-  return (all ? items : items.filter(inScope(root))).sort((a, b) => b.ts - a.ts);
+  return (all ? items : items.filter(inScope(root))).sort(byNewest);
 }
 
 // 최근 limit개(최신 날짜 파일부터) — 패널 첫 로드.

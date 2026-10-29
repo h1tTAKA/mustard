@@ -59,9 +59,9 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
 
     // info = 카드 메타("브랜치 · 커밋 제목", #1062) — tool 필드에 담아 저장(스키마 변경 없이).
     // #1090 커밋의 모든 파일 덩어리를 한 작업 목록으로 → 동시 EXPLAIN_CONCURRENCY개씩 설명(차례로 하면 큰 커밋 하나에 수십 분).
-    //  파일의 덩어리가 다 끝나면 그 파일 카드를 바로 — 카드 시각 = 끝난 시각(끝난 순서대로 맨 위에 쌓임, 유저 요청).
+    //  파일의 덩어리가 다 끝나면 그 파일 카드를 바로 — 카드 시각 = 커밋 시각(#1244 유저 결정, 예전 #1090은 끝난 시각).
     // #1093 opts — 복구용: only = 그 파일만, ts = 원래 카드 시각 유지, replace = 같은 key 카드 교체.
-    const explainCommit = async (hash: string, info: string, opts: { only?: string; ts?: number; replace?: boolean } = {}) => {
+    const explainCommit = async (hash: string, info: string, opts: { only?: string; ts?: number; replace?: boolean; commitSec?: number } = {}) => {
       const list = await post("/api/repo/git-show", { path: root, hash });
       const files = ((list?.files ?? []) as { status: string; path: string }[]).filter((f) => f.status !== "D" && !SKIP_FILE.test(f.path) && (!opts.only || f.path === opts.only));
       type FileJob = { path: string; store: string; texts: (string | null)[]; left: number };
@@ -69,7 +69,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
       const emit = (f: FileJob) => {
         const texts = f.texts.filter((x): x is string => !!x);
         if (!texts.length || !alive) return;
-        const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts: opts.ts ?? Date.now(), expl: texts.join(DIFF_SEP) }; // #1074 자르지 않음
+        const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts: opts.ts ?? (opts.commitSec ? Math.min(opts.commitSec * 1000, Date.now()) : Date.now()), expl: texts.join(DIFF_SEP) }; // #1074 자르지 않음 · #1244 카드 시각 = 커밋 시각(늦게 끝나도 그 커밋 자리에, 유저 결정 — #1090 '끝난 순서대로 맨 위'에서 바뀜)
         void post("/api/repo/stream", { root, items: [item], replace: !!opts.replace }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
         window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
       };
@@ -102,7 +102,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
       return alive && cfg.current.diffOn; // 끝까지 했나(도중에 끄면 false — 그 커밋은 처리 완료로 안 적음, 다시 켜면 이어서)
     };
 
-    // 미룬 세션 카드 — 턴 끝났으면(또는 20분 지남) 요약해서 카드로(카드 시각 = 만든 시각), 세션 없으면 버림
+    // 미룬 세션 카드 — 턴 끝났으면(또는 20분 지남) 요약해서 카드로(카드 시각 = 커밋 시각, #1244), 세션 없으면 버림
     const flushPending = async () => {
       const st0 = read(); if (!st0?.pending?.length) return;
       const keep: Pend[] = [], skipped: Pend[] = []; // skipped = 이번 주기에 못 본 것 — 다음엔 먼저(오래 열린 세션들이 몫을 계속 차지하지 않게)
@@ -187,7 +187,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         for (const c of fresh) {
           if (!alive) return;
           const branch = c.branch || head; // #1068 그 커밋을 만들 때 브랜치(reflog)
-          if (cfg.current.diffOn && !c.merge && !(await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200)))) return; // 도중에 끔 — 이 커밋부터 다음 주기에(리뷰)
+          if (cfg.current.diffOn && !c.merge && !(await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200), { commitSec: c.ts }))) return; // 도중에 끔 — 이 커밋부터 다음 주기에(리뷰)
           // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드. 턴이 끝날 때까지(마무리 말 포함) 미뤘다가 만듦.
           if (alive && cfg.current.sessOn) pendingAdd.push({ hash: c.hash, ts: c.ts, subject: c.subject ?? "", branch, at: Date.now(), merge: !!c.merge });
           if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)

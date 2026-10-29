@@ -2,7 +2,7 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconStar, IconStarFilled , IconAdjustmentsHorizontal } from "@tabler/icons-react";
+import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconPin, IconPinFilled , IconAdjustmentsHorizontal } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
@@ -21,7 +21,7 @@ import { CREW_ROLES } from "@/lib/crew/crewTypes";
 import { useCatchupRepoPrefs } from "@/lib/useCatchupRepoPrefs";
 import { beginBusy, busyOf, subscribeBusy } from "@/lib/catchupBusy";
 import CatchupRepoPrefs from "@/components/workspace/CatchupRepoPrefs";
-import { cardMeta, tagMatches, type Facet, type TagType } from "@/lib/catchupMeta";
+import { byNewest, cardMeta, tagMatches, type Facet, type TagType } from "@/lib/catchupMeta";
 import { openCrewTask } from "@/components/workspace/crew/CrewChat";
 import { useFlyCard, collectCards } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
@@ -217,7 +217,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const onlySource = onlyKind ? (() => {
     const got = onlyFound?.scope === `${onlyKind}|${allFolders ? 1 : 0}` ? onlyFound.items.filter(onlyPred) : [];
     const have = new Set(got.map((x) => x.key));
-    return [...concepts.filter((c) => !have.has(c.key) && onlyPred(c)), ...got].sort((a, b) => b.ts - a.ts);
+    return [...concepts.filter((c) => !have.has(c.key) && onlyPred(c)), ...got].sort(byNewest);
   })() : null;
 
   const seenRef = useRef(new Set<string>());                          // 이미 설명한 개념(dedup) — 서버 로드 시 채움
@@ -298,7 +298,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       const d = (e as CustomEvent<{ root: string; item: Omit<Concept, "status"> }>).detail;
       if (!d || d.root !== root) return;
       seenRef.current.add(d.item.key);
-      setConcepts((prev) => [{ ...d.item, status: "done" as const }, ...prev.filter((c) => c.key !== d.item.key)].sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS)); // #1068 카드 시각 = 커밋 시각 → 몰아서 만든 카드도 제자리
+      setConcepts((prev) => [{ ...d.item, status: "done" as const }, ...prev.filter((c) => c.key !== d.item.key)].sort(byNewest).slice(0, MAX_ITEMS)); // #1068 카드 시각 = 커밋 시각 → 몰아서 만든 카드도 제자리
     };
     window.addEventListener(CATCHUP_ITEM_EVENT, on);
     return () => window.removeEventListener(CATCHUP_ITEM_EVENT, on);
@@ -322,7 +322,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         if (!ev.note) return;
         const nkey = `narration|${ev.ts}|${ev.target}`;                 // ts+제목 = 고유 키(같은 ms 충돌 방지)
         setConcepts((prev) => (prev.some((c) => c.key === nkey) ? prev  // 이미 있으면 스킵(SSE 재연결 replay 중복 방지)
-          : [{ key: nkey, kind: "narration" as const, target: ev.target, tool: ev.tool || "narration", status: "done" as const, ts: ev.ts, expl: ev.note }, ...prev].sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS))); // #1068 꺼진 동안 재생분은 원래 시각 자리에
+          : [{ key: nkey, kind: "narration" as const, target: ev.target, tool: ev.tool || "narration", status: "done" as const, ts: ev.ts, expl: ev.note }, ...prev].sort(byNewest).slice(0, MAX_ITEMS))); // #1068 꺼진 동안 재생분은 원래 시각 자리에
         // #1051 실시간 해설 본문의 "용어" 목록도 용어집으로(서버 프롬프트가 개발·IT 용어만 쓰게 함)
         const nt = cfgRef.current.termsAnalyze ? parseNarrationTerms(ev.note) : [];
         if (nt.length) setTerms((prev) => mergeTerms(prev, nt, normalizeCardFront));
@@ -331,7 +331,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       if (isCommand(ev) ? !cfgRef.current.commandsAnalyze : !cfgRef.current.explainAnalyze) return; // #1062 분석 끔 → 새 카드·설명 안 만듦
       const key = `${ev.kind}|${ev.target}`;
       metaRef.current.set(key, { kind: ev.kind, target: ev.target, tool: ev.tool });
-      setConcepts((prev) => { const found = prev.find((c) => c.key === key); if (found) return ev.ts < found.ts ? prev : [{ ...found, tool: ev.tool, ts: ev.ts }, ...prev.filter((c) => c.key !== key)]; /* 재생분(옛 시각)이 최근 카드를 끌어내리지 않게 */ return [{ key, kind: ev.kind, target: ev.target, tool: ev.tool, status: "idle" as const, ts: ev.ts }, ...prev].sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS); });
+      setConcepts((prev) => { const found = prev.find((c) => c.key === key); if (found) return ev.ts < found.ts ? prev : [{ ...found, tool: ev.tool, ts: ev.ts }, ...prev.filter((c) => c.key !== key)]; /* 재생분(옛 시각)이 최근 카드를 끌어내리지 않게 */ return [{ key, kind: ev.kind, target: ev.target, tool: ev.tool, status: "idle" as const, ts: ev.ts }, ...prev].sort(byNewest).slice(0, MAX_ITEMS); });
       const cfg = cfgRef.current; if (cfg.providerId) enqueue(key);
     };
     return () => { es.close(); if (lostTimer) clearTimeout(lostTimer); };
@@ -355,7 +355,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       } catch { /* 서버 미준비 — 실시간만 */ }
       if (!alive) return;
       for (const c of items) seenRef.current.add(c.key);
-      setConcepts((prev) => { const have = new Set(prev.map((c) => c.key)); return [...prev, ...items.filter((c) => !have.has(c.key))].sort((a, b) => b.ts - a.ts); });
+      setConcepts((prev) => { const have = new Set(prev.map((c) => c.key)); return [...prev, ...items.filter((c) => !have.has(c.key))].sort(byNewest); });
       setLoaded(true);
     })();
     return () => { alive = false; };
@@ -493,7 +493,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const tagSource = useMemo(() => {
     if (!tagKey || tagFound?.k !== tagKey) return null;
     const have = new Set(tagFound.items.map((x) => x.key));
-    return [...concepts.filter((c) => !have.has(c.key) && tagMatch(c)), ...tagFound.items].sort((a, b) => b.ts - a.ts);
+    return [...concepts.filter((c) => !have.has(c.key) && tagMatch(c)), ...tagFound.items].sort(byNewest);
   }, [tagKey, tagFound, concepts]); // eslint-disable-line react-hooks/exhaustive-deps -- tagMatch는 tag(=tagKey)로만 바뀜
   // 칩을 버튼처럼(카드 헤더 버튼 안이라 span + 전파 막기)
   const chipProps = (t2: Tag) => ({ role: "button" as const, tabIndex: 0, title: t("learn.chipFilter"),
@@ -528,12 +528,14 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       <IconMessageCircle size={13} stroke={2} aria-hidden />{askCounts[c.key] ? <span className="font-semibold">{askCounts[c.key]}</span> : null}
     </button>
   ) : null;
-  // #1238 별표 — 질문 버튼 왼쪽. 켜짐 = 머스타드 채운 별
-  const starBtn = (c: Concept) => c.status === "done" ? (
-    <button type="button" onClick={() => toggleStar(c.key)} title={t(stars[c.key] ? "learn.unstar" : "learn.star")} aria-label={t(stars[c.key] ? "learn.unstar" : "learn.star")} aria-pressed={!!stars[c.key]}
-      className={`rounded-md p-0.5 transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${stars[c.key] ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:text-mustard-600 dark:text-zinc-500 dark:hover:text-mustard-400"}`}>
-      {stars[c.key] ? <IconStarFilled size={13} aria-hidden /> : <IconStar size={13} stroke={2} aria-hidden />}
-    </button>
+  // #1238 핀(#1244 별 → 핀, 버튼 줄 → 카드 제목 앞) — 제목 버튼 안이라 span + 전파 막기(칩과 같은 방식). 꽂힌 건 늘, 안 꽂힌 건 카드에 올렸을 때만.
+  const pinMark = (c: Concept) => c.status === "done" ? (
+    <span role="button" tabIndex={0} aria-pressed={!!stars[c.key]} title={t(stars[c.key] ? "learn.unstar" : "learn.star")} aria-label={t(stars[c.key] ? "learn.unstar" : "learn.star")}
+      onClick={(e) => { e.stopPropagation(); toggleStar(c.key); }}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggleStar(c.key); } }}
+      className={`-ml-1 mt-0.5 shrink-0 cursor-pointer rounded p-px outline-none transition hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-mustard-500/60 dark:hover:bg-zinc-800 ${stars[c.key] ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 opacity-0 group-hover:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100 dark:text-zinc-500"}`}>
+      {stars[c.key] ? <IconPinFilled size={13} aria-hidden /> : <IconPin size={13} stroke={2} aria-hidden />}
+    </span>
   ) : null;
   // #1081 카드로 이동 — 전체 필터·검색 해제 → 지금 목록에 있으면 그대로, 없으면 서버에서 키로 찾아 그 날짜를 연 뒤 스크롤·2.5초 강조
   const [flashKey, setFlashKey] = useState<string | null>(null);
@@ -770,7 +772,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                     <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" aria-hidden />
                   </li>
                 )}
-                <li data-ckey={c.key} className={`relative rounded-lg border bg-zinc-50/70 transition-shadow dark:bg-zinc-800/40 ${flashKey === c.key ? "border-mustard-500 ring-2 ring-mustard-500/40" : askItem?.key === c.key ? "border-mustard-500/60" : "border-zinc-200 dark:border-zinc-800"}`}>
+                <li data-ckey={c.key} className={`group relative rounded-lg border bg-zinc-50/70 transition-shadow dark:bg-zinc-800/40 ${flashKey === c.key ? "border-mustard-500 ring-2 ring-mustard-500/40" : askItem?.key === c.key ? "border-mustard-500/60" : "border-zinc-200 dark:border-zinc-800"}`}>
                   {/* #1056 diff 카드 — 질문 버튼 왼쪽에 "diff 열기"(키에 담긴 커밋·파일) */}
                   {/* #1066 + git 그래프에서 그 커밋 짚기(세션 카드와 같은 버튼) */}
                   {c.kind === "diff" && (() => { const d = parseDiffItemKey(c.key); return d ? (
@@ -782,7 +784,6 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {/* #1078 마크다운 복사 */}
                       <button type="button" onClick={() => void copyCard(c)} title={t("learn.copyMd")} aria-label={t("learn.copyMd")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconCopy size={13} stroke={2} aria-hidden /></button>
-                      {starBtn(c)}
                       {askBtn(c, false)}
                     </span>
                   ) : null; })()}
@@ -796,15 +797,12 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {/* #1078 마크다운 복사(요약 + 원본 대화 전체) */}
                       <button type="button" onClick={() => void copyCard(c)} title={t("learn.copyMd")} aria-label={t("learn.copyMd")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconCopy size={13} stroke={2} aria-hidden /></button>
-                      {/* #1238 원본 대화만 복사 */}
-                      <button type="button" onClick={() => void copyRaw(c)} title={t("learn.copyRaw")} aria-label={t("learn.copyRaw")}
-                        className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconMessages size={13} stroke={2} aria-hidden /></button>
-                      {starBtn(c)}
                       {askBtn(c, false)}
                     </span>
                   )}
-                  {!(c.kind === "diff" && parseDiffItemKey(c.key)) && !(c.kind === "session" && c.status === "done") && c.status === "done" && <span className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5">{starBtn(c)}{askBtn(c, false)}</span>}
-                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "session" ? "pr-36" : c.kind === "diff" ? "pr-32" : "pr-16"}`}>
+                  {!(c.kind === "diff" && parseDiffItemKey(c.key)) && !(c.kind === "session" && c.status === "done") && askBtn(c, true)}
+                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" || c.kind === "session" ? "pr-28" : askCounts[c.key] ? "pr-14" : "pr-10"}`}>
+                    {pinMark(c)}
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
                       {/* #1181 모든 작업 폴더 보기 — 어느 worktree(브랜치)에서 쌓인 건지. 메인 것은 표시 없음 */}
@@ -867,7 +865,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           </div>
                         </div>
                       )}
-                      {c.kind === "session" && c.key.startsWith("session|") && <CatchupSessionRaw root={root} hash={c.key.slice(8)} />}
+                      {c.kind === "session" && c.key.startsWith("session|") && <CatchupSessionRaw root={root} hash={c.key.slice(8)} onCopy={() => void copyRaw(c)} />}
                       {c.status === "done" ? (() => {
                         // #1066 diff 구간별: [N~M번째 줄 ▸ 그 구간 코드 펼치기] + 설명. 한 파일 여러 변경이 한 카드여도 어느 설명이 어느 줄인지 보임
                         const d = c.kind === "diff" ? parseDiffItemKey(c.key) : null; const secs = d ? diffSections(c.expl ?? "") : null;
