@@ -1,22 +1,16 @@
 "use client";
 // 워크스페이스 코드칸(#647) — 파일 클릭 시 소스 읽어 shiki로 하이라이트(읽기전용). 다크 전환 대응.
+import { langOf } from "@/lib/codeLang";
 import { useEffect, useRef, useState } from "react";
 import { codeToHtml } from "shiki";
 import { IconLoader2, IconAlertTriangle, IconFileOff, IconZoomIn, IconZoomOut, IconArrowsMinimize, IconArrowsMaximize } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 
 // 확장자 → shiki 언어. 없으면 text.
-const EXT_LANG: Record<string, string> = {
-  ts: "typescript", tsx: "tsx", js: "javascript", jsx: "jsx", mjs: "javascript", cjs: "javascript",
-  json: "json", py: "python", go: "go", rs: "rust", java: "java", kt: "kotlin", kts: "kotlin",
-  rb: "ruby", php: "php", c: "c", h: "c", cpp: "cpp", cc: "cpp", hpp: "cpp", cs: "csharp", swift: "swift",
-  css: "css", scss: "scss", html: "html", md: "markdown", yml: "yaml", yaml: "yaml", sh: "bash", sql: "sql", toml: "toml",
-};
 // 바이트 → 사람이 읽는 크기(#657 미리보기 안내용).
 const fmtSize = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
 type BinaryInfo = { kind: "image" | "binary" | "non-utf8"; size: number; dataUrl?: string };
 
-const langOf = (file: string) => EXT_LANG[file.split(".").pop()?.toLowerCase() ?? ""] ?? "text";
 
 export default function CodePane({ root, file }: { root: string; file: string }) {
   const [html, setHtml] = useState<string>("");

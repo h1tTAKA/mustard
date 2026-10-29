@@ -2,7 +2,10 @@
 // 캐치업 diff 카드의 변경 코드(#1060) — 기본 접힘, 펼치면 그 커밋·파일 diff를 처음 한 번 가져와 바뀐 구간만 빨강/초록으로.
 // 구간 = diff 화면·자동 설명과 같은 groupHunks(앞뒤 3줄 컨텍스트) → 설명과 같은 단위. 코드는 저장 안 하고 git에서 읽음.
 // #1066 왼쪽에 옛/새 줄 번호. range를 주면 그 줄 범위 구간 하나만(설명 구간별 펼치기), label = 버튼 글자.
-import { Fragment, useRef, useState } from "react";
+// #1229 글자는 언어에 맞게 문법 색칠(shiki, 펼칠 때만 불러옴) — 줄 배경(빨강/초록)은 그대로, 색칠 실패면 예전처럼 단색.
+import { Fragment, useEffect, useRef, useState } from "react";
+import type { ThemedToken } from "shiki";
+import { langOf } from "@/lib/codeLang";
 import { IconChevronDown, IconLoader2 } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import { type DLine, parseDiff, groupHunks } from "@/lib/hunkDiff";
@@ -13,6 +16,30 @@ export default function CatchupDiffCode({ root, hash, file, range, label }: { ro
   const [hunks, setHunks] = useState<DLine[][] | null>(null); // null = 아직/불러오는 중
   const [failed, setFailed] = useState(false);
   const loadingRef = useRef(false); // 불러오는 중 다시 펼쳐도 중복 요청 X(#1060 리뷰)
+  const [tokens, setTokens] = useState<ThemedToken[][][] | null>(null); // 구간 → 줄 → 토큰(없으면 단색)
+  const [isDark, setIsDark] = useState(false);
+  useEffect(() => {
+    const read = () => setIsDark(document.documentElement.classList.contains("dark"));
+    read();
+    const obs = new MutationObserver(read);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+  // 구간을 불러왔거나 다크/라이트가 바뀌면 색칠(줄들을 한 번에 — 구간마다 따로 하면 여러 줄짜리 주석·문자열이 끊김)
+  useEffect(() => {
+    if (!hunks?.length) return;
+    let live = true;
+    const flat = hunks.flat();
+    void import("shiki")
+      .then(({ codeToTokens }) => codeToTokens(flat.map((l) => l.text).join("\n"), { lang: langOf(file) as never, theme: isDark ? "github-dark" : "github-light" }))
+      .then(({ tokens: all }) => {
+        if (!live || all.length !== flat.length) return;
+        let k = 0;
+        setTokens(hunks.map((h) => h.map(() => all[k++])));
+      })
+      .catch(() => { if (live) setTokens(null); });
+    return () => { live = false; };
+  }, [hunks, isDark, file]);
 
   const toggle = () => {
     const next = !open;
@@ -55,11 +82,16 @@ export default function CatchupDiffCode({ root, hash, file, range, label }: { ro
             {hunks.map((h, i) => (
               <Fragment key={i}>
                 {i > 0 && <div className="border-t border-dashed border-zinc-200 dark:border-zinc-800" aria-hidden />}
-                {h.map((l, j) => (
-                  <div key={j} className={`whitespace-pre pr-2 ${l.kind === "add" ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300" : l.kind === "del" ? "bg-rose-500/15 text-rose-800 dark:text-rose-300" : "text-zinc-500 dark:text-zinc-400"}`}>
-                    {num(l.oldN)}{num(l.newN)}{l.kind === "add" ? "+ " : l.kind === "del" ? "- " : "  "}{l.text || " "}
-                  </div>
-                ))}
+                {h.map((l, j) => {
+                  const toks = tokens?.[i]?.[j];
+                  return (
+                    <div key={j} className={`whitespace-pre pr-2 ${l.kind === "add" ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300" : l.kind === "del" ? "bg-rose-500/15 text-rose-800 dark:text-rose-300" : "text-zinc-500 dark:text-zinc-400"}`}>
+                      {num(l.oldN)}{num(l.newN)}
+                      <span className={l.kind === "add" ? "text-emerald-600 dark:text-emerald-400" : l.kind === "del" ? "text-rose-600 dark:text-rose-400" : ""}>{l.kind === "add" ? "+ " : l.kind === "del" ? "- " : "  "}</span>
+                      {toks?.length ? toks.map((tk, n) => <span key={n} style={{ color: tk.color }}>{tk.content}</span>) : (l.text || " ")}
+                    </div>
+                  );
+                })}
               </Fragment>
             ))}
             </div>
