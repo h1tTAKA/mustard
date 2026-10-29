@@ -2,7 +2,7 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconStar, IconStarFilled , IconAdjustmentsHorizontal } from "@tabler/icons-react";
+import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconPin, IconPinFilled , IconAdjustmentsHorizontal } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
@@ -528,12 +528,14 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       <IconMessageCircle size={13} stroke={2} aria-hidden />{askCounts[c.key] ? <span className="font-semibold">{askCounts[c.key]}</span> : null}
     </button>
   ) : null;
-  // #1238 별표 — 질문 버튼 왼쪽. 켜짐 = 머스타드 채운 별
-  const starBtn = (c: Concept) => c.status === "done" ? (
-    <button type="button" onClick={() => toggleStar(c.key)} title={t(stars[c.key] ? "learn.unstar" : "learn.star")} aria-label={t(stars[c.key] ? "learn.unstar" : "learn.star")} aria-pressed={!!stars[c.key]}
-      className={`rounded-md p-0.5 transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${stars[c.key] ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:text-mustard-600 dark:text-zinc-500 dark:hover:text-mustard-400"}`}>
-      {stars[c.key] ? <IconStarFilled size={13} aria-hidden /> : <IconStar size={13} stroke={2} aria-hidden />}
-    </button>
+  // #1238 핀(#1244 별 → 핀, 버튼 줄 → 카드 제목 앞) — 제목 버튼 안이라 span + 전파 막기(칩과 같은 방식). 꽂힌 건 늘, 안 꽂힌 건 카드에 올렸을 때만.
+  const pinMark = (c: Concept) => c.status === "done" ? (
+    <span role="button" tabIndex={0} aria-pressed={!!stars[c.key]} title={t(stars[c.key] ? "learn.unstar" : "learn.star")} aria-label={t(stars[c.key] ? "learn.unstar" : "learn.star")}
+      onClick={(e) => { e.stopPropagation(); toggleStar(c.key); }}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggleStar(c.key); } }}
+      className={`-ml-1 mt-0.5 shrink-0 cursor-pointer rounded p-px transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${stars[c.key] ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 opacity-0 group-hover:opacity-100 focus:opacity-100 dark:text-zinc-500"}`}>
+      {stars[c.key] ? <IconPinFilled size={13} aria-hidden /> : <IconPin size={13} stroke={2} aria-hidden />}
+    </span>
   ) : null;
   // #1081 카드로 이동 — 전체 필터·검색 해제 → 지금 목록에 있으면 그대로, 없으면 서버에서 키로 찾아 그 날짜를 연 뒤 스크롤·2.5초 강조
   const [flashKey, setFlashKey] = useState<string | null>(null);
@@ -770,7 +772,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                     <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" aria-hidden />
                   </li>
                 )}
-                <li data-ckey={c.key} className={`relative rounded-lg border bg-zinc-50/70 transition-shadow dark:bg-zinc-800/40 ${flashKey === c.key ? "border-mustard-500 ring-2 ring-mustard-500/40" : askItem?.key === c.key ? "border-mustard-500/60" : "border-zinc-200 dark:border-zinc-800"}`}>
+                <li data-ckey={c.key} className={`group relative rounded-lg border bg-zinc-50/70 transition-shadow dark:bg-zinc-800/40 ${flashKey === c.key ? "border-mustard-500 ring-2 ring-mustard-500/40" : askItem?.key === c.key ? "border-mustard-500/60" : "border-zinc-200 dark:border-zinc-800"}`}>
                   {/* #1056 diff 카드 — 질문 버튼 왼쪽에 "diff 열기"(키에 담긴 커밋·파일) */}
                   {/* #1066 + git 그래프에서 그 커밋 짚기(세션 카드와 같은 버튼) */}
                   {c.kind === "diff" && (() => { const d = parseDiffItemKey(c.key); return d ? (
@@ -782,7 +784,6 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {/* #1078 마크다운 복사 */}
                       <button type="button" onClick={() => void copyCard(c)} title={t("learn.copyMd")} aria-label={t("learn.copyMd")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconCopy size={13} stroke={2} aria-hidden /></button>
-                      {starBtn(c)}
                       {askBtn(c, false)}
                     </span>
                   ) : null; })()}
@@ -799,12 +800,12 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {/* #1238 원본 대화만 복사 */}
                       <button type="button" onClick={() => void copyRaw(c)} title={t("learn.copyRaw")} aria-label={t("learn.copyRaw")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconMessages size={13} stroke={2} aria-hidden /></button>
-                      {starBtn(c)}
                       {askBtn(c, false)}
                     </span>
                   )}
-                  {!(c.kind === "diff" && parseDiffItemKey(c.key)) && !(c.kind === "session" && c.status === "done") && c.status === "done" && <span className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5">{starBtn(c)}{askBtn(c, false)}</span>}
-                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "session" ? "pr-36" : c.kind === "diff" ? "pr-32" : "pr-16"}`}>
+                  {!(c.kind === "diff" && parseDiffItemKey(c.key)) && !(c.kind === "session" && c.status === "done") && askBtn(c, true)}
+                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "session" ? "pr-32" : c.kind === "diff" ? "pr-28" : "pr-10"}`}>
+                    {pinMark(c)}
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
                       {/* #1181 모든 작업 폴더 보기 — 어느 worktree(브랜치)에서 쌓인 건지. 메인 것은 표시 없음 */}
