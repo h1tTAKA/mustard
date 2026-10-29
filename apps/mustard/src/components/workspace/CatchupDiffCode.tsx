@@ -16,7 +16,7 @@ export default function CatchupDiffCode({ root, hash, file, range, label }: { ro
   const [hunks, setHunks] = useState<DLine[][] | null>(null); // null = 아직/불러오는 중
   const [failed, setFailed] = useState(false);
   const loadingRef = useRef(false); // 불러오는 중 다시 펼쳐도 중복 요청 X(#1060 리뷰)
-  const [tokens, setTokens] = useState<ThemedToken[][][] | null>(null); // 구간 → 줄 → 토큰(없으면 단색)
+  const [tokens, setTokens] = useState<{ dark: boolean; all: ThemedToken[][][] } | null>(null); // 구간 → 줄 → 토큰(없으면 단색), 칠한 테마도(재리뷰)
   const [isDark, setIsDark] = useState(false);
   // 다크/라이트 감시는 펼쳐서 코드가 있을 때만(접힌 카드 수십 개가 각자 감시하지 않게, 리뷰)
   const showing = open && !!hunks?.length;
@@ -46,7 +46,7 @@ export default function CatchupDiffCode({ root, hash, file, range, label }: { ro
           return h.map((l) => (l.kind === "del" ? ot[o++] : l.kind === "add" ? nt[n++] : (o++, nt[n++])));
         }));
       })
-      .then((all) => { if (live) setTokens(all); })
+      .then((all) => { if (live) setTokens({ dark: isDark, all }); })
       .catch(() => { if (live) setTokens(null); }); // 실패·줄 수 불일치 → 단색(이전 테마 색이 남지 않게)
     return () => { live = false; };
   }, [hunks, isDark, file, showing]);
@@ -93,7 +93,7 @@ export default function CatchupDiffCode({ root, hash, file, range, label }: { ro
               <Fragment key={i}>
                 {i > 0 && <div className="border-t border-dashed border-zinc-200 dark:border-zinc-800" aria-hidden />}
                 {h.map((l, j) => {
-                  const toks = tokens?.[i]?.[j];
+                  const toks = tokens?.dark === isDark ? tokens.all[i]?.[j] : undefined; // 다른 테마로 칠한 색은 안 씀(접은 채 모드를 바꾼 뒤 다시 펼 때)
                   return (
                     <div key={j} className={`whitespace-pre pr-2 ${l.kind === "add" ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300" : l.kind === "del" ? "bg-rose-500/15 text-rose-800 dark:text-rose-300" : "text-zinc-500 dark:text-zinc-400"}`}>
                       {num(l.oldN)}{num(l.newN)}
