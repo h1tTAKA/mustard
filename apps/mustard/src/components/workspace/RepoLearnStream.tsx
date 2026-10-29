@@ -407,7 +407,13 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       .finally(() => {
         if (--sync.inflight > 0 || !sync.failed) return;
         sync.failed = false;
-        void loadStars().then((st) => { if (st && sync.inflight === 0) { starLocal.current.clear(); setStars(st); } });
+        // 다시 읽는 사이 새 클릭이 있으면 그 저장이 끝난 뒤(마지막 finally)에 다시, 읽기 자체가 실패하면 3초 뒤 2번까지(리뷰)
+        const resync = (left: number) => void loadStars().then((st) => {
+          if (sync.inflight > 0) { sync.failed = true; return; }
+          if (!st) { if (left > 0) setTimeout(() => { if (sync.inflight === 0) resync(left - 1); else sync.failed = true; }, 3000); return; }
+          starLocal.current.clear(); setStars(st);
+        });
+        resync(2);
       });
   }, [stars, root, t, toast, loadStars]);
   // 경계선 드래그 — 패널 높이 = 컴포넌트 바닥 - 포인터 y. 목록·패널 최소 높이 보장.
