@@ -1,7 +1,7 @@
 "use client";
 // 커밋 세션 원본 대화(#1064) — 기본 접힘, 펼치면 서버에 저장된 구간을 처음 한 번 가져와 사용자/AI/도구 순서대로.
 import { useRef, useState } from "react";
-import { IconChevronDown, IconLoader2, IconMessages } from "@tabler/icons-react";
+import { IconChevronDown, IconCopy, IconLoader2 } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import type { SessionMsg } from "@/lib/agentSessionParse";
 import type { CrewTalk } from "@/lib/sessionCard";
@@ -32,9 +32,9 @@ export default function CatchupSessionRaw({ root, hash, onCopy }: { root: string
           <IconChevronDown size={12} stroke={2} className={`transition ${open ? "" : "-rotate-90"}`} aria-hidden />
           {open ? t("learn.hideSession") : t("learn.showSession")}
         </button>
-        {/* #1238 원본 대화만 복사 — #1244 카드 버튼 줄에서 여기(원본 대화 보기 옆)로, 유저 요청 */}
+        {/* #1238 원본 대화만 복사 — #1244 카드 버튼 줄에서 여기(원본 대화 보기 옆)로, #1248 말풍선은 장식으로 보여 복사 아이콘으로(유저 요청) */}
         {onCopy && <button type="button" onClick={onCopy} title={t("learn.copyRaw")} aria-label={t("learn.copyRaw")}
-          className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconMessages size={13} stroke={2} aria-hidden /></button>}
+          className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconCopy size={13} stroke={2} aria-hidden /></button>}
       </div>
       {open && (
         failed ? <p className="mt-1 text-[10px] text-rose-500">{t("learn.sessionError")}</p>
