@@ -305,6 +305,27 @@ export function askCounts(root: string): Record<string, number> {
   return out;
 }
 
+// ── 레포별 캐치업 설정(#1239) — prefs.json = { off: [끈 항목] }. 전역 설정에서 켠 것 중 이 레포만 끔(전역 켜면 끄지 않은 건 따라 켜짐).
+//  서버 해설(narrate)도 봐야 해서 서버 저장(창이 안 열려도 레포마다 끌 수 있게).
+export const REPO_PREF_KEYS = ["explainShow", "explainAnalyze", "commandsShow", "commandsAnalyze", "diffShow", "diffAnalyze", "termsShow", "termsAnalyze", "sessionsShow", "sessionsAnalyze"] as const;
+export type RepoPrefKey = (typeof REPO_PREF_KEYS)[number];
+const prefFile = (root: string) => join(repoDir(root), "prefs.json");
+export function readRepoPrefs(root: string): { off: RepoPrefKey[] } {
+  try {
+    const o = JSON.parse(readFileSync(prefFile(root), "utf8")) as { off?: unknown };
+    return { off: Array.isArray(o.off) ? REPO_PREF_KEYS.filter((k) => (o.off as unknown[]).includes(k)) : [] };
+  } catch { return { off: [] }; }
+}
+export function writeRepoPrefs(root: string, off: unknown): { off: RepoPrefKey[] } {
+  const clean = { off: Array.isArray(off) ? REPO_PREF_KEYS.filter((k) => off.includes(k)) : [] };
+  mkdirSync(repoDir(root), { recursive: true });
+  const file = prefFile(root);
+  writeFileSync(`${file}.tmp`, JSON.stringify(clean));
+  renameSync(`${file}.tmp`, file);
+  return clean;
+}
+export const repoPrefOff = (root: string, key: RepoPrefKey) => readRepoPrefs(root).off.includes(key);
+
 // ── 별표(#1238) — 레포별 stars.json = { key: 별표한 시각 }. 화면 표시·별표만 보기.
 const starFile = (root: string) => join(repoDir(root), "stars.json");
 export function readStars(root: string): Record<string, number> {

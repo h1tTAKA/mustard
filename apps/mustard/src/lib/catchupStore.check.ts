@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appendItems, replaceItems, askCounts, filterItems, itemFacets, readStars, setStar, tagItems, catchupRoots, dayKey, findItem, itemsForHashes, listDays, mainOf, readAsk, readDay, readRecent, readSession, searchItems, sanitize, writeAsk, writeSession } from "./catchupStore.ts";
+import { appendItems, replaceItems, askCounts, filterItems, itemFacets, readRepoPrefs, readStars, repoPrefOff, setStar, tagItems, writeRepoPrefs, catchupRoots, dayKey, findItem, itemsForHashes, listDays, mainOf, readAsk, readDay, readRecent, readSession, searchItems, sanitize, writeAsk, writeSession } from "./catchupStore.ts";
 
 assert.ok(process.env.MUSTARD_STREAM_DIR, "임시 디렉터리 필수(실 기록 보호)");
 const root = "/tmp/repo-a";
@@ -137,5 +137,13 @@ console.log("catchupStore ok");
   setStar(r, "session|bbbbbbb222", true, 5); setStar(r, "narration|1|n", true, 6);
   assert.deepStrictEqual(readStars(r), { "session|bbbbbbb222": 5, "narration|1|n": 6 });
   assert.deepStrictEqual(setStar(r, "narration|1|n", false, 7), { "session|bbbbbbb222": 5 }, "끄기");
+}
+// #1239 레포별 설정
+{
+  const r = "/tmp/repo-1239";
+  assert.deepStrictEqual(readRepoPrefs(r), { off: [] }, "없으면 다 켬(전과 같음)");
+  assert.deepStrictEqual(writeRepoPrefs(r, ["diffShow", "explainAnalyze", "hacker", 3, "diffShow"]), { off: ["explainAnalyze", "diffShow"] }, "아는 키만·중복 제거·정해진 순서");
+  assert.ok(repoPrefOff(r, "explainAnalyze") && !repoPrefOff(r, "sessionsShow"));
+  assert.deepStrictEqual(writeRepoPrefs(r, "nope"), { off: [] }, "배열 아니면 비움");
 }
 console.log("catchupStore.check ok");
