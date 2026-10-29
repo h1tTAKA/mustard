@@ -647,11 +647,11 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       <div className="relative flex shrink-0 items-center gap-1.5 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
         <IconActivity size={14} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
         <span className="truncate text-[13px] font-semibold text-zinc-700 dark:text-zinc-200" title={t("learn.mode")}>{t("learn.title")}</span>
-        {/* #1240 만드는 중 — 있을 때만, 종류별 수 */}
+        {/* #1240 만드는 중 — 있을 때만, 종류별 수. 좁으면 말줄임(옆 버튼 안 밀게), 숫자마다 읽지 않게 실시간 알림 없음(리뷰) */}
         {busyParts.length > 0 && (
-          <span className="flex shrink-0 items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500" role="status" aria-live="polite">
+          <span className="flex min-w-0 items-center gap-1 whitespace-nowrap text-[10px] text-zinc-400 dark:text-zinc-500" title={`${t("learn.busy")} ${busyParts.map(([, n, label]) => `${t(label)} ${n}`).join(" · ")}`}>
             <IconLoader2 size={11} stroke={2} className="animate-spin text-mustard-600 dark:text-mustard-400" aria-hidden />
-            {t("learn.busy")} {busyParts.map(([, n, label]) => `${t(label)} ${n}`).join(" · ")}
+            <span className="truncate">{t("learn.busy")} {busyParts.map(([, n, label]) => `${t(label)} ${n}`).join(" · ")}</span>
           </span>
         )}
         {/* #1078 캘린더는 제목 바로 옆(유저 피드백) */}

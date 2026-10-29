@@ -4,7 +4,7 @@ import { beginNarrate, narratingFor } from "./narrateBusy.ts";
 
 const a = beginNarrate("/repo"), b = beginNarrate("/repo/src");
 assert.strictEqual(narratingFor("/repo"), 2, "하위 폴더 cwd도 그 레포로");
-assert.strictEqual(narratingFor("/repo/src"), 2, "상위도");
+assert.strictEqual(narratingFor("/repo/src"), 1, "위 폴더(/repo)에서 돈 건 하위 레포 창에 안 셈");
 assert.strictEqual(narratingFor("/repo2"), 0, "이름만 비슷한 레포는 아님");
 a(); a();
 assert.strictEqual(narratingFor("/repo"), 1, "두 번 끝내도 한 번");
