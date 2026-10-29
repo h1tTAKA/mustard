@@ -5,7 +5,11 @@ const FOREIGN = /^(TERM_PROGRAM_VERSION|TERM_SESSION_ID|ITERM_\w+|LC_TERMINAL(_V
 
 function applyTerminalEnv(env) {
   // 셸 통합이 ZDOTDIR을 자기 폴더로 돌려 두고 원래 값을 따로 보관하는 경우 — 보관값을 지우기 전에 원래대로(rc 체인이 반쪽 되지 않게, 리뷰)
-  if ("GHOSTTY_ZSH_ZDOTDIR" in env) { if (env.GHOSTTY_ZSH_ZDOTDIR) env.ZDOTDIR = env.GHOSTTY_ZSH_ZDOTDIR; else delete env.ZDOTDIR; }
+  // ZDOTDIR이 실제로 그 통합 폴더(리소스 폴더 아래)일 때만 — 사용자가 직접 바꾼 값은 건드리지 않음(재리뷰)
+  const res = env.GHOSTTY_RESOURCES_DIR;
+  if ("GHOSTTY_ZSH_ZDOTDIR" in env && res && typeof env.ZDOTDIR === "string" && env.ZDOTDIR.startsWith(res)) {
+    if (env.GHOSTTY_ZSH_ZDOTDIR) env.ZDOTDIR = env.GHOSTTY_ZSH_ZDOTDIR; else delete env.ZDOTDIR;
+  }
   for (const k of Object.keys(env)) if (FOREIGN.test(k)) delete env[k]; // 앱을 켠 다른 터미널의 세션 값은 물려주지 않음
   env.TERM = "xterm-256color";
   env.COLORTERM = "truecolor";

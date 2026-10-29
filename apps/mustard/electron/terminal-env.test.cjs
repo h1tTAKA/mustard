@@ -14,7 +14,9 @@ for (const k of ["TERM_PROGRAM_VERSION", "ITERM_SESSION_ID", "LC_TERMINAL", "GHO
 assert.strictEqual(nested.TERMINFO, "/t", "모르는 값은 건드리지 않음");
 const ide = applyTerminalEnv({ VSCODE_IPC_HOOK_CLI: "/s", TMUX: "/tmp/t,1,0", TMUX_PANE: "%1" });
 for (const k of ["VSCODE_IPC_HOOK_CLI", "TMUX", "TMUX_PANE"]) assert.ok(!(k in ide), `${k} 지움`);
-assert.strictEqual(applyTerminalEnv({ ZDOTDIR: "/integ", GHOSTTY_ZSH_ZDOTDIR: "/Users/x/.zsh" }).ZDOTDIR, "/Users/x/.zsh", "셸 통합이 바꾼 ZDOTDIR은 원래대로");
-assert.ok(!("ZDOTDIR" in applyTerminalEnv({ ZDOTDIR: "/integ", GHOSTTY_ZSH_ZDOTDIR: "" })), "원래 없었으면 지움");
+const R = "/App/Resources/x";
+assert.strictEqual(applyTerminalEnv({ GHOSTTY_RESOURCES_DIR: R, ZDOTDIR: `${R}/shell-integration/zsh`, GHOSTTY_ZSH_ZDOTDIR: "/Users/x/.zsh" }).ZDOTDIR, "/Users/x/.zsh", "셸 통합이 바꾼 ZDOTDIR은 원래대로");
+assert.ok(!("ZDOTDIR" in applyTerminalEnv({ GHOSTTY_RESOURCES_DIR: R, ZDOTDIR: `${R}/shell-integration/zsh`, GHOSTTY_ZSH_ZDOTDIR: "" })), "원래 없었으면 지움");
+assert.strictEqual(applyTerminalEnv({ GHOSTTY_RESOURCES_DIR: R, ZDOTDIR: "/mine", GHOSTTY_ZSH_ZDOTDIR: "/old" }).ZDOTDIR, "/mine", "통합 폴더가 아니면(사용자가 바꾼 값) 그대로");
 assert.strictEqual(applyTerminalEnv({ ZDOTDIR: "/mine" }).ZDOTDIR, "/mine", "사용자 ZDOTDIR은 그대로");
 console.log("terminal-env.test ok");

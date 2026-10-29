@@ -33,7 +33,7 @@ extraResources:
   # (RUN_AS_NODE는 asar 미지원 → asar 안 스크립트는 require 불가). resources/electron/에 동봉.
   - from: electron/terminal-daemon.cjs
     to: electron/terminal-daemon.cjs
-  - from: electron/terminal-env.cjs      # #1226 데몬이 require — 빠지면 새 데몬이 켜자마자 죽음
+  - from: electron/terminal-env.cjs      # #1226 데몬이 require — 빠지면 색 능력 env가 빠짐(데몬은 뜸, diff 줄 배경 안 보임)
     to: electron/terminal-env.cjs
   - from: electron/daemon-version.cjs   # #1036 데몬이 require — 빠지면 새 데몬이 켜자마자 죽음(실측)
     to: electron/daemon-version.cjs
