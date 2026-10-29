@@ -163,17 +163,19 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [allFolders, setAllFolders] = useState(false); // #1181 되돌아보기·검색 — 모든 작업 폴더(worktree·지운 것 포함)
   // #1238 검색 기준 — 글자(서버가 제목·설명) / 브랜치·에이전트·커밋(풀다운 최신순 → 고르면 칩 필터와 같은 tag로 전체 날짜에서 모음)
   const [searchBy, setSearchBy] = useState<"text" | TagType>("text");
-  const [facets, setFacets] = useState<Record<TagType, Facet[]> | null>(null);
+  const [facetsGot, setFacets] = useState<{ scope: string; v: Record<TagType, Facet[]> } | null>(null);
   const wantFacets = searchOpen && searchBy !== "text";
   useEffect(() => {
     if (!wantFacets) return;
     let alive = true;
-    const none = { branch: [], agent: [], hash: [] };
+    const none = { branch: [], agent: [], hash: [] }, scope = `${root}|${allFolders ? 1 : 0}`;
     fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&facets=1${allFolders ? "&all=1" : ""}`).then((r) => r.json())
-      .then((j) => { if (alive) setFacets(j?.ok && j.facets ? (j.facets as Record<TagType, Facet[]>) : none); })
-      .catch(() => { if (alive) setFacets(none); });
+      .then((j) => { if (alive) setFacets({ scope, v: j?.ok && j.facets ? (j.facets as Record<TagType, Facet[]>) : none }); })
+      .catch(() => { if (alive) setFacets({ scope, v: none }); });
     return () => { alive = false; };
   }, [wantFacets, root, allFolders]);
+  // 레포·모든 폴더를 바꾸면 새 값이 올 때까지 "…"(옛 범위 값을 고르지 않게, 리뷰)
+  const facets = facetsGot?.scope === `${root}|${allFolders ? 1 : 0}` ? facetsGot.v : null;
   const query = q.trim();
   useEffect(() => {
     if (!query) return;
@@ -381,20 +383,23 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       .then((j) => { if (j?.ok && j.counts) setAskCounts(j.counts as Record<string, number>); }).catch(() => { /* 배지 없이 */ });
   }, [root]);
   const onAskCount = useCallback((key: string, n: number) => setAskCounts((p) => (p[key] === n ? p : { ...p, [key]: n })), []);
-  // #1238 별표 — 레포별 서버 저장(stars.json). 누르면 바로 바꾸고 저장 실패면 되돌림.
+  // #1238 별표 — 레포별 서버 저장(stars.json). 누르면 바로 바꾸고, 저장 실패면 서버 값을 다시 읽어 맞춤(되돌리기 계산보다 단순·연타에도 정확, 리뷰).
+  const starTouched = useRef(false); // 누른 뒤 늦게 온 첫 읽기 결과가 방금 누른 별을 지우지 않게
+  const loadStars = useCallback(() => fetch(`/api/repo/stream/star?root=${encodeURIComponent(root)}`).then((r) => r.json())
+    .then((j) => (j?.ok && j.stars ? (j.stars as Record<string, number>) : null)).catch(() => null), [root]);
   useEffect(() => {
-    let alive = true;
-    fetch(`/api/repo/stream/star?root=${encodeURIComponent(root)}`).then((r) => r.json())
-      .then((j) => { if (alive && j?.ok && j.stars) setStars(j.stars as Record<string, number>); }).catch(() => { /* 별표 없이 */ });
+    let alive = true; starTouched.current = false;
+    void loadStars().then((st) => { if (alive && st && !starTouched.current) setStars(st); });
     return () => { alive = false; };
-  }, [root]);
+  }, [loadStars]);
   const toggleStar = useCallback((key: string) => {
+    starTouched.current = true;
     const on = !stars[key];
     setStars((p) => { const n = { ...p }; if (on) n[key] = Date.now(); else delete n[key]; return n; });
     fetch("/api/repo/stream/star", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, key, on }) }).then((r) => r.json())
-      .then((j) => { if (!j?.ok) throw new Error("save"); }) // 응답 전체로 덮지 않음(빠른 연타에 늦은 옛 응답이 최신을 되돌리지 않게, 리뷰)
-      .catch(() => { setStars((p) => { const n = { ...p }; if (on) delete n[key]; else n[key] = Date.now(); return n; }); toast(t("learn.copyFailed")); });
-  }, [stars, root, t, toast]);
+      .then((j) => { if (!j?.ok) throw new Error("save"); })
+      .catch(() => { toast(t("learn.starFailed")); void loadStars().then((st) => { if (st) setStars(st); }); });
+  }, [stars, root, t, toast, loadStars]);
   // 경계선 드래그 — 패널 높이 = 컴포넌트 바닥 - 포인터 y. 목록·패널 최소 높이 보장.
   const dragCleanup = useRef<(() => void) | null>(null);
   useEffect(() => () => dragCleanup.current?.(), []); // 드래그 중 언마운트돼도 리스너 정리(#998 리뷰)
