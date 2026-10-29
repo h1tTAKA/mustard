@@ -2,7 +2,7 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconStar, IconStarFilled } from "@tabler/icons-react";
+import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconStar, IconStarFilled , IconAdjustmentsHorizontal } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
@@ -18,6 +18,8 @@ import { mergeTerms, parseNarrationTerms, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
+import { useCatchupRepoPrefs } from "@/lib/useCatchupRepoPrefs";
+import CatchupRepoPrefs from "@/components/workspace/CatchupRepoPrefs";
 import { cardMeta, tagMatches, type Facet, type TagType } from "@/lib/catchupMeta";
 import { openCrewTask } from "@/components/workspace/crew/CrewChat";
 import { useFlyCard, collectCards } from "@mustard/nunopi";
@@ -123,14 +125,16 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [lost, setLost] = useState(false); // #1078 실시간 연결이 몇 초 넘게 끊김(평소엔 표시 없음)
   const [termsOpen, setTermsOpen] = useState(false); // #1076 기본은 무조건 닫힘(다시 들어와도 펼쳐져 있지 않게)
   // #1062 설정 > 캐치업 — 카테고리별 표시(창에 보이기)·분석(새로 만들기). 표시는 렌더, 분석은 cfgRef(콜백)로.
-  const explainShow = useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow);
-  const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze);
-  const showCommands = useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow);
-  const commandsAnalyze = useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze);
-  const diffShow = useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow);
-  const sessionsShow = useSetting<boolean>(CUKEYS.sessionsShow, CATCHUP_DEFAULTS.sessionsShow); // #1064
-  const showTerms = useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow);
-  const termsAnalyze = useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze);
+  // #1239 레포별 설정 — 전역에서 켠 것 중 이 레포만 끈 항목(서버 prefs.json). 실제 = 전역 && !레포 끔.
+  const repoPrefs = useCatchupRepoPrefs(root);
+  const explainShow = useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow) && !repoPrefs.isOff("explainShow");
+  const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze) && !repoPrefs.isOff("explainAnalyze");
+  const showCommands = useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow) && !repoPrefs.isOff("commandsShow");
+  const commandsAnalyze = useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze) && !repoPrefs.isOff("commandsAnalyze");
+  const diffShow = useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow) && !repoPrefs.isOff("diffShow");
+  const sessionsShow = useSetting<boolean>(CUKEYS.sessionsShow, CATCHUP_DEFAULTS.sessionsShow) && !repoPrefs.isOff("sessionsShow"); // #1064
+  const showTerms = useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow) && !repoPrefs.isOff("termsShow");
+  const termsAnalyze = useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze) && !repoPrefs.isOff("termsAnalyze");
   const explainProvider = useSetting<string>(CUKEYS.explainProvider, ""); // #1062 카테고리별 AI("" = 워크스페이스 기본)
   const commandsProvider = useSetting<string>(CUKEYS.commandsProvider, "");
   const explainModel = useSetting<string>(CUKEYS.explainModel, ""); // "" = 그 프로바이더 기본 모델
@@ -219,13 +223,16 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const queueRef = useRef<string[]>([]);
   const busyRef = useRef(false);
   const metaRef = useRef(new Map<string, { kind: ConceptKind; target: string; tool: string }>());
-  const cfgRef = useRef({ providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel });
-  useEffect(() => { cfgRef.current = { providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel }; }, [providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel]);
+  const cfgRef = useRef({ prefsLoaded: repoPrefs.loaded, providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel });
+  useEffect(() => { cfgRef.current = { prefsLoaded: repoPrefs.loaded, providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel }; }, [repoPrefs.loaded, providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel]);
 
   const explainOne = useCallback(async (key: string) => {
     const meta = metaRef.current.get(key); const { locale: loc } = cfgRef.current;
     if (!meta) return;
-    const c = cfgRef.current; const pid = ((isCommand(meta) ? c.commandsProvider : c.explainProvider) || c.providerId) as AgentProviderKind | undefined; // #1062 카테고리별 AI
+    const c = cfgRef.current;
+    // #1239 줄에 선 뒤·카드 펼치기로 들어와도 지금 분석 꺼짐이면 안 함. 레포 설정 받기 전이면 미뤄 둠 — seen에서 빼서 다시 줄 설 수 있게(리뷰)
+    if (!c.prefsLoaded || !(isCommand(meta) ? c.commandsAnalyze : c.explainAnalyze)) { seenRef.current.delete(key); return; }
+    const pid = ((isCommand(meta) ? c.commandsProvider : c.explainProvider) || c.providerId) as AgentProviderKind | undefined; // #1062 카테고리별 AI
     if (!pid) return;
     const ps = withModel(c.providerSettings, pid, isCommand(meta) ? c.commandsModel : c.explainModel); // 카테고리별 모델
     setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "loading" } : c)));
@@ -253,6 +260,11 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   }, [explainOne]);
 
   const enqueue = useCallback((key: string) => { if (seenRef.current.has(key)) return; seenRef.current.add(key); queueRef.current.push(key); void pump(); }, [pump]);
+  // #1239 레포 설정을 받은 뒤·분석을 다시 켰을 때 — 미뤄 둔(아직 설명 없는) 카드를 다시 줄에(그 사이 들어온 실시간 카드가 영영 idle로 안 남게)
+  useEffect(() => {
+    if (!repoPrefs.loaded) return;
+    for (const c of concepts) if (c.status === "idle" && !c.expl && metaRef.current.has(c.key) && (isCommand(c) ? commandsAnalyze : explainAnalyze)) enqueue(c.key);
+  }, [repoPrefs.loaded, explainAnalyze, commandsAnalyze]); // eslint-disable-line react-hooks/exhaustive-deps -- 켜지는 순간만(목록 바뀔 때마다 아님)
 
   // 실시간 연결은 "보고 있거나 에이전트가 작업 중"일 때만(#1043) — 같은 주소 동시 연결은 6개까지라, 방문한 레포마다
   // 열어두면 늦게 연 연결이 대기열에 멈춤(레포 5개 + 상태 스트림 = 6 → "패널 갔다 와야 뜸").
@@ -340,6 +352,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
 
   // #996 캘린더 되돌아보기 — 달력 열 때 기록 있는 날짜 로드, 지난 날 고르면 그날 파일만. 실시간(concepts)은 뒤에서 계속 갱신.
   const [calOpen, setCalOpen] = useState(false);
+  const [prefsOpen, setPrefsOpen] = useState(false); // #1239 이 레포 캐치업 설정
+  const closePrefs = useCallback(() => setPrefsOpen(false), []);
   const [days, setDays] = useState<Set<string>>(() => new Set());
   const [viewDay, setViewDay] = useState<string | null>(null);
   const [dayItems, setDayItems] = useState<Concept[] | null>(null); // null = 로딩 중
@@ -623,6 +637,12 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           className={`mr-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition ${calOpen || viewDay ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
           <IconCalendar size={14} stroke={2} aria-hidden />
         </button>
+        {/* #1239 이 레포 캐치업 설정 — 캘린더와 같은 작은 버튼, 이 레포에서 끈 게 있으면 머스타드 */}
+        <button type="button" data-prefs-toggle onClick={() => setPrefsOpen((v) => !v)} aria-expanded={prefsOpen} title={t("learn.repoPrefs")} aria-label={t("learn.repoPrefs")}
+          className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition ${prefsOpen || repoPrefs.off.length ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
+          <IconAdjustmentsHorizontal size={14} stroke={2} aria-hidden />
+        </button>
+        {prefsOpen && <CatchupRepoPrefs isOff={repoPrefs.isOff} set={repoPrefs.set} loaded={repoPrefs.loaded} onClose={closePrefs} />}
         {onToggleChat && ( /* #1078 워크스페이스 질문 — 캐치업 안 질문 화면 ↔ 카드 목록. 헤더 오른쪽 끝, 배경 있는 작은 버튼(켜지면 은은한 머스타드) */
           <button type="button" onClick={onToggleChat} aria-pressed={chatOpen} title={t("learn.chat")}
             className={`inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-[11px] font-medium leading-none transition ${chatOpen ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"}`}>

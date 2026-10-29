@@ -7,6 +7,7 @@ import { useLocale, useSetting, withModel, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { parseDiff, groupHunks, diffMark, DIFF_SEP, noteStoreKey, loadNotes, saveNote, explainDiffText } from "@/lib/hunkNotes";
 import { buildSessionItem } from "@/lib/sessionCard";
+import { useCatchupRepoPrefs } from "@/lib/useCatchupRepoPrefs";
 import { isFailedNote, RUNTIME_FAIL_PREFIXES } from "@/lib/failText";
 
 // #1056 캐치업 연동 — 파일 하나 설명이 끝나면 캐치업 카드(kind diff)로. key에 hash·파일을 담아 카드에서 diff를 열 수 있게.
@@ -23,22 +24,25 @@ const SKIP_FILE = /\.(md|mdx|markdown|txt|rst|adoc|lock|png|jpe?g|gif|webp|avif|
 const post = (url: string, body: unknown) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
 
 export function useAutoCommitExplain(root: string, providerId: AgentProviderKind, providerSettings: ProviderSettings) {
-  const autoOn = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits);
+  const repoPrefs = useCatchupRepoPrefs(root); // #1239 이 레포만 끈 분석
+  const autoOn = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits) && !repoPrefs.isOff("diffAnalyze");
   const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
   const diffProvider = useSetting<string>(CUKEYS.diffProvider, ""); // #1062 Diff AI("" = 워크스페이스 기본)
   const diffModel = useSetting<string>(CUKEYS.diffModel, "");
   // #1064 세션 분석 — Diff 분석과 따로 켜고 끔(같은 새 커밋 감시를 공유). AI·모델도 따로.
-  const sessionsOn = useSetting<boolean>(CUKEYS.sessionsAnalyze, CATCHUP_DEFAULTS.sessionsAnalyze);
+  const sessionsOn = useSetting<boolean>(CUKEYS.sessionsAnalyze, CATCHUP_DEFAULTS.sessionsAnalyze) && !repoPrefs.isOff("sessionsAnalyze");
   const sessProvider = useSetting<string>(CUKEYS.sessionsProvider, "");
   const sessModel = useSetting<string>(CUKEYS.sessionsModel, "");
   const on = catchupOn && (autoOn || sessionsOn); // #1062 캐치업 전체 끄면 전부 중지
+  // #1239 레포 설정 받기 전엔 tick만 쉼(on에 섞으면 앱 켤 때마다 꺼짐 → 상태 지움 → 꺼진 동안 커밋·미룬 카드·되살리기가 날아감, 리뷰)
+  const prefsLoaded = repoPrefs.loaded;
   const { locale } = useLocale();
   const pid = (diffProvider || providerId) as AgentProviderKind;
   const ps = useMemo(() => withModel(providerSettings, pid, diffModel), [providerSettings, pid, diffModel]);
   const spid = (sessProvider || providerId) as AgentProviderKind;
   const sps = useMemo(() => withModel(providerSettings, spid, sessModel), [providerSettings, spid, sessModel]);
-  const cfg = useRef({ providerId: pid, providerSettings: ps, locale, diffOn: autoOn, sessOn: sessionsOn, spid, sps });
-  useEffect(() => { cfg.current = { providerId: pid, providerSettings: ps, locale, diffOn: autoOn, sessOn: sessionsOn, spid, sps }; }, [pid, ps, locale, autoOn, sessionsOn, spid, sps]);
+  const cfg = useRef({ providerId: pid, providerSettings: ps, locale, diffOn: autoOn, sessOn: sessionsOn, spid, sps, loaded: prefsLoaded });
+  useEffect(() => { cfg.current = { providerId: pid, providerSettings: ps, locale, diffOn: autoOn, sessOn: sessionsOn, spid, sps, loaded: prefsLoaded }; }, [pid, ps, locale, autoOn, sessionsOn, spid, sps, prefsLoaded]);
 
   useEffect(() => {
     if (!root) return;
@@ -69,7 +73,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
       };
       for (const f of files) { // #1074 커밋당 파일·구간 상한 없음 — 큰 커밋도 바뀐 코드 전부 캐치업에(유저 요청)
-        if (!alive) return;
+        if (!alive || !cfg.current.diffOn) return false; // #1239 도중에 (레포에서) diff 분석 끄면 멈춤 — 끝나지 않았다고 알림(done에 안 넣게, 리뷰)
         const d = await post("/api/repo/git-show", { path: root, hash, file: f.path });
         const raw = String(d?.diff ?? "");
         if (!raw.trim() || /^Binary files /m.test(raw)) continue;
@@ -81,11 +85,11 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
       }
       let next = 0;
       const worker = async () => {
-        while (alive && next < jobs.length) {
+        while (alive && cfg.current.diffOn && next < jobs.length) { // 도중에 끄면 남은 구간 안 함
           const { file, i, h } = jobs[next++];
           const { providerId: pid, providerSettings: ps, locale: loc } = cfg.current;
           for (const wait of RETRY_MS) { // #1093 실패면 잠시 뒤 다시(런타임 상한·일시 오류) — 최대 3번
-            if (!alive) return;
+            if (!alive || !cfg.current.diffOn) return; // 재시도 대기 뒤에도 다시 확인
             try { const text = await explainDiffText(h.diffText, pid, ps, loc); saveNote(file.store, h.diffText, text); file.texts[i] = diffMark(h) + text; break; }
             catch { if (wait < 0) break; await new Promise((r) => setTimeout(r, wait)); } // 끝내 실패 — 카드엔 빠지고 복구 주기에서 다시
           }
@@ -93,6 +97,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         }
       };
       await Promise.all(Array.from({ length: Math.min(EXPLAIN_CONCURRENCY, jobs.length) }, worker));
+      return alive && cfg.current.diffOn; // 끝까지 했나(도중에 끄면 false — 그 커밋은 처리 완료로 안 적음, 다시 켜면 이어서)
     };
 
     // 미룬 세션 카드 — 턴 끝났으면(또는 20분 지남) 요약해서 카드로(카드 시각 = 만든 시각), 세션 없으면 버림
@@ -137,7 +142,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     };
 
     const tick = async () => {
-      if (busy || !alive || !cfg.current.providerId) return;
+      if (busy || !alive || !cfg.current.providerId || !cfg.current.loaded) return; // 레포 설정 받기 전엔 쉼(상태는 안 건드림)
       busy = true;
       budget = 5;
       try {
@@ -179,7 +184,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         for (const c of fresh) {
           if (!alive) return;
           const branch = c.branch || head; // #1068 그 커밋을 만들 때 브랜치(reflog)
-          if (cfg.current.diffOn && !c.merge) await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200));
+          if (cfg.current.diffOn && !c.merge && !(await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200)))) return; // 도중에 끔 — 이 커밋부터 다음 주기에(리뷰)
           // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드. 턴이 끝날 때까지(마무리 말 포함) 미뤘다가 만듦.
           if (alive && cfg.current.sessOn) pendingAdd.push({ hash: c.hash, ts: c.ts, subject: c.subject ?? "", branch, at: Date.now(), merge: !!c.merge });
           if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)

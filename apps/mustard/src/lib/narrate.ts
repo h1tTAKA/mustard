@@ -2,7 +2,7 @@
 import { snaClaudeProvider, snaCodexProvider, snaOpenCodeProvider } from "@mustard/nunopi/server";
 import type { AgentAnalyzeRequest } from "@mustard/core";
 import { emitNarration } from "@/lib/mcpActivity";
-import { appendItems } from "@/lib/catchupStore";
+import { appendItems, repoPrefOff } from "@/lib/catchupStore";
 import { narrationProvider, narrationModel, narrationLocale } from "@/lib/narrationConfig";
 import { translate } from "@mustard/core/messages";
 import { isFailedNote } from "@/lib/failText";
@@ -83,6 +83,7 @@ function splitNarration(summary: string): { title: string; note: string } {
 // 재료(delta·diff) → AI 해설 → 캐치업 방출 + 날짜별 저장. ts = 카드 시각(재생이면 원래 시각). 해설 없음(SKIP 등)이면 false.
 // 실패(구독 미가용·레이트리밋 등)는 throw — 호출부가 조용히 처리.
 export async function narrate(cwd: string, agent: string, delta: string, diff: string, ts: number, opts: { providerId?: unknown; signal?: AbortSignal } = {}): Promise<boolean> {
+  if (repoPrefOff(cwd, "explainAnalyze")) return false; // #1239 이 레포만 해설 분석 끔(캐치업 창 레포 설정) — observe·backfill 공통 길목
   // #1062 설정 > 캐치업 > 해설 AI — SNA(구독 CLI) 3종. 그 밖(openai-compatible 등)은 Claude로, 모델도 그 AI 것만 적용.
   const chosen = opts.providerId === "codex" ? "codex-agent" : narrationProvider();
   const pid = chosen === "codex-agent" || chosen === "opencode-agent" ? chosen : "claude-agent";

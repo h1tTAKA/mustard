@@ -288,8 +288,8 @@ export function writeAsk(root: string, thread: unknown, now: number): AskThread 
   mkdirSync(askDir(root), { recursive: true });
   const file = askFile(root, t.key);
   const saved = { ...t, updatedAt: now };
-  writeFileSync(`${file}.tmp`, JSON.stringify(saved));
-  renameSync(`${file}.tmp`, file);
+  const tmp = `${file}.${process.pid}.tmp`; writeFileSync(tmp, JSON.stringify(saved));
+  renameSync(tmp, file);
   return saved;
 }
 
@@ -305,6 +305,43 @@ export function askCounts(root: string): Record<string, number> {
   return out;
 }
 
+// ── 레포별 캐치업 설정(#1239) — prefs.json = { off: [끈 항목] }. 전역 설정에서 켠 것 중 이 레포만 끔(전역 켜면 끄지 않은 건 따라 켜짐).
+//  서버 해설(narrate)도 봐야 해서 서버 저장(창이 안 열려도 레포마다 끌 수 있게).
+export const REPO_PREF_KEYS = ["explainShow", "explainAnalyze", "commandsShow", "commandsAnalyze", "diffShow", "diffAnalyze", "termsShow", "termsAnalyze", "sessionsShow", "sessionsAnalyze"] as const;
+export type RepoPrefKey = (typeof REPO_PREF_KEYS)[number];
+const prefFile = (root: string) => join(repoDir(root), "prefs.json");
+export function readRepoPrefs(root: string): { off: RepoPrefKey[] } {
+  try {
+    const o = JSON.parse(readFileSync(prefFile(root), "utf8")) as { off?: unknown };
+    return { off: Array.isArray(o.off) ? REPO_PREF_KEYS.filter((k) => (o.off as unknown[]).includes(k)) : [] };
+  } catch { return { off: [] }; }
+}
+// 항목 하나만 켜고 끔(목록 통째 저장 X — 창 여러 개·실패가 섞여도 서로 덮지 않게, 리뷰). 읽고 바꾸고 바로 씀(동기라 한 서버 안에선 안 섞임).
+export function setRepoPref(root: string, key: unknown, off: boolean): { off: RepoPrefKey[] } | null {
+  if (!REPO_PREF_KEYS.includes(key as RepoPrefKey)) return null;
+  const cur = readRepoPrefs(root).off.filter((k) => k !== key);
+  const clean = { off: REPO_PREF_KEYS.filter((k) => (k === key ? off : cur.includes(k))) };
+  mkdirSync(repoDir(root), { recursive: true });
+  const file = prefFile(root), tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(clean));
+  renameSync(tmp, file);
+  return clean;
+}
+// 하위 폴더에서 일하는 에이전트(터미널 cwd가 src/ 등)도 레포 최상위 설정을 따르게 — git 최상위(30초 캐시)도 확인(리뷰).
+const topCache = new Map<string, { top: string; at: number }>();
+const gitTop = (p: string) => {
+  const hit = topCache.get(p); if (hit && Date.now() - hit.at < 30_000) return hit.top;
+  let top = "";
+  try { top = real(execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd: real(p), encoding: "utf8", timeout: 3000, stdio: ["ignore", "pipe", "ignore"] }).trim()); } catch { /* git 아님 */ }
+  topCache.set(p, { top, at: Date.now() });
+  return top;
+};
+export const repoPrefOff = (root: string, key: RepoPrefKey) => {
+  if (readRepoPrefs(root).off.includes(key)) return true;
+  const top = gitTop(root);
+  return !!top && top !== real(root) && readRepoPrefs(top).off.includes(key);
+};
+
 // ── 별표(#1238) — 레포별 stars.json = { key: 별표한 시각 }. 화면 표시·별표만 보기.
 const starFile = (root: string) => join(repoDir(root), "stars.json");
 export function readStars(root: string): Record<string, number> {
@@ -319,8 +356,8 @@ export function setStar(root: string, key: string, on: boolean, now: number): Re
   if (on) stars[k] = now; else delete stars[k];
   mkdirSync(repoDir(root), { recursive: true });
   const file = starFile(root);
-  writeFileSync(`${file}.tmp`, JSON.stringify(stars));
-  renameSync(`${file}.tmp`, file);
+  const tmp = `${file}.${process.pid}.tmp`; writeFileSync(tmp, JSON.stringify(stars)); // pid — 두 서버(개발·앱)가 같은 폴더를 써도 안 섞이게(리뷰)
+  renameSync(tmp, file);
   return stars;
 }
 
