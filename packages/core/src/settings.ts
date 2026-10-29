@@ -275,10 +275,22 @@ export function subscribeSettings(listener: Listener): () => void {
 }
 
 // React 훅 — 값 구독(설정 변경 시 리렌더). 클라이언트 전용.
+// 객체·배열 값은 읽을 때마다 JSON.parse로 새로 만들어져 useSyncExternalStore가 "매번 바뀜"으로 보고 무한 렌더(#1231, 테마 고르면 화면이 죽음).
+// 내용(JSON)이 같으면 전에 돌려준 같은 참조를 돌려줌. 원시 값은 그대로.
+const snapCache = new Map<string, { raw: string; value: unknown }>();
+export function stableSnapshot<T>(key: string, value: T): T {
+  if (value === null || typeof value !== "object") return value;
+  const raw = JSON.stringify(value);
+  const hit = snapCache.get(key);
+  if (hit && hit.raw === raw) return hit.value as T;
+  snapCache.set(key, { raw, value });
+  return value;
+}
+
 export function useSetting<T>(key: keyof MustardSettings & string, fallback: T): T {
   return useSyncExternalStore(
     subscribeSettings,
-    () => getSetting<T>(key, fallback),
+    () => stableSnapshot(key, getSetting<T>(key, fallback)),
     () => fallback, // 서버 스냅샷 = fallback(하이드레이션 안전)
   );
 }
