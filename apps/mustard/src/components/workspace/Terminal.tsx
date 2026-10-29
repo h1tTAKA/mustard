@@ -4,7 +4,7 @@
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { findLinks, resolvePath, type TerminalLink } from "@/lib/terminalLinks";
-import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, readMacOptionAsAlt, effectiveMacOptionAsAlt, altCharForCode, jisYenInput, DEFAULT_WORD_SEPARATOR, parseShellArgs, readGpuMode, gpuAllowed, resolveMinContrast, isLightColor, readFontWeight, readPadding, withAlpha } from "@mustard/core";
+import { useT, currentTerminalTheme, isCurrentTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, readMacOptionAsAlt, effectiveMacOptionAsAlt, altCharForCode, jisYenInput, DEFAULT_WORD_SEPARATOR, parseShellArgs, readGpuMode, gpuAllowed, resolveMinContrast, isLightColor, readFontWeight, readPadding, withAlpha } from "@mustard/core";
 import { inputSourceId, refreshInputSource, subscribeInputSource } from "@/lib/inputSource";
 
 // 터미널 설정(#926) — 스토어서 읽어 xterm 옵션 구성. copyOnSelect/rightClickPaste는 핸들러서 별도.
@@ -92,29 +92,8 @@ function lineText(line: import("@xterm/xterm").IBufferLine) {
   return { text, col, wid };
 }
 
-// 터미널 팔레트(#914·#956) — 앱 테마와 분리된 자체 색. CLI TUI가 다크 전제.
-// 다크=near-black 배경(앱 다크와 통일, #956), 그레이=차콜,
-// 라이트=Tango 라이트. ANSI 16색은 다크/그레이 공유(검정 배경서도 잘 보임).
-const TERM_ANSI_DARK = {
-  black: "#1d1f21", red: "#cc6666", green: "#b5bd68", yellow: "#f0c674", blue: "#81a2be", magenta: "#b294bb", cyan: "#8abeb7", white: "#c5c8c6",
-  brightBlack: "#666666", brightRed: "#d54e53", brightGreen: "#b9ca4a", brightYellow: "#e7c547", brightBlue: "#7aa6da", brightMagenta: "#c397d8", brightCyan: "#70c0b1", brightWhite: "#eaeaea",
-};
-const TERM_DARK = {
-  background: "#0a0a0a", foreground: "#ffffff", cursor: "#ffffff", cursorAccent: "#0a0a0a", selectionBackground: "#333333",
-  ...TERM_ANSI_DARK,
-};
-const TERM_GRAY = {
-  background: "#282c34", foreground: "#ffffff", cursor: "#ffffff", cursorAccent: "#282c34", selectionBackground: "#3e4451",
-  ...TERM_ANSI_DARK,
-};
-const TERM_LIGHT = {
-  background: "#ffffff", foreground: "#2e3434", cursor: "#2e3434", cursorAccent: "#ffffff", selectionBackground: "#accef7",
-  black: "#2e3436", red: "#cc0000", green: "#4e9a06", yellow: "#8e7700", blue: "#3465a4", magenta: "#75507b", cyan: "#05727e", white: "#6a6a6a",
-  brightBlack: "#555753", brightRed: "#ef2929", brightGreen: "#1b7a1b", brightYellow: "#6d5a00", brightBlue: "#204a87", brightMagenta: "#ad7fa8", brightCyan: "#034b50", brightWhite: "#3d3d3d",
-};
 function buildTermTheme() {
-  const pref = getTerminalThemePref();
-  const base = pref === "light" ? TERM_LIGHT : pref === "gray" ? TERM_GRAY : pref === "dark" ? TERM_DARK : isTerminalDark(pref) ? TERM_DARK : TERM_LIGHT; // auto: 앱 다크면 검정
+  const base = currentTerminalTheme().colors; // #1215 다크용·라이트용 테마(앱 다크 여부로 고름)
   return { ...base, cursor: withAlpha(base.cursor, getSetting<unknown>(TKEYS.cursorOpacity, TERMINAL_DEFAULTS.cursorOpacity)) }; // #1214 커서 투명도
 }
 // 재접속 스크롤백 재생 시 xterm이 버퍼 속 터미널 질의(DA/DSR/OSC 색 등)에 "다시" 응답해
@@ -224,6 +203,17 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
           term.loadAddon(gl);
         } catch { /* WebGL 미지원 → 기본 렌더 폴백 */ }
       }
+      // 테마 색 넣기 — 실제로 바뀔 때만(#1214: 테마를 다시 넣으면 프로그램이 OSC로 바꾼 색이 풀림). 라이트↔다크면 자동 대비도.
+      let themeKey = JSON.stringify(buildTermTheme());
+      const syncTheme = () => {
+        const th = buildTermTheme();
+        const k = JSON.stringify(th);
+        if (!term || k === themeKey) return;
+        themeKey = k;
+        term.options.theme = th;
+        term.options.minimumContrastRatio = minContrast();
+        if (host) host.style.background = th.background;
+      };
       // 설정 라이브 갱신(#926) — fontSize/lineHeight/cursor 등 즉시 반영 + fit. (scrollback/gpu는 새 탭부터.)
       const applyTermSettings = () => {
         if (!term) return;
@@ -238,8 +228,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
         term.options.fontWeightBold = o.fontWeightBold;
         if (host) host.style.padding = padding();
         if (host && !getSetting<boolean>(TKEYS.hideMouseWhileTyping, TERMINAL_DEFAULTS.hideMouseWhileTyping)) host.classList.remove("mustard-hide-mouse"); // 끄면 숨긴 마우스 바로(리뷰)
-        const th = buildTermTheme();
-        if (term.options.theme?.cursor !== th.cursor) term.options.theme = th; // #1214 커서 투명도 — 바뀔 때만(테마를 다시 넣으면 프로그램이 바꾼 색이 풀림)
+        syncTheme(); // #1214 커서 투명도·#1215 테마 고르기
         term.options.scrollSensitivity = o.scrollSensitivity;
         term.options.fastScrollSensitivity = o.fastScrollSensitivity;
         term.options.macOptionIsMeta = o.macOptionIsMeta;
@@ -260,7 +249,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       host.addEventListener("mousemove", showMouse); // #1214 타이핑 중 숨긴 마우스 다시
       // #973 터미널 벨 데스크톱 알림 제거 — 알림은 에이전트 ask/완료만(WorkspaceTabs). 터미널 벨 알림은 스팸이라 폐지.
       // 테마 라이브 전환(#914) — 터미널 설정(dark/light/auto) 변경 또는 auto일 때 앱 .dark 변경 시 색 갱신.
-      const applyTermTheme = () => { const th = buildTermTheme(); if (term) { term.options.theme = th; term.options.minimumContrastRatio = minContrast(); } if (host) host.style.background = th.background; }; // #1214 라이트↔다크면 자동 대비도 바뀜
+      const applyTermTheme = syncTheme;
       mo = new MutationObserver(applyTermTheme);
       mo.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme"] });
       window.addEventListener(TERMINAL_THEME_EVENT, applyTermTheme);
@@ -356,7 +345,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       const firstEnsure = async () => {
         if (disposed || !term) return;
         try {
-          const r = await nd.terminal.ensure({ id, cwd, cols: term.cols, rows: term.rows, dark: isTerminalDark(getTerminalThemePref()), shell: getSetting<string>(TKEYS.shell, TERMINAL_DEFAULTS.shell), shellArgs: parseShellArgs(getSetting<string>(TKEYS.shellArgs, TERMINAL_DEFAULTS.shellArgs)) }); // #1196 새 세션만 셸 적용(있는 세션은 그대로), #1213 셸 인자
+          const r = await nd.terminal.ensure({ id, cwd, cols: term.cols, rows: term.rows, dark: isCurrentTerminalDark(), shell: getSetting<string>(TKEYS.shell, TERMINAL_DEFAULTS.shell), shellArgs: parseShellArgs(getSetting<string>(TKEYS.shellArgs, TERMINAL_DEFAULTS.shellArgs)) }); // #1196 새 세션만 셸 적용(있는 세션은 그대로), #1213 셸 인자
           if (disposed || !term) return;
           if (!r.ok) { term.write(`\r\n[${tRef.current("terminal.startFailed", { reason: r.reason ? `: ${r.reason}` : "" })}]\r\n`); return; }
           if (r.buffer) term.write(stripTermQueries(r.buffer)); // 정확한 cols 확보 후 재생(줄바꿈 안 굳음). 질의 시퀀스 제거(에코 방지 #807)

@@ -81,6 +81,12 @@ export const TKEYS = {
   shell: "terminal.shell",
   osc52: "terminal.osc52",
   images: "terminal.images",
+  themeDark: "terminal.themeDark", // #1215 다크 모드용 테마 {name, colors}(없으면 옛 nunopi:terminal-theme에서)
+  themeLight: "terminal.themeLight", // #1215 라이트 모드용 테마
+  themeSeparateLight: "terminal.themeSeparateLight",
+  customThemes: "terminal.customThemes",
+  colorOverridesDark: "terminal.colorOverridesDark", // #1215 다크용 테마 위에 덮는 색 {키: hex}
+  colorOverridesLight: "terminal.colorOverridesLight", // #1215 가져온 테마 [{name, colors}] 최대 100 // #1215 false = 라이트 모드에도 다크용
   shellArgs: "terminal.shellArgs",
   jisYenToBackslash: "terminal.jisYenToBackslash",
   wordSeparator: "terminal.wordSeparator",
