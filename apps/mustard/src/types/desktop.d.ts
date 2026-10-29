@@ -97,7 +97,7 @@ interface NunopiDesktopApi {
   repo?: {
     watch(opts: { id: string; root: string }): Promise<{ ok: boolean; supported: boolean; error?: string }>;
     unwatch(opts: { id: string }): Promise<void>;
-    onChanged(cb: (p: { id: string }) => void): () => void;
+    onChanged(cb: (p: { id: string; dead?: boolean }) => void): () => void; // #1225 dead = 감시가 에러로 멈춤 → 폴링으로
   };
   // GitHub 패널(#809/#810) — gh CLI 브릿지. auth=인증 상태 진단(cwd=레포). 서브3~5서 checks/이슈/PR 메서드 추가.
   github?: {

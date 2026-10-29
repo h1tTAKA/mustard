@@ -1275,7 +1275,7 @@ ipcMain.handle("app:relaunch", () => { app.relaunch(); app.quit(); });
 // Claude·Codex 구독 사용 한도 조회(#735) — 로컬 크레덴셜로 각 provider usage 엔드포인트 호출.
 ipcMain.handle("provider-usage:get", () => getProviderUsage());
 // 레포 파일 워처(#739) — 변경 시 렌더러에 repo:changed push. 활성 레포당 하나(렌더러가 전환 관리).
-ipcMain.handle("repo:watch", (e, { id, root }) => startWatch(id, root, () => { try { e.sender.send("repo:changed", { id }); } catch { /* ignore */ } }));
+ipcMain.handle("repo:watch", (e, { id, root }) => startWatch(id, root, (info) => { try { e.sender.send("repo:changed", { id, dead: !!(info && info.dead) }); } catch { /* ignore */ } }));
 ipcMain.handle("repo:unwatch", (_e, { id }) => { stopWatch(id); });
 
 // 알림 아이콘 경로 — dev=public, 패키지=standalone/public(존재하는 첫 후보).

@@ -35,7 +35,7 @@ function startWatch(id, root, onChange) {
     return { ok: false, supported: false, error: String((e && e.message) || e) };
   }
   // #1225 감시가 에러로 죽으면 정리하고 한 번 갱신 신호 — 이후는 렌더러 안전망 폴링이 맡음(조용히 멈춰 있지 않게)
-  watcher.on("error", () => { stopWatch(id); onChange(); });
+  watcher.on("error", () => { const e = watchers.get(id); if (e && e.watcher === watcher) { stopWatch(id); onChange({ dead: true }); } }); // 같은 id의 새 감시는 건드리지 않음(리뷰)
   watchers.set(id, { watcher, timer: null });
   return { ok: true, supported: true };
 }
