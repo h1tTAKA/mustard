@@ -3,6 +3,7 @@ import { snaClaudeProvider, snaCodexProvider, snaOpenCodeProvider } from "@musta
 import type { AgentAnalyzeRequest } from "@mustard/core";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems, repoPrefOff } from "@/lib/catchupStore";
+import { beginNarrate } from "@/lib/narrateBusy";
 import { narrationProvider, narrationModel, narrationLocale } from "@/lib/narrationConfig";
 import { translate } from "@mustard/core/messages";
 import { isFailedNote } from "@/lib/failText";
@@ -84,6 +85,11 @@ function splitNarration(summary: string): { title: string; note: string } {
 // 실패(구독 미가용·레이트리밋 등)는 throw — 호출부가 조용히 처리.
 export async function narrate(cwd: string, agent: string, delta: string, diff: string, ts: number, opts: { providerId?: unknown; signal?: AbortSignal } = {}): Promise<boolean> {
   if (repoPrefOff(cwd, "explainAnalyze")) return false; // #1239 이 레포만 해설 분석 끔(캐치업 창 레포 설정) — observe·backfill 공통 길목
+  const end = beginNarrate(cwd); // #1240 캐치업 창 "만드는 중" — 성공·실패·SKIP 모두 끝에서 뺌
+  try { return await narrateOnce(cwd, agent, delta, diff, ts, opts); } finally { end(); }
+}
+
+async function narrateOnce(cwd: string, agent: string, delta: string, diff: string, ts: number, opts: { providerId?: unknown; signal?: AbortSignal }): Promise<boolean> {
   // #1062 설정 > 캐치업 > 해설 AI — SNA(구독 CLI) 3종. 그 밖(openai-compatible 등)은 Claude로, 모델도 그 AI 것만 적용.
   const chosen = opts.providerId === "codex" ? "codex-agent" : narrationProvider();
   const pid = chosen === "codex-agent" || chosen === "opencode-agent" ? chosen : "claude-agent";

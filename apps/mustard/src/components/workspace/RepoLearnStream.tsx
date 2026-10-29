@@ -1,7 +1,7 @@
 "use client";
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconStar, IconStarFilled , IconAdjustmentsHorizontal } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
@@ -19,6 +19,7 @@ import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
 import { useCatchupRepoPrefs } from "@/lib/useCatchupRepoPrefs";
+import { beginBusy, busyOf, subscribeBusy } from "@/lib/catchupBusy";
 import CatchupRepoPrefs from "@/components/workspace/CatchupRepoPrefs";
 import { cardMeta, tagMatches, type Facet, type TagType } from "@/lib/catchupMeta";
 import { openCrewTask } from "@/components/workspace/crew/CrewChat";
@@ -236,6 +237,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     if (!pid) return;
     const ps = withModel(c.providerSettings, pid, isCommand(meta) ? c.commandsModel : c.explainModel); // 카테고리별 모델
     setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "loading" } : c)));
+    const endBusy = beginBusy(root, "explain"); // #1240 머리 줄 "만드는 중"
     try {
       const res = await fetch("/api/agent/analyze", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -250,7 +252,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "done", expl } : c)));
       saveItems(root, [{ key, kind: meta.kind, target: meta.target, tool: meta.tool, ts: Date.now(), expl }]); // #994 날짜별 저장(내레이션은 서버가 직접)
       if (newTerms.length && cfgRef.current.termsAnalyze) setTerms((prev) => mergeTerms(prev, newTerms, normalizeCardFront)); // 상한 없음, 표기 변형까지 중복 제거(#1051)
-    } catch { setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "error" } : c))); }
+    } catch { setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "error" } : c))); } finally { endBusy(); }
   }, [root]);
 
   const pump = useCallback(async () => {
@@ -270,6 +272,19 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   // 열어두면 늦게 연 연결이 대기열에 멈춤(레포 5개 + 상태 스트림 = 6 → "패널 갔다 와야 뜸").
   // 둘 다 아니게 된 뒤 2분 지나면 끊고, 다시 보거나 에이전트가 돌면 바로 다시 연결(+ 아래 로드가 놓친 기록 채움).
   const want = active || agentWorking;
+  // #1240 "만드는 중" — 이 창의 해설·diff·세션 수(공용 계수기) + 서버 실시간 해설 수(보일 때만 3초마다 물어봄)
+  const busy = useSyncExternalStore(useCallback((f: () => void) => subscribeBusy(root, f), [root]), () => busyOf(root), () => busyOf(""));
+  const [narrating, setNarrating] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    let alive = true;
+    const ask = () => fetch(`/api/repo/learn/busy?root=${encodeURIComponent(root)}`).then((r) => r.json())
+      .then((j) => { if (alive && typeof j?.narrating === "number") setNarrating(j.narrating); }).catch(() => {});
+    void ask();
+    const id = setInterval(() => void ask(), 3000);
+    return () => { alive = false; clearInterval(id); };
+  }, [active, root]);
+  const busyParts = ([["explain", busy.explain + (active ? narrating : 0), "learn.busyExplain"], ["diff", busy.diff, "learn.busyDiff"], ["session", busy.session, "learn.busySession"]] as const).filter(([, n]) => n > 0);
   const [connected, setConnected] = useState(want);
   useEffect(() => {
     if (want) { setConnected(true); return; } // eslint-disable-line react-hooks/set-state-in-effect -- 조건 바뀌면 즉시 연결
@@ -632,6 +647,13 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       <div className="relative flex shrink-0 items-center gap-1.5 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
         <IconActivity size={14} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
         <span className="truncate text-[13px] font-semibold text-zinc-700 dark:text-zinc-200" title={t("learn.mode")}>{t("learn.title")}</span>
+        {/* #1240 만드는 중 — 있을 때만, 종류별 수. 좁으면 말줄임(옆 버튼 안 밀게), 숫자마다 읽지 않게 실시간 알림 없음(리뷰) */}
+        {busyParts.length > 0 && (
+          <span className="flex min-w-0 items-center gap-1 whitespace-nowrap text-[10px] text-zinc-400 dark:text-zinc-500" title={`${t("learn.busy")} ${busyParts.map(([, n, label]) => `${t(label)} ${n}`).join(" · ")}`}>
+            <IconLoader2 size={11} stroke={2} className="animate-spin text-mustard-600 dark:text-mustard-400" aria-hidden />
+            <span className="truncate">{t("learn.busy")} {busyParts.map(([, n, label]) => `${t(label)} ${n}`).join(" · ")}</span>
+          </span>
+        )}
         {/* #1078 캘린더는 제목 바로 옆(유저 피드백) */}
         <button type="button" data-cal-toggle onClick={openCal} aria-expanded={calOpen} title={t("learn.calendar")} aria-label={t("learn.calendar")}
           className={`mr-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition ${calOpen || viewDay ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
