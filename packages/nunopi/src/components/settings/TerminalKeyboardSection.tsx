@@ -23,7 +23,7 @@ export default function TerminalKeyboardSection() {
     window.addEventListener("focus", load); // 다른 앱에서 입력 소스 바꾸고 돌아오면 다시
     return () => window.removeEventListener("focus", load);
   }, []);
-  const sourceName = source ? source.split(".").pop() : t("settings.optionAltUnknown");
+  const sourceName = source ? source.replace(/^com\.apple\.(keylayout|inputmethod)\./, "") : t("settings.optionAltUnknown"); // 예: Korean.2SetKorean, ABC
   return (
     <>
     {isMac && (

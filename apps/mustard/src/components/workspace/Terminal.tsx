@@ -273,7 +273,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       // \x1b[13;2u = Enter(13) + Shift 수정자(2). 에이전트 CLI(Claude Code 등)가 이를 진짜 개행 키로
       // 파싱해 멀티라인·백스페이스 정상(생 \n/ESC+CR은 리터럴로 오처리돼 1줄만/백스페이스 깨짐). false로 CR 제출 차단.
       // #1213 한쪽 ⌥만 Alt — 어느 ⌥가 눌렸는지(location 1 왼쪽, 2 오른쪽) 기억했다가 그쪽이면 ESC+그 키 글자를 직접 보냄.
-      // preventDefault로 브라우저가 å 같은 조합 글자를 넣지 않게. IME 조합 중·Shift 같이 누름은 건드리지 않음.
+      // preventDefault로 브라우저가 å 같은 조합 글자를 넣지 않게(⇧ 같이 누르면 ESC+대문자·⇧기호). IME 조합 중은 건드리지 않음.
       let optBits = 0;
       term.textarea?.addEventListener("blur", () => { optBits = 0; });
       term.attachCustomKeyEventHandler((e) => {
@@ -286,9 +286,10 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
           else if (e.type === "keyup") optBits = bit ? optBits & ~bit : 0;
           return true;
         }
-        if (isMac && e.type === "keydown" && e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
-          const mode = macOptionMode();
-          const ch = (mode === "left" && optBits & 1) || (mode === "right" && optBits & 2) ? altCharForCode(e.code) : null;
+        if (isMac && e.type === "keydown" && e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing && e.keyCode !== 229) {
+          // xterm에 넣어 둔 값이 양쪽이면 xterm이 처리(입력 소스가 막 바뀐 순간에도 두 경로가 겹치지 않게 같은 값을 봄 — 리뷰)
+          const mode = term?.options.macOptionIsMeta ? "both" : macOptionMode();
+          const ch = (mode === "left" && optBits & 1) || (mode === "right" && optBits & 2) ? altCharForCode(e.code, e.shiftKey) : null;
           if (ch) { e.preventDefault(); nd.terminal.input({ id, data: "\x1b" + ch }); return false; }
         }
         if (e.type === "keydown" && e.key === "Enter" && e.shiftKey) {

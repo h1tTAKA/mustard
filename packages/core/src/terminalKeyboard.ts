@@ -21,11 +21,12 @@ export function readMacOptionAsAlt(stored: unknown, legacyOn: unknown): MacOptio
 
 // 한쪽 ⌥만 Alt일 때 보낼 글자 — 그 키를 Option 없이 친 글자(물리 위치 기준, US 배열).
 // ponytail: US 배열 고정, 다른 배열의 왼쪽/오른쪽 모드가 필요해지면 navigator.keyboard.getLayoutMap()으로.
-const PUNCT: Record<string, string> = { Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]", Backslash: "\\", Semicolon: ";", Quote: "'", Comma: ",", Period: ".", Slash: "/", Backquote: "`" };
-export function altCharForCode(code: string): string | null {
-  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
-  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
-  return PUNCT[code] ?? null;
+const PUNCT: Record<string, [string, string]> = { Minus: ["-", "_"], Equal: ["=", "+"], BracketLeft: ["[", "{"], BracketRight: ["]", "}"], Backslash: ["\\", "|"], Semicolon: [";", ":"], Quote: ["'", '"'], Comma: [",", "<"], Period: [".", ">"], Slash: ["/", "?"], Backquote: ["`", "~"] };
+const SHIFT_DIGIT = ")!@#$%^&*(";
+export function altCharForCode(code: string, shift = false): string | null {
+  if (/^Key[A-Z]$/.test(code)) return shift ? code.slice(3) : code.slice(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(code)) return shift ? SHIFT_DIGIT[Number(code.slice(5))] : code.slice(5);
+  return PUNCT[code]?.[shift ? 1 : 0] ?? null;
 }
 
 // JIS 키보드 ¥ 키 → \ — 물리 ¥ 키(IntlYen)를 수식키 없이 눌렀을 때만. keydown은 \ 입력, 같이 오는 keypress·keyup은 삼켜 ¥가 안 들어가게.
@@ -38,7 +39,8 @@ export function jisYenInput(e: YenKeyEvent, enabled: boolean): "input" | "suppre
 }
 
 // 셸 인자 — 한 줄에 인자 하나(따옴표 해석 없음, 그대로 넘김). 빈 줄은 뺌.
-export const parseShellArgs = (text: string): string[] => text.split("\n").map((l) => l.replace(/\r$/, "")).filter((l) => l.length > 0);
+// 데몬 상한(32개·각 1024자)에 맞춰 잘라서 보냄 — 넘으면 데몬이 통째로 버리기 때문(리뷰).
+export const parseShellArgs = (text: string): string[] => text.split("\n").map((l) => l.replace(/\r$/, "").slice(0, 1024)).filter((l) => l.length > 0).slice(0, 32);
 
 // 더블클릭 단어 구분 기호 기본값(xterm 기본과 같음) — 설정이 비면 이걸.
 export const DEFAULT_WORD_SEPARATOR = " ()[]{}',\"`";

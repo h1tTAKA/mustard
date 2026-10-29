@@ -16,6 +16,9 @@ assert.strictEqual(ch("KeyB"), "b");
 assert.strictEqual(ch("Digit3"), "3");
 assert.strictEqual(ch("Period"), ".");
 assert.strictEqual(ch("ArrowLeft"), null);
+assert.strictEqual(ch("KeyB", true), "B");
+assert.strictEqual(ch("Digit1", true), "!");
+assert.strictEqual(ch("Period", true), ">");
 const k = (o: Partial<Parameters<typeof yen>[0]>) => ({ type: "keydown", code: "IntlYen", key: "¥", keyCode: 220, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...o });
 assert.strictEqual(yen(k({}), true), "input");
 assert.strictEqual(yen(k({ type: "keypress" }), true), "suppress");
@@ -26,4 +29,6 @@ assert.strictEqual(yen(k({ keyCode: 229 }), true), null, "IME 조합 중은 그�
 assert.strictEqual(yen(k({ code: "Backslash" }), true), null, "물리 ¥ 키만");
 assert.deepStrictEqual(args("-l\n\n--login\r\n-c foo"), ["-l", "--login", "-c foo"], "줄마다 하나, 빈 줄 뺌, 따옴표·공백 해석 없음");
 assert.deepStrictEqual(args(""), []);
+assert.strictEqual(args(Array(40).fill("x").join("\n")).length, 32, "데몬 상한 32개로 자름");
+assert.strictEqual(args("y".repeat(2000))[0].length, 1024);
 console.log("terminalKeyboard ok");

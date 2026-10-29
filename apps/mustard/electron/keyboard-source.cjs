@@ -4,7 +4,7 @@ const { execFile } = require("node:child_process");
 function run(cmd, args, input) {
   return new Promise((resolve) => {
     const p = execFile(cmd, args, { timeout: 500, maxBuffer: 1 << 20 }, (err, out) => resolve(err ? null : String(out)));
-    if (input != null) p.stdin.end(input);
+    if (input != null) { p.stdin.on("error", () => {}); p.stdin.end(input); } // plutil이 먼저 끝나도 EPIPE로 main이 죽지 않게(리뷰)
   });
 }
 
