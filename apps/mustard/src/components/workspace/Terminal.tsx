@@ -4,12 +4,28 @@
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { findLinks, resolvePath, type TerminalLink } from "@/lib/terminalLinks";
-import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, readMacOptionAsAlt, effectiveMacOptionAsAlt, altCharForCode, jisYenInput, DEFAULT_WORD_SEPARATOR, parseShellArgs, type TerminalFontWeight } from "@mustard/core";
+import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, readMacOptionAsAlt, effectiveMacOptionAsAlt, altCharForCode, jisYenInput, DEFAULT_WORD_SEPARATOR, parseShellArgs, readGpuMode, gpuAllowed, resolveMinContrast, isLightColor, type TerminalFontWeight } from "@mustard/core";
 import { inputSourceId, refreshInputSource, subscribeInputSource } from "@/lib/inputSource";
 
 // 터미널 설정(#926) — 스토어서 읽어 xterm 옵션 구성. copyOnSelect/rightClickPaste는 핸들러서 별도.
 // #1213 지금 Option을 Alt로 — 자동이면 입력 소스(US·ABC = 양쪽, 그 외·모름 = 끄기)로 정함.
 const macOptionMode = () => effectiveMacOptionAsAlt(readMacOptionAsAlt(getSetting<unknown>(TKEYS.macOptionAsAlt, undefined), getSetting<unknown>(TKEYS.macOptionIsMeta, undefined)), inputSourceId()); // 새 키 없으면 옛 스위치(켜짐 = 양쪽)
+
+// #1214 최소 색상 대비 — 자동이면 지금 터미널 배경 밝기로(밝으면 4.5, 어두우면 3).
+const minContrast = () => resolveMinContrast(getSetting<unknown>(TKEYS.minContrast, TERMINAL_DEFAULTS.minContrast), isLightColor(buildTermTheme().background));
+
+// #1214 GPU 이름(리눅스 자동 판단용) — 한 번만 읽음. 못 읽으면 null.
+let gpuNameCache: string | null | undefined;
+function gpuName(): string | null {
+  if (gpuNameCache !== undefined) return gpuNameCache;
+  try {
+    const gl = document.createElement("canvas").getContext("webgl2");
+    const ext = gl?.getExtension("WEBGL_debug_renderer_info");
+    gpuNameCache = gl && ext ? `${gl.getParameter(ext.UNMASKED_VENDOR_WEBGL)} ${gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)}` : null;
+    gl?.getExtension("WEBGL_lose_context")?.loseContext(); // 확인용 문맥은 바로 돌려줌
+  } catch { gpuNameCache = null; }
+  return gpuNameCache;
+}
 
 function termOptionsFromSettings() {
   return {
@@ -23,6 +39,7 @@ function termOptionsFromSettings() {
     fontWeight: getSetting<TerminalFontWeight>(TKEYS.fontWeight, TERMINAL_DEFAULTS.fontWeight),
     scrollSensitivity: getSetting<number>(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity),
     fastScrollSensitivity: getSetting<number>(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity), // #1212 ⌥ 누른 채
+    minimumContrastRatio: minContrast(), // #1214 글자색이 배경과 비슷하면 진하게
     wordSeparator: getSetting<string>(TKEYS.wordSeparator, TERMINAL_DEFAULTS.wordSeparator) || DEFAULT_WORD_SEPARATOR, // #1213 더블클릭 단어 구분
     macOptionIsMeta: macOptionMode() === "both", // #1213 양쪽만 xterm이 처리, 한쪽만은 키 핸들러가 ESC+글자
   };
@@ -190,8 +207,9 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
           cb(links.length ? links : undefined);
         },
       });
-      // GPU(WebGL) 렌더 — 설정 gpu=false면 canvas 폴백(#926).
-      if (getSetting<boolean>(TKEYS.gpu, TERMINAL_DEFAULTS.gpu)) {
+      // GPU(WebGL) 렌더 — #1214 자동(리눅스 소프트웨어 렌더면 일반 렌더)/켜짐/끄기, 새 탭부터. 옛 gpu 스위치는 옮겨 읽음.
+      const gpuMode = readGpuMode(getSetting<unknown>(TKEYS.gpuMode, undefined), getSetting<unknown>(TKEYS.gpu, undefined));
+      if (gpuAllowed(gpuMode, isLinux, gpuMode === "auto" && isLinux ? gpuName() : null)) {
         try {
           const gl = new webgl.WebglAddon();
           // #1165 GPU 프로세스가 다시 뜨면 WebGL 문맥이 사라짐 → 그대로 두면 글자 빠짐·흰 화면. 떼면 xterm이 기본(DOM) 렌더로 바꾸고 전체를 다시 그림.
@@ -215,6 +233,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
         term.options.fastScrollSensitivity = o.fastScrollSensitivity;
         term.options.macOptionIsMeta = o.macOptionIsMeta;
         term.options.wordSeparator = o.wordSeparator;
+        term.options.minimumContrastRatio = o.minimumContrastRatio;
         try { fit.fit(); } catch { /* ignore */ }
       };
       offSettings = subscribeSettings(applyTermSettings);
@@ -229,7 +248,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       host.addEventListener("mouseenter", onEnter);
       // #973 터미널 벨 데스크톱 알림 제거 — 알림은 에이전트 ask/완료만(WorkspaceTabs). 터미널 벨 알림은 스팸이라 폐지.
       // 테마 라이브 전환(#914) — 터미널 설정(dark/light/auto) 변경 또는 auto일 때 앱 .dark 변경 시 색 갱신.
-      const applyTermTheme = () => { const th = buildTermTheme(); if (term) term.options.theme = th; if (host) host.style.background = th.background; };
+      const applyTermTheme = () => { const th = buildTermTheme(); if (term) { term.options.theme = th; term.options.minimumContrastRatio = minContrast(); } if (host) host.style.background = th.background; }; // #1214 라이트↔다크면 자동 대비도 바뀜
       mo = new MutationObserver(applyTermTheme);
       mo.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme"] });
       window.addEventListener(TERMINAL_THEME_EVENT, applyTermTheme);

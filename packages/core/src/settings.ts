@@ -24,7 +24,8 @@ export const TERMINAL_DEFAULTS = {
   copyOnSelect: false,
   copyTrimGutter: true,                        // #1212 복사할 때 공통 왼쪽 여백 자르기
   rightClickPaste: false,
-  gpu: true,
+  gpu: true,                                   // 옛 스위치(#1214부터 gpuMode로 옮겨 읽음)
+  minContrast: "auto" as "auto" | number,      // #1214 최소 색상 대비
   // 심화(#941)
   fontWeight: "normal" as TerminalFontWeight, // xterm fontWeight
   scrollSensitivity: 1,                        // 높을수록 빠름(한 틱에 더 많이 이동)
@@ -58,6 +59,8 @@ export const TKEYS = {
   copyTrimGutter: "terminal.copyTrimGutter",
   rightClickPaste: "terminal.rightClickPaste",
   gpu: "terminal.gpu",
+  gpuMode: "terminal.gpuMode", // #1214 auto·on·off(없으면 옛 gpu 스위치에서)
+  minContrast: "terminal.minContrast", // #1214 "auto" | 숫자(1 = 끄기)
   fontWeight: "terminal.fontWeight",
   scrollSensitivity: "terminal.scrollSensitivity",
   fastScrollSensitivity: "terminal.fastScrollSensitivity",
