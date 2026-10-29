@@ -32,3 +32,14 @@ export function isLightColor(hex: string): boolean {
   const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   return (L + 0.05) / 0.05 >= 1.05 / (L + 0.05);
 }
+
+// 글자 굵기 — 100~900(100 단위). 옛 값 "normal" = 400, "bold" = 700, 그 외는 기본.
+export function readFontWeight(stored: unknown, fallback: number): number {
+  if (stored === "normal") return 400;
+  if (stored === "bold") return 700;
+  const n = typeof stored === "number" ? stored : Number(stored);
+  return Number.isFinite(n) && stored !== "" && stored !== null ? Math.min(900, Math.max(100, Math.round(n / 100) * 100)) : fallback;
+}
+
+// 터미널 여백(px) — 0~40, 숫자 아니면 기본.
+export const readPadding = (stored: unknown, fallback: number) => (typeof stored === "number" && Number.isFinite(stored) ? Math.min(40, Math.max(0, Math.round(stored))) : fallback);

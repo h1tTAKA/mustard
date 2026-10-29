@@ -193,7 +193,6 @@ export default function SettingsDrawer({
   const tCopyTrim = useSetting<boolean>(TKEYS.copyTrimGutter, TERMINAL_DEFAULTS.copyTrimGutter); // #1212
   const tRightClickPaste = useSetting<boolean>(TKEYS.rightClickPaste, TERMINAL_DEFAULTS.rightClickPaste);
   // 터미널 심화(#941)
-  const tFontWeight = useSetting<string>(TKEYS.fontWeight, TERMINAL_DEFAULTS.fontWeight);
   const tScrollSensitivity = useSetting<number>(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity);
   const tFastScroll = useSetting<number>(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity); // #1212
   const tTuiScroll = useSetting<number>(TKEYS.tuiScrollSensitivity, TERMINAL_DEFAULTS.tuiScrollSensitivity);
@@ -813,18 +812,6 @@ export default function SettingsDrawer({
                     className="w-32 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
                 </div>
               )}
-            </div>
-            {/* 폰트 굵기(#941) */}
-            <div className="space-y-1.5">
-              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalFontWeight")}</span>
-              <div className="inline-flex w-full rounded-xl border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-900">
-                {(["normal", "bold"] as const).map((fw) => (
-                  <button key={fw} type="button" onClick={() => setSetting(TKEYS.fontWeight, fw)}
-                    className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${tFontWeight === fw ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
-                    {t(`settings.fontWeight.${fw}`)}
-                  </button>
-                ))}
-              </div>
             </div>
             {/* 스크롤 속도(#941·#1212) — 줄마다 − 값 + 로 한 단계씩 + 전체 기본값 */}
             <div className="space-y-2">

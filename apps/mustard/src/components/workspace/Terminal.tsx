@@ -4,7 +4,7 @@
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { findLinks, resolvePath, type TerminalLink } from "@/lib/terminalLinks";
-import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, readMacOptionAsAlt, effectiveMacOptionAsAlt, altCharForCode, jisYenInput, DEFAULT_WORD_SEPARATOR, parseShellArgs, readGpuMode, gpuAllowed, resolveMinContrast, isLightColor, type TerminalFontWeight } from "@mustard/core";
+import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, readMacOptionAsAlt, effectiveMacOptionAsAlt, altCharForCode, jisYenInput, DEFAULT_WORD_SEPARATOR, parseShellArgs, readGpuMode, gpuAllowed, resolveMinContrast, isLightColor, readFontWeight, readPadding } from "@mustard/core";
 import { inputSourceId, refreshInputSource, subscribeInputSource } from "@/lib/inputSource";
 
 // 터미널 설정(#926) — 스토어서 읽어 xterm 옵션 구성. copyOnSelect/rightClickPaste는 핸들러서 별도.
@@ -12,6 +12,8 @@ import { inputSourceId, refreshInputSource, subscribeInputSource } from "@/lib/i
 const macOptionMode = () => effectiveMacOptionAsAlt(readMacOptionAsAlt(getSetting<unknown>(TKEYS.macOptionAsAlt, undefined), getSetting<unknown>(TKEYS.macOptionIsMeta, undefined)), inputSourceId()); // 새 키 없으면 옛 스위치(켜짐 = 양쪽)
 
 // #1214 최소 색상 대비 — 자동이면 지금 터미널 배경 밝기로(밝으면 4.5, 어두우면 3).
+// #1214 터미널 여백(세로 가로)
+const padding = () => `${readPadding(getSetting<unknown>(TKEYS.paddingY, undefined), TERMINAL_DEFAULTS.paddingY)}px ${readPadding(getSetting<unknown>(TKEYS.paddingX, undefined), TERMINAL_DEFAULTS.paddingX)}px`;
 const minContrast = () => resolveMinContrast(getSetting<unknown>(TKEYS.minContrast, TERMINAL_DEFAULTS.minContrast), isLightColor(buildTermTheme().background));
 
 // #1214 GPU 이름(리눅스 자동 판단용) — 한 번만 읽음. 못 읽으면 null.
@@ -36,7 +38,8 @@ function termOptionsFromSettings() {
     cursorBlink: getSetting<boolean>(TKEYS.cursorBlink, TERMINAL_DEFAULTS.cursorBlink),
     scrollback: getSetting<number>(TKEYS.scrollback, TERMINAL_DEFAULTS.scrollback),
     // 심화(#941)
-    fontWeight: getSetting<TerminalFontWeight>(TKEYS.fontWeight, TERMINAL_DEFAULTS.fontWeight),
+    fontWeight: readFontWeight(getSetting<unknown>(TKEYS.fontWeight, undefined), TERMINAL_DEFAULTS.fontWeight), // #1214 100~900
+    fontWeightBold: readFontWeight(getSetting<unknown>(TKEYS.fontWeightBold, undefined), TERMINAL_DEFAULTS.fontWeightBold),
     scrollSensitivity: getSetting<number>(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity),
     fastScrollSensitivity: getSetting<number>(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity), // #1212 ⌥ 누른 채
     minimumContrastRatio: minContrast(), // #1214 글자색이 배경과 비슷하면 진하게
@@ -171,7 +174,11 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       if (host) host.style.background = buildTermTheme().background;
       const fit = new FitAddon();
       term.loadAddon(fit);
-      term.open(host);
+      // #1214 여백 — 바깥(host)에 padding, xterm은 안쪽 칸에 열어 fit이 여백 뺀 크기로 계산하게
+      const inner = document.createElement("div");
+      inner.style.cssText = "width:100%;height:100%";
+      host.appendChild(inner);
+      term.open(inner);
       // #1196 인라인 이미지(sixel·iTerm 그림) — 새 탭부터
       if (imageMod) { try { term.loadAddon(new imageMod.ImageAddon()); } catch { /* 지원 안 함 */ } }
       // #1196 OSC 52 = 프로그램(tmux·neovim·ssh 너머)이 클립보드에 쓰기. 쓰기만(읽기 요청 "?"는 무시 — 클립보드가 새지 않게), 1MB까지(base64 1,333,336자 = 1MB = main 상한과 같음).
@@ -229,6 +236,8 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
         term.options.cursorBlink = o.cursorBlink;
         // 심화(#941) 라이브 반영
         term.options.fontWeight = o.fontWeight;
+        term.options.fontWeightBold = o.fontWeightBold;
+        if (host) host.style.padding = padding();
         term.options.scrollSensitivity = o.scrollSensitivity;
         term.options.fastScrollSensitivity = o.fastScrollSensitivity;
         term.options.macOptionIsMeta = o.macOptionIsMeta;
@@ -376,5 +385,5 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
 
   // 초기 배경도 현재 터미널 테마에 맞춰(라이트 앱 첫 프레임 다크 깜빡임 방지). 클라이언트 전용 pane이라 안전.
   const initialBg = typeof document !== "undefined" ? buildTermTheme().background : "#0a0a0a"; // #956 pref별 배경(검정/그레이/흰색)
-  return <div ref={hostRef} className="h-full w-full overflow-hidden p-1.5" style={{ background: initialBg }} />;
+  return <div ref={hostRef} className="h-full w-full overflow-hidden" style={{ background: initialBg, padding: padding() }} />;
 }

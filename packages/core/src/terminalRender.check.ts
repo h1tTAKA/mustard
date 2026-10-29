@@ -1,6 +1,6 @@
 // terminalRender 점검 — node --experimental-strip-types packages/core/src/terminalRender.check.ts
 import assert from "node:assert";
-import { readGpuMode as gpu, gpuAllowed as ok, resolveMinContrast as mc, isLightColor as light } from "./terminalRender.ts";
+import { readFontWeight as fw, readPadding as pad, readGpuMode as gpu, gpuAllowed as ok, resolveMinContrast as mc, isLightColor as light } from "./terminalRender.ts";
 
 assert.strictEqual(gpu(undefined, true), "auto", "옛 켜짐 = 자동");
 assert.strictEqual(gpu(undefined, false), "off", "옛 꺼짐 = 끄기");
@@ -18,4 +18,14 @@ assert.strictEqual(mc(1, true), 1, "1 = 끄기");
 assert.strictEqual(mc(30, false), 21, "범위 1~21");
 assert.ok(light("#ffffff") && light("#fff") && !light("#0a0a0a") && !light("#282c34"));
 assert.ok(!light("nope"));
+assert.strictEqual(fw("normal", 500), 400, "옛 보통 = 400");
+assert.strictEqual(fw("bold", 500), 700, "옛 굵게 = 700");
+assert.strictEqual(fw(350, 500), 400, "100 단위로");
+assert.strictEqual(fw(1200, 500), 900);
+assert.strictEqual(fw(undefined, 700), 700);
+assert.strictEqual(fw("abc", 400), 400);
+assert.strictEqual(pad(12, 6), 12);
+assert.strictEqual(pad(-3, 6), 0);
+assert.strictEqual(pad(99, 6), 40);
+assert.strictEqual(pad("8", 6), 6, "숫자만");
 console.log("terminalRender ok");
