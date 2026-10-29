@@ -38,6 +38,7 @@ const load = (root: string) => inLine(root, () => fetchJson(`/api/repo/stream/pr
 const started = new Set<string>();
 const ensure = (root: string) => {
   if (!root || started.has(root)) return;
+  if (!started.size && typeof window !== "undefined") window.addEventListener("focus", () => { for (const r of started) void load(r); }); // 다른 창에서 바꾼 값 — 창에 돌아올 때 다시 읽음(리뷰)
   started.add(root);
   const tryLoad = () => void load(root).then((ok) => { if (!ok) setTimeout(tryLoad, 5000); });
   tryLoad();

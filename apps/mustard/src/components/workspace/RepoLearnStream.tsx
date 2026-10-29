@@ -128,13 +128,13 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   // #1239 레포별 설정 — 전역에서 켠 것 중 이 레포만 끈 항목(서버 prefs.json). 실제 = 전역 && !레포 끔.
   const repoPrefs = useCatchupRepoPrefs(root);
   const explainShow = useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow) && !repoPrefs.isOff("explainShow");
-  const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze) && repoPrefs.loaded && !repoPrefs.isOff("explainAnalyze"); // 레포 설정 받기 전엔 분석 안 함(리뷰)
+  const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze) && !repoPrefs.isOff("explainAnalyze");
   const showCommands = useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow) && !repoPrefs.isOff("commandsShow");
-  const commandsAnalyze = useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze) && repoPrefs.loaded && !repoPrefs.isOff("commandsAnalyze");
+  const commandsAnalyze = useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze) && !repoPrefs.isOff("commandsAnalyze");
   const diffShow = useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow) && !repoPrefs.isOff("diffShow");
   const sessionsShow = useSetting<boolean>(CUKEYS.sessionsShow, CATCHUP_DEFAULTS.sessionsShow) && !repoPrefs.isOff("sessionsShow"); // #1064
   const showTerms = useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow) && !repoPrefs.isOff("termsShow");
-  const termsAnalyze = useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze) && repoPrefs.loaded && !repoPrefs.isOff("termsAnalyze");
+  const termsAnalyze = useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze) && !repoPrefs.isOff("termsAnalyze");
   const explainProvider = useSetting<string>(CUKEYS.explainProvider, ""); // #1062 카테고리별 AI("" = 워크스페이스 기본)
   const commandsProvider = useSetting<string>(CUKEYS.commandsProvider, "");
   const explainModel = useSetting<string>(CUKEYS.explainModel, ""); // "" = 그 프로바이더 기본 모델
@@ -223,14 +223,15 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const queueRef = useRef<string[]>([]);
   const busyRef = useRef(false);
   const metaRef = useRef(new Map<string, { kind: ConceptKind; target: string; tool: string }>());
-  const cfgRef = useRef({ providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel });
-  useEffect(() => { cfgRef.current = { providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel }; }, [providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel]);
+  const cfgRef = useRef({ prefsLoaded: repoPrefs.loaded, providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel });
+  useEffect(() => { cfgRef.current = { prefsLoaded: repoPrefs.loaded, providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel }; }, [repoPrefs.loaded, providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, termsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel]);
 
   const explainOne = useCallback(async (key: string) => {
     const meta = metaRef.current.get(key); const { locale: loc } = cfgRef.current;
     if (!meta) return;
     const c = cfgRef.current;
-    if (!(isCommand(meta) ? c.commandsAnalyze : c.explainAnalyze)) return; // #1239 줄에 선 뒤·카드 펼치기로 들어와도 지금 분석 꺼짐이면 안 함(리뷰)
+    // #1239 줄에 선 뒤·카드 펼치기로 들어와도 지금 분석 꺼짐이면 안 함. 레포 설정 받기 전이면 미뤄 둠 — seen에서 빼서 다시 줄 설 수 있게(리뷰)
+    if (!c.prefsLoaded || !(isCommand(meta) ? c.commandsAnalyze : c.explainAnalyze)) { seenRef.current.delete(key); return; }
     const pid = ((isCommand(meta) ? c.commandsProvider : c.explainProvider) || c.providerId) as AgentProviderKind | undefined; // #1062 카테고리별 AI
     if (!pid) return;
     const ps = withModel(c.providerSettings, pid, isCommand(meta) ? c.commandsModel : c.explainModel); // 카테고리별 모델
@@ -259,6 +260,11 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   }, [explainOne]);
 
   const enqueue = useCallback((key: string) => { if (seenRef.current.has(key)) return; seenRef.current.add(key); queueRef.current.push(key); void pump(); }, [pump]);
+  // #1239 레포 설정을 받은 뒤·분석을 다시 켰을 때 — 미뤄 둔(아직 설명 없는) 카드를 다시 줄에(그 사이 들어온 실시간 카드가 영영 idle로 안 남게)
+  useEffect(() => {
+    if (!repoPrefs.loaded) return;
+    for (const c of concepts) if (c.status === "idle" && !c.expl && metaRef.current.has(c.key) && (isCommand(c) ? commandsAnalyze : explainAnalyze)) enqueue(c.key);
+  }, [repoPrefs.loaded, explainAnalyze, commandsAnalyze]); // eslint-disable-line react-hooks/exhaustive-deps -- 켜지는 순간만(목록 바뀔 때마다 아님)
 
   // 실시간 연결은 "보고 있거나 에이전트가 작업 중"일 때만(#1043) — 같은 주소 동시 연결은 6개까지라, 방문한 레포마다
   // 열어두면 늦게 연 연결이 대기열에 멈춤(레포 5개 + 상태 스트림 = 6 → "패널 갔다 와야 뜸").
