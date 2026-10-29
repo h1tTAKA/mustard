@@ -3,8 +3,8 @@
 // 목록 = 가져온 테마(맨 앞) + Mustard 내장 3개 + iTerm2-Color-Schemes 878개(public/terminal-themes.json, 이 화면에서만 불러옴 — 없으면 내장만).
 // 가져오기 = Ghostty·iTerm2·JSON·Warp YAML 파일(256KB까지), 내보내기 = 지금 테마 JSON.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { IconSearch, IconCheck, IconUpload, IconDownload, IconX } from "@tabler/icons-react";
-import { useT, useToast, useSetting, setSetting, TKEYS, getTerminalThemePref, resolveTermThemes, unpackTheme, isLightColor, readStoredTheme, parseThemeFile, addCustomThemes, BUILTIN_TERMINAL_THEMES, ANSI_KEYS, THEME_FILE_MAX, type TermTheme } from "@mustard/core";
+import { IconSearch, IconCheck, IconUpload, IconDownload, IconX, IconRotate } from "@tabler/icons-react";
+import { useT, useToast, useSetting, setSetting, TKEYS, getTerminalThemePref, resolveTermThemes, unpackTheme, isLightColor, readStoredTheme, parseThemeFile, addCustomThemes, readOverrides, BUILTIN_TERMINAL_THEMES, ANSI_KEYS, BASE_KEYS, THEME_FILE_MAX, type TermTheme, type TermColorKey } from "@mustard/core";
 import { Segmented, SettingRow } from "./settingsControls";
 
 const PAGE = 48;
@@ -129,6 +129,46 @@ export default function TerminalThemeSection() {
           {t("settings.termTheme.more", { n: list.items.length - shown })}
         </button>
       )}
+      <ColorOverrides theme={current} slot={target} />
     </div>
+  );
+}
+
+// 색 하나씩 덮어쓰기(#1215) — 지금 탭(다크용·라이트용) 테마 위에. 테마를 바꿔도 남고, 하나씩·전부 되돌리기.
+const GROUPS: { k: string; keys: readonly TermColorKey[] }[] = [{ k: "base", keys: BASE_KEYS }, { k: "normal", keys: ANSI_KEYS.slice(0, 8) }, { k: "bright", keys: ANSI_KEYS.slice(8) }];
+function ColorOverrides({ theme, slot }: { theme: TermTheme; slot: "dark" | "light" }) {
+  const t = useT();
+  const key = slot === "dark" ? TKEYS.colorOverridesDark : TKEYS.colorOverridesLight;
+  const over = readOverrides(useSetting<unknown>(key, undefined));
+  const count = Object.keys(over).length;
+  const set = (k: TermColorKey, v: string | null) => { const next = { ...over }; if (v) next[k] = v; else delete next[k]; setSetting(key, next); };
+  return (
+    <details className="rounded-xl border border-zinc-200 dark:border-zinc-800">
+      <summary className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        <span>{t("settings.termTheme.overrides")}{count > 0 && <span className="ml-1.5 text-xs font-normal text-zinc-400">{t("settings.termTheme.overridesCount", { n: count })}</span>}</span>
+        {count > 0 && <button type="button" onClick={(e) => { e.preventDefault(); setSetting(key, {}); }} className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-normal text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconRotate size={12} stroke={2} aria-hidden />{t("settings.termTheme.overridesReset")}</button>}
+      </summary>
+      <div className="space-y-3 border-t border-zinc-200 px-3 py-3 dark:border-zinc-800">
+        <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.termTheme.overridesDesc", { name: theme.name })}</p>
+        {GROUPS.map((g) => (
+          <div key={g.k} className="space-y-1.5">
+            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{t(`settings.termTheme.group.${g.k}`)}</span>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
+              {g.keys.map((k) => {
+                const v = over[k] ?? theme.colors[k] ?? theme.colors.foreground;
+                const label = t(`settings.termTheme.color.${k}`);
+                return (
+                  <label key={k} className="flex min-w-0 items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
+                    <input type="color" value={v} onChange={(e) => set(k, e.target.value)} aria-label={label} className="size-6 shrink-0 cursor-pointer rounded border border-zinc-200 bg-transparent p-0 dark:border-zinc-700" />
+                    <span className={`truncate ${over[k] ? "font-semibold" : ""}`}>{label}</span>
+                    {over[k] && <button type="button" onClick={(e) => { e.preventDefault(); set(k, null); }} aria-label={t("settings.termTheme.overrideUndo", { name: label })} className="shrink-0 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"><IconRotate size={11} stroke={2} aria-hidden /></button>}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }

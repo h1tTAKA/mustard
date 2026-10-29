@@ -2,12 +2,18 @@
 import { getSetting, TKEYS } from "./settings";
 import { getTerminalThemePref } from "./theme";
 import { isLightColor } from "./terminalRender";
-import { pickTermTheme, resolveTermThemes, type TermTheme, type TermThemeChoice } from "./terminalThemes";
+import { pickTermSlot, pickTermTheme, readOverrides, resolveTermThemes, type TermColors, type TermTheme, type TermThemeChoice } from "./terminalThemes";
 
 export const terminalThemeChoice = (): TermThemeChoice =>
   resolveTermThemes(getSetting<unknown>(TKEYS.themeDark, undefined), getSetting<unknown>(TKEYS.themeLight, undefined), getSetting<unknown>(TKEYS.themeSeparateLight, undefined), getTerminalThemePref());
 
 const appDark = () => typeof document !== "undefined" && document.documentElement.classList.contains("dark");
-export const currentTerminalTheme = (): TermTheme => pickTermTheme(terminalThemeChoice(), appDark());
+// 고른 테마 + 그 모드의 색 덮어쓰기(#1215)
+export function currentTerminalTheme(): TermTheme {
+  const c = terminalThemeChoice(), dark = appDark();
+  const th = pickTermTheme(c, dark);
+  const over = readOverrides(getSetting<unknown>(pickTermSlot(c, dark) === "dark" ? TKEYS.colorOverridesDark : TKEYS.colorOverridesLight, undefined));
+  return { name: th.name, colors: { ...th.colors, ...over } as TermColors };
+}
 // 터미널이 어두운지 — 테마 배경 밝기로(CLI에 넘기는 COLORFGBG 힌트 등)
 export const isCurrentTerminalDark = (): boolean => !isLightColor(currentTerminalTheme().colors.background);

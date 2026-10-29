@@ -97,7 +97,7 @@ export function resolveTermThemes(storedDark: unknown, storedLight: unknown, sto
     separate: typeof storedSeparate === "boolean" ? storedSeparate : legacyPref === "auto" || !["dark", "gray", "light"].includes(legacyPref),
   };
 }
-export const pickTermTheme = (c: TermThemeChoice, appDark: boolean): TermTheme => (appDark || !c.separate ? c.dark : c.light);
+export const pickTermTheme = (c: TermThemeChoice, appDark: boolean): TermTheme => (appDark || !c.separate ? c.dark : c.light); // 고르는 규칙은 pickTermSlot과 같음
 
 // ── #1215 가져오기 — Ghostty 테마 파일, iTerm2 .itermcolors, JSON(우리 형식·Windows Terminal), Warp YAML. 의존성 없이.
 export const THEME_FILE_MAX = 256 * 1024;
@@ -187,3 +187,13 @@ export function addCustomThemes(list: unknown, add: TermTheme[]): TermTheme[] {
   const names = new Set(add.map((t) => t.name));
   return [...add, ...cur.filter((t) => !names.has(t.name))].slice(0, CUSTOM_THEMES_MAX);
 }
+
+// ── #1215 색 하나씩 덮어쓰기 — 모드별(다크용·라이트용). hex만 남기고, 테마 위에 덮음.
+export type TermColorOverrides = Partial<Record<TermColorKey, string>>;
+export function readOverrides(v: unknown): TermColorOverrides {
+  const out: TermColorOverrides = {};
+  if (!v || typeof v !== "object") return out;
+  for (const k of COLOR_KEYS) { const c = normalizeHex((v as Record<string, unknown>)[k]); if (c) out[k] = c; }
+  return out;
+}
+export const pickTermSlot = (c: TermThemeChoice, appDark: boolean): "dark" | "light" => (appDark || !c.separate ? "dark" : "light");

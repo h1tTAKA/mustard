@@ -1,6 +1,6 @@
 // terminalThemes 점검 — node --experimental-strip-types packages/core/src/terminalThemes.check.ts
 import assert from "node:assert";
-import { parseGhosttyTheme as gh, completeColors as complete, normalizeHex as hex, packTheme, unpackTheme, MUSTARD_DARK, MUSTARD_GRAY, MUSTARD_LIGHT, resolveTermThemes as resolve, pickTermTheme as pick, readStoredTheme as stored, parseThemeFile as parse, addCustomThemes as addCustom } from "./terminalThemes.ts";
+import { parseGhosttyTheme as gh, completeColors as complete, normalizeHex as hex, packTheme, unpackTheme, MUSTARD_DARK, MUSTARD_GRAY, MUSTARD_LIGHT, resolveTermThemes as resolve, pickTermTheme as pick, readStoredTheme as stored, parseThemeFile as parse, addCustomThemes as addCustom, readOverrides, pickTermSlot } from "./terminalThemes.ts";
 
 const light = (h: string) => h === "#ffffff" || h === "#fdf6e3";
 assert.strictEqual(hex("#ABC"), "#aabbcc");
@@ -68,4 +68,8 @@ assert.strictEqual(parse("n\u0007ame.json", JSON.stringify({ colors: MUSTARD_DAR
 const merged = addCustom([{ name: "A", colors: MUSTARD_GRAY.colors }, { name: "Z", colors: MUSTARD_GRAY.colors }, "junk"], ours);
 assert.deepStrictEqual(merged.map((t) => t.name), ["A", "B", "Z"], "같은 이름은 바꿔 끼움, 깨진 값은 버림");
 assert.strictEqual(merged[0].colors.background, MUSTARD_DARK.colors.background);
+assert.deepStrictEqual(readOverrides({ red: "#F00", blue: "nope", hacker: "#000", background: "123456" }), { background: "#123456", red: "#ff0000" }, "hex·아는 키만");
+assert.deepStrictEqual(readOverrides(null), {});
+assert.strictEqual(pickTermSlot(resolve(undefined, undefined, undefined, "auto"), false), "light");
+assert.strictEqual(pickTermSlot(resolve(undefined, undefined, false, "auto"), false), "dark", "라이트에도 다크용이면 다크 덮어쓰기");
 console.log("terminalThemes ok");
