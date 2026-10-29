@@ -54,6 +54,7 @@ export default function CatchupDiffCode({ root, hash, file, range, label }: { ro
   const toggle = () => {
     const next = !open;
     setOpen(next);
+    if (next) setIsDark(document.documentElement.classList.contains("dark")); // 접은 동안 바뀐 모드를 펼치는 그 렌더부터(3차 리뷰)
     if (!next || hunks || loadingRef.current) return;
     setFailed(false); // 실패했어도 다시 펼치면 재시도
     loadingRef.current = true;
