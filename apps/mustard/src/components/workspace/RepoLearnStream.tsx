@@ -415,7 +415,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         if (mine) starLocal.current.delete(key); // 그새 또 눌렀으면 그 클릭이 화면을 맡음
         if (j?.ok) return;
         if (mine) show(!on);
-        toast(t("learn.starFailed")); syncStars(2);
+        toast(t("learn.starFailed")); setTimeout(() => syncStars(2), 3000); // 시간 초과로 끊은 저장이 서버에선 끝날 수 있어 잠깐 뒤에 읽음(리뷰)
       });
   }, [stars, root, t, toast, syncStars, inLine]);
   // 경계선 드래그 — 패널 높이 = 컴포넌트 바닥 - 포인터 y. 목록·패널 최소 높이 보장.
