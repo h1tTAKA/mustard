@@ -464,7 +464,8 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   };
 
   const statusRef = useRef<Record<string, "added" | "modified">>({});
-  const pathRef = useRef(path); pathRef.current = path; // 늦게 온 다른 레포 응답 거르기(리뷰)
+  const pathRef = useRef(path); // 늦게 온 다른 레포 응답 거르기(리뷰)
+  useLayoutEffect(() => { pathRef.current = path; }, [path]); // 렌더 중 대입 대신 — 커밋된 path만, 다른 effect보다 먼저
   const lastTreeAt = useRef(0); // 트리 마지막 재조회 시각(중복 호출 줄이기)
   const prevActivePath = useRef<string | null>(null); // 같은 레포가 다시 활성화됐는지
   // 워킹트리 변경 상태맵 로드(#687 도트 + #689 챗 승계 트리거). 경로 로드·깃 새로고침 시 호출. 바뀌었으면 true(#1225).
