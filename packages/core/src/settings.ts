@@ -83,7 +83,8 @@ export const TKEYS = {
   images: "terminal.images",
   themeDark: "terminal.themeDark", // #1215 다크 모드용 테마 {name, colors}(없으면 옛 nunopi:terminal-theme에서)
   themeLight: "terminal.themeLight", // #1215 라이트 모드용 테마
-  themeSeparateLight: "terminal.themeSeparateLight", // #1215 false = 라이트 모드에도 다크용
+  themeSeparateLight: "terminal.themeSeparateLight",
+  customThemes: "terminal.customThemes", // #1215 가져온 테마 [{name, colors}] 최대 100 // #1215 false = 라이트 모드에도 다크용
   shellArgs: "terminal.shellArgs",
   jisYenToBackslash: "terminal.jisYenToBackslash",
   wordSeparator: "terminal.wordSeparator",

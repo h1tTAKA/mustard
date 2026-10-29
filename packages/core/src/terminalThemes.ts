@@ -98,3 +98,92 @@ export function resolveTermThemes(storedDark: unknown, storedLight: unknown, sto
   };
 }
 export const pickTermTheme = (c: TermThemeChoice, appDark: boolean): TermTheme => (appDark || !c.separate ? c.dark : c.light);
+
+// ── #1215 가져오기 — Ghostty 테마 파일, iTerm2 .itermcolors, JSON(우리 형식·Windows Terminal), Warp YAML. 의존성 없이.
+export const THEME_FILE_MAX = 256 * 1024;
+export const CUSTOM_THEMES_MAX = 100;
+type Part = Partial<Record<TermColorKey, string>>;
+const clean = (s: string) => s.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80);
+const byte = (n: number) => Math.round(Math.min(1, Math.max(0, n)) * 255).toString(16).padStart(2, "0");
+
+// iTerm2: plist의 "Ansi 0 Color" 등 → Red/Green/Blue Component(0~1)
+const ITERM_KEYS: Record<string, TermColorKey> = { "Background Color": "background", "Foreground Color": "foreground", "Cursor Color": "cursor", "Cursor Text Color": "cursorAccent", "Selection Color": "selectionBackground", "Selected Text Color": "selectionForeground" };
+export function parseItermColors(text: string): Part {
+  const out: Part = {};
+  const re = /<key>([^<]+)<\/key>\s*<dict>([\s\S]*?)<\/dict>/g;
+  for (let m; (m = re.exec(text)); ) {
+    const ansi = /^Ansi (\d+) Color$/.exec(m[1]);
+    const key = ansi ? (Number(ansi[1]) < 16 ? ANSI_KEYS[Number(ansi[1])] : undefined) : ITERM_KEYS[m[1]];
+    if (!key) continue;
+    const comp = (c: string) => { const v = new RegExp(`<key>${c} Component</key>\\s*<(?:real|integer)>([^<]+)</`).exec(m![2]); return v ? Number(v[1]) : NaN; };
+    const [r, g, b] = [comp("Red"), comp("Green"), comp("Blue")];
+    if ([r, g, b].every(Number.isFinite)) out[key] = `#${byte(r)}${byte(g)}${byte(b)}`;
+  }
+  return out;
+}
+
+// Warp YAML(name, background, foreground, accent, terminal_colors.normal/bright.*) — 이 모양만 읽는 작은 파서. 그라데이션이면 첫 색.
+const WARP_ANSI = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"] as const;
+export function parseWarpYaml(text: string): { name?: string; colors: Part } {
+  const colors: Part = {};
+  let name: string | undefined;
+  const stack: { indent: number; key: string }[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    if (!raw.trim() || raw.trim().startsWith("#")) continue;
+    const m = /^(\s*)([A-Za-z_][\w-]*)\s*:\s*(.*)$/.exec(raw);
+    if (!m) continue;
+    const indent = m[1].length, key = m[2], val = m[3].replace(/\s+#.*$/, "").replace(/^['"]|['"]$/g, "").trim();
+    while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop();
+    const path = [...stack.map((s) => s.key), key];
+    if (!val) { stack.push({ indent, key }); continue; }
+    if (path.length === 1 && key === "name") name = clean(val);
+    const hex = normalizeHex(val);
+    if (!hex) continue;
+    const top = path[0];
+    if ((top === "background" || top === "foreground") && !colors[top]) colors[top] = hex; // 값 또는 그라데이션의 첫 색
+    else if (top === "accent" && path.length === 1) colors.cursor ??= hex;
+    else if (top === "cursor" && path.length === 1) colors.cursor = hex;
+    else if (top === "terminal_colors" && path.length === 3 && (WARP_ANSI as readonly string[]).includes(key)) {
+      const i = WARP_ANSI.indexOf(key as (typeof WARP_ANSI)[number]) + (path[1] === "bright" ? 8 : 0);
+      if (path[1] === "normal" || path[1] === "bright") colors[ANSI_KEYS[i]] = hex;
+    }
+  }
+  return { name, colors };
+}
+
+// JSON — 우리 형식 {name, colors:{…}} 또는 그 배열, Windows Terminal 색 묶음({name, background, purple…}).
+const WT_KEYS: Record<string, TermColorKey> = { cursorColor: "cursor", selectionBackground: "selectionBackground", purple: "magenta", brightPurple: "brightMagenta" };
+function jsonPart(o: Record<string, unknown>): Part {
+  const src = (o.colors && typeof o.colors === "object" ? o.colors : o) as Record<string, unknown>;
+  const out: Part = {};
+  for (const [k, v] of Object.entries(src)) {
+    const key = (COLOR_KEYS as readonly string[]).includes(k) ? (k as TermColorKey) : WT_KEYS[k];
+    const c = key ? normalizeHex(v) : null;
+    if (key && c) out[key] = c;
+  }
+  return out;
+}
+
+// 파일 하나 → 테마 목록. 형식은 내용으로 판단, 이름은 파일 안 이름 > 파일 이름.
+export function parseThemeFile(fileName: string, text: string, isLight: (hex: string) => boolean): TermTheme[] {
+  if (text.length > THEME_FILE_MAX) return [];
+  const base = clean(fileName.replace(/\.(itermcolors|json|ya?ml|conf|txt)$/i, "")) || "Imported";
+  const make = (name: string, part: Part): TermTheme[] => { const colors = completeColors(part, isLight); return colors ? [{ name: clean(name) || base, colors }] : []; };
+  const t = text.trimStart();
+  if (t.startsWith("<?xml") || t.startsWith("<plist") || /\.itermcolors$/i.test(fileName)) return make(base, parseItermColors(text));
+  if (t.startsWith("{") || t.startsWith("[")) {
+    let data: unknown;
+    try { data = JSON.parse(text); } catch { return []; }
+    const items = Array.isArray(data) ? data : data && typeof data === "object" && Array.isArray((data as { themes?: unknown }).themes) ? (data as { themes: unknown[] }).themes : [data];
+    return items.slice(0, CUSTOM_THEMES_MAX).flatMap((o, i) => (o && typeof o === "object" ? make(typeof (o as { name?: unknown }).name === "string" ? (o as { name: string }).name : items.length > 1 ? `${base} ${i + 1}` : base, jsonPart(o as Record<string, unknown>)) : []));
+  }
+  if (/^\s*terminal_colors\s*:/m.test(text)) { const w = parseWarpYaml(text); return make(w.name ?? base, w.colors); }
+  return make(base, parseGhosttyTheme(text));
+}
+
+// 사용자 테마 목록에 넣기 — 같은 이름은 바꿔 끼움, 최대 개수.
+export function addCustomThemes(list: unknown, add: TermTheme[]): TermTheme[] {
+  const cur = Array.isArray(list) ? list.flatMap((v) => { const t = readStoredTheme(v); return t ? [t] : []; }) : [];
+  const names = new Set(add.map((t) => t.name));
+  return [...add, ...cur.filter((t) => !names.has(t.name))].slice(0, CUSTOM_THEMES_MAX);
+}

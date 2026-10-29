@@ -1,9 +1,10 @@
 "use client";
 // 설정 > 터미널 > 테마(#1215) — 다크 모드용·라이트 모드용을 카드로 고름(카드 = 그 테마 배경 위 프롬프트 한 줄 + 색 8개).
-// 목록 = Mustard 내장 3개 + iTerm2-Color-Schemes 878개(public/terminal-themes.json, 이 화면에서만 불러옴 — 없으면 내장만).
-import { useEffect, useMemo, useState } from "react";
-import { IconSearch, IconCheck } from "@tabler/icons-react";
-import { useT, useSetting, setSetting, TKEYS, getTerminalThemePref, resolveTermThemes, unpackTheme, isLightColor, BUILTIN_TERMINAL_THEMES, ANSI_KEYS, type TermTheme } from "@mustard/core";
+// 목록 = 가져온 테마(맨 앞) + Mustard 내장 3개 + iTerm2-Color-Schemes 878개(public/terminal-themes.json, 이 화면에서만 불러옴 — 없으면 내장만).
+// 가져오기 = Ghostty·iTerm2·JSON·Warp YAML 파일(256KB까지), 내보내기 = 지금 테마 JSON.
+import { useEffect, useMemo, useRef, useState } from "react";
+import { IconSearch, IconCheck, IconUpload, IconDownload, IconX } from "@tabler/icons-react";
+import { useT, useToast, useSetting, setSetting, TKEYS, getTerminalThemePref, resolveTermThemes, unpackTheme, isLightColor, readStoredTheme, parseThemeFile, addCustomThemes, BUILTIN_TERMINAL_THEMES, ANSI_KEYS, THEME_FILE_MAX, type TermTheme } from "@mustard/core";
 import { Segmented, SettingRow } from "./settingsControls";
 
 const PAGE = 48;
@@ -16,11 +17,18 @@ function loadCatalog(): Promise<TermTheme[]> {
   return catalog;
 }
 
-function ThemeCard({ theme, selected, onPick }: { theme: TermTheme; selected: boolean; onPick: () => void }) {
+function ThemeCard({ theme, selected, onPick, onRemove, removeLabel }: { theme: TermTheme; selected: boolean; onPick: () => void; onRemove?: () => void; removeLabel?: string }) {
   const c = theme.colors;
   return (
+    <div className="group relative min-w-0">
+    {onRemove && (
+      <button type="button" onClick={onRemove} aria-label={removeLabel} title={removeLabel}
+        className="absolute -right-1.5 -top-1.5 z-10 grid size-5 place-items-center rounded-full bg-zinc-200 text-zinc-600 opacity-0 shadow transition hover:bg-zinc-300 focus-visible:opacity-100 group-hover:opacity-100 dark:bg-zinc-700 dark:text-zinc-200">
+        <IconX size={11} stroke={2.5} aria-hidden />
+      </button>
+    )}
     <button type="button" onClick={onPick} aria-pressed={selected} title={theme.name}
-      className={`group min-w-0 rounded-xl p-1 text-left transition ${selected ? "ring-2 ring-mustard-600 dark:ring-mustard-400" : "ring-1 ring-zinc-200 hover:ring-zinc-400 dark:ring-zinc-800 dark:hover:ring-zinc-600"}`}>
+      className={`w-full min-w-0 rounded-xl p-1 text-left transition ${selected ? "ring-2 ring-mustard-600 dark:ring-mustard-400" : "ring-1 ring-zinc-200 hover:ring-zinc-400 dark:ring-zinc-800 dark:hover:ring-zinc-600"}`}>
       <span className="block rounded-lg px-2 py-1.5 font-mono text-[11px] leading-4" style={{ background: c.background, color: c.foreground }}>
         <span style={{ color: c.green }}>$</span> ls <span style={{ color: c.blue }}>src</span>
         <span className="ml-0.5 inline-block h-3 w-1.5 align-middle" style={{ background: c.cursor }} />
@@ -33,6 +41,7 @@ function ThemeCard({ theme, selected, onPick }: { theme: TermTheme; selected: bo
         {selected && <IconCheck size={12} stroke={2.5} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />}
       </span>
     </button>
+    </div>
   );
 }
 
@@ -45,6 +54,10 @@ export default function TerminalThemeSection() {
   const [mode, setMode] = useState<"dark" | "light">("dark");
   const target = choice.separate ? mode : "dark";
   const current = choice[target];
+  const toast = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const storedCustom = useSetting<unknown>(TKEYS.customThemes, undefined);
+  const custom = useMemo(() => (Array.isArray(storedCustom) ? storedCustom.flatMap((v) => { const th = readStoredTheme(v); return th ? [th] : []; }) : []), [storedCustom]);
   const [all, setAll] = useState<TermTheme[]>([...BUILTIN_TERMINAL_THEMES]);
   const [q, setQ] = useState("");
   const [shown, setShown] = useState(PAGE);
@@ -53,8 +66,29 @@ export default function TerminalThemeSection() {
   // 검색 중이면 전부에서, 아니면 이 모드에 맞는 밝기만(다크용 = 어두운 배경)
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return all.filter((th) => (s ? th.name.toLowerCase().includes(s) : isLightColor(th.colors.background) === (target === "light")));
-  }, [all, q, target]);
+    const mine = custom.filter((th) => !s || th.name.toLowerCase().includes(s)); // 가져온 테마는 밝기 상관없이 맨 앞
+    return { mineCount: mine.length, items: [...mine, ...all.filter((th) => (s ? th.name.toLowerCase().includes(s) : isLightColor(th.colors.background) === (target === "light")))] };
+  }, [all, custom, q, target]);
+  const importFiles = async (files: FileList | null) => {
+    const got: TermTheme[] = [];
+    for (const f of Array.from(files ?? [])) {
+      if (f.size > THEME_FILE_MAX) { toast(t("settings.termTheme.tooBig", { name: f.name }), "error"); continue; }
+      got.push(...parseThemeFile(f.name, await f.text(), isLightColor));
+    }
+    if (fileRef.current) fileRef.current.value = "";
+    if (!got.length) { toast(t("settings.termTheme.importNone"), "error"); return; }
+    setSetting(TKEYS.customThemes, addCustomThemes(storedCustom, got));
+    pick(got[0]);
+    setQ("");
+    toast(t("settings.termTheme.imported", { n: got.length, name: got[0].name }));
+  };
+  const exportCurrent = () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify({ name: current.name, colors: current.colors }, null, 2)], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `${current.name.replace(/[^\w.-]+/g, "-")}.json`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const removeCustom = (name: string) => setSetting(TKEYS.customThemes, custom.filter((th) => th.name !== name));
   const pick = (th: TermTheme) => setSetting(target === "dark" ? TKEYS.themeDark : TKEYS.themeLight, { name: th.name, colors: th.colors });
 
   return (
@@ -69,19 +103,30 @@ export default function TerminalThemeSection() {
           <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${choice.separate ? "left-[22px]" : "left-0.5"}`} />
         </button>
       </SettingRow>
+      <div className="flex flex-wrap items-center gap-2">
+        <input ref={fileRef} type="file" multiple hidden onChange={(e) => void importFiles(e.target.files)} />
+        <button type="button" onClick={() => fileRef.current?.click()} title={t("settings.termTheme.importHint")}
+          className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"><IconUpload size={13} stroke={2} aria-hidden />{t("settings.termTheme.import")}</button>
+        <button type="button" onClick={exportCurrent}
+          className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"><IconDownload size={13} stroke={2} aria-hidden />{t("settings.termTheme.export")}</button>
+        <span className="text-[11px] text-zinc-400 dark:text-zinc-500">{t("settings.termTheme.importHint")}</span>
+      </div>
       <label className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 dark:border-zinc-700 dark:bg-zinc-900">
         <IconSearch size={14} className="shrink-0 text-zinc-400" aria-hidden />
         <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("settings.termTheme.search", { n: all.length })} aria-label={t("settings.termTheme.search", { n: all.length })}
           className="min-w-0 flex-1 bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-50" />
       </label>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {list.slice(0, shown).map((th) => <ThemeCard key={th.name} theme={th} selected={th.name === current.name} onPick={() => pick(th)} />)}
+        {list.items.slice(0, shown).map((th, i) => {
+          const mine = i < list.mineCount;
+          return <ThemeCard key={`${mine ? "c" : "b"}:${th.name}`} theme={th} selected={th.name === current.name} onPick={() => pick(th)} onRemove={mine ? () => removeCustom(th.name) : undefined} removeLabel={t("settings.termTheme.remove", { name: th.name })} />;
+        })}
       </div>
-      {list.length === 0 && <p className="text-center text-xs text-zinc-400">{t("settings.termTheme.none")}</p>}
-      {list.length > shown && (
+      {list.items.length === 0 && <p className="text-center text-xs text-zinc-400">{t("settings.termTheme.none")}</p>}
+      {list.items.length > shown && (
         <button type="button" onClick={() => setShown((n) => n + PAGE)}
           className="w-full rounded-lg py-1.5 text-xs text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
-          {t("settings.termTheme.more", { n: list.length - shown })}
+          {t("settings.termTheme.more", { n: list.items.length - shown })}
         </button>
       )}
     </div>

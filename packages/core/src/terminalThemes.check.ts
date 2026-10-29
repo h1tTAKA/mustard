@@ -1,6 +1,6 @@
 // terminalThemes 점검 — node --experimental-strip-types packages/core/src/terminalThemes.check.ts
 import assert from "node:assert";
-import { parseGhosttyTheme as gh, completeColors as complete, normalizeHex as hex, packTheme, unpackTheme, MUSTARD_DARK, MUSTARD_GRAY, MUSTARD_LIGHT, resolveTermThemes as resolve, pickTermTheme as pick, readStoredTheme as stored } from "./terminalThemes.ts";
+import { parseGhosttyTheme as gh, completeColors as complete, normalizeHex as hex, packTheme, unpackTheme, MUSTARD_DARK, MUSTARD_GRAY, MUSTARD_LIGHT, resolveTermThemes as resolve, pickTermTheme as pick, readStoredTheme as stored, parseThemeFile as parse, addCustomThemes as addCustom } from "./terminalThemes.ts";
 
 const light = (h: string) => h === "#ffffff" || h === "#fdf6e3";
 assert.strictEqual(hex("#ABC"), "#aabbcc");
@@ -39,4 +39,33 @@ assert.strictEqual(resolve(drac, undefined, false, "light").dark.name, "Dracula"
 assert.strictEqual(pick(resolve(drac, undefined, false, "auto"), false).name, "Dracula", "라이트에도 다크용");
 assert.strictEqual(stored({ name: "x", colors: { background: "#000" } }), null, "색 빠진 저장값은 버림");
 assert.strictEqual(stored("nope"), null);
+// 가져오기 — 형식 4종
+const iterm = `<?xml version="1.0"?><plist><dict>
+<key>Ansi 1 Color</key><dict><key>Blue Component</key><real>0.0</real><key>Green Component</key><real>0.0</real><key>Red Component</key><real>1</real></dict>
+<key>Background Color</key><dict><key>Blue Component</key><real>0.2</real><key>Green Component</key><real>0.2</real><key>Red Component</key><real>0.2</real></dict>
+<key>Foreground Color</key><dict><key>Blue Component</key><real>1</real><key>Green Component</key><real>1</real><key>Red Component</key><real>1</real></dict>
+</dict></plist>`;
+const it = parse("Neon.itermcolors", iterm, light);
+assert.strictEqual(it.length, 1);
+assert.strictEqual(it[0].name, "Neon", "이름 = 파일 이름");
+assert.strictEqual(it[0].colors.red, "#ff0000");
+assert.strictEqual(it[0].colors.background, "#333333");
+const warp = parse("x.yaml", "name: Warp Night\naccent: '#ff00ff'\nbackground: '#101010'\nforeground: \"#eeeeee\"\ndetails: darker\nterminal_colors:\n  normal:\n    black: '#000000'\n    red: '#aa0000'\n  bright:\n    red: '#ff5555' # 주석\n", light);
+assert.strictEqual(warp[0].name, "Warp Night");
+assert.strictEqual(warp[0].colors.cursor, "#ff00ff", "커서 없으면 accent");
+assert.strictEqual(warp[0].colors.red, "#aa0000");
+assert.strictEqual(warp[0].colors.brightRed, "#ff5555");
+const grad = parse("g.yml", "background:\n  top: '#202020'\n  bottom: '#000000'\nforeground: '#ffffff'\nterminal_colors:\n  normal:\n    red: '#ff0000'\n", light);
+assert.strictEqual(grad[0].colors.background, "#202020", "그라데이션은 첫 색");
+const wt = parse("wt.json", JSON.stringify({ name: "Campbell", background: "#0C0C0C", foreground: "#CCCCCC", purple: "#881798", red: "#C50F1F", cursorColor: "#FFFFFF" }), light);
+assert.strictEqual(wt[0].colors.magenta, "#881798", "Windows Terminal purple = magenta");
+const ours = parse("pack.json", JSON.stringify([{ name: "A", colors: MUSTARD_DARK.colors }, { name: "B", colors: MUSTARD_LIGHT.colors }]), light);
+assert.deepStrictEqual(ours.map((t) => t.name), ["A", "B"]);
+assert.strictEqual(parse("Dracula", "palette = 1=#ff5555\nbackground = #282a36\nforeground = #f8f8f2\n", light)[0].name, "Dracula", "Ghostty 테마");
+assert.deepStrictEqual(parse("bad.json", "{oops", light), [], "깨진 JSON은 빈 목록");
+assert.deepStrictEqual(parse("big", "x".repeat(300 * 1024), light), [], "256KB 넘으면 거부");
+assert.strictEqual(parse("n\u0007ame.json", JSON.stringify({ colors: MUSTARD_DARK.colors }), light)[0].name, "name", "제어문자 제거");
+const merged = addCustom([{ name: "A", colors: MUSTARD_GRAY.colors }, { name: "Z", colors: MUSTARD_GRAY.colors }, "junk"], ours);
+assert.deepStrictEqual(merged.map((t) => t.name), ["A", "B", "Z"], "같은 이름은 바꿔 끼움, 깨진 값은 버림");
+assert.strictEqual(merged[0].colors.background, MUSTARD_DARK.colors.background);
 console.log("terminalThemes ok");
