@@ -1618,7 +1618,7 @@ const termClient = createDaemonClient({
   metaFile: join(app.getPath("userData"), "terminal-daemon.json"),
   daemonScript: daemonScriptPath(),
   // fork는 process.execPath(=electron)로 실행 → ELECTRON_RUN_AS_NODE로 순수 node처럼 데몬 구동.
-  spawnEnvExtra: { ELECTRON_RUN_AS_NODE: "1", NUNOPI_TERM_SHELL: process.env.SHELL || (process.platform === "win32" ? "powershell.exe" : "/bin/bash") },
+  spawnEnvExtra: { ELECTRON_RUN_AS_NODE: "1", NUNOPI_TERM_LOG: join(app.getPath("userData"), "terminal-daemon.log"), NUNOPI_TERM_SHELL: process.env.SHELL || (process.platform === "win32" ? "powershell.exe" : "/bin/bash") },
   onData: (id, data) => {
     let b = (liveBuffers.get(id) || "") + data;
     if (b.length > PTY_BUFFER_MAX) b = b.slice(-PTY_BUFFER_MAX);
