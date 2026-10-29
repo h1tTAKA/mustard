@@ -69,7 +69,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
       const emit = (f: FileJob) => {
         const texts = f.texts.filter((x): x is string => !!x);
         if (!texts.length || !alive) return;
-        const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts: opts.ts ?? (opts.commitSec ? opts.commitSec * 1000 : Date.now()), expl: texts.join(DIFF_SEP) }; // #1074 자르지 않음 · #1244 카드 시각 = 커밋 시각(늦게 끝나도 그 커밋 자리에, 유저 결정 — #1090 '끝난 순서대로 맨 위'에서 바뀜)
+        const item = { key: diffItemKey(hash, f.path), kind: "diff", target: `${f.path} @${hash.slice(0, 7)}`, tool: info || "diff", ts: opts.ts ?? (opts.commitSec ? Math.min(opts.commitSec * 1000, Date.now()) : Date.now()), expl: texts.join(DIFF_SEP) }; // #1074 자르지 않음 · #1244 카드 시각 = 커밋 시각(늦게 끝나도 그 커밋 자리에, 유저 결정 — #1090 '끝난 순서대로 맨 위'에서 바뀜)
         void post("/api/repo/stream", { root, items: [item], replace: !!opts.replace }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
         window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
       };

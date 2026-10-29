@@ -1,6 +1,8 @@
 // 캐치업 카드 메타(#1088 칩 필터, #1238 서버 필터·풀다운) — diff·세션 카드에서 해시·브랜치·에이전트를 뽑음. 화면·서버 공용(순수 함수).
 // diff: key "diff|<hash>|<file>", tool "브랜치 · 커밋 제목"(옛 카드는 "diff"). 세션: key "session|<hash>", tool "에이전트 · 브랜치", target "제목 @hash7".
 export type TagType = "agent" | "branch" | "hash";
+// #1244 카드 정렬 — 최신 먼저, 같은 시각(한 커밋의 diff 여러 장·세션 카드)이면 key 순서(diff → session)로 늘 같게(실시간·새로고침이 같은 순서, 리뷰)
+export const byNewest = (a: { ts: number; key: string }, b: { ts: number; key: string }) => b.ts - a.ts || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 type Card = { kind: string; key: string; tool: string; target?: string; ts?: number };
 
 export function cardMeta(c: Card): { hash: string; branch: string; agent: string } | null {

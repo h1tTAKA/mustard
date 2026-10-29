@@ -21,7 +21,7 @@ import { CREW_ROLES } from "@/lib/crew/crewTypes";
 import { useCatchupRepoPrefs } from "@/lib/useCatchupRepoPrefs";
 import { beginBusy, busyOf, subscribeBusy } from "@/lib/catchupBusy";
 import CatchupRepoPrefs from "@/components/workspace/CatchupRepoPrefs";
-import { cardMeta, tagMatches, type Facet, type TagType } from "@/lib/catchupMeta";
+import { byNewest, cardMeta, tagMatches, type Facet, type TagType } from "@/lib/catchupMeta";
 import { openCrewTask } from "@/components/workspace/crew/CrewChat";
 import { useFlyCard, collectCards } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
@@ -217,7 +217,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const onlySource = onlyKind ? (() => {
     const got = onlyFound?.scope === `${onlyKind}|${allFolders ? 1 : 0}` ? onlyFound.items.filter(onlyPred) : [];
     const have = new Set(got.map((x) => x.key));
-    return [...concepts.filter((c) => !have.has(c.key) && onlyPred(c)), ...got].sort((a, b) => b.ts - a.ts);
+    return [...concepts.filter((c) => !have.has(c.key) && onlyPred(c)), ...got].sort(byNewest);
   })() : null;
 
   const seenRef = useRef(new Set<string>());                          // 이미 설명한 개념(dedup) — 서버 로드 시 채움
@@ -298,7 +298,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       const d = (e as CustomEvent<{ root: string; item: Omit<Concept, "status"> }>).detail;
       if (!d || d.root !== root) return;
       seenRef.current.add(d.item.key);
-      setConcepts((prev) => [{ ...d.item, status: "done" as const }, ...prev.filter((c) => c.key !== d.item.key)].sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS)); // #1068 카드 시각 = 커밋 시각 → 몰아서 만든 카드도 제자리
+      setConcepts((prev) => [{ ...d.item, status: "done" as const }, ...prev.filter((c) => c.key !== d.item.key)].sort(byNewest).slice(0, MAX_ITEMS)); // #1068 카드 시각 = 커밋 시각 → 몰아서 만든 카드도 제자리
     };
     window.addEventListener(CATCHUP_ITEM_EVENT, on);
     return () => window.removeEventListener(CATCHUP_ITEM_EVENT, on);
@@ -322,7 +322,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         if (!ev.note) return;
         const nkey = `narration|${ev.ts}|${ev.target}`;                 // ts+제목 = 고유 키(같은 ms 충돌 방지)
         setConcepts((prev) => (prev.some((c) => c.key === nkey) ? prev  // 이미 있으면 스킵(SSE 재연결 replay 중복 방지)
-          : [{ key: nkey, kind: "narration" as const, target: ev.target, tool: ev.tool || "narration", status: "done" as const, ts: ev.ts, expl: ev.note }, ...prev].sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS))); // #1068 꺼진 동안 재생분은 원래 시각 자리에
+          : [{ key: nkey, kind: "narration" as const, target: ev.target, tool: ev.tool || "narration", status: "done" as const, ts: ev.ts, expl: ev.note }, ...prev].sort(byNewest).slice(0, MAX_ITEMS))); // #1068 꺼진 동안 재생분은 원래 시각 자리에
         // #1051 실시간 해설 본문의 "용어" 목록도 용어집으로(서버 프롬프트가 개발·IT 용어만 쓰게 함)
         const nt = cfgRef.current.termsAnalyze ? parseNarrationTerms(ev.note) : [];
         if (nt.length) setTerms((prev) => mergeTerms(prev, nt, normalizeCardFront));
@@ -331,7 +331,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       if (isCommand(ev) ? !cfgRef.current.commandsAnalyze : !cfgRef.current.explainAnalyze) return; // #1062 분석 끔 → 새 카드·설명 안 만듦
       const key = `${ev.kind}|${ev.target}`;
       metaRef.current.set(key, { kind: ev.kind, target: ev.target, tool: ev.tool });
-      setConcepts((prev) => { const found = prev.find((c) => c.key === key); if (found) return ev.ts < found.ts ? prev : [{ ...found, tool: ev.tool, ts: ev.ts }, ...prev.filter((c) => c.key !== key)]; /* 재생분(옛 시각)이 최근 카드를 끌어내리지 않게 */ return [{ key, kind: ev.kind, target: ev.target, tool: ev.tool, status: "idle" as const, ts: ev.ts }, ...prev].sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS); });
+      setConcepts((prev) => { const found = prev.find((c) => c.key === key); if (found) return ev.ts < found.ts ? prev : [{ ...found, tool: ev.tool, ts: ev.ts }, ...prev.filter((c) => c.key !== key)]; /* 재생분(옛 시각)이 최근 카드를 끌어내리지 않게 */ return [{ key, kind: ev.kind, target: ev.target, tool: ev.tool, status: "idle" as const, ts: ev.ts }, ...prev].sort(byNewest).slice(0, MAX_ITEMS); });
       const cfg = cfgRef.current; if (cfg.providerId) enqueue(key);
     };
     return () => { es.close(); if (lostTimer) clearTimeout(lostTimer); };
@@ -355,7 +355,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       } catch { /* 서버 미준비 — 실시간만 */ }
       if (!alive) return;
       for (const c of items) seenRef.current.add(c.key);
-      setConcepts((prev) => { const have = new Set(prev.map((c) => c.key)); return [...prev, ...items.filter((c) => !have.has(c.key))].sort((a, b) => b.ts - a.ts); });
+      setConcepts((prev) => { const have = new Set(prev.map((c) => c.key)); return [...prev, ...items.filter((c) => !have.has(c.key))].sort(byNewest); });
       setLoaded(true);
     })();
     return () => { alive = false; };
@@ -493,7 +493,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const tagSource = useMemo(() => {
     if (!tagKey || tagFound?.k !== tagKey) return null;
     const have = new Set(tagFound.items.map((x) => x.key));
-    return [...concepts.filter((c) => !have.has(c.key) && tagMatch(c)), ...tagFound.items].sort((a, b) => b.ts - a.ts);
+    return [...concepts.filter((c) => !have.has(c.key) && tagMatch(c)), ...tagFound.items].sort(byNewest);
   }, [tagKey, tagFound, concepts]); // eslint-disable-line react-hooks/exhaustive-deps -- tagMatch는 tag(=tagKey)로만 바뀜
   // 칩을 버튼처럼(카드 헤더 버튼 안이라 span + 전파 막기)
   const chipProps = (t2: Tag) => ({ role: "button" as const, tabIndex: 0, title: t("learn.chipFilter"),
@@ -533,7 +533,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     <span role="button" tabIndex={0} aria-pressed={!!stars[c.key]} title={t(stars[c.key] ? "learn.unstar" : "learn.star")} aria-label={t(stars[c.key] ? "learn.unstar" : "learn.star")}
       onClick={(e) => { e.stopPropagation(); toggleStar(c.key); }}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggleStar(c.key); } }}
-      className={`-ml-1 mt-0.5 shrink-0 cursor-pointer rounded p-px transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${stars[c.key] ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 opacity-0 group-hover:opacity-100 focus:opacity-100 dark:text-zinc-500"}`}>
+      className={`-ml-1 mt-0.5 shrink-0 cursor-pointer rounded p-px outline-none transition hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-mustard-500/60 dark:hover:bg-zinc-800 ${stars[c.key] ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 opacity-0 group-hover:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100 dark:text-zinc-500"}`}>
       {stars[c.key] ? <IconPinFilled size={13} aria-hidden /> : <IconPin size={13} stroke={2} aria-hidden />}
     </span>
   ) : null;
@@ -801,7 +801,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                     </span>
                   )}
                   {!(c.kind === "diff" && parseDiffItemKey(c.key)) && !(c.kind === "session" && c.status === "done") && askBtn(c, true)}
-                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" || c.kind === "session" ? "pr-28" : "pr-10"}`}>
+                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" || c.kind === "session" ? "pr-28" : askCounts[c.key] ? "pr-14" : "pr-10"}`}>
                     {pinMark(c)}
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">

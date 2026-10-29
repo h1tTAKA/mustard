@@ -1,6 +1,6 @@
 // catchupMeta 점검 — node --experimental-strip-types src/lib/catchupMeta.check.ts
 import assert from "node:assert";
-import { cardMeta, collectFacets, tagMatches } from "./catchupMeta.ts";
+import { byNewest, cardMeta, collectFacets, tagMatches } from "./catchupMeta.ts";
 
 const diff = (hash: string, tool: string, ts: number) => ({ kind: "diff", key: `diff|${hash}|a.ts`, tool, target: `a.ts @${hash.slice(0, 7)}`, ts });
 const sess = (hash: string, tool: string, subject: string, ts: number) => ({ kind: "session", key: `session|${hash}`, tool, target: `${subject} @${hash.slice(0, 7)}`, ts });
@@ -26,4 +26,6 @@ assert.deepStrictEqual(f.agent.map((x) => x.value), ["Claude Code", "Codex"]);
 assert.deepStrictEqual(f.hash.map((x) => [x.value, x.label]), [["bbbbbbb", "새 기능"], ["aaaaaaa", "옛 고침"], ["ccccccc", "더 옛것"]], "해시 label = 커밋 제목(옛 diff는 세션 제목으로 채움)");
 assert.strictEqual(f.hash[0].ts, 30, "해시 시각 = 가장 최신 카드");
 assert.strictEqual(collectFacets(Array.from({ length: 80 }, (_, i) => diff(`${String(i).padStart(7, "0")}abc`, `b${i} · s`, 100 - i)), 50).branch.length, 50, "종류마다 상한");
+// #1244 같은 시각이면 key 순서(diff → session), 아니면 최신 먼저
+assert.deepStrictEqual([{ ts: 5, key: "session|a" }, { ts: 5, key: "diff|a|y" }, { ts: 9, key: "z" }, { ts: 5, key: "diff|a|x" }].sort(byNewest).map((x) => x.key), ["z", "diff|a|x", "diff|a|y", "session|a"]);
 console.log("catchupMeta.check ok");
