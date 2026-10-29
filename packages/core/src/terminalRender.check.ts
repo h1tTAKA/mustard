@@ -1,0 +1,38 @@
+// terminalRender 점검 — node --experimental-strip-types packages/core/src/terminalRender.check.ts
+import assert from "node:assert";
+import { withAlpha as alpha, readFontWeight as fw, readPadding as pad, readGpuMode as gpu, gpuAllowed as ok, resolveMinContrast as mc, isLightColor as light } from "./terminalRender.ts";
+
+assert.strictEqual(gpu(undefined, true), "auto", "옛 켜짐 = 자동");
+assert.strictEqual(gpu(undefined, false), "off", "옛 꺼짐 = 끄기");
+assert.strictEqual(gpu(undefined, undefined), "auto");
+assert.strictEqual(gpu("on", false), "on", "새 값이 있으면 그걸");
+assert.strictEqual(gpu("nope", true), "auto");
+assert.ok(ok("auto", false, null), "맥·윈도우 자동 = WebGL");
+assert.ok(!ok("auto", true, "Mesa llvmpipe (LLVM 15)"), "리눅스 소프트웨어 렌더 = 일반 렌더");
+assert.ok(!ok("auto", true, null), "리눅스에서 GPU 이름을 못 읽으면 일반 렌더");
+assert.ok(ok("auto", true, "NVIDIA GeForce RTX 3080"));
+assert.ok(ok("on", true, "llvmpipe") && !ok("off", false, null));
+assert.strictEqual(mc("auto", true), 4.5);
+assert.strictEqual(mc(undefined, false), 3);
+assert.strictEqual(mc(1, true), 1, "1 = 끄기");
+assert.strictEqual(mc(30, false), 21, "범위 1.5~21");
+assert.strictEqual(mc(1.2, false), 1.5, "직접은 화면과 같은 하한");
+assert.strictEqual(mc(0, true), 1, "1 이하 = 끄기");
+assert.ok(light("#ffffff") && light("#fff") && !light("#0a0a0a") && !light("#282c34"));
+assert.ok(!light("nope"));
+assert.strictEqual(fw("normal", 500), 400, "옛 보통 = 400");
+assert.strictEqual(fw("bold", 500), 700, "옛 굵게 = 700");
+assert.strictEqual(fw(350, 500), 400, "100 단위로");
+assert.strictEqual(fw(1200, 500), 900);
+assert.strictEqual(fw(undefined, 700), 700);
+assert.strictEqual(fw("abc", 400), 400);
+assert.strictEqual(pad(12, 6), 12);
+assert.strictEqual(pad(-3, 6), 0);
+assert.strictEqual(pad(99, 6), 40);
+assert.strictEqual(pad("8", 6), 6, "숫자만");
+assert.strictEqual(alpha("#ffffff", 1), "#ffffff");
+assert.strictEqual(alpha("#fff", 0.5), "rgba(255, 255, 255, 0.5)");
+assert.strictEqual(alpha("#2e3434", 0), "rgba(46, 52, 52, 0.1)", "최소 0.1(안 보이게는 안 함)");
+assert.strictEqual(alpha("red", 0.5), "red", "hex만");
+assert.strictEqual(alpha("#000000", "x"), "#000000");
+console.log("terminalRender ok");

@@ -8,6 +8,7 @@ import UpdateSection from "./UpdateSection";
 import BrowserSection from "./BrowserSection";
 import TerminalSessionsSection from "./TerminalSessionsSection";
 import TerminalKeyboardSection from "./TerminalKeyboardSection";
+import TerminalRenderSection from "./TerminalRenderSection";
 import { IconKeyboard, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus } from "@tabler/icons-react";
 import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
@@ -191,9 +192,7 @@ export default function SettingsDrawer({
   const tCopyOnSelect = useSetting<boolean>(TKEYS.copyOnSelect, TERMINAL_DEFAULTS.copyOnSelect);
   const tCopyTrim = useSetting<boolean>(TKEYS.copyTrimGutter, TERMINAL_DEFAULTS.copyTrimGutter); // #1212
   const tRightClickPaste = useSetting<boolean>(TKEYS.rightClickPaste, TERMINAL_DEFAULTS.rightClickPaste);
-  const tGpu = useSetting<boolean>(TKEYS.gpu, TERMINAL_DEFAULTS.gpu);
   // 터미널 심화(#941)
-  const tFontWeight = useSetting<string>(TKEYS.fontWeight, TERMINAL_DEFAULTS.fontWeight);
   const tScrollSensitivity = useSetting<number>(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity);
   const tFastScroll = useSetting<number>(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity); // #1212
   const tTuiScroll = useSetting<number>(TKEYS.tuiScrollSensitivity, TERMINAL_DEFAULTS.tuiScrollSensitivity);
@@ -775,7 +774,6 @@ export default function SettingsDrawer({
               { key: TKEYS.copyOnSelect, on: tCopyOnSelect, label: t("settings.terminalCopyOnSelect") },
               { key: TKEYS.copyTrimGutter, on: tCopyTrim, label: t("settings.terminalCopyTrimGutter") }, // #1212
               { key: TKEYS.rightClickPaste, on: tRightClickPaste, label: t("settings.terminalRightClickPaste") },
-              { key: TKEYS.gpu, on: tGpu, label: t("settings.terminalGpu") },
               { key: TKEYS.focusFollowsMouse, on: tFocusFollowsMouse, label: t("settings.terminalFocusFollowsMouse") },
               { key: TKEYS.osc52, on: tOsc52, label: t("settings.terminalOsc52") }, // #1196
               { key: TKEYS.images, on: tImages, label: t("settings.terminalImages") }, // #1196
@@ -789,6 +787,7 @@ export default function SettingsDrawer({
                 </button>
               </div>
             ))}
+            <TerminalRenderSection />{/* #1214 GPU·색상 대비 */}
             <TerminalKeyboardSection />{/* #1213 Option을 Alt로 — 맥에서만 보임 */}
             {/* 스크롤백(#1212) — 5k/10k/25k/50k/사용자 지정. 새 탭부터 */}
             <div className="space-y-1.5">
@@ -813,18 +812,6 @@ export default function SettingsDrawer({
                     className="w-32 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
                 </div>
               )}
-            </div>
-            {/* 폰트 굵기(#941) */}
-            <div className="space-y-1.5">
-              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalFontWeight")}</span>
-              <div className="inline-flex w-full rounded-xl border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-900">
-                {(["normal", "bold"] as const).map((fw) => (
-                  <button key={fw} type="button" onClick={() => setSetting(TKEYS.fontWeight, fw)}
-                    className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${tFontWeight === fw ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
-                    {t(`settings.fontWeight.${fw}`)}
-                  </button>
-                ))}
-              </div>
             </div>
             {/* 스크롤 속도(#941·#1212) — 줄마다 − 값 + 로 한 단계씩 + 전체 기본값 */}
             <div className="space-y-2">

@@ -4,12 +4,30 @@
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { findLinks, resolvePath, type TerminalLink } from "@/lib/terminalLinks";
-import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, readMacOptionAsAlt, effectiveMacOptionAsAlt, altCharForCode, jisYenInput, DEFAULT_WORD_SEPARATOR, parseShellArgs, type TerminalFontWeight } from "@mustard/core";
+import { useT, getTerminalThemePref, isTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, readMacOptionAsAlt, effectiveMacOptionAsAlt, altCharForCode, jisYenInput, DEFAULT_WORD_SEPARATOR, parseShellArgs, readGpuMode, gpuAllowed, resolveMinContrast, isLightColor, readFontWeight, readPadding, withAlpha } from "@mustard/core";
 import { inputSourceId, refreshInputSource, subscribeInputSource } from "@/lib/inputSource";
 
 // 터미널 설정(#926) — 스토어서 읽어 xterm 옵션 구성. copyOnSelect/rightClickPaste는 핸들러서 별도.
 // #1213 지금 Option을 Alt로 — 자동이면 입력 소스(US·ABC = 양쪽, 그 외·모름 = 끄기)로 정함.
 const macOptionMode = () => effectiveMacOptionAsAlt(readMacOptionAsAlt(getSetting<unknown>(TKEYS.macOptionAsAlt, undefined), getSetting<unknown>(TKEYS.macOptionIsMeta, undefined)), inputSourceId()); // 새 키 없으면 옛 스위치(켜짐 = 양쪽)
+
+// #1214 최소 색상 대비 — 자동이면 지금 터미널 배경 밝기로(밝으면 4.5, 어두우면 3).
+// #1214 터미널 여백(세로 가로)
+const padding = () => `${readPadding(getSetting<unknown>(TKEYS.paddingY, undefined), TERMINAL_DEFAULTS.paddingY)}px ${readPadding(getSetting<unknown>(TKEYS.paddingX, undefined), TERMINAL_DEFAULTS.paddingX)}px`;
+const minContrast = () => resolveMinContrast(getSetting<unknown>(TKEYS.minContrast, TERMINAL_DEFAULTS.minContrast), isLightColor(buildTermTheme().background));
+
+// #1214 GPU 이름(리눅스 자동 판단용) — 한 번만 읽음. 못 읽으면 null.
+let gpuNameCache: string | null | undefined;
+function gpuName(): string | null {
+  if (gpuNameCache !== undefined) return gpuNameCache;
+  try {
+    const gl = document.createElement("canvas").getContext("webgl2");
+    const ext = gl?.getExtension("WEBGL_debug_renderer_info");
+    gpuNameCache = gl && ext ? `${gl.getParameter(ext.UNMASKED_VENDOR_WEBGL)} ${gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)}` : null;
+    gl?.getExtension("WEBGL_lose_context")?.loseContext(); // 확인용 문맥은 바로 돌려줌
+  } catch { gpuNameCache = null; }
+  return gpuNameCache;
+}
 
 function termOptionsFromSettings() {
   return {
@@ -20,9 +38,11 @@ function termOptionsFromSettings() {
     cursorBlink: getSetting<boolean>(TKEYS.cursorBlink, TERMINAL_DEFAULTS.cursorBlink),
     scrollback: getSetting<number>(TKEYS.scrollback, TERMINAL_DEFAULTS.scrollback),
     // 심화(#941)
-    fontWeight: getSetting<TerminalFontWeight>(TKEYS.fontWeight, TERMINAL_DEFAULTS.fontWeight),
+    fontWeight: readFontWeight(getSetting<unknown>(TKEYS.fontWeight, undefined), TERMINAL_DEFAULTS.fontWeight), // #1214 100~900
+    fontWeightBold: readFontWeight(getSetting<unknown>(TKEYS.fontWeightBold, undefined), TERMINAL_DEFAULTS.fontWeightBold),
     scrollSensitivity: getSetting<number>(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity),
     fastScrollSensitivity: getSetting<number>(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity), // #1212 ⌥ 누른 채
+    minimumContrastRatio: minContrast(), // #1214 글자색이 배경과 비슷하면 진하게
     wordSeparator: getSetting<string>(TKEYS.wordSeparator, TERMINAL_DEFAULTS.wordSeparator) || DEFAULT_WORD_SEPARATOR, // #1213 더블클릭 단어 구분
     macOptionIsMeta: macOptionMode() === "both", // #1213 양쪽만 xterm이 처리, 한쪽만은 키 핸들러가 ESC+글자
   };
@@ -94,10 +114,8 @@ const TERM_LIGHT = {
 };
 function buildTermTheme() {
   const pref = getTerminalThemePref();
-  if (pref === "light") return TERM_LIGHT;
-  if (pref === "gray") return TERM_GRAY;
-  if (pref === "dark") return TERM_DARK;
-  return isTerminalDark(pref) ? TERM_DARK : TERM_LIGHT; // auto: 앱 다크면 검정
+  const base = pref === "light" ? TERM_LIGHT : pref === "gray" ? TERM_GRAY : pref === "dark" ? TERM_DARK : isTerminalDark(pref) ? TERM_DARK : TERM_LIGHT; // auto: 앱 다크면 검정
+  return { ...base, cursor: withAlpha(base.cursor, getSetting<unknown>(TKEYS.cursorOpacity, TERMINAL_DEFAULTS.cursorOpacity)) }; // #1214 커서 투명도
 }
 // 재접속 스크롤백 재생 시 xterm이 버퍼 속 터미널 질의(DA/DSR/OSC 색 등)에 "다시" 응답해
 // 입력창에 에코되는 문제(#807) 방지 — 질의는 화면 출력이 없어 재생 전 제거(라이브 스트림엔 미적용).
@@ -140,6 +158,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
     let onCtx: ((e: MouseEvent) => void) | null = null;
     let onCopy: ((e: ClipboardEvent) => void) | null = null;
     let onEnter: (() => void) | null = null;
+    const showMouse = () => host?.classList.remove("mustard-hide-mouse");
     let fallback: ReturnType<typeof setTimeout> | null = null;
     let onPaste: ((ev: ClipboardEvent) => void | Promise<void>) | undefined;
 
@@ -154,7 +173,11 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       if (host) host.style.background = buildTermTheme().background;
       const fit = new FitAddon();
       term.loadAddon(fit);
-      term.open(host);
+      // #1214 여백 — 바깥(host)에 padding, xterm은 안쪽 칸에 열어 fit이 여백 뺀 크기로 계산하게
+      const inner = document.createElement("div");
+      inner.style.cssText = "width:100%;height:100%";
+      host.replaceChildren(inner); // 같은 화면을 다시 그릴 때 전 칸이 남아 쌓이지 않게(리뷰)
+      term.open(inner);
       // #1196 인라인 이미지(sixel·iTerm 그림) — 새 탭부터
       if (imageMod) { try { term.loadAddon(new imageMod.ImageAddon()); } catch { /* 지원 안 함 */ } }
       // #1196 OSC 52 = 프로그램(tmux·neovim·ssh 너머)이 클립보드에 쓰기. 쓰기만(읽기 요청 "?"는 무시 — 클립보드가 새지 않게), 1MB까지(base64 1,333,336자 = 1MB = main 상한과 같음).
@@ -190,8 +213,9 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
           cb(links.length ? links : undefined);
         },
       });
-      // GPU(WebGL) 렌더 — 설정 gpu=false면 canvas 폴백(#926).
-      if (getSetting<boolean>(TKEYS.gpu, TERMINAL_DEFAULTS.gpu)) {
+      // GPU(WebGL) 렌더 — #1214 자동(리눅스 소프트웨어 렌더면 일반 렌더)/켜짐/끄기, 새 탭부터. 옛 gpu 스위치는 옮겨 읽음.
+      const gpuMode = readGpuMode(getSetting<unknown>(TKEYS.gpuMode, undefined), getSetting<unknown>(TKEYS.gpu, undefined));
+      if (gpuAllowed(gpuMode, isLinux, gpuMode === "auto" && isLinux ? gpuName() : null)) {
         try {
           const gl = new webgl.WebglAddon();
           // #1165 GPU 프로세스가 다시 뜨면 WebGL 문맥이 사라짐 → 그대로 두면 글자 빠짐·흰 화면. 떼면 xterm이 기본(DOM) 렌더로 바꾸고 전체를 다시 그림.
@@ -211,10 +235,16 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
         term.options.cursorBlink = o.cursorBlink;
         // 심화(#941) 라이브 반영
         term.options.fontWeight = o.fontWeight;
+        term.options.fontWeightBold = o.fontWeightBold;
+        if (host) host.style.padding = padding();
+        if (host && !getSetting<boolean>(TKEYS.hideMouseWhileTyping, TERMINAL_DEFAULTS.hideMouseWhileTyping)) host.classList.remove("mustard-hide-mouse"); // 끄면 숨긴 마우스 바로(리뷰)
+        const th = buildTermTheme();
+        if (term.options.theme?.cursor !== th.cursor) term.options.theme = th; // #1214 커서 투명도 — 바뀔 때만(테마를 다시 넣으면 프로그램이 바꾼 색이 풀림)
         term.options.scrollSensitivity = o.scrollSensitivity;
         term.options.fastScrollSensitivity = o.fastScrollSensitivity;
         term.options.macOptionIsMeta = o.macOptionIsMeta;
         term.options.wordSeparator = o.wordSeparator;
+        term.options.minimumContrastRatio = o.minimumContrastRatio;
         try { fit.fit(); } catch { /* ignore */ }
       };
       offSettings = subscribeSettings(applyTermSettings);
@@ -227,9 +257,10 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       // 마우스 포커스(#941) — 설정 켜지면 호버 시 터미널 포커스.
       onEnter = () => { if (getSetting<boolean>(TKEYS.focusFollowsMouse, TERMINAL_DEFAULTS.focusFollowsMouse)) term?.focus(); };
       host.addEventListener("mouseenter", onEnter);
+      host.addEventListener("mousemove", showMouse); // #1214 타이핑 중 숨긴 마우스 다시
       // #973 터미널 벨 데스크톱 알림 제거 — 알림은 에이전트 ask/완료만(WorkspaceTabs). 터미널 벨 알림은 스팸이라 폐지.
       // 테마 라이브 전환(#914) — 터미널 설정(dark/light/auto) 변경 또는 auto일 때 앱 .dark 변경 시 색 갱신.
-      const applyTermTheme = () => { const th = buildTermTheme(); if (term) term.options.theme = th; if (host) host.style.background = th.background; };
+      const applyTermTheme = () => { const th = buildTermTheme(); if (term) { term.options.theme = th; term.options.minimumContrastRatio = minContrast(); } if (host) host.style.background = th.background; }; // #1214 라이트↔다크면 자동 대비도 바뀜
       mo = new MutationObserver(applyTermTheme);
       mo.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme"] });
       window.addEventListener(TERMINAL_THEME_EVENT, applyTermTheme);
@@ -332,7 +363,11 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
           offData = nd.terminal.onData(({ id: i, data }) => { if (i === id && term) term.write(data); });
           // 셸 종료 시 빈 화면 방치 대신 안내(+로 새 터미널).
           offExit = nd.terminal.onExit(({ id: i }) => { if (i === id && term) term.write(`\r\n\x1b[2m${tRef.current("workspace.terminalExited")}\x1b[0m\r\n`); });
-          term.onData((d) => nd.terminal.input({ id, data: d }));
+          term.onData((d) => {
+        nd.terminal.input({ id, data: d });
+        // #1214 타이핑 중 마우스 숨기기 — 치면 숨기고 마우스를 움직이면 다시
+        if (host && getSetting<boolean>(TKEYS.hideMouseWhileTyping, TERMINAL_DEFAULTS.hideMouseWhileTyping)) host.classList.add("mustard-hide-mouse");
+      });
         } catch {
           // 핸들러 미등록(옛 메인) 등 — 크래시 대신 안내.
           if (term && !disposed) term.write(`\r\n[${tRef.current("terminal.connectFailed")}]\r\n`);
@@ -340,22 +375,22 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       };
       // 폭이 잡혔을 때만 fit → 최초 1회 ensure, 이후 resize. 폭 미확정이면 스킵(다음 콜백/폴백서 처리).
       const sync = () => {
-        if (disposed || !term || host.clientWidth < MIN_W) return;
+        if (disposed || !term || inner.clientWidth < MIN_W) return; // #1214 여백 뺀 안쪽 폭으로(리뷰)
         try { fit.fit(); } catch { /* ignore */ }
         if (!ensured) { ensured = true; void firstEnsure(); }
         else { try { nd.terminal.resize({ id, cols: term.cols, rows: term.rows }); } catch { /* ignore */ } }
       };
       ro = new ResizeObserver(sync);
-      ro.observe(host);
+      ro.observe(inner);
       requestAnimationFrame(sync); // 이미 폭이 잡혀 있으면 즉시 진행
       // 폭이 끝내 안 잡혀도(희귀) 터미널이 빈 채 방치되지 않게 폴백 — 최후엔 강제 ensure(데몬이 cols 하한 클램프).
       fallback = setTimeout(() => { if (!ensured && !disposed && term) { ensured = true; void firstEnsure(); } }, 1500);
     })();
 
-    return () => { offClear(); disposed = true; if (fallback) clearTimeout(fallback); if (onPaste) host.removeEventListener("paste", onPaste, true); if (onCopy) host.removeEventListener("copy", onCopy, true); offData?.(); offExit?.(); ro?.disconnect(); mo?.disconnect(); offTheme?.(); offSettings?.(); offInputSource?.(); selDisp?.dispose(); linkDisp?.dispose(); oscDisp?.dispose(); osc52Disp?.dispose(); if (onCtx) host.removeEventListener("contextmenu", onCtx); if (onEnter) host.removeEventListener("mouseenter", onEnter); term?.dispose(); term = null; };
+    return () => { offClear(); disposed = true; if (fallback) clearTimeout(fallback); if (onPaste) host.removeEventListener("paste", onPaste, true); if (onCopy) host.removeEventListener("copy", onCopy, true); offData?.(); offExit?.(); ro?.disconnect(); mo?.disconnect(); offTheme?.(); offSettings?.(); offInputSource?.(); selDisp?.dispose(); linkDisp?.dispose(); oscDisp?.dispose(); osc52Disp?.dispose(); if (onCtx) host.removeEventListener("contextmenu", onCtx); if (onEnter) host.removeEventListener("mouseenter", onEnter); host.removeEventListener("mousemove", showMouse); term?.dispose(); term = null; };
   }, [id, cwd]);
 
   // 초기 배경도 현재 터미널 테마에 맞춰(라이트 앱 첫 프레임 다크 깜빡임 방지). 클라이언트 전용 pane이라 안전.
   const initialBg = typeof document !== "undefined" ? buildTermTheme().background : "#0a0a0a"; // #956 pref별 배경(검정/그레이/흰색)
-  return <div ref={hostRef} className="h-full w-full overflow-hidden p-1.5" style={{ background: initialBg }} />;
+  return <div ref={hostRef} className="h-full w-full overflow-hidden" style={{ background: initialBg, padding: padding() }} />;
 }

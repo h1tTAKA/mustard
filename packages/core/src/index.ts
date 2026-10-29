@@ -18,6 +18,7 @@ export * from "./settings";
 export * from "./browserUrl";
 export * from "./terminalSelection";
 export * from "./terminalKeyboard";
+export * from "./terminalRender";
 export * from "./appearance";
 export * from "./notify";
 export * from "./shortcuts";

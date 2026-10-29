@@ -13,7 +13,6 @@ export interface MustardSettings {
 
 // 터미널 설정(#926) — 키·기본값 공유(Terminal[apps] + SettingsDrawer[packages] 둘 다 참조).
 export type TerminalCursorStyle = "bar" | "block" | "underline";
-export type TerminalFontWeight = "normal" | "bold";
 export const TERMINAL_DEFAULTS = {
   fontSize: 12,
   fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -24,9 +23,15 @@ export const TERMINAL_DEFAULTS = {
   copyOnSelect: false,
   copyTrimGutter: true,                        // #1212 복사할 때 공통 왼쪽 여백 자르기
   rightClickPaste: false,
-  gpu: true,
+  gpu: true,                                   // 옛 스위치(#1214부터 gpuMode로 옮겨 읽음)
+  minContrast: "auto" as "auto" | number,      // #1214 최소 색상 대비
   // 심화(#941)
-  fontWeight: "normal" as TerminalFontWeight, // xterm fontWeight
+  fontWeight: 400,                             // #1214 100~900(옛 "normal"·"bold"는 400·700으로 읽음)
+  fontWeightBold: 700,                         // #1214 굵은 글자 굵기
+  paddingX: 6,                                 // #1214 터미널 여백(px, 0~40)
+  paddingY: 6,
+  cursorOpacity: 1,                            // #1214 커서 투명도(0.1~1)
+  hideMouseWhileTyping: false,                 // #1214 타이핑 중 마우스 숨기기
   scrollSensitivity: 1,                        // 높을수록 빠름(한 틱에 더 많이 이동)
   fastScrollSensitivity: 5,                    // #1212 ⌥ 누른 채 휠 배율(1~10)
   tuiScrollSensitivity: 1,                     // #1212 전체 화면 프로그램(마우스 추적 중) 휠 배율(정수 1~10)
@@ -58,7 +63,14 @@ export const TKEYS = {
   copyTrimGutter: "terminal.copyTrimGutter",
   rightClickPaste: "terminal.rightClickPaste",
   gpu: "terminal.gpu",
+  gpuMode: "terminal.gpuMode", // #1214 auto·on·off(없으면 옛 gpu 스위치에서)
+  minContrast: "terminal.minContrast", // #1214 "auto" | 숫자(1 = 끄기)
   fontWeight: "terminal.fontWeight",
+  fontWeightBold: "terminal.fontWeightBold",
+  paddingX: "terminal.paddingX",
+  paddingY: "terminal.paddingY",
+  cursorOpacity: "terminal.cursorOpacity",
+  hideMouseWhileTyping: "terminal.hideMouseWhileTyping",
   scrollSensitivity: "terminal.scrollSensitivity",
   fastScrollSensitivity: "terminal.fastScrollSensitivity",
   tuiScrollSensitivity: "terminal.tuiScrollSensitivity",
