@@ -314,7 +314,7 @@ export function readStars(root: string): Record<string, number> {
   } catch { return {}; }
 }
 export function setStar(root: string, key: string, on: boolean, now: number): Record<string, number> {
-  const k = key.slice(0, 600);
+  const k = key;
   const stars = readStars(root);
   if (on) stars[k] = now; else delete stars[k];
   mkdirSync(repoDir(root), { recursive: true });

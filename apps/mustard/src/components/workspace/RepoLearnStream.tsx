@@ -186,29 +186,29 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     }, 250);
     return () => { alive = false; clearTimeout(tm); };
   }, [query, root, allFolders]);
-  // #1135 Crew 작업(역할 보고·crew/* 브랜치 diff·세션)이 하나라도 있을 때만 Crew 칩
-  // tool: diff = "브랜치 · 커밋 제목", 세션 = "에이전트 · 브랜치" — 브랜치 자리만 봄(커밋 제목에 "crew/"가 있어도 안 걸리게, 리뷰)
   const [askCounts, setAskCounts] = useState<Record<string, number>>({});
   const [stars, setStars] = useState<Record<string, number>>({});
   const hasAsk = Object.values(askCounts).some((n) => n > 0), hasStar = Object.keys(stars).length > 0;
+  // #1135 Crew 작업(역할 보고·crew/* 브랜치 diff·세션)이 하나라도 있을 때만 Crew 칩
+  // tool: diff = "브랜치 · 커밋 제목", 세션 = "에이전트 · 브랜치" — 브랜치 자리만 봄(커밋 제목에 "crew/"가 있어도 안 걸리게, 리뷰)
   const hasCrew = concepts.some((c) => c.tool.startsWith("crew|") || (c.kind === "diff" && c.tool.startsWith("crew/")) || (c.kind === "session" && c.tool.split(" · ")[1]?.startsWith("crew/")));
   const filter = (filterSel === "explain" && !explainShow) || (filterSel === "commands" && !showCommands) || (filterSel === "diff" && !diffShow) || (filterSel === "session" && !sessionsShow) || (filterSel === "terms" && !showTerms) || (filterSel === "crew" && !hasCrew) || (filterSel === "ask" && !hasAsk) || (filterSel === "star" && !hasStar) ? "all" : filterSel;
   // #1238 질문·별표 칩 — 서버에서 전체 날짜로(별표·질문이 바뀌면 다시). 받는 사이엔 지금 목록에서 거른 것도 합쳐 바로 반영.
   const onlyKind = filter === "ask" || filter === "star" ? filter : null;
   const onlyPred = (c: { key: string }) => (onlyKind === "star" ? !!stars[c.key] : (askCounts[c.key] ?? 0) > 0);
   const onlySig = onlyKind ? `${onlyKind}|${allFolders ? 1 : 0}|${Object.keys(onlyKind === "star" ? stars : askCounts).filter((k) => onlyKind === "star" || askCounts[k] > 0).sort().join(",")}` : "";
-  const [onlyFound, setOnlyFound] = useState<{ kind: string; items: Concept[] } | null>(null);
+  const [onlyFound, setOnlyFound] = useState<{ scope: string; items: Concept[] } | null>(null); // scope = 종류|모든 폴더(바꾸면 옛 범위 안 섞이게)
   useEffect(() => {
     if (!onlySig) return;
     let alive = true;
-    const kind = onlySig.split("|")[0];
+    const [kind, af] = onlySig.split("|"); const scope = `${kind}|${af}`;
     fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&only=${kind}${allFolders ? "&all=1" : ""}`).then((r) => r.json())
-      .then((j) => { if (alive) setOnlyFound({ kind, items: j?.ok && Array.isArray(j.items) ? (j.items as Omit<Concept, "status">[]).map((x) => ({ ...x, status: "done" as const })) : [] }); })
+      .then((j) => { if (alive) setOnlyFound({ scope, items: j?.ok && Array.isArray(j.items) ? (j.items as Omit<Concept, "status">[]).map((x) => ({ ...x, status: "done" as const })) : [] }); })
       .catch(() => { /* 지금 목록에서 거른 것만 */ });
     return () => { alive = false; };
   }, [onlySig, root, allFolders]);
   const onlySource = onlyKind ? (() => {
-    const got = onlyFound?.kind === onlyKind ? onlyFound.items.filter(onlyPred) : [];
+    const got = onlyFound?.scope === `${onlyKind}|${allFolders ? 1 : 0}` ? onlyFound.items.filter(onlyPred) : [];
     const have = new Set(got.map((x) => x.key));
     return [...concepts.filter((c) => !have.has(c.key) && onlyPred(c)), ...got].sort((a, b) => b.ts - a.ts);
   })() : null;
@@ -392,7 +392,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     const on = !stars[key];
     setStars((p) => { const n = { ...p }; if (on) n[key] = Date.now(); else delete n[key]; return n; });
     fetch("/api/repo/stream/star", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, key, on }) }).then((r) => r.json())
-      .then((j) => { if (j?.ok && j.stars) setStars(j.stars as Record<string, number>); else throw new Error("save"); })
+      .then((j) => { if (!j?.ok) throw new Error("save"); }) // 응답 전체로 덮지 않음(빠른 연타에 늦은 옛 응답이 최신을 되돌리지 않게, 리뷰)
       .catch(() => { setStars((p) => { const n = { ...p }; if (on) delete n[key]; else n[key] = Date.now(); return n; }); toast(t("learn.copyFailed")); });
   }, [stars, root, t, toast]);
   // 경계선 드래그 — 패널 높이 = 컴포넌트 바닥 - 포인터 y. 목록·패널 최소 높이 보장.
@@ -427,11 +427,11 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const tagMatch = (c: { kind: string; key: string; tool: string }) => !tag || tagMatches(c, tag.type, tag.value);
   // #1238 칩·풀다운 필터는 서버에서 전체 날짜로(예전엔 불러온 최근 100개 안에서만). 받기 전엔 지금 목록에서 거른 것.
   const [tagFound, setTagFound] = useState<{ k: string; items: Concept[] } | null>(null);
-  const tagKey = tag ? `${tag.type}|${tag.value}|${allFolders ? 1 : 0}` : "";
+  const tagKey = tag ? JSON.stringify([tag.type, tag.value, allFolders]) : ""; // 브랜치 이름에 | 가 있어도 안 잘리게(리뷰)
   useEffect(() => {
     if (!tagKey) return;
     let alive = true;
-    const [type, value] = tagKey.split("|");
+    const [type, value] = JSON.parse(tagKey) as [string, string];
     fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&tag=${type}&v=${encodeURIComponent(value)}${allFolders ? "&all=1" : ""}`).then((r) => r.json())
       .then((j) => { if (alive) setTagFound({ k: tagKey, items: j?.ok && Array.isArray(j.items) ? (j.items as Omit<Concept, "status">[]).map((x) => ({ ...x, status: "done" as const })) : [] }); })
       .catch(() => { if (alive) setTagFound({ k: tagKey, items: [] }); });
@@ -448,7 +448,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     onClick: (e: React.MouseEvent) => { e.stopPropagation(); toggleTag(t2); },
     onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggleTag(t2); } } });
   const chipOn = (t2: Tag) => (tag && tag.type === t2.type && tag.value === t2.value ? " ring-1 ring-mustard-500/70" : "");
-  const shown = (query ? (found ?? []) : tagSource ?? onlySource ?? (viewDay ? (dayItems ?? []) : concepts)).filter((c) => (isCommand(c) ? showCommands : c.kind === "diff" ? diffShow : c.kind === "session" ? sessionsShow : explainShow) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)) // #1062 표시 끔 = 분석된 것도 숨김, 문서 편집 카드는 항상 숨김(#1049)
+  // #1238 날짜 보기 중 칩은 그날 안에서만(바 문구와 같게, 리뷰), 아니면 칩·질문·별표는 서버 전체 날짜 결과
+  const shown = (query ? (found ?? []) : viewDay ? (dayItems ?? []) : tagSource ?? onlySource ?? concepts).filter((c) => (isCommand(c) ? showCommands : c.kind === "diff" ? diffShow : c.kind === "session" ? sessionsShow : explainShow) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)) // #1062 표시 끔 = 분석된 것도 숨김, 문서 편집 카드는 항상 숨김(#1049)
     && (filter === "all" || (filter === "ask" || filter === "star" ? onlyPred(c) : filter === "crew" ? !!crewTask(c) : filter === "commands" ? isCommand(c) : filter === "diff" ? c.kind === "diff" : filter === "session" ? c.kind === "session" : filter === "explain" && !isCommand(c) && c.kind !== "diff" && c.kind !== "session"))).filter(tagMatch);
   // #1064 세션 → 에이전트로 넘기기(인앱 브라우저 피드백과 같은 경로). 카드 하나에 요청 입력창.
   const [handoffKey, setHandoffKey] = useState<string | null>(null);
@@ -488,7 +489,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const jumpN = jump?.n;
   useEffect(() => {
     if (!jump) return;
-    setFilter("all"); setQ(""); // eslint-disable-line react-hooks/set-state-in-effect -- 외부 요청(링크 클릭) 시 보기 초기화
+    setFilter("all"); setQ(""); setTag(null); // eslint-disable-line react-hooks/set-state-in-effect -- 외부 요청(링크 클릭) 시 보기 초기화(#1238 칩도 — 칩 밖 카드면 못 찾음, 리뷰)
     pendingJump.current = jump.key;
     if (concepts.some((c) => c.key === jump.key)) { pickDay(null); return; }
     const key = jump.key;
@@ -635,7 +636,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                 className="min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none placeholder:text-zinc-400 dark:text-zinc-200" />
             ) : (
               // 고르면 칩 필터와 같은 표시(아래 "필터 ✕")로 — 검색칸은 닫음
-              <select value="" autoFocus aria-label={t("learn.searchPick")} onChange={(e) => { const v = e.target.value; if (!v) return; setTag({ type: searchBy, value: v }); setSearchOpen(false); setSearchBy("text"); }}
+              <select value="" autoFocus aria-label={t("learn.searchPick")} onChange={(e) => { const v = e.target.value; if (!v) return; setTag({ type: searchBy, value: v }); setQ(""); setSearchOpen(false); setSearchBy("text"); }}
                 className={`min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none dark:text-zinc-200 ${searchBy === "hash" ? "font-mono" : ""}`}>
                 <option value="">{facets ? (facets[searchBy].length ? t("learn.searchPick") : t("learn.searchNone")) : "…"}</option>
                 {facets?.[searchBy].map((f) => <option key={f.value} value={f.value}>{searchBy === "hash" && f.label ? `${f.value} · ${f.label.slice(0, 60)}` : f.value}</option>)}
@@ -738,7 +739,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                     </span>
                   )}
                   {!(c.kind === "diff" && parseDiffItemKey(c.key)) && !(c.kind === "session" && c.status === "done") && c.status === "done" && <span className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5">{starBtn(c)}{askBtn(c, false)}</span>}
-                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "session" ? "pr-32" : c.kind === "diff" ? "pr-28" : "pr-14"}`}>
+                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "session" ? "pr-36" : c.kind === "diff" ? "pr-32" : "pr-16"}`}>
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
                       {/* #1181 모든 작업 폴더 보기 — 어느 worktree(브랜치)에서 쌓인 건지. 메인 것은 표시 없음 */}
