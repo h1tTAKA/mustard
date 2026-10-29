@@ -387,11 +387,12 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   //  · 별표 저장·읽기는 한 줄로 차례대로(starChain) — 응답 순서가 클릭 순서와 같아 옛 읽기가 새 저장을 덮을 수 없음.
   //  · 읽은 서버 값엔 아직 줄에서 차례를 기다리는 클릭(starLocal)을 덮어 보여줌.
   //  · 저장 실패면 그 별을 클릭 전으로 되돌리고 서버 값을 다시 읽음(못 읽으면 3초 뒤 2번, 끝내 못 읽으면 알림).
+  //  · 요청마다 8초 제한(응답이 안 오면 줄 전체가 멈추지 않게) — 레포가 바뀌면 이 화면은 새로 만들어져(key=path) 줄도 새로.
   const starLocal = useRef(new Map<string, { on: boolean; n: number }>());
   const starN = useRef(0);
   const starChain = useRef<Promise<unknown>>(Promise.resolve());
   const inLine = useCallback(<T,>(f: () => Promise<T>) => { const p = starChain.current.catch(() => {}).then(f); starChain.current = p; return p; }, []);
-  const loadStars = useCallback(() => inLine(() => fetch(`/api/repo/stream/star?root=${encodeURIComponent(root)}`).then((r) => r.json())
+  const loadStars = useCallback(() => inLine(() => fetch(`/api/repo/stream/star?root=${encodeURIComponent(root)}`, { signal: AbortSignal.timeout(8000) }).then((r) => r.json())
     .then((j) => (j?.ok && j.stars ? (j.stars as Record<string, number>) : null)).catch(() => null)), [root, inLine]);
   const withLocal = (st: Record<string, number>) => { const n = { ...st }; for (const [k, x] of starLocal.current) { if (x.on) n[k] = n[k] ?? Date.now(); else delete n[k]; } return n; };
   const syncStars = useCallback((left: number) => void loadStars().then((st) => {
@@ -408,7 +409,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     starLocal.current.set(key, { on, n });
     const show = (v: boolean) => setStars((p) => { const x = { ...p }; if (v) x[key] = x[key] ?? Date.now(); else delete x[key]; return x; });
     show(on);
-    void inLine(() => fetch("/api/repo/stream/star", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, key, on }) }).then((r) => r.json()).catch(() => null))
+    void inLine(() => fetch("/api/repo/stream/star", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, key, on }), signal: AbortSignal.timeout(8000) }).then((r) => r.json()).catch(() => null))
       .then((j) => {
         const mine = starLocal.current.get(key)?.n === n;
         if (mine) starLocal.current.delete(key); // 그새 또 눌렀으면 그 클릭이 화면을 맡음
