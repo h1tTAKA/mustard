@@ -47,6 +47,6 @@ export async function buildSessionItem(root: string, hash: string, ts: number, s
   }
   return {
     key: sessionItemKey(hash), kind: "session", target: `${subject || hash.slice(0, 7)} @${hash.slice(0, 7)}`,
-    tool: [s.crew?.length && s.agent !== "crew" ? `Crew/${AGENT_LABEL[s.agent] ?? s.agent}` : AGENT_LABEL[s.agent] ?? s.agent, s.branch || branch].filter(Boolean).join(" · ").slice(0, 200), ts: Date.now(), expl: expl.slice(0, 8000),
+    tool: [s.crew?.length && s.agent !== "crew" ? `Crew/${AGENT_LABEL[s.agent] ?? s.agent}` : AGENT_LABEL[s.agent] ?? s.agent, s.branch || branch].filter(Boolean).join(" · ").slice(0, 200), ts: ts * 1000, expl: expl.slice(0, 8000), // #1244 카드 시각 = 커밋(머지) 시각 — 늦게·되살려 만들어도 그 자리에
   };
 }
