@@ -25,12 +25,12 @@ const post = (url: string, body: unknown) => fetch(url, { method: "POST", header
 
 export function useAutoCommitExplain(root: string, providerId: AgentProviderKind, providerSettings: ProviderSettings) {
   const repoPrefs = useCatchupRepoPrefs(root); // #1239 이 레포만 끈 분석
-  const autoOn = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits) && !repoPrefs.isOff("diffAnalyze");
+  const autoOn = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits) && repoPrefs.loaded && !repoPrefs.isOff("diffAnalyze"); // 레포 설정 받기 전엔 안 함(리뷰)
   const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
   const diffProvider = useSetting<string>(CUKEYS.diffProvider, ""); // #1062 Diff AI("" = 워크스페이스 기본)
   const diffModel = useSetting<string>(CUKEYS.diffModel, "");
   // #1064 세션 분석 — Diff 분석과 따로 켜고 끔(같은 새 커밋 감시를 공유). AI·모델도 따로.
-  const sessionsOn = useSetting<boolean>(CUKEYS.sessionsAnalyze, CATCHUP_DEFAULTS.sessionsAnalyze) && !repoPrefs.isOff("sessionsAnalyze");
+  const sessionsOn = useSetting<boolean>(CUKEYS.sessionsAnalyze, CATCHUP_DEFAULTS.sessionsAnalyze) && repoPrefs.loaded && !repoPrefs.isOff("sessionsAnalyze");
   const sessProvider = useSetting<string>(CUKEYS.sessionsProvider, "");
   const sessModel = useSetting<string>(CUKEYS.sessionsModel, "");
   const on = catchupOn && (autoOn || sessionsOn); // #1062 캐치업 전체 끄면 전부 중지
@@ -71,7 +71,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item } }));
       };
       for (const f of files) { // #1074 커밋당 파일·구간 상한 없음 — 큰 커밋도 바뀐 코드 전부 캐치업에(유저 요청)
-        if (!alive) return;
+        if (!alive || !cfg.current.diffOn) return; // #1239 도중에 (레포에서) diff 분석 끄면 멈춤(리뷰)
         const d = await post("/api/repo/git-show", { path: root, hash, file: f.path });
         const raw = String(d?.diff ?? "");
         if (!raw.trim() || /^Binary files /m.test(raw)) continue;
@@ -83,7 +83,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
       }
       let next = 0;
       const worker = async () => {
-        while (alive && next < jobs.length) {
+        while (alive && cfg.current.diffOn && next < jobs.length) { // 도중에 끄면 남은 구간 안 함
           const { file, i, h } = jobs[next++];
           const { providerId: pid, providerSettings: ps, locale: loc } = cfg.current;
           for (const wait of RETRY_MS) { // #1093 실패면 잠시 뒤 다시(런타임 상한·일시 오류) — 최대 3번

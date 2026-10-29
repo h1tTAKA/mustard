@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import { useT, useSetting, useToast, CUKEYS, CATCHUP_DEFAULTS, GKEYS, GIT_DEFAULTS } from "@mustard/core";
 import type { RepoPrefKey } from "@/lib/useCatchupRepoPrefs";
 
-export default function CatchupRepoPrefs({ isOff, set, onClose }: { isOff: (k: RepoPrefKey) => boolean; set: (k: RepoPrefKey, off: boolean) => Promise<boolean>; onClose: () => void }) {
+export default function CatchupRepoPrefs({ isOff, set, loaded, onClose }: { isOff: (k: RepoPrefKey) => boolean; loaded: boolean; set: (k: RepoPrefKey, off: boolean) => Promise<boolean>; onClose: () => void }) {
   const t = useT();
   const toast = useToast();
   const ref = useRef<HTMLDivElement>(null);
@@ -39,7 +39,7 @@ export default function CatchupRepoPrefs({ isOff, set, onClose }: { isOff: (k: R
                 return (
                   <div key={suf} className="flex flex-col items-center gap-1" title={globalOn ? undefined : t("learn.repoPrefsGlobalOff")}>
                     <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">{cap}</span>
-                    <button type="button" role="switch" aria-checked={on} aria-label={`${label} ${cap}`} disabled={!globalOn} onClick={() => void flip(k)}
+                    <button type="button" role="switch" aria-checked={on} aria-label={`${label} ${cap}`} disabled={!globalOn || !loaded} onClick={() => void flip(k)}
                       className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:opacity-50 ${on ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
                       <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
                     </button>

@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appendItems, replaceItems, askCounts, filterItems, itemFacets, readRepoPrefs, readStars, repoPrefOff, setStar, tagItems, writeRepoPrefs, catchupRoots, dayKey, findItem, itemsForHashes, listDays, mainOf, readAsk, readDay, readRecent, readSession, searchItems, sanitize, writeAsk, writeSession } from "./catchupStore.ts";
+import { appendItems, replaceItems, askCounts, filterItems, itemFacets, readRepoPrefs, readStars, repoPrefOff, setRepoPref, setStar, tagItems, catchupRoots, dayKey, findItem, itemsForHashes, listDays, mainOf, readAsk, readDay, readRecent, readSession, searchItems, sanitize, writeAsk, writeSession } from "./catchupStore.ts";
 
 assert.ok(process.env.MUSTARD_STREAM_DIR, "임시 디렉터리 필수(실 기록 보호)");
 const root = "/tmp/repo-a";
@@ -142,8 +142,18 @@ console.log("catchupStore ok");
 {
   const r = "/tmp/repo-1239";
   assert.deepStrictEqual(readRepoPrefs(r), { off: [] }, "없으면 다 켬(전과 같음)");
-  assert.deepStrictEqual(writeRepoPrefs(r, ["diffShow", "explainAnalyze", "hacker", 3, "diffShow"]), { off: ["explainAnalyze", "diffShow"] }, "아는 키만·중복 제거·정해진 순서");
+  setRepoPref(r, "diffShow", true);
+  assert.deepStrictEqual(setRepoPref(r, "explainAnalyze", true), { off: ["explainAnalyze", "diffShow"] }, "하나씩 더함·정해진 순서");
+  assert.strictEqual(setRepoPref(r, "hacker", true), null, "모르는 키 거부");
   assert.ok(repoPrefOff(r, "explainAnalyze") && !repoPrefOff(r, "sessionsShow"));
-  assert.deepStrictEqual(writeRepoPrefs(r, "nope"), { off: [] }, "배열 아니면 비움");
+  assert.deepStrictEqual(setRepoPref(r, "diffShow", false), { off: ["explainAnalyze"] }, "하나만 켬(다른 건 그대로)");
+}
+// #1239 하위 폴더 cwd도 레포 최상위 설정을 따름
+{
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "prefs-sub-")));
+  execFileSync("git", ["init", "-q"], { cwd: repo }); mkdirSync(join(repo, "src"));
+  setRepoPref(repo, "explainAnalyze", true);
+  assert.ok(repoPrefOff(join(repo, "src"), "explainAnalyze"), "하위 폴더 해설도 꺼짐");
+  assert.ok(!repoPrefOff(join(repo, "src"), "diffShow"));
 }
 console.log("catchupStore.check ok");

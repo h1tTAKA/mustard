@@ -128,13 +128,13 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   // #1239 레포별 설정 — 전역에서 켠 것 중 이 레포만 끈 항목(서버 prefs.json). 실제 = 전역 && !레포 끔.
   const repoPrefs = useCatchupRepoPrefs(root);
   const explainShow = useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow) && !repoPrefs.isOff("explainShow");
-  const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze) && !repoPrefs.isOff("explainAnalyze");
+  const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze) && repoPrefs.loaded && !repoPrefs.isOff("explainAnalyze"); // 레포 설정 받기 전엔 분석 안 함(리뷰)
   const showCommands = useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow) && !repoPrefs.isOff("commandsShow");
-  const commandsAnalyze = useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze) && !repoPrefs.isOff("commandsAnalyze");
+  const commandsAnalyze = useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze) && repoPrefs.loaded && !repoPrefs.isOff("commandsAnalyze");
   const diffShow = useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow) && !repoPrefs.isOff("diffShow");
   const sessionsShow = useSetting<boolean>(CUKEYS.sessionsShow, CATCHUP_DEFAULTS.sessionsShow) && !repoPrefs.isOff("sessionsShow"); // #1064
   const showTerms = useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow) && !repoPrefs.isOff("termsShow");
-  const termsAnalyze = useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze) && !repoPrefs.isOff("termsAnalyze");
+  const termsAnalyze = useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze) && repoPrefs.loaded && !repoPrefs.isOff("termsAnalyze");
   const explainProvider = useSetting<string>(CUKEYS.explainProvider, ""); // #1062 카테고리별 AI("" = 워크스페이스 기본)
   const commandsProvider = useSetting<string>(CUKEYS.commandsProvider, "");
   const explainModel = useSetting<string>(CUKEYS.explainModel, ""); // "" = 그 프로바이더 기본 모델
@@ -229,7 +229,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const explainOne = useCallback(async (key: string) => {
     const meta = metaRef.current.get(key); const { locale: loc } = cfgRef.current;
     if (!meta) return;
-    const c = cfgRef.current; const pid = ((isCommand(meta) ? c.commandsProvider : c.explainProvider) || c.providerId) as AgentProviderKind | undefined; // #1062 카테고리별 AI
+    const c = cfgRef.current;
+    if (!(isCommand(meta) ? c.commandsAnalyze : c.explainAnalyze)) return; // #1239 줄에 선 뒤·카드 펼치기로 들어와도 지금 분석 꺼짐이면 안 함(리뷰)
+    const pid = ((isCommand(meta) ? c.commandsProvider : c.explainProvider) || c.providerId) as AgentProviderKind | undefined; // #1062 카테고리별 AI
     if (!pid) return;
     const ps = withModel(c.providerSettings, pid, isCommand(meta) ? c.commandsModel : c.explainModel); // 카테고리별 모델
     setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "loading" } : c)));
@@ -634,7 +636,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition ${prefsOpen || repoPrefs.off.length ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
           <IconAdjustmentsHorizontal size={14} stroke={2} aria-hidden />
         </button>
-        {prefsOpen && <CatchupRepoPrefs isOff={repoPrefs.isOff} set={repoPrefs.set} onClose={closePrefs} />}
+        {prefsOpen && <CatchupRepoPrefs isOff={repoPrefs.isOff} set={repoPrefs.set} loaded={repoPrefs.loaded} onClose={closePrefs} />}
         {onToggleChat && ( /* #1078 워크스페이스 질문 — 캐치업 안 질문 화면 ↔ 카드 목록. 헤더 오른쪽 끝, 배경 있는 작은 버튼(켜지면 은은한 머스타드) */
           <button type="button" onClick={onToggleChat} aria-pressed={chatOpen} title={t("learn.chat")}
             className={`inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-[11px] font-medium leading-none transition ${chatOpen ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"}`}>
