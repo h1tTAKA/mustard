@@ -35,7 +35,7 @@ export async function buildSessionItem(root: string, hash: string, ts: number, s
   const j = await r.json().catch(() => null);
   // #1235 서버 오류·JSON 아님은 "세션 없음"이 아님 — 다음 주기에 다시(예전엔 none으로 버려 머지 카드가 영영 빠졌음). none은 서버가 ok로 null을 줄 때만.
   if (r.status >= 400 && r.status < 500) return "none" as const; // 요청 자체가 잘못됨(경로·hash 형식) — 다시 해도 같음(리뷰)
-  if (!r.ok || j?.ok !== true) return "wait" as const;
+  if (!r.ok || j?.ok !== true) return "error" as const; // 서버 오류·JSON 아님 — 호출부가 몇 번만 다시
   const s = j.session as LinkedSession | null | undefined;
   if (!s?.messages?.length && !s?.crew?.length) return "none" as const;
   if (s.closed === false && !force) return "wait" as const;

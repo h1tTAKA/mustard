@@ -45,7 +45,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     const stateKey = `nunopi:auto-explain:${root}`;
     if (!on) { try { localStorage.removeItem(stateKey); } catch { /* ignore */ } return; } // 다시 켜면 그때부터
     // pending = 세션 턴이 아직 안 끝나 카드를 미룬 커밋(#1064) — 다음 주기마다 다시, 20분 지나면 그대로 만듦
-    type Pend = { hash: string; ts: number; subject: string; branch: string; at: number; merge?: boolean };
+    type Pend = { hash: string; ts: number; subject: string; branch: string; at: number; merge?: boolean; err?: number };
     type State = { since: number; done: string[]; pending?: Pend[]; revived?: number; reviveTries?: number; reviveAt?: number };
     const read = (): State | null => { try { return JSON.parse(localStorage.getItem(stateKey) || "null") as State | null; } catch { return null; } };
     const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
@@ -98,13 +98,17 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     const flushPending = async () => {
       const st0 = read(); if (!st0?.pending?.length) return;
       const keep: Pend[] = [];
+      let made = 0; // #1235 한 번에 최대 5개만 요약(되살리기로 많이 쌓여도 새 커밋 설명을 오래 막지 않게, 리뷰) — 나머지는 다음 주기
       for (const pd of st0.pending) {
         if (!alive) return;
+        if (made >= 5) { keep.push(pd); continue; }
         if (!cfg.current.sessOn) continue; // 세션 분석 꺼짐 — 미룬 것도 버림
         if (Date.now() - pd.at > 60 * 60_000) continue; // 1시간 넘게 계속 실패 — 포기
         const { spid: sp, sps: sset, locale: sl } = cfg.current;
-        const r = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, Date.now() - pd.at > 20 * 60_000, !!pd.merge).catch(() => "wait" as const);
+        const r = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, Date.now() - pd.at > 20 * 60_000, !!pd.merge).catch(() => "error" as const);
         if (r === "wait") { keep.push(pd); continue; }
+        if (r === "error") { if ((pd.err ?? 0) < 10) keep.push({ ...pd, err: (pd.err ?? 0) + 1 }); continue; } // 서버 오류 — 10번(약 5분)까지만 다시(리뷰)
+        made++;
         if (r !== "none" && alive) {
           void post("/api/repo/stream", { root, items: [r] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
           window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item: r } }));
@@ -145,7 +149,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         //  한계: 이 기능 전부터 켜 둔 레포에서, 켜기 전 24시간 안 커밋도 처리된 것으로 봄(최대 100개 1회).
         if (!st.revived && !cfg.current.sessOn) { st = { ...st, revived: 1 }; write(st); }
         if (!st.revived && Date.now() >= (st.reviveAt ?? 0)) {
-          const back = await post("/api/repo/git-recent", { path: root, since: Math.floor(Date.now() / 1000) - 86_400, limit: 100 });
+          const back = await post("/api/repo/git-recent", { path: root, since: Math.floor(Date.now() / 1000) - 86_400, limit: 100 }).catch(() => null); // 실패도 아래 재시도 상한으로
           const add: Pend[] = [];
           let failed = !Array.isArray(back?.commits) || !!back?.note; // git 실패도 빈 목록으로 옴(note) — 실패로 봄
           for (const c of (failed ? [] : back.commits) as { hash: string; ts: number; subject?: string; merge?: boolean; branch?: string }[]) {
