@@ -2,7 +2,7 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconStar, IconStarFilled } from "@tabler/icons-react";
+import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconStar, IconStarFilled , IconAdjustmentsHorizontal } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
@@ -19,6 +19,7 @@ import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
 import { useCatchupRepoPrefs } from "@/lib/useCatchupRepoPrefs";
+import CatchupRepoPrefs from "@/components/workspace/CatchupRepoPrefs";
 import { cardMeta, tagMatches, type Facet, type TagType } from "@/lib/catchupMeta";
 import { openCrewTask } from "@/components/workspace/crew/CrewChat";
 import { useFlyCard, collectCards } from "@mustard/nunopi";
@@ -343,6 +344,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
 
   // #996 캘린더 되돌아보기 — 달력 열 때 기록 있는 날짜 로드, 지난 날 고르면 그날 파일만. 실시간(concepts)은 뒤에서 계속 갱신.
   const [calOpen, setCalOpen] = useState(false);
+  const [prefsOpen, setPrefsOpen] = useState(false); // #1239 이 레포 캐치업 설정
+  const closePrefs = useCallback(() => setPrefsOpen(false), []);
   const [days, setDays] = useState<Set<string>>(() => new Set());
   const [viewDay, setViewDay] = useState<string | null>(null);
   const [dayItems, setDayItems] = useState<Concept[] | null>(null); // null = 로딩 중
@@ -626,6 +629,12 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           className={`mr-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition ${calOpen || viewDay ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
           <IconCalendar size={14} stroke={2} aria-hidden />
         </button>
+        {/* #1239 이 레포 캐치업 설정 — 캘린더와 같은 작은 버튼, 이 레포에서 끈 게 있으면 머스타드 */}
+        <button type="button" data-prefs-toggle onClick={() => setPrefsOpen((v) => !v)} aria-expanded={prefsOpen} title={t("learn.repoPrefs")} aria-label={t("learn.repoPrefs")}
+          className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition ${prefsOpen || repoPrefs.off.length ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"}`}>
+          <IconAdjustmentsHorizontal size={14} stroke={2} aria-hidden />
+        </button>
+        {prefsOpen && <CatchupRepoPrefs isOff={repoPrefs.isOff} set={repoPrefs.set} onClose={closePrefs} />}
         {onToggleChat && ( /* #1078 워크스페이스 질문 — 캐치업 안 질문 화면 ↔ 카드 목록. 헤더 오른쪽 끝, 배경 있는 작은 버튼(켜지면 은은한 머스타드) */
           <button type="button" onClick={onToggleChat} aria-pressed={chatOpen} title={t("learn.chat")}
             className={`inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-[11px] font-medium leading-none transition ${chatOpen ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"}`}>
