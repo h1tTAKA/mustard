@@ -46,7 +46,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     if (!on) { try { localStorage.removeItem(stateKey); } catch { /* ignore */ } return; } // 다시 켜면 그때부터
     // pending = 세션 턴이 아직 안 끝나 카드를 미룬 커밋(#1064) — 다음 주기마다 다시, 20분 지나면 그대로 만듦
     type Pend = { hash: string; ts: number; subject: string; branch: string; at: number; merge?: boolean };
-    type State = { since: number; done: string[]; pending?: Pend[]; revived?: number; reviveTries?: number };
+    type State = { since: number; done: string[]; pending?: Pend[]; revived?: number; reviveTries?: number; reviveAt?: number };
     const read = (): State | null => { try { return JSON.parse(localStorage.getItem(stateKey) || "null") as State | null; } catch { return null; } };
     const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
     let alive = true, busy = false;
@@ -144,7 +144,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         //  세션 분석이 꺼져 있으면 되살리기는 건너뛰고 끝으로 찍음(나중에 켰을 때 꺼져 있던 동안의 커밋을 한꺼번에 요약하지 않게, 리뷰).
         //  한계: 이 기능 전부터 켜 둔 레포에서, 켜기 전 24시간 안 커밋도 처리된 것으로 봄(최대 100개 1회).
         if (!st.revived && !cfg.current.sessOn) { st = { ...st, revived: 1 }; write(st); }
-        if (!st.revived) {
+        if (!st.revived && Date.now() >= (st.reviveAt ?? 0)) {
           const back = await post("/api/repo/git-recent", { path: root, since: Math.floor(Date.now() / 1000) - 86_400, limit: 100 });
           const add: Pend[] = [];
           let failed = !Array.isArray(back?.commits) || !!back?.note; // git 실패도 빈 목록으로 옴(note) — 실패로 봄
@@ -158,9 +158,10 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
             add.push({ hash: c.hash, ts: c.ts, subject: c.subject ?? "", branch: c.branch || back.branch || "", at: Date.now(), merge: !!c.merge });
           }
           if (!alive) return; // 꺼진 뒤 옛 상태로 덮어쓰지 않게(리뷰)
-          // 일시 오류면 끝으로 찍지 않음(다음 주기에 다시) — 단 3번까지(계속 실패해도 매 주기 훑지 않게, 리뷰)
+          // 일시 오류면 끝으로 찍지 않음 — 5분 뒤 다시, 3번까지(몇 분 이어지는 오류도 견디고, 계속 실패해도 매 주기 훑지 않게, 리뷰)
+          //  한계: 세션 파일은 있는데 카드가 없는 커밋(턴이 1시간 넘게 안 끝나 버린 것 등)은 "있음"으로 보고 되살리지 않음.
           const cur = read() ?? st, tries = (cur.reviveTries ?? 0) + 1;
-          st = { ...cur, ...(failed && tries < 3 ? { reviveTries: tries } : { revived: 1 }), pending: [...(cur.pending ?? []), ...add.filter((a) => !cur.pending?.some((p) => p.hash === a.hash))] };
+          st = { ...cur, ...(failed && tries < 3 ? { reviveTries: tries, reviveAt: Date.now() + 5 * 60_000 } : { revived: 1 }), pending: [...(cur.pending ?? []), ...add.filter((a) => !cur.pending?.some((p) => p.hash === a.hash))] };
           write(st);
         }
         const j = await post("/api/repo/git-recent", { path: root, since: st.since });
@@ -175,7 +176,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드. 턴이 끝날 때까지(마무리 말 포함) 미뤘다가 만듦.
           if (alive && cfg.current.sessOn) pendingAdd.push({ hash: c.hash, ts: c.ts, subject: c.subject ?? "", branch, at: Date.now(), merge: !!c.merge });
           if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)
-          st = { since: Math.max(st.since, c.ts), done: [...st.done, c.hash].slice(-50), pending: [...(st.pending ?? []), ...pendingAdd.splice(0)] }; // 같은 초 커밋은 done으로 중복 차단
+          st = { ...st, since: Math.max(st.since, c.ts), done: [...st.done, c.hash].slice(-50), pending: [...(st.pending ?? []), ...pendingAdd.splice(0)] }; // 같은 초 커밋은 done으로 중복 차단
           write(st);
           await flushPending(); // #1090 커밋 하나 끝날 때마다 그 세션 카드도 바로(회차 전체를 기다리지 않음)
           st = read() ?? st;
