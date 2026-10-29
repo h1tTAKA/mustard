@@ -2,7 +2,10 @@
 // 캐치업 diff 카드의 변경 코드(#1060) — 기본 접힘, 펼치면 그 커밋·파일 diff를 처음 한 번 가져와 바뀐 구간만 빨강/초록으로.
 // 구간 = diff 화면·자동 설명과 같은 groupHunks(앞뒤 3줄 컨텍스트) → 설명과 같은 단위. 코드는 저장 안 하고 git에서 읽음.
 // #1066 왼쪽에 옛/새 줄 번호. range를 주면 그 줄 범위 구간 하나만(설명 구간별 펼치기), label = 버튼 글자.
-import { Fragment, useRef, useState } from "react";
+// #1229 글자는 언어에 맞게 문법 색칠(shiki, 펼칠 때만 불러옴) — 줄 배경(빨강/초록)은 그대로, 색칠 실패면 예전처럼 단색.
+import { Fragment, useEffect, useRef, useState } from "react";
+import type { ThemedToken } from "shiki";
+import { langOf } from "@/lib/codeLang";
 import { IconChevronDown, IconLoader2 } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import { type DLine, parseDiff, groupHunks } from "@/lib/hunkDiff";
@@ -13,10 +16,45 @@ export default function CatchupDiffCode({ root, hash, file, range, label }: { ro
   const [hunks, setHunks] = useState<DLine[][] | null>(null); // null = 아직/불러오는 중
   const [failed, setFailed] = useState(false);
   const loadingRef = useRef(false); // 불러오는 중 다시 펼쳐도 중복 요청 X(#1060 리뷰)
+  const [tokens, setTokens] = useState<{ dark: boolean; all: ThemedToken[][][] } | null>(null); // 구간 → 줄 → 토큰(없으면 단색), 칠한 테마도(재리뷰)
+  const [isDark, setIsDark] = useState(false);
+  // 다크/라이트 감시는 펼쳐서 코드가 있을 때만(접힌 카드 수십 개가 각자 감시하지 않게, 리뷰)
+  const showing = open && !!hunks?.length;
+  useEffect(() => {
+    if (!showing) return;
+    const read = () => setIsDark(document.documentElement.classList.contains("dark"));
+    read();
+    const obs = new MutationObserver(read);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, [showing]);
+  // 색칠 — 구간마다, 옛 코드(그대로+삭제)와 새 코드(그대로+추가)를 따로 칠해 줄로 되돌림.
+  // 한 흐름으로 이으면 삭제 줄의 열린 주석·문자열이 추가 줄까지 번져 색이 틀림(리뷰). 모르는 언어는 칠하지 않음(예전 초록/빨강 글자 유지).
+  useEffect(() => {
+    const lang = langOf(file);
+    if (!showing || !hunks || lang === "text") return;
+    let live = true;
+    const theme = isDark ? "github-dark" : "github-light";
+    void import("shiki")
+      .then(async ({ codeToTokens }) => {
+        const side = async (ls: DLine[]) => (ls.length ? (await codeToTokens(ls.map((l) => l.text).join("\n"), { lang: lang as never, theme })).tokens : []);
+        return Promise.all(hunks.map(async (h) => {
+          const oldL = h.filter((l) => l.kind !== "add"), newL = h.filter((l) => l.kind !== "del");
+          const [ot, nt] = await Promise.all([side(oldL), side(newL)]);
+          if (ot.length !== oldL.length || nt.length !== newL.length) throw new Error("줄 수 불일치");
+          let o = 0, n = 0;
+          return h.map((l) => (l.kind === "del" ? ot[o++] : l.kind === "add" ? nt[n++] : (o++, nt[n++])));
+        }));
+      })
+      .then((all) => { if (live) setTokens({ dark: isDark, all }); })
+      .catch(() => { if (live) setTokens(null); }); // 실패·줄 수 불일치 → 단색(이전 테마 색이 남지 않게)
+    return () => { live = false; };
+  }, [hunks, isDark, file, showing]);
 
   const toggle = () => {
     const next = !open;
     setOpen(next);
+    if (next) setIsDark(document.documentElement.classList.contains("dark")); // 접은 동안 바뀐 모드를 펼치는 그 렌더부터(3차 리뷰)
     if (!next || hunks || loadingRef.current) return;
     setFailed(false); // 실패했어도 다시 펼치면 재시도
     loadingRef.current = true;
@@ -55,11 +93,16 @@ export default function CatchupDiffCode({ root, hash, file, range, label }: { ro
             {hunks.map((h, i) => (
               <Fragment key={i}>
                 {i > 0 && <div className="border-t border-dashed border-zinc-200 dark:border-zinc-800" aria-hidden />}
-                {h.map((l, j) => (
-                  <div key={j} className={`whitespace-pre pr-2 ${l.kind === "add" ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300" : l.kind === "del" ? "bg-rose-500/15 text-rose-800 dark:text-rose-300" : "text-zinc-500 dark:text-zinc-400"}`}>
-                    {num(l.oldN)}{num(l.newN)}{l.kind === "add" ? "+ " : l.kind === "del" ? "- " : "  "}{l.text || " "}
-                  </div>
-                ))}
+                {h.map((l, j) => {
+                  const toks = tokens?.dark === isDark ? tokens.all[i]?.[j] : undefined; // 다른 테마로 칠한 색은 안 씀(접은 채 모드를 바꾼 뒤 다시 펼 때)
+                  return (
+                    <div key={j} className={`whitespace-pre pr-2 ${l.kind === "add" ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300" : l.kind === "del" ? "bg-rose-500/15 text-rose-800 dark:text-rose-300" : "text-zinc-500 dark:text-zinc-400"}`}>
+                      {num(l.oldN)}{num(l.newN)}
+                      <span className={l.kind === "add" ? "text-emerald-700 dark:text-emerald-400" : l.kind === "del" ? "text-rose-700 dark:text-rose-400" : ""}>{l.kind === "add" ? "+ " : l.kind === "del" ? "- " : "  "}</span>
+                      {toks?.length ? toks.map((tk, n) => <span key={n} style={{ color: tk.color }}>{tk.content}</span>) : (l.text || " ")}
+                    </div>
+                  );
+                })}
               </Fragment>
             ))}
             </div>
