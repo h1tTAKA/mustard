@@ -464,6 +464,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   };
 
   const statusRef = useRef<Record<string, "added" | "modified">>({});
+  const pathRef = useRef(path); pathRef.current = path; // 늦게 온 다른 레포 응답 거르기(리뷰)
   const lastTreeAt = useRef(0); // 트리 마지막 재조회 시각(중복 호출 줄이기)
   const prevActivePath = useRef<string | null>(null); // 같은 레포가 다시 활성화됐는지
   // 워킹트리 변경 상태맵 로드(#687 도트 + #689 챗 승계 트리거). 경로 로드·깃 새로고침 시 호출. 바뀌었으면 true(#1225).
@@ -471,13 +472,14 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     try {
       const rs = await fetch("/api/repo/git-status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p }) });
       const ds = await rs.json();
+      if (p !== pathRef.current) return false; // 그새 레포가 바뀜 — 옛 레포 상태로 덮지 않음(#712 펼침 섞임 방지)
       const map: Record<string, "added" | "modified"> = {};
       // 키는 트리(scan)와 같은 repo-relative POSIX. git porcelain은 항상 "/"지만 방어적 정규화.
       if (rs.ok && ds.isGit && Array.isArray(ds.files)) for (const f of ds.files) { const k = statusKind(f.index ?? "", f.work ?? ""); if (k && typeof f.path === "string") map[f.path.replace(/\\/g, "/")] = k; }
       const changed = !sameStatus(statusRef.current, map);
       if (changed) { statusRef.current = map; setFileStatus(map); } // 같으면 그대로(#1225 리뷰 — 접어 둔 변경 폴더가 다시 펴지지 않게)
       return changed;
-    } catch { if (Object.keys(statusRef.current).length) { statusRef.current = {}; setFileStatus({}); return true; } return false; }
+    } catch { if (p === pathRef.current && Object.keys(statusRef.current).length) { statusRef.current = {}; setFileStatus({}); return true; } return false; }
   }, []);
   // 변경 파일 경로 집합(챗 승계 판별용, #689) — fileStatus 바뀔 때만 새 identity(effect 무한루프 방지).
   const changedFileSet = useMemo(() => new Set(Object.keys(fileStatus)), [fileStatus]);
@@ -507,6 +509,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     // #1225 감시가 "된다"고 해도 OS 알림이 조용히 멈출 수 있음(실측: fseventsd 고장으로 0건) → 안전망 폴링이 트리도 다시 읽음
     // (목록이 같으면 교체 안 함 — 깜빡임 없음). 그래프(무거움)는 감시가 없을 때만 폴링. 규칙은 lib/repoRefresh(점검 있음).
     let tick = 0;
+    let alive = true;
     const startPoll = (supported: boolean) => {
       if (poll) clearInterval(poll);
       const plan = pollPlan(supported);
@@ -518,12 +521,13 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       }, supported ? POLL_MS.watching : POLL_MS.fallback);
     };
     void api.repo.watch({ id, root: path })
-      .then((r) => startPoll(!(r && r.supported === false)))
-      .catch(() => startPoll(false));                               // watch 실패 → 폴링이 유일 수단
+      .then((r) => { if (alive) startPoll(!(r && r.supported === false)); })
+      .catch(() => { if (alive) startPoll(false); }); // 정리 뒤 늦게 온 응답은 무시(리뷰 — 못 지우는 폴링 방지)                               // watch 실패 → 폴링이 유일 수단
     // #1225 같은 레포 탭이 다시 활성화되면 그동안 생긴 파일 바로 반영(가벼운 것만 — 그래프는 #838대로 fs 이벤트 때만). 첫 마운트는 로드 effect가 함.
     if (prevActivePath.current === path) { void loadGitStatus(path); setTreeNonce((n) => n + 1); }
     prevActivePath.current = path;
     return () => {
+      alive = false;
       off();
       if (debounce) clearTimeout(debounce);
       if (poll) clearInterval(poll);
