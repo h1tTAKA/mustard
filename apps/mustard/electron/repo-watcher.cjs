@@ -34,7 +34,8 @@ function startWatch(id, root, onChange) {
     // recursive 미지원(Linux 등) → 폴백 신호.
     return { ok: false, supported: false, error: String((e && e.message) || e) };
   }
-  watcher.on("error", () => {}); // 파일 삭제 등 감시 에러는 조용히
+  // #1225 감시가 에러로 죽으면 정리하고 한 번 갱신 신호 — 이후는 렌더러 안전망 폴링이 맡음(조용히 멈춰 있지 않게)
+  watcher.on("error", () => { stopWatch(id); onChange(); });
   watchers.set(id, { watcher, timer: null });
   return { ok: true, supported: true };
 }

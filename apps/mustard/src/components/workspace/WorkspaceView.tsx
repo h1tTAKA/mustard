@@ -8,6 +8,7 @@ import { NunopiGlyph } from "@/components/brand/ModeSwapToggle";
 import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, GKEYS, withModel, BROWSER_KEYS, BROWSER_DEFAULTS } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
 import FileTree from "@/components/workspace/FileTree";
+import { POLL_MS, pollPlan, sameFiles } from "@/lib/repoRefresh";
 import CodePane from "@/components/workspace/CodePane";
 import WorkspaceChat, { type ChatFocus } from "@/components/workspace/WorkspaceChat";
 import GithubPanel from "@/components/workspace/GithubPanel";
@@ -477,7 +478,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const changedFileSet = useMemo(() => new Set(Object.keys(fileStatus)), [fileStatus]);
   const chatEl = <WorkspaceChat root={path} files={files} focus={chatFocus} prefill={chatPrefill} changedFiles={changedFileSet} providerId={chatPid} providerSettings={chatPs} cardsEnabled={chatCards} onOpenCard={catchupOn ? (key) => { setCatchupChat(false); setRightMode("learn"); setCardJump((j) => ({ key, n: (j?.n ?? 0) + 1 })); } : undefined} />; // #1078 캐치업 안·단독 모드 공용, #1081 카드 링크
   // 깃 그래프 새로고침 시 상태맵도 갱신 — stable(inline이면 GitGraph load가 매 렌더 재생성→무한 fetch).
-  const handleGitRefreshed = useCallback(() => { if (path) void loadGitStatus(path); }, [path, loadGitStatus]);
+  const handleGitRefreshed = useCallback(() => { if (path) { void loadGitStatus(path); setTreeNonce((n) => n + 1); } }, [path, loadGitStatus]); // #1225 git 새로고침 때 파일 목록도
 
   // 실시간 갱신(#739) — 활성 워크스페이스의 레포를 파일 워처로 감시. 변경 시 도트 재로드 + gitNonce↑(GitGraph 재fetch).
   // 활성 path만 watch(keep-alive 멀티탭 중복 방지). recursive 미지원이면 폴링 폴백.
@@ -497,13 +498,20 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     // 성능(#838): 그래프(1965커밋 재조회+재렌더)·트리 통째 재조회(heavy)는 fs 이벤트서만. 안전망 폴링은 도트(git status)만
     // 저비용 갱신 — 변경 없어도 15초마다 heavy로 돌던 churn 제거. fs.watch가 조용히 죽어도 도트는 유지, 그래프·트리는 수동 새로고침 커버.
     // 단 watch 미지원/실패면 fs 이벤트가 아예 없으니 폴링이 heavy 유일 수단 → 그땐 refresh(heavy) 유지.
+    // #1225 감시가 "된다"고 해도 OS 알림이 조용히 멈출 수 있음(실측: fseventsd 고장으로 0건) → 안전망 폴링이 트리도 다시 읽음
+    // (목록이 같으면 교체 안 함 — 깜빡임 없음). 그래프(무거움)는 감시가 없을 때만 폴링. 규칙은 lib/repoRefresh(점검 있음).
+    const startPoll = (supported: boolean) => {
+      const plan = pollPlan(supported);
+      poll = setInterval(() => {
+        if (plan.status) void loadGitStatus(path);
+        if (plan.graph) setGitNonce((n) => n + 1);
+        if (plan.tree) setTreeNonce((n) => n + 1);
+      }, supported ? POLL_MS.watching : POLL_MS.fallback);
+    };
     void api.repo.watch({ id, root: path })
-      .then((r) => {
-        poll = (r && r.supported === false)
-          ? setInterval(refresh, 3000)                             // 미지원: fs 이벤트 없음 → 폴링이 heavy
-          : setInterval(() => void loadGitStatus(path), 15000);    // 지원: 폴링은 도트만(heavy는 fs 이벤트서)
-      })
-      .catch(() => { poll = setInterval(refresh, 3000); });         // watch 실패 → heavy 폴링(유일 수단)
+      .then((r) => startPoll(!(r && r.supported === false)))
+      .catch(() => startPoll(false));                               // watch 실패 → 폴링이 유일 수단
+    refresh(); // #1225 탭이 다시 활성화되면 그동안 생긴 파일 바로 반영
     return () => {
       off();
       if (debounce) clearTimeout(debounce);
@@ -542,7 +550,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       try {
         const r = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
         const d = await r.json();
-        if (!cancelled && r.ok && Array.isArray(d.files)) setFiles(d.files); // 실패 시 기존 목록 유지
+        if (!cancelled && r.ok && Array.isArray(d.files)) setFiles((prev) => (sameFiles(prev, d.files) ? prev : d.files)); // 같으면 그대로(#1225 폴링), 실패 시 기존 목록 유지
       } catch { /* 기존 목록 유지 */ }
     })();
     return () => { cancelled = true; };
