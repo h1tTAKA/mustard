@@ -78,3 +78,23 @@ export function unpackTheme(p: unknown): TermTheme | null {
   }
   return { name: p[0], colors };
 }
+
+// 설정에 저장된 테마(이름 + 색) 읽기 — 필수 색이 다 hex일 때만, 아니면 null.
+export function readStoredTheme(v: unknown): TermTheme | null {
+  if (!v || typeof v !== "object") return null;
+  const { name, colors } = v as { name?: unknown; colors?: Record<string, unknown> };
+  if (typeof name !== "string" || !colors || typeof colors !== "object") return null;
+  return unpackTheme([name, ...COLOR_KEYS.map((k) => (typeof colors[k] === "string" ? colors[k] : ""))]);
+}
+
+// 다크 모드용·라이트 모드용 테마 + "라이트 모드에도 다크용 쓰기". 새 설정이 없으면 옛 값(#914 dark·gray·light·auto)에서.
+export type TermThemeChoice = { dark: TermTheme; light: TermTheme; separate: boolean };
+export function resolveTermThemes(storedDark: unknown, storedLight: unknown, storedSeparate: unknown, legacyPref: string): TermThemeChoice {
+  const legacy = legacyPref === "gray" ? MUSTARD_GRAY : legacyPref === "light" ? MUSTARD_LIGHT : MUSTARD_DARK;
+  return {
+    dark: readStoredTheme(storedDark) ?? legacy,
+    light: readStoredTheme(storedLight) ?? MUSTARD_LIGHT,
+    separate: typeof storedSeparate === "boolean" ? storedSeparate : legacyPref === "auto" || !["dark", "gray", "light"].includes(legacyPref),
+  };
+}
+export const pickTermTheme = (c: TermThemeChoice, appDark: boolean): TermTheme => (appDark || !c.separate ? c.dark : c.light);

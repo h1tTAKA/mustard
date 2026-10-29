@@ -4,7 +4,7 @@
 import { launchOpts, liftStoredArgs } from "@/lib/agentLaunch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
-import { useShortcut, useT, getTerminalThemePref, isTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
+import { useShortcut, useT, isCurrentTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
 import Terminal from "@/components/workspace/Terminal";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
@@ -196,7 +196,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
       setTabs((prev) => [...prev, { id, title: t("workspace.terminalTab", { n: nextNum(prev) }) }]);
       setActiveId(id);
       markAgentUsed(agent);
-      void window.nunopiDesktop?.terminal?.launchAgent?.({ id, agent, dark: isTerminalDark(getTerminalThemePref()), ...launchOpts(agent, args), cwd: d.worktree });
+      void window.nunopiDesktop?.terminal?.launchAgent?.({ id, agent, dark: isCurrentTerminalDark(), ...launchOpts(agent, args), cwd: d.worktree });
     };
     window.addEventListener("mustard:crew-takeover", on);
     return () => window.removeEventListener("mustard:crew-takeover", on);
@@ -208,7 +208,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
     setTabs((prev) => [...prev, { id, title: t("workspace.terminalTab", { n: nextNum(prev) }) }]);
     setActiveId(id);
     // 터미널 테마(#922) + 권한·유저 인자(#927, #1184) 전달. main이 카탈로그로 명령 조립.
-    void window.nunopiDesktop?.terminal?.launchAgent?.({ id, agent, dark: isTerminalDark(getTerminalThemePref()), ...launchOpts(agent) }); // main이 pty ensure 대기 후 커맨드 주입
+    void window.nunopiDesktop?.terminal?.launchAgent?.({ id, agent, dark: isCurrentTerminalDark(), ...launchOpts(agent) }); // main이 pty ensure 대기 후 커맨드 주입
   };
   // 기본 에이전트(#927) 빠른 실행 — 설정의 agent.default.
   // #1184 자동 = 감지되고 켜진 첫 에이전트(카탈로그 순서), 셸만(blank) = 새 터미널
