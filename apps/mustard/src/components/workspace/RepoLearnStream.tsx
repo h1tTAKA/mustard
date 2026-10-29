@@ -690,7 +690,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         {/* #1088 검색 — 평소엔 돋보기 버튼만, 누르면 입력칸(검색어가 있으면 계속 열림). 비운 채 포커스 잃거나 Esc면 닫힘 */}
         {searchOpen || q ? (
           // #1238 칸 밖으로 포커스가 나갈 때만 닫힘(기준 고르기 풀다운으로 옮겨도 안 닫히게)
-          <label className="ml-auto flex min-w-[8rem] flex-1 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 focus-within:border-mustard-500/60 dark:border-zinc-700"
+          <label className="ml-1.5 flex min-w-[8rem] flex-1 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 focus-within:border-mustard-500/60 dark:border-zinc-700"
             onBlur={(e) => { if (!q && !e.currentTarget.contains(e.relatedTarget as Node | null)) { setSearchOpen(false); setSearchBy("text"); } }}
             onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); setSearchOpen(false); setSearchBy("text"); } }}>
             <IconSearch size={11} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
