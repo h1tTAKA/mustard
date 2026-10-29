@@ -18,6 +18,7 @@ import { mergeTerms, parseNarrationTerms, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
+import { useCatchupRepoPrefs } from "@/lib/useCatchupRepoPrefs";
 import { cardMeta, tagMatches, type Facet, type TagType } from "@/lib/catchupMeta";
 import { openCrewTask } from "@/components/workspace/crew/CrewChat";
 import { useFlyCard, collectCards } from "@mustard/nunopi";
@@ -123,14 +124,16 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [lost, setLost] = useState(false); // #1078 실시간 연결이 몇 초 넘게 끊김(평소엔 표시 없음)
   const [termsOpen, setTermsOpen] = useState(false); // #1076 기본은 무조건 닫힘(다시 들어와도 펼쳐져 있지 않게)
   // #1062 설정 > 캐치업 — 카테고리별 표시(창에 보이기)·분석(새로 만들기). 표시는 렌더, 분석은 cfgRef(콜백)로.
-  const explainShow = useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow);
-  const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze);
-  const showCommands = useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow);
-  const commandsAnalyze = useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze);
-  const diffShow = useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow);
-  const sessionsShow = useSetting<boolean>(CUKEYS.sessionsShow, CATCHUP_DEFAULTS.sessionsShow); // #1064
-  const showTerms = useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow);
-  const termsAnalyze = useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze);
+  // #1239 레포별 설정 — 전역에서 켠 것 중 이 레포만 끈 항목(서버 prefs.json). 실제 = 전역 && !레포 끔.
+  const repoPrefs = useCatchupRepoPrefs(root);
+  const explainShow = useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow) && !repoPrefs.isOff("explainShow");
+  const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze) && !repoPrefs.isOff("explainAnalyze");
+  const showCommands = useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow) && !repoPrefs.isOff("commandsShow");
+  const commandsAnalyze = useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze) && !repoPrefs.isOff("commandsAnalyze");
+  const diffShow = useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow) && !repoPrefs.isOff("diffShow");
+  const sessionsShow = useSetting<boolean>(CUKEYS.sessionsShow, CATCHUP_DEFAULTS.sessionsShow) && !repoPrefs.isOff("sessionsShow"); // #1064
+  const showTerms = useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow) && !repoPrefs.isOff("termsShow");
+  const termsAnalyze = useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze) && !repoPrefs.isOff("termsAnalyze");
   const explainProvider = useSetting<string>(CUKEYS.explainProvider, ""); // #1062 카테고리별 AI("" = 워크스페이스 기본)
   const commandsProvider = useSetting<string>(CUKEYS.commandsProvider, "");
   const explainModel = useSetting<string>(CUKEYS.explainModel, ""); // "" = 그 프로바이더 기본 모델

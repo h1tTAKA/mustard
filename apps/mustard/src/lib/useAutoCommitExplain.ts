@@ -7,6 +7,7 @@ import { useLocale, useSetting, withModel, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { parseDiff, groupHunks, diffMark, DIFF_SEP, noteStoreKey, loadNotes, saveNote, explainDiffText } from "@/lib/hunkNotes";
 import { buildSessionItem } from "@/lib/sessionCard";
+import { useCatchupRepoPrefs } from "@/lib/useCatchupRepoPrefs";
 import { isFailedNote, RUNTIME_FAIL_PREFIXES } from "@/lib/failText";
 
 // #1056 캐치업 연동 — 파일 하나 설명이 끝나면 캐치업 카드(kind diff)로. key에 hash·파일을 담아 카드에서 diff를 열 수 있게.
@@ -23,12 +24,13 @@ const SKIP_FILE = /\.(md|mdx|markdown|txt|rst|adoc|lock|png|jpe?g|gif|webp|avif|
 const post = (url: string, body: unknown) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
 
 export function useAutoCommitExplain(root: string, providerId: AgentProviderKind, providerSettings: ProviderSettings) {
-  const autoOn = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits);
+  const repoPrefs = useCatchupRepoPrefs(root); // #1239 이 레포만 끈 분석
+  const autoOn = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits) && !repoPrefs.isOff("diffAnalyze");
   const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
   const diffProvider = useSetting<string>(CUKEYS.diffProvider, ""); // #1062 Diff AI("" = 워크스페이스 기본)
   const diffModel = useSetting<string>(CUKEYS.diffModel, "");
   // #1064 세션 분석 — Diff 분석과 따로 켜고 끔(같은 새 커밋 감시를 공유). AI·모델도 따로.
-  const sessionsOn = useSetting<boolean>(CUKEYS.sessionsAnalyze, CATCHUP_DEFAULTS.sessionsAnalyze);
+  const sessionsOn = useSetting<boolean>(CUKEYS.sessionsAnalyze, CATCHUP_DEFAULTS.sessionsAnalyze) && !repoPrefs.isOff("sessionsAnalyze");
   const sessProvider = useSetting<string>(CUKEYS.sessionsProvider, "");
   const sessModel = useSetting<string>(CUKEYS.sessionsModel, "");
   const on = catchupOn && (autoOn || sessionsOn); // #1062 캐치업 전체 끄면 전부 중지
