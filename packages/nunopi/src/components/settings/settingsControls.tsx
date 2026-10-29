@@ -4,8 +4,13 @@ import type { ReactNode } from "react";
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 
 export function Stepper({ value, min, max, step, label, format, onChange }: { value: number; min: number; max: number; step: number; label: string; format: (v: number) => string; onChange: (v: number) => void }) {
-  // 저장값을 먼저 단계에 맞춘 뒤 한 단계(#1212 리뷰), 소수 단계 오차는 반올림으로 정리
-  const go = (d: number) => onChange(Number(Math.min(max, Math.max(min, Math.round(value / step) * step + d * step)).toFixed(4)));
+  // 단계에 맞는 값이면 한 단계, 안 맞는 값(옛 저장값)이면 그 방향의 가장 가까운 단계로(#1214 리뷰). 소수 단계 오차는 반올림으로 정리
+  const go = (d: number) => {
+    let q = value / step;
+    if (Math.abs(q - Math.round(q)) < 1e-6) q = Math.round(q);
+    const n = Number.isInteger(q) ? q + d : d > 0 ? Math.ceil(q) : Math.floor(q);
+    onChange(Number(Math.min(max, Math.max(min, n * step)).toFixed(4)));
+  };
   const btn = "grid size-7 place-items-center rounded-md text-zinc-600 transition hover:bg-white aria-disabled:opacity-30 aria-disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-700";
   return (
     <span className="flex shrink-0 items-center rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800" role="group" aria-label={label}>

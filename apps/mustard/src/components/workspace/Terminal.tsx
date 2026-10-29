@@ -176,7 +176,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       // #1214 여백 — 바깥(host)에 padding, xterm은 안쪽 칸에 열어 fit이 여백 뺀 크기로 계산하게
       const inner = document.createElement("div");
       inner.style.cssText = "width:100%;height:100%";
-      host.appendChild(inner);
+      host.replaceChildren(inner); // 같은 화면을 다시 그릴 때 전 칸이 남아 쌓이지 않게(리뷰)
       term.open(inner);
       // #1196 인라인 이미지(sixel·iTerm 그림) — 새 탭부터
       if (imageMod) { try { term.loadAddon(new imageMod.ImageAddon()); } catch { /* 지원 안 함 */ } }
@@ -237,6 +237,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
         term.options.fontWeight = o.fontWeight;
         term.options.fontWeightBold = o.fontWeightBold;
         if (host) host.style.padding = padding();
+        if (host && !getSetting<boolean>(TKEYS.hideMouseWhileTyping, TERMINAL_DEFAULTS.hideMouseWhileTyping)) host.classList.remove("mustard-hide-mouse"); // 끄면 숨긴 마우스 바로(리뷰)
         const th = buildTermTheme();
         if (term.options.theme?.cursor !== th.cursor) term.options.theme = th; // #1214 커서 투명도 — 바뀔 때만(테마를 다시 넣으면 프로그램이 바꾼 색이 풀림)
         term.options.scrollSensitivity = o.scrollSensitivity;
@@ -374,13 +375,13 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       };
       // 폭이 잡혔을 때만 fit → 최초 1회 ensure, 이후 resize. 폭 미확정이면 스킵(다음 콜백/폴백서 처리).
       const sync = () => {
-        if (disposed || !term || host.clientWidth < MIN_W) return;
+        if (disposed || !term || inner.clientWidth < MIN_W) return; // #1214 여백 뺀 안쪽 폭으로(리뷰)
         try { fit.fit(); } catch { /* ignore */ }
         if (!ensured) { ensured = true; void firstEnsure(); }
         else { try { nd.terminal.resize({ id, cols: term.cols, rows: term.rows }); } catch { /* ignore */ } }
       };
       ro = new ResizeObserver(sync);
-      ro.observe(host);
+      ro.observe(inner);
       requestAnimationFrame(sync); // 이미 폭이 잡혀 있으면 즉시 진행
       // 폭이 끝내 안 잡혀도(희귀) 터미널이 빈 채 방치되지 않게 폴백 — 최후엔 강제 ensure(데몬이 cols 하한 클램프).
       fallback = setTimeout(() => { if (!ensured && !disposed && term) { ensured = true; void firstEnsure(); } }, 1500);

@@ -20,7 +20,7 @@ export default function TerminalRenderSection() {
     { k: "fontWeightBold", key: TKEYS.fontWeightBold, v: weightBold, min: 100, max: 900, step: 100, fmt: (v: number) => String(v) },
     { k: "paddingX", key: TKEYS.paddingX, v: padX, min: 0, max: 40, step: 2, fmt: (v: number) => `${v}px` },
     { k: "paddingY", key: TKEYS.paddingY, v: padY, min: 0, max: 40, step: 2, fmt: (v: number) => `${v}px` },
-    { k: "cursorOpacity", key: TKEYS.cursorOpacity, v: typeof cursorOpacity === "number" ? cursorOpacity : 1, min: 0.1, max: 1, step: 0.1, fmt: (v: number) => `${Math.round(v * 100)}%` },
+    { k: "cursorOpacity", key: TKEYS.cursorOpacity, v: typeof cursorOpacity === "number" && Number.isFinite(cursorOpacity) ? Math.min(1, Math.max(0.1, cursorOpacity)) : 1, min: 0.1, max: 1, step: 0.1, fmt: (v: number) => `${Math.round(v * 100)}%` },
   ] as const;
   const cMode = typeof contrast !== "number" ? "auto" : contrast <= 1 ? "off" : "custom";
   return (
@@ -35,7 +35,7 @@ export default function TerminalRenderSection() {
         </SettingRow>
         {cMode === "custom" && typeof contrast === "number" && (
           <div className="flex justify-end">
-            <Stepper value={contrast} min={1.5} max={21} step={0.5} label={t("settings.minContrast")} format={(v) => `${v}:1`} onChange={(v) => setSetting(TKEYS.minContrast, v)} />
+            <Stepper value={Math.min(21, Math.max(1.5, contrast))} min={1.5} max={21} step={0.5} label={t("settings.minContrast")} format={(v) => `${v}:1`} onChange={(v) => setSetting(TKEYS.minContrast, v)} />
           </div>
         )}
       </div>
