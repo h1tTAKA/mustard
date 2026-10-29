@@ -8,7 +8,9 @@ const net = require("node:net");
 let DAEMON_VERSION = 0;
 try { ({ DAEMON_VERSION } = require("./daemon-version.cjs")); } catch { /* 터미널은 살림 */ }
 const fs = require("node:fs");
-const { applyTerminalEnv } = require("./terminal-env.cjs");
+// #1226 색 능력 env — 파일이 빠져도 데몬은 떠야 함(못 읽으면 그대로 둠, 리뷰)
+let applyTerminalEnv = (env) => env;
+try { ({ applyTerminalEnv } = require("./terminal-env.cjs")); } catch { /* 터미널은 살림 */ }
 
 const SOCK = process.env.NUNOPI_TERM_SOCK;   // 소켓 경로
 const TOKEN = process.env.NUNOPI_TERM_TOKEN; // 인증 토큰
