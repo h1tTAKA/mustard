@@ -383,39 +383,32 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       .then((j) => { if (j?.ok && j.counts) setAskCounts(j.counts as Record<string, number>); }).catch(() => { /* 배지 없이 */ });
   }, [root]);
   const onAskCount = useCallback((key: string, n: number) => setAskCounts((p) => (p[key] === n ? p : { ...p, [key]: n })), []);
-  // #1238 별표 — 레포별 서버 저장(stars.json). 누르면 바로 바꿈(리뷰 3회로 정리):
-  //  · 첫 읽기가 늦게 와도 누른 key만 내 값으로 덮어 합침(다른 별표는 서버 것)
-  //  · 저장 실패가 있었으면, 날아가는 저장이 모두 끝난 뒤 서버 값을 다시 읽어 맞춤(진행 중 요청을 옛 스냅샷으로 덮지 않게)
-  const starLocal = useRef(new Map<string, boolean>()); // 마지막 동기화 뒤 누른 key → 켬/끔
-  const starSync = useRef({ inflight: 0, failed: false });
+  // #1238 별표 — 레포별 서버 저장(stars.json). 누르면 바로 바꿈. 리뷰 5회 끝에 한 규칙으로:
+  //  화면 = 서버 값 + "아직 저장 확정 안 된 클릭"(starLocal). 서버 값을 언제 읽든 이걸로 합치니 요청 순서가 섞여도 맞음.
+  //  저장 성공·실패 모두 그 클릭을 starLocal에서 지움(같은 key를 그새 또 눌렀으면 안 지움). 실패면 서버 값을 다시 읽어 맞춤.
+  const starLocal = useRef(new Map<string, { on: boolean; n: number }>());
+  const starN = useRef(0);
   const loadStars = useCallback(() => fetch(`/api/repo/stream/star?root=${encodeURIComponent(root)}`).then((r) => r.json())
     .then((j) => (j?.ok && j.stars ? (j.stars as Record<string, number>) : null)).catch(() => null), [root]);
-  const withLocal = (st: Record<string, number>) => { const n = { ...st }; for (const [k, on] of starLocal.current) { if (on) n[k] = n[k] ?? Date.now(); else delete n[k]; } return n; };
+  const withLocal = (st: Record<string, number>) => { const n = { ...st }; for (const [k, x] of starLocal.current) { if (x.on) n[k] = n[k] ?? Date.now(); else delete n[k]; } return n; };
+  const syncStars = useCallback((left: number) => void loadStars().then((st) => {
+    if (st) { setStars(withLocal(st)); return; }
+    if (left > 0) setTimeout(() => syncStars(left - 1), 3000); else toast(t("learn.starFailed")); // 서버를 못 읽음 — 화면이 다를 수 있음을 알림
+  }), [loadStars, t, toast]); // withLocal은 ref만 읽음
   useEffect(() => {
     let alive = true;
     void loadStars().then((st) => { if (alive && st) setStars(withLocal(st)); });
     return () => { alive = false; };
   }, [loadStars]); // withLocal은 ref만 읽음
   const toggleStar = useCallback((key: string) => {
-    const on = !stars[key];
-    starLocal.current.set(key, on);
-    setStars((p) => { const n = { ...p }; if (on) n[key] = Date.now(); else delete n[key]; return n; });
-    const sync = starSync.current; sync.inflight++;
+    const on = !stars[key], n = ++starN.current;
+    starLocal.current.set(key, { on, n });
+    setStars((p) => { const x = { ...p }; if (on) x[key] = Date.now(); else delete x[key]; return x; });
+    const done = () => { if (starLocal.current.get(key)?.n === n) starLocal.current.delete(key); };
     fetch("/api/repo/stream/star", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, key, on }) }).then((r) => r.json())
-      .then((j) => { if (!j?.ok) throw new Error("save"); })
-      .catch(() => { sync.failed = true; toast(t("learn.starFailed")); })
-      .finally(() => {
-        if (--sync.inflight > 0 || !sync.failed) return;
-        sync.failed = false;
-        // 다시 읽는 사이 새 클릭이 있으면 그 저장이 끝난 뒤(마지막 finally)에 다시, 읽기 자체가 실패하면 3초 뒤 2번까지(리뷰)
-        const resync = (left: number) => void loadStars().then((st) => {
-          if (sync.inflight > 0) { sync.failed = true; return; }
-          if (!st) { if (left > 0) setTimeout(() => { if (sync.inflight === 0) resync(left - 1); else sync.failed = true; }, 3000); return; }
-          starLocal.current.clear(); setStars(st);
-        });
-        resync(2);
-      });
-  }, [stars, root, t, toast, loadStars]);
+      .then((j) => { if (!j?.ok) throw new Error("save"); done(); })
+      .catch(() => { done(); toast(t("learn.starFailed")); syncStars(2); });
+  }, [stars, root, t, toast, syncStars]);
   // 경계선 드래그 — 패널 높이 = 컴포넌트 바닥 - 포인터 y. 목록·패널 최소 높이 보장.
   const dragCleanup = useRef<(() => void) | null>(null);
   useEffect(() => () => dragCleanup.current?.(), []); // 드래그 중 언마운트돼도 리스너 정리(#998 리뷰)
