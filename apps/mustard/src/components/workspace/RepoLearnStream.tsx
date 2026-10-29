@@ -18,7 +18,7 @@ import { mergeTerms, parseNarrationTerms, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
-import { cardMeta, tagMatches } from "@/lib/catchupMeta";
+import { cardMeta, tagMatches, type Facet, type TagType } from "@/lib/catchupMeta";
 import { openCrewTask } from "@/components/workspace/crew/CrewChat";
 import { useFlyCard, collectCards } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
@@ -161,6 +161,19 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [searchOpen, setSearchOpen] = useState(false); // #1088 돋보기 버튼 → 입력칸
   const [found, setFound] = useState<Concept[] | null>(null); // null = 검색 중
   const [allFolders, setAllFolders] = useState(false); // #1181 되돌아보기·검색 — 모든 작업 폴더(worktree·지운 것 포함)
+  // #1238 검색 기준 — 글자(서버가 제목·설명) / 브랜치·에이전트·커밋(풀다운 최신순 → 고르면 칩 필터와 같은 tag로 전체 날짜에서 모음)
+  const [searchBy, setSearchBy] = useState<"text" | TagType>("text");
+  const [facets, setFacets] = useState<Record<TagType, Facet[]> | null>(null);
+  const wantFacets = searchOpen && searchBy !== "text";
+  useEffect(() => {
+    if (!wantFacets) return;
+    let alive = true;
+    const none = { branch: [], agent: [], hash: [] };
+    fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&facets=1${allFolders ? "&all=1" : ""}`).then((r) => r.json())
+      .then((j) => { if (alive) setFacets(j?.ok && j.facets ? (j.facets as Record<TagType, Facet[]>) : none); })
+      .catch(() => { if (alive) setFacets(none); });
+    return () => { alive = false; };
+  }, [wantFacets, root, allFolders]);
   const query = q.trim();
   useEffect(() => {
     if (!query) return;
@@ -377,12 +390,30 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       className="inline-flex cursor-pointer items-center gap-0.5 rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 transition hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"><IconLayoutKanban size={10} stroke={2} className="shrink-0" aria-hidden />Crew</span>
   );
   const tagMatch = (c: { kind: string; key: string; tool: string }) => !tag || tagMatches(c, tag.type, tag.value);
+  // #1238 칩·풀다운 필터는 서버에서 전체 날짜로(예전엔 불러온 최근 100개 안에서만). 받기 전엔 지금 목록에서 거른 것.
+  const [tagFound, setTagFound] = useState<{ k: string; items: Concept[] } | null>(null);
+  const tagKey = tag ? `${tag.type}|${tag.value}|${allFolders ? 1 : 0}` : "";
+  useEffect(() => {
+    if (!tagKey) return;
+    let alive = true;
+    const [type, value] = tagKey.split("|");
+    fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&tag=${type}&v=${encodeURIComponent(value)}${allFolders ? "&all=1" : ""}`).then((r) => r.json())
+      .then((j) => { if (alive) setTagFound({ k: tagKey, items: j?.ok && Array.isArray(j.items) ? (j.items as Omit<Concept, "status">[]).map((x) => ({ ...x, status: "done" as const })) : [] }); })
+      .catch(() => { if (alive) setTagFound({ k: tagKey, items: [] }); });
+    return () => { alive = false; };
+  }, [tagKey, root, allFolders]);
+  // 서버 결과 + 그 뒤 실시간으로 들어온 같은 값 카드(최신순, key 중복 제거)
+  const tagSource = useMemo(() => {
+    if (!tagKey || tagFound?.k !== tagKey) return null;
+    const have = new Set(tagFound.items.map((x) => x.key));
+    return [...concepts.filter((c) => !have.has(c.key) && tagMatch(c)), ...tagFound.items].sort((a, b) => b.ts - a.ts);
+  }, [tagKey, tagFound, concepts]); // eslint-disable-line react-hooks/exhaustive-deps -- tagMatch는 tag(=tagKey)로만 바뀜
   // 칩을 버튼처럼(카드 헤더 버튼 안이라 span + 전파 막기)
   const chipProps = (t2: Tag) => ({ role: "button" as const, tabIndex: 0, title: t("learn.chipFilter"),
     onClick: (e: React.MouseEvent) => { e.stopPropagation(); toggleTag(t2); },
     onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggleTag(t2); } } });
   const chipOn = (t2: Tag) => (tag && tag.type === t2.type && tag.value === t2.value ? " ring-1 ring-mustard-500/70" : "");
-  const shown = (query ? (found ?? []) : viewDay ? (dayItems ?? []) : concepts).filter((c) => (isCommand(c) ? showCommands : c.kind === "diff" ? diffShow : c.kind === "session" ? sessionsShow : explainShow) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)) // #1062 표시 끔 = 분석된 것도 숨김, 문서 편집 카드는 항상 숨김(#1049)
+  const shown = (query ? (found ?? []) : tagSource ?? (viewDay ? (dayItems ?? []) : concepts)).filter((c) => (isCommand(c) ? showCommands : c.kind === "diff" ? diffShow : c.kind === "session" ? sessionsShow : explainShow) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)) // #1062 표시 끔 = 분석된 것도 숨김, 문서 편집 카드는 항상 숨김(#1049)
     && (filter === "all" || (filter === "crew" ? !!crewTask(c) : filter === "commands" ? isCommand(c) : filter === "diff" ? c.kind === "diff" : filter === "session" ? c.kind === "session" : filter === "explain" && !isCommand(c) && c.kind !== "diff" && c.kind !== "session"))).filter(tagMatch);
   // #1064 세션 → 에이전트로 넘기기(인앱 브라우저 피드백과 같은 경로). 카드 하나에 요청 입력창.
   const [handoffKey, setHandoffKey] = useState<string | null>(null);
@@ -540,11 +571,26 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         ))}
         {/* #1088 검색 — 평소엔 돋보기 버튼만, 누르면 입력칸(검색어가 있으면 계속 열림). 비운 채 포커스 잃거나 Esc면 닫힘 */}
         {searchOpen || q ? (
-          <label className="ml-auto flex min-w-[8rem] flex-1 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 focus-within:border-mustard-500/60 dark:border-zinc-700">
+          // #1238 칸 밖으로 포커스가 나갈 때만 닫힘(기준 고르기 풀다운으로 옮겨도 안 닫히게)
+          <label className="ml-auto flex min-w-[8rem] flex-1 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 focus-within:border-mustard-500/60 dark:border-zinc-700"
+            onBlur={(e) => { if (!q && !e.currentTarget.contains(e.relatedTarget as Node | null)) { setSearchOpen(false); setSearchBy("text"); } }}
+            onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); setSearchOpen(false); setSearchBy("text"); } }}>
             <IconSearch size={11} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
-            <input type="search" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("learn.search")} aria-label={t("learn.search")}
-              onBlur={() => { if (!q) setSearchOpen(false); }} onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); setSearchOpen(false); } }}
-              className="min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none placeholder:text-zinc-400 dark:text-zinc-200" />
+            <select value={searchBy} onChange={(e) => setSearchBy(e.target.value as "text" | TagType)} aria-label={t("learn.searchBy")} title={t("learn.searchBy")}
+              className="shrink-0 bg-transparent text-[11px] text-zinc-500 outline-none dark:text-zinc-400">
+              {(["text", "branch", "agent", "hash"] as const).map((b) => <option key={b} value={b}>{t(`learn.searchBy.${b}`)}</option>)}
+            </select>
+            {searchBy === "text" ? (
+              <input type="search" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("learn.search")} aria-label={t("learn.search")}
+                className="min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none placeholder:text-zinc-400 dark:text-zinc-200" />
+            ) : (
+              // 고르면 칩 필터와 같은 표시(아래 "필터 ✕")로 — 검색칸은 닫음
+              <select value="" autoFocus aria-label={t("learn.searchPick")} onChange={(e) => { const v = e.target.value; if (!v) return; setTag({ type: searchBy, value: v }); setSearchOpen(false); setSearchBy("text"); }}
+                className={`min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none dark:text-zinc-200 ${searchBy === "hash" ? "font-mono" : ""}`}>
+                <option value="">{facets ? (facets[searchBy].length ? t("learn.searchPick") : t("learn.searchNone")) : "…"}</option>
+                {facets?.[searchBy].map((f) => <option key={f.value} value={f.value}>{searchBy === "hash" && f.label ? `${f.value} · ${f.label.slice(0, 60)}` : f.value}</option>)}
+              </select>
+            )}
           </label>
         ) : (
           <button type="button" onClick={() => setSearchOpen(true)} title={t("learn.search")} aria-label={t("learn.search")}
