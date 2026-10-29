@@ -11,8 +11,8 @@ const fs = require("node:fs");
 // #1226 색 능력 env — 파일이 빠져도 데몬은 떠야 함(못 읽으면 그대로 둠, 리뷰)
 let applyTerminalEnv = (env) => env;
 try { ({ applyTerminalEnv } = require("./terminal-env.cjs")); } catch (e) {
-  // 데몬은 stdio를 버리고 떠서 console은 안 보임 → 소켓 옆 로그 파일에 남김(재리뷰)
-  try { fs.appendFileSync(`${process.env.NUNOPI_TERM_SOCK || "/tmp/mustard-term"}.log`, `${new Date().toISOString()} terminal-env 로드 실패 — 색 능력 env 없이 진행: ${(e && e.message) || e}\n`); } catch { /* ignore */ }
+  // 데몬은 stdio를 버리고 떠서 console은 안 보임 → 앱이 정해 준 userData 로그 파일에만(재리뷰, 없으면 생략)
+  if (process.env.NUNOPI_TERM_LOG) try { fs.appendFileSync(process.env.NUNOPI_TERM_LOG, `${new Date().toISOString()} terminal-env 로드 실패 — 색 능력 env 없이 진행: ${(e && e.message) || e}\n`); } catch { /* ignore */ }
 }
 
 const SOCK = process.env.NUNOPI_TERM_SOCK;   // 소켓 경로
@@ -59,7 +59,7 @@ function ensure({ id, cwd, cols, rows, dark, shell: wantShell, shellArgs }) {
     // 터미널의 claude가 자식 세션으로 오인(트랜스크립트 저장 꺼짐)하고, MESSAGING_SOCKET/TOKEN까지 새 격리가 깨짐.
     // 유저가 셸 rc에 둔 CLAUDE_* 설정은 로그인 셸이 다시 읽으므로 상속분만 지워도 안전.
     for (const k of Object.keys(env)) if (k === "CLAUDECODE" || k.startsWith("CLAUDE_")) delete env[k];
-    delete env.NUNOPI_TERM_SOCK; delete env.NUNOPI_TERM_TOKEN; delete env.NUNOPI_TERM_SHELL; // 데몬 내부 env 누출 방지
+    delete env.NUNOPI_TERM_SOCK; delete env.NUNOPI_TERM_TOKEN; delete env.NUNOPI_TERM_SHELL; delete env.NUNOPI_TERM_LOG; // 데몬 내부 env 누출 방지
     env.MUSTARD_TERM_ID = id; // #989 관리형 Claude 훅이 이 세션으로 상태 POST(없으면 훅 no-op = Mustard 밖 claude)
     // 터미널 배경 밝기 힌트(#914) — CLI TUI(claude 등)가 라이트/다크 색을 스스로 고르게. "fg;bg" ANSI 인덱스.
     // 라이트=bg 15(밝음)→"0;15", 다크=bg 0(어두움)→"15;0". OSC11 응답과 병행(env만 보는 도구 커버).
