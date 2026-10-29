@@ -383,22 +383,32 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       .then((j) => { if (j?.ok && j.counts) setAskCounts(j.counts as Record<string, number>); }).catch(() => { /* 배지 없이 */ });
   }, [root]);
   const onAskCount = useCallback((key: string, n: number) => setAskCounts((p) => (p[key] === n ? p : { ...p, [key]: n })), []);
-  // #1238 별표 — 레포별 서버 저장(stars.json). 누르면 바로 바꾸고, 저장 실패면 서버 값을 다시 읽어 맞춤(되돌리기 계산보다 단순·연타에도 정확, 리뷰).
-  const starTouched = useRef(false); // 누른 뒤 늦게 온 첫 읽기 결과가 방금 누른 별을 지우지 않게
+  // #1238 별표 — 레포별 서버 저장(stars.json). 누르면 바로 바꿈(리뷰 3회로 정리):
+  //  · 첫 읽기가 늦게 와도 누른 key만 내 값으로 덮어 합침(다른 별표는 서버 것)
+  //  · 저장 실패가 있었으면, 날아가는 저장이 모두 끝난 뒤 서버 값을 다시 읽어 맞춤(진행 중 요청을 옛 스냅샷으로 덮지 않게)
+  const starLocal = useRef(new Map<string, boolean>()); // 마지막 동기화 뒤 누른 key → 켬/끔
+  const starSync = useRef({ inflight: 0, failed: false });
   const loadStars = useCallback(() => fetch(`/api/repo/stream/star?root=${encodeURIComponent(root)}`).then((r) => r.json())
     .then((j) => (j?.ok && j.stars ? (j.stars as Record<string, number>) : null)).catch(() => null), [root]);
+  const withLocal = (st: Record<string, number>) => { const n = { ...st }; for (const [k, on] of starLocal.current) { if (on) n[k] = n[k] ?? Date.now(); else delete n[k]; } return n; };
   useEffect(() => {
-    let alive = true; starTouched.current = false;
-    void loadStars().then((st) => { if (alive && st && !starTouched.current) setStars(st); });
+    let alive = true;
+    void loadStars().then((st) => { if (alive && st) setStars(withLocal(st)); });
     return () => { alive = false; };
-  }, [loadStars]);
+  }, [loadStars]); // withLocal은 ref만 읽음
   const toggleStar = useCallback((key: string) => {
-    starTouched.current = true;
     const on = !stars[key];
+    starLocal.current.set(key, on);
     setStars((p) => { const n = { ...p }; if (on) n[key] = Date.now(); else delete n[key]; return n; });
+    const sync = starSync.current; sync.inflight++;
     fetch("/api/repo/stream/star", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, key, on }) }).then((r) => r.json())
       .then((j) => { if (!j?.ok) throw new Error("save"); })
-      .catch(() => { toast(t("learn.starFailed")); void loadStars().then((st) => { if (st) setStars(st); }); });
+      .catch(() => { sync.failed = true; toast(t("learn.starFailed")); })
+      .finally(() => {
+        if (--sync.inflight > 0 || !sync.failed) return;
+        sync.failed = false;
+        void loadStars().then((st) => { if (st && sync.inflight === 0) { starLocal.current.clear(); setStars(st); } });
+      });
   }, [stars, root, t, toast, loadStars]);
   // 경계선 드래그 — 패널 높이 = 컴포넌트 바닥 - 포인터 y. 목록·패널 최소 높이 보장.
   const dragCleanup = useRef<(() => void) | null>(null);
@@ -632,7 +642,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
             onBlur={(e) => { if (!q && !e.currentTarget.contains(e.relatedTarget as Node | null)) { setSearchOpen(false); setSearchBy("text"); } }}
             onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); setSearchOpen(false); setSearchBy("text"); } }}>
             <IconSearch size={11} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
-            <select value={searchBy} onChange={(e) => setSearchBy(e.target.value as "text" | TagType)} aria-label={t("learn.searchBy")} title={t("learn.searchBy")}
+            <select value={searchBy} onChange={(e) => { const b = e.target.value as "text" | TagType; setSearchBy(b); if (b !== "text") setQ(""); }} aria-label={t("learn.searchBy")} title={t("learn.searchBy")}
               className="shrink-0 bg-transparent text-[11px] text-zinc-500 outline-none dark:text-zinc-400">
               {(["text", "branch", "agent", "hash"] as const).map((b) => <option key={b} value={b}>{t(`learn.searchBy.${b}`)}</option>)}
             </select>
