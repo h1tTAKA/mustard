@@ -19,7 +19,7 @@ export function gpuAllowed(mode: GpuMode, isLinux: boolean, gpuName: string | nu
 // 최소 대비 — "auto"(밝은 배경 4.5, 어두운 배경 3), 1 = 끄기, 숫자 = 직접(1~21, xterm 범위).
 export type MinContrast = "auto" | number;
 export function resolveMinContrast(setting: unknown, lightBackground: boolean): number {
-  if (typeof setting === "number" && Number.isFinite(setting)) return Math.min(21, Math.max(1, setting));
+  if (typeof setting === "number" && Number.isFinite(setting)) return setting <= 1 ? 1 : Math.min(21, Math.max(1.5, setting)); // 1 이하 = 끄기, 직접은 화면과 같은 1.5~21(재리뷰)
   return lightBackground ? 4.5 : 3;
 }
 
