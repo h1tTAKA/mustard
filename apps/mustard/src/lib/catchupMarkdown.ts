@@ -17,8 +17,14 @@ export function diffCardMarkdown(o: { path: string; hash: string; branch: string
 }
 
 // 세션 카드 — 요약 + 원본 대화 전체(복사는 상한 없음, 에이전트 공유와 다름).
+// #1238 원본 대화만(요약·머리말 없이) — 다른 에이전트·문서에 그대로 붙이기용. Crew 대화방 글이 있으면 앞에.
+export function sessionRawText(messages: SessionMsg[], crew: { from: string; to: string[]; text: string }[] = []): string {
+  const talk = crew.map((c) => `[@${c.from}${c.to.length ? ` → ${c.to.map((x) => `@${x}`).join(" ")}` : ""}] ${c.text}`);
+  return [...talk, ...messages.map((m) => `[${m.role === "user" ? "User" : m.role === "assistant" ? "Agent" : "Tool"}] ${m.text}`)].join("\n\n");
+}
+
 export function sessionCardMarkdown(o: { subject: string; hash: string; branch: string; agent: string; ts: number; summary: string; messages: SessionMsg[] }): string {
-  const raw = o.messages.map((m) => `[${m.role === "user" ? "User" : m.role === "assistant" ? "Agent" : "Tool"}] ${m.text}`).join("\n\n");
+  const raw = sessionRawText(o.messages);
   return tidy([`## ${o.subject} @${o.hash.slice(0, 7)}`, "",
     [o.agent && `- Agent: ${o.agent}`, o.branch && `- Branch: ${o.branch}`, `- Time: ${stamp(o.ts)}`].filter(Boolean).join("\n"), "",
     "### Summary", "", o.summary.trim(), "",

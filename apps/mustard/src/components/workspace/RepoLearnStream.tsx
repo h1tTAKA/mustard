@@ -2,12 +2,12 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban } from "@tabler/icons-react";
+import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconChevronDown, IconBook2, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconPlus, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconStar, IconStarFilled } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
 import { diffSections, groupHunks, parseDiff } from "@/lib/hunkDiff";
-import { diffCardMarkdown, sessionCardMarkdown } from "@/lib/catchupMarkdown";
+import { diffCardMarkdown, sessionCardMarkdown, sessionRawText } from "@/lib/catchupMarkdown";
 import CatchupSessionRaw from "@/components/workspace/CatchupSessionRaw";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import { sendToAgent } from "@/lib/browser/sendToAgent";
@@ -18,6 +18,7 @@ import { mergeTerms, parseNarrationTerms, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
+import { cardMeta, tagMatches, type Facet, type TagType } from "@/lib/catchupMeta";
 import { openCrewTask } from "@/components/workspace/crew/CrewChat";
 import { useFlyCard, collectCards } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
@@ -154,12 +155,27 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     toast(ok ? t("card.added", { term: x.term }) : t("card.exists"));
   }, [root, t, toast]);
   // #1049 카테고리 필터 — 해설(실시간 해설·파일/심볼 설명) / 명령어 / 용어. 꺼진 카테고리는 칩도 숨김.
-  const [filterSel, setFilter] = useState<"all" | "explain" | "commands" | "diff" | "session" | "terms" | "crew">("all");
+  const [filterSel, setFilter] = useState<"all" | "explain" | "commands" | "diff" | "session" | "terms" | "crew" | "ask" | "star">("all"); // #1238 ask·star = 질문·별표 있는 카드(전체 날짜)
   // #1049 검색 — 서버가 전체 날짜에서 제목·설명을 찾음(입력 멈춘 뒤 250ms). 용어집은 화면에서 거름.
   const [q, setQ] = useState("");
   const [searchOpen, setSearchOpen] = useState(false); // #1088 돋보기 버튼 → 입력칸
   const [found, setFound] = useState<Concept[] | null>(null); // null = 검색 중
   const [allFolders, setAllFolders] = useState(false); // #1181 되돌아보기·검색 — 모든 작업 폴더(worktree·지운 것 포함)
+  // #1238 검색 기준 — 글자(서버가 제목·설명) / 브랜치·에이전트·커밋(풀다운 최신순 → 고르면 칩 필터와 같은 tag로 전체 날짜에서 모음)
+  const [searchBy, setSearchBy] = useState<"text" | TagType>("text");
+  const [facetsGot, setFacets] = useState<{ scope: string; v: Record<TagType, Facet[]> } | null>(null);
+  const wantFacets = searchOpen && searchBy !== "text";
+  useEffect(() => {
+    if (!wantFacets) return;
+    let alive = true;
+    const none = { branch: [], agent: [], hash: [] }, scope = `${root}|${allFolders ? 1 : 0}`;
+    fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&facets=1${allFolders ? "&all=1" : ""}`).then((r) => r.json())
+      .then((j) => { if (alive) setFacets({ scope, v: j?.ok && j.facets ? (j.facets as Record<TagType, Facet[]>) : none }); })
+      .catch(() => { if (alive) setFacets({ scope, v: none }); });
+    return () => { alive = false; };
+  }, [wantFacets, root, allFolders]);
+  // 레포·모든 폴더를 바꾸면 새 값이 올 때까지 "…"(옛 범위 값을 고르지 않게, 리뷰)
+  const facets = facetsGot?.scope === `${root}|${allFolders ? 1 : 0}` ? facetsGot.v : null;
   const query = q.trim();
   useEffect(() => {
     if (!query) return;
@@ -172,10 +188,32 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     }, 250);
     return () => { alive = false; clearTimeout(tm); };
   }, [query, root, allFolders]);
+  const [askCounts, setAskCounts] = useState<Record<string, number>>({});
+  const [stars, setStars] = useState<Record<string, number>>({});
+  const hasAsk = Object.values(askCounts).some((n) => n > 0), hasStar = Object.keys(stars).length > 0;
   // #1135 Crew 작업(역할 보고·crew/* 브랜치 diff·세션)이 하나라도 있을 때만 Crew 칩
   // tool: diff = "브랜치 · 커밋 제목", 세션 = "에이전트 · 브랜치" — 브랜치 자리만 봄(커밋 제목에 "crew/"가 있어도 안 걸리게, 리뷰)
   const hasCrew = concepts.some((c) => c.tool.startsWith("crew|") || (c.kind === "diff" && c.tool.startsWith("crew/")) || (c.kind === "session" && c.tool.split(" · ")[1]?.startsWith("crew/")));
-  const filter = (filterSel === "explain" && !explainShow) || (filterSel === "commands" && !showCommands) || (filterSel === "diff" && !diffShow) || (filterSel === "session" && !sessionsShow) || (filterSel === "terms" && !showTerms) || (filterSel === "crew" && !hasCrew) ? "all" : filterSel;
+  const filter = (filterSel === "explain" && !explainShow) || (filterSel === "commands" && !showCommands) || (filterSel === "diff" && !diffShow) || (filterSel === "session" && !sessionsShow) || (filterSel === "terms" && !showTerms) || (filterSel === "crew" && !hasCrew) || (filterSel === "ask" && !hasAsk) || (filterSel === "star" && !hasStar) ? "all" : filterSel;
+  // #1238 질문·별표 칩 — 서버에서 전체 날짜로(별표·질문이 바뀌면 다시). 받는 사이엔 지금 목록에서 거른 것도 합쳐 바로 반영.
+  const onlyKind = filter === "ask" || filter === "star" ? filter : null;
+  const onlyPred = (c: { key: string }) => (onlyKind === "star" ? !!stars[c.key] : (askCounts[c.key] ?? 0) > 0);
+  const onlySig = onlyKind ? `${onlyKind}|${allFolders ? 1 : 0}|${Object.keys(onlyKind === "star" ? stars : askCounts).filter((k) => onlyKind === "star" || askCounts[k] > 0).sort().join(",")}` : "";
+  const [onlyFound, setOnlyFound] = useState<{ scope: string; items: Concept[] } | null>(null); // scope = 종류|모든 폴더(바꾸면 옛 범위 안 섞이게)
+  useEffect(() => {
+    if (!onlySig) return;
+    let alive = true;
+    const [kind, af] = onlySig.split("|"); const scope = `${kind}|${af}`;
+    fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&only=${kind}${allFolders ? "&all=1" : ""}`).then((r) => r.json())
+      .then((j) => { if (alive) setOnlyFound({ scope, items: j?.ok && Array.isArray(j.items) ? (j.items as Omit<Concept, "status">[]).map((x) => ({ ...x, status: "done" as const })) : [] }); })
+      .catch(() => { /* 지금 목록에서 거른 것만 */ });
+    return () => { alive = false; };
+  }, [onlySig, root, allFolders]);
+  const onlySource = onlyKind ? (() => {
+    const got = onlyFound?.scope === `${onlyKind}|${allFolders ? 1 : 0}` ? onlyFound.items.filter(onlyPred) : [];
+    const have = new Set(got.map((x) => x.key));
+    return [...concepts.filter((c) => !have.has(c.key) && onlyPred(c)), ...got].sort((a, b) => b.ts - a.ts);
+  })() : null;
 
   const seenRef = useRef(new Set<string>());                          // 이미 설명한 개념(dedup) — 서버 로드 시 채움
   const queueRef = useRef<string[]>([]);
@@ -337,7 +375,6 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   }, [root, viewDay, pickDay]);
   // #998 항목 질문 — 💬로 고른 항목 + 항목별 질문 수(배지) + 패널 높이(드래그, 기억).
   const [askItem, setAskItem] = useState<Concept | null>(null);
-  const [askCounts, setAskCounts] = useState<Record<string, number>>({});
   const [askH, setAskH] = useState(() => { try { const v = Number(localStorage.getItem("nunopi:catchup-ask-h")); return v >= 140 ? v : 300; } catch { return 300; } });
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -346,6 +383,41 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       .then((j) => { if (j?.ok && j.counts) setAskCounts(j.counts as Record<string, number>); }).catch(() => { /* 배지 없이 */ });
   }, [root]);
   const onAskCount = useCallback((key: string, n: number) => setAskCounts((p) => (p[key] === n ? p : { ...p, [key]: n })), []);
+  // #1238 별표 — 레포별 서버 저장(stars.json). 누르면 화면은 바로 바뀜. 리뷰 6회 끝에 정리한 규칙:
+  //  · 별표 저장·읽기는 한 줄로 차례대로(starChain) — 응답 순서가 클릭 순서와 같아 옛 읽기가 새 저장을 덮을 수 없음.
+  //  · 읽은 서버 값엔 아직 줄에서 차례를 기다리는 클릭(starLocal)을 덮어 보여줌.
+  //  · 저장 실패면 그 별을 클릭 전으로 되돌리고 서버 값을 다시 읽음(못 읽으면 3초 뒤 2번, 끝내 못 읽으면 알림).
+  //  · 요청마다 8초 제한(응답이 안 오면 줄 전체가 멈추지 않게) — 레포가 바뀌면 이 화면은 새로 만들어져(key=path) 줄도 새로.
+  const starLocal = useRef(new Map<string, { on: boolean; n: number }>());
+  const starN = useRef(0);
+  const starChain = useRef<Promise<unknown>>(Promise.resolve());
+  const inLine = useCallback(<T,>(f: () => Promise<T>) => { const p = starChain.current.catch(() => {}).then(f); starChain.current = p; return p; }, []);
+  const loadStars = useCallback(() => inLine(() => fetch(`/api/repo/stream/star?root=${encodeURIComponent(root)}`, { signal: AbortSignal.timeout(8000) }).then((r) => r.json())
+    .then((j) => (j?.ok && j.stars ? (j.stars as Record<string, number>) : null)).catch(() => null)), [root, inLine]);
+  const withLocal = (st: Record<string, number>) => { const n = { ...st }; for (const [k, x] of starLocal.current) { if (x.on) n[k] = n[k] ?? Date.now(); else delete n[k]; } return n; };
+  const syncStars = useCallback((left: number) => void loadStars().then((st) => {
+    if (st) { setStars(withLocal(st)); return; }
+    if (left > 0) setTimeout(() => syncStars(left - 1), 3000); else toast(t("learn.starFailed"));
+  }), [loadStars, t, toast]); // withLocal은 ref만 읽음
+  useEffect(() => {
+    let alive = true;
+    void loadStars().then((st) => { if (alive && st) setStars(withLocal(st)); });
+    return () => { alive = false; };
+  }, [loadStars]); // withLocal은 ref만 읽음
+  const toggleStar = useCallback((key: string) => {
+    const on = !stars[key], n = ++starN.current;
+    starLocal.current.set(key, { on, n });
+    const show = (v: boolean) => setStars((p) => { const x = { ...p }; if (v) x[key] = x[key] ?? Date.now(); else delete x[key]; return x; });
+    show(on);
+    void inLine(() => fetch("/api/repo/stream/star", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, key, on }), signal: AbortSignal.timeout(8000) }).then((r) => r.json()).catch(() => null))
+      .then((j) => {
+        const mine = starLocal.current.get(key)?.n === n;
+        if (mine) starLocal.current.delete(key); // 그새 또 눌렀으면 그 클릭이 화면을 맡음
+        if (j?.ok) return;
+        if (mine) show(!on);
+        toast(t("learn.starFailed")); setTimeout(() => syncStars(2), 3000); // 시간 초과로 끊은 저장이 서버에선 끝날 수 있어 잠깐 뒤에 읽음(리뷰)
+      });
+  }, [stars, root, t, toast, syncStars, inLine]);
   // 경계선 드래그 — 패널 높이 = 컴포넌트 바닥 - 포인터 y. 목록·패널 최소 높이 보장.
   const dragCleanup = useRef<(() => void) | null>(null);
   useEffect(() => () => dragCleanup.current?.(), []); // 드래그 중 언마운트돼도 리스너 정리(#998 리뷰)
@@ -363,12 +435,6 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   type Tag = { type: "agent" | "branch" | "hash"; value: string };
   const [tag, setTag] = useState<Tag | null>(null);
   const toggleTag = (t2: Tag) => setTag((cur) => (cur && cur.type === t2.type && cur.value === t2.value ? null : t2));
-  const cardMeta = (c: { kind: string; key: string; tool: string }) => {
-    const cut = c.tool.indexOf(" · ");
-    if (c.kind === "diff") { const h = c.key.split("|")[1] ?? ""; const info = c.tool !== "diff" ? c.tool : ""; return { hash: h.slice(0, 7), branch: cut >= 0 ? info.slice(0, cut) : info, agent: "" }; }
-    if (c.kind === "session") return { hash: c.key.slice("session|".length, "session|".length + 7), agent: cut >= 0 ? c.tool.slice(0, cut) : c.tool, branch: cut >= 0 ? c.tool.slice(cut + 3) : "" };
-    return null;
-  };
   // #1135 Crew 작업 카드 → 그 Crew 카드 id. 역할 보고 = tool "crew|<id>", diff·세션 = crew/<id8> 브랜치(보드가 앞 8자로 찾음).
   const crewTask = (c: { kind: string; key: string; tool: string }) => {
     if (c.kind === "narration") return c.tool.startsWith("crew|") ? c.tool.slice(5) : null;
@@ -381,14 +447,33 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); openCrewTask(root, id); } }}
       className="inline-flex cursor-pointer items-center gap-0.5 rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 transition hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"><IconLayoutKanban size={10} stroke={2} className="shrink-0" aria-hidden />Crew</span>
   );
-  const tagMatch = (c: { kind: string; key: string; tool: string }) => { if (!tag) return true; const m = cardMeta(c); return !!m && (tag.type === "hash" ? m.hash === tag.value.slice(0, 7) : m[tag.type] === tag.value); };
+  const tagMatch = (c: { kind: string; key: string; tool: string }) => !tag || tagMatches(c, tag.type, tag.value);
+  // #1238 칩·풀다운 필터는 서버에서 전체 날짜로(예전엔 불러온 최근 100개 안에서만). 받기 전엔 지금 목록에서 거른 것.
+  const [tagFound, setTagFound] = useState<{ k: string; items: Concept[] } | null>(null);
+  const tagKey = tag ? JSON.stringify([tag.type, tag.value, allFolders]) : ""; // 브랜치 이름에 | 가 있어도 안 잘리게(리뷰)
+  useEffect(() => {
+    if (!tagKey) return;
+    let alive = true;
+    const [type, value] = JSON.parse(tagKey) as [string, string];
+    fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&tag=${type}&v=${encodeURIComponent(value)}${allFolders ? "&all=1" : ""}`).then((r) => r.json())
+      .then((j) => { if (alive) setTagFound({ k: tagKey, items: j?.ok && Array.isArray(j.items) ? (j.items as Omit<Concept, "status">[]).map((x) => ({ ...x, status: "done" as const })) : [] }); })
+      .catch(() => { if (alive) setTagFound({ k: tagKey, items: [] }); });
+    return () => { alive = false; };
+  }, [tagKey, root, allFolders]);
+  // 서버 결과 + 그 뒤 실시간으로 들어온 같은 값 카드(최신순, key 중복 제거)
+  const tagSource = useMemo(() => {
+    if (!tagKey || tagFound?.k !== tagKey) return null;
+    const have = new Set(tagFound.items.map((x) => x.key));
+    return [...concepts.filter((c) => !have.has(c.key) && tagMatch(c)), ...tagFound.items].sort((a, b) => b.ts - a.ts);
+  }, [tagKey, tagFound, concepts]); // eslint-disable-line react-hooks/exhaustive-deps -- tagMatch는 tag(=tagKey)로만 바뀜
   // 칩을 버튼처럼(카드 헤더 버튼 안이라 span + 전파 막기)
   const chipProps = (t2: Tag) => ({ role: "button" as const, tabIndex: 0, title: t("learn.chipFilter"),
     onClick: (e: React.MouseEvent) => { e.stopPropagation(); toggleTag(t2); },
     onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggleTag(t2); } } });
   const chipOn = (t2: Tag) => (tag && tag.type === t2.type && tag.value === t2.value ? " ring-1 ring-mustard-500/70" : "");
-  const shown = (query ? (found ?? []) : viewDay ? (dayItems ?? []) : concepts).filter((c) => (isCommand(c) ? showCommands : c.kind === "diff" ? diffShow : c.kind === "session" ? sessionsShow : explainShow) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)) // #1062 표시 끔 = 분석된 것도 숨김, 문서 편집 카드는 항상 숨김(#1049)
-    && (filter === "all" || (filter === "crew" ? !!crewTask(c) : filter === "commands" ? isCommand(c) : filter === "diff" ? c.kind === "diff" : filter === "session" ? c.kind === "session" : filter === "explain" && !isCommand(c) && c.kind !== "diff" && c.kind !== "session"))).filter(tagMatch);
+  // #1238 날짜 보기 중 칩은 그날 안에서만(바 문구와 같게, 리뷰), 아니면 칩·질문·별표는 서버 전체 날짜 결과
+  const shown = (query ? (found ?? []) : viewDay ? (dayItems ?? []) : tagSource ?? onlySource ?? concepts).filter((c) => (isCommand(c) ? showCommands : c.kind === "diff" ? diffShow : c.kind === "session" ? sessionsShow : explainShow) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)) // #1062 표시 끔 = 분석된 것도 숨김, 문서 편집 카드는 항상 숨김(#1049)
+    && (filter === "all" || (filter === "ask" || filter === "star" ? onlyPred(c) : filter === "crew" ? !!crewTask(c) : filter === "commands" ? isCommand(c) : filter === "diff" ? c.kind === "diff" : filter === "session" ? c.kind === "session" : filter === "explain" && !isCommand(c) && c.kind !== "diff" && c.kind !== "session"))).filter(tagMatch);
   // #1064 세션 → 에이전트로 넘기기(인앱 브라우저 피드백과 같은 경로). 카드 하나에 요청 입력창.
   const [handoffKey, setHandoffKey] = useState<string | null>(null);
   const [handoffText, setHandoffText] = useState("");
@@ -414,13 +499,20 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       <IconMessageCircle size={13} stroke={2} aria-hidden />{askCounts[c.key] ? <span className="font-semibold">{askCounts[c.key]}</span> : null}
     </button>
   ) : null;
+  // #1238 별표 — 질문 버튼 왼쪽. 켜짐 = 머스타드 채운 별
+  const starBtn = (c: Concept) => c.status === "done" ? (
+    <button type="button" onClick={() => toggleStar(c.key)} title={t(stars[c.key] ? "learn.unstar" : "learn.star")} aria-label={t(stars[c.key] ? "learn.unstar" : "learn.star")} aria-pressed={!!stars[c.key]}
+      className={`rounded-md p-0.5 transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${stars[c.key] ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:text-mustard-600 dark:text-zinc-500 dark:hover:text-mustard-400"}`}>
+      {stars[c.key] ? <IconStarFilled size={13} aria-hidden /> : <IconStar size={13} stroke={2} aria-hidden />}
+    </button>
+  ) : null;
   // #1081 카드로 이동 — 전체 필터·검색 해제 → 지금 목록에 있으면 그대로, 없으면 서버에서 키로 찾아 그 날짜를 연 뒤 스크롤·2.5초 강조
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const pendingJump = useRef<string | null>(null);
   const jumpN = jump?.n;
   useEffect(() => {
     if (!jump) return;
-    setFilter("all"); setQ(""); // eslint-disable-line react-hooks/set-state-in-effect -- 외부 요청(링크 클릭) 시 보기 초기화
+    setFilter("all"); setQ(""); setTag(null); // eslint-disable-line react-hooks/set-state-in-effect -- 외부 요청(링크 클릭) 시 보기 초기화(#1238 칩도 — 칩 밖 카드면 못 찾음, 리뷰)
     pendingJump.current = jump.key;
     if (concepts.some((c) => c.key === jump.key)) { pickDay(null); return; }
     const key = jump.key;
@@ -462,6 +554,14 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       md = sessionCardMarkdown({ subject: m ? m[1] : c.target, hash, agent: cut >= 0 ? c.tool.slice(0, cut) : c.tool, branch: cut >= 0 ? c.tool.slice(cut + 3) : "", ts: c.ts, summary: c.expl ?? "", messages: j?.session?.messages ?? [] });
     } else return;
     try { await navigator.clipboard.writeText(md); toast(t("learn.copiedMd")); } catch { toast(t("learn.copyFailed")); }
+  }, [root, t, toast]);
+  // #1238 세션 카드 원본 대화만(요약·머리말 없이) — 다른 에이전트·문서에 그대로 붙이기
+  const copyRaw = useCallback(async (c: Concept) => {
+    const hash = c.key.slice("session|".length);
+    const j = await fetch(`/api/repo/session-link?root=${encodeURIComponent(root)}&hash=${encodeURIComponent(hash)}`).then((r) => r.json()).catch(() => null);
+    const text = sessionRawText(Array.isArray(j?.session?.messages) ? j.session.messages : [], Array.isArray(j?.session?.crew) ? j.session.crew : []);
+    if (!text) { toast(t(j?.ok ? "learn.copyRawEmpty" : "learn.copyFailed")); return; }
+    try { await navigator.clipboard.writeText(text); toast(t("learn.copiedRaw")); } catch { toast(t("learn.copyFailed")); }
   }, [root, t, toast]);
   const shownTerms = query ? terms.filter((x) => `${x.term}\n${x.def}`.toLowerCase().includes(query.toLowerCase())) : terms;
   const viewLabel = viewDay ? (() => { try { return new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${viewDay}T00:00:00`)); } catch { return viewDay; } })() : "";
@@ -537,7 +637,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       <div className={chatOpen ? "hidden" : "contents"}>
       {/* #1049 카테고리 필터 칩 */}
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
-        {([["all", t("learn.filterAll")], ...(explainShow ? [["explain", t("learn.filterExplain")]] : []), ...(showCommands ? [["commands", t("learn.filterCommands")]] : []), ...(diffShow ? [["diff", t("learn.filterDiff")]] : []), ...(sessionsShow ? [["session", t("learn.filterSessions")]] : []), ...(showTerms ? [["terms", t("learn.filterTerms")]] : []), ...(hasCrew ? [["crew", t("learn.filterCrew")]] : [])] as [typeof filterSel, string][]).map(([id, label]) => (
+        {([["all", t("learn.filterAll")], ...(explainShow ? [["explain", t("learn.filterExplain")]] : []), ...(showCommands ? [["commands", t("learn.filterCommands")]] : []), ...(diffShow ? [["diff", t("learn.filterDiff")]] : []), ...(sessionsShow ? [["session", t("learn.filterSessions")]] : []), ...(showTerms ? [["terms", t("learn.filterTerms")]] : []), ...(hasCrew ? [["crew", t("learn.filterCrew")]] : []), ...(hasAsk ? [["ask", t("learn.filterAsk")]] : []), ...(hasStar ? [["star", t("learn.filterStar")]] : [])] as [typeof filterSel, string][]).map(([id, label]) => (
           <button key={id} type="button" onClick={() => setFilter(id)} aria-pressed={filter === id}
             className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition ${filter === id ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
             {label}
@@ -545,11 +645,26 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         ))}
         {/* #1088 검색 — 평소엔 돋보기 버튼만, 누르면 입력칸(검색어가 있으면 계속 열림). 비운 채 포커스 잃거나 Esc면 닫힘 */}
         {searchOpen || q ? (
-          <label className="ml-auto flex min-w-[8rem] flex-1 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 focus-within:border-mustard-500/60 dark:border-zinc-700">
+          // #1238 칸 밖으로 포커스가 나갈 때만 닫힘(기준 고르기 풀다운으로 옮겨도 안 닫히게)
+          <label className="ml-auto flex min-w-[8rem] flex-1 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 focus-within:border-mustard-500/60 dark:border-zinc-700"
+            onBlur={(e) => { if (!q && !e.currentTarget.contains(e.relatedTarget as Node | null)) { setSearchOpen(false); setSearchBy("text"); } }}
+            onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); setSearchOpen(false); setSearchBy("text"); } }}>
             <IconSearch size={11} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
-            <input type="search" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("learn.search")} aria-label={t("learn.search")}
-              onBlur={() => { if (!q) setSearchOpen(false); }} onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); setSearchOpen(false); } }}
-              className="min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none placeholder:text-zinc-400 dark:text-zinc-200" />
+            <select value={searchBy} onChange={(e) => { const b = e.target.value as "text" | TagType; setSearchBy(b); if (b !== "text") setQ(""); }} aria-label={t("learn.searchBy")} title={t("learn.searchBy")}
+              className="shrink-0 bg-transparent text-[11px] text-zinc-500 outline-none dark:text-zinc-400">
+              {(["text", "branch", "agent", "hash"] as const).map((b) => <option key={b} value={b}>{t(`learn.searchBy.${b}`)}</option>)}
+            </select>
+            {searchBy === "text" ? (
+              <input type="search" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("learn.search")} aria-label={t("learn.search")}
+                className="min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none placeholder:text-zinc-400 dark:text-zinc-200" />
+            ) : (
+              // 고르면 칩 필터와 같은 표시(아래 "필터 ✕")로 — 검색칸은 닫음
+              <select value="" autoFocus aria-label={t("learn.searchPick")} onChange={(e) => { const v = e.target.value; if (!v) return; setTag({ type: searchBy, value: v }); setQ(""); setSearchOpen(false); setSearchBy("text"); }}
+                className={`min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none dark:text-zinc-200 ${searchBy === "hash" ? "font-mono" : ""}`}>
+                <option value="">{facets ? (facets[searchBy].length ? t("learn.searchPick") : t("learn.searchNone")) : "…"}</option>
+                {facets?.[searchBy].map((f) => <option key={f.value} value={f.value}>{searchBy === "hash" && f.label ? `${f.value} · ${f.label.slice(0, 60)}` : f.value}</option>)}
+              </select>
+            )}
           </label>
         ) : (
           <button type="button" onClick={() => setSearchOpen(true)} title={t("learn.search")} aria-label={t("learn.search")}
@@ -625,6 +740,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {/* #1078 마크다운 복사 */}
                       <button type="button" onClick={() => void copyCard(c)} title={t("learn.copyMd")} aria-label={t("learn.copyMd")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconCopy size={13} stroke={2} aria-hidden /></button>
+                      {starBtn(c)}
                       {askBtn(c, false)}
                     </span>
                   ) : null; })()}
@@ -638,11 +754,15 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {/* #1078 마크다운 복사(요약 + 원본 대화 전체) */}
                       <button type="button" onClick={() => void copyCard(c)} title={t("learn.copyMd")} aria-label={t("learn.copyMd")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconCopy size={13} stroke={2} aria-hidden /></button>
+                      {/* #1238 원본 대화만 복사 */}
+                      <button type="button" onClick={() => void copyRaw(c)} title={t("learn.copyRaw")} aria-label={t("learn.copyRaw")}
+                        className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconMessages size={13} stroke={2} aria-hidden /></button>
+                      {starBtn(c)}
                       {askBtn(c, false)}
                     </span>
                   )}
-                  {!(c.kind === "diff" && parseDiffItemKey(c.key)) && !(c.kind === "session" && c.status === "done") && askBtn(c, true)}
-                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" || c.kind === "session" ? "pr-24" : "pr-9"}`}>
+                  {!(c.kind === "diff" && parseDiffItemKey(c.key)) && !(c.kind === "session" && c.status === "done") && c.status === "done" && <span className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5">{starBtn(c)}{askBtn(c, false)}</span>}
+                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "session" ? "pr-36" : c.kind === "diff" ? "pr-32" : "pr-16"}`}>
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
                       {/* #1181 모든 작업 폴더 보기 — 어느 worktree(브랜치)에서 쌓인 건지. 메인 것은 표시 없음 */}

@@ -7,6 +7,7 @@ import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSyn
 import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { isFailedNote } from "./failText.ts";
+import { collectFacets, tagMatches, type Facet, type TagType } from "./catchupMeta.ts";
 
 export type CatchupKind = "symbol" | "file" | "query" | "repo" | "edit" | "narration" | "diff" | "session"; // session = 커밋을 만든 에이전트 세션(#1064) // diff = 커밋 변경 자동 설명(#1056)
 // #1181 wt·br = 메인이 아닌 작업 폴더(git worktree)에서 쌓인 항목 — 그 폴더 경로와 그때 브랜치(폴더를 지워도 브랜치 이름으로 보이게). 메인 항목엔 없음.
@@ -217,12 +218,32 @@ export function readRecent(root: string, limit: number): CatchupItem[] {
 export function searchItems(root: string, q: string, limit: number, all = false): CatchupItem[] {
   const needle = q.trim().toLowerCase();
   if (!needle) return [];
+  return filterItems(root, (x) => `${x.target}\n${x.expl}`.toLowerCase().includes(needle), limit, all);
+}
+
+// #1238 전체 날짜를 최신부터 훑어 조건에 맞는 항목 limit개(검색·브랜치/에이전트/해시·별표·질문 공용).
+export function filterItems(root: string, pred: (x: CatchupItem) => boolean, limit: number, all = false): CatchupItem[] {
   const out: CatchupItem[] = [];
   for (const day of allDays(root)) {
-    for (const x of readDay(root, day, all)) if (`${x.target}\n${x.expl}`.toLowerCase().includes(needle)) out.push(x);
+    for (const x of readDay(root, day, all)) if (pred(x)) out.push(x);
     if (out.length >= limit) break;
   }
   return out.slice(0, limit);
+}
+
+// #1238 브랜치·에이전트·해시 카드만(전체 날짜) — 칩·풀다운 필터.
+export const tagItems = (root: string, type: TagType, value: string, limit: number, all = false) => filterItems(root, (x) => tagMatches(x, type, value), limit, all);
+
+// #1238 풀다운 값 — 브랜치·에이전트·해시를 최신순으로(종류마다 50개). 다 차면 더 안 읽음.
+// ponytail: 전수 스캔(최대 120일) — 기록이 아주 커지면 색인.
+export function itemFacets(root: string, all = false): Record<TagType, Facet[]> {
+  const items: CatchupItem[] = [];
+  for (const day of allDays(root).slice(0, 120)) {
+    items.push(...readDay(root, day, all).filter((x) => x.kind === "diff" || x.kind === "session"));
+    const f = collectFacets(items);
+    if (f.branch.length >= 50 && f.agent.length >= 50 && f.hash.length >= 50) return f;
+  }
+  return collectFacets(items);
 }
 
 // ── 커밋 세션 원본(#1064) — 커밋을 만든 에이전트 대화 구간. 기록 파일이 지워져도 남게 복사 저장. sessions/<hash>.json
@@ -282,6 +303,25 @@ export function askCounts(root: string): Record<string, number> {
     try { const t = sanitizeThread(JSON.parse(readFileSync(join(dir, f), "utf8"))); if (t) out[t.key] = t.messages.filter((m) => m.role === "user").length; } catch { /* 깨진 파일 스킵 */ }
   }
   return out;
+}
+
+// ── 별표(#1238) — 레포별 stars.json = { key: 별표한 시각 }. 화면 표시·별표만 보기.
+const starFile = (root: string) => join(repoDir(root), "stars.json");
+export function readStars(root: string): Record<string, number> {
+  try {
+    const o = JSON.parse(readFileSync(starFile(root), "utf8")) as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(o).filter((e): e is [string, number] => !!e[0] && typeof e[1] === "number"));
+  } catch { return {}; }
+}
+export function setStar(root: string, key: string, on: boolean, now: number): Record<string, number> {
+  const k = key;
+  const stars = readStars(root);
+  if (on) stars[k] = now; else delete stars[k];
+  mkdirSync(repoDir(root), { recursive: true });
+  const file = starFile(root);
+  writeFileSync(`${file}.tmp`, JSON.stringify(stars));
+  renameSync(`${file}.tmp`, file);
+  return stars;
 }
 
 // #1081 키로 항목 찾기(최근 날짜부터) — 질문 답변의 catchup: 링크 → 그 카드로 이동할 날짜를 알려고.

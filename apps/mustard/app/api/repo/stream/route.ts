@@ -1,6 +1,6 @@
-// 캐치업 기록(#994) — #1181 저장은 레포 하나(메인 worktree), 읽기는 기본 그 폴더 것만 · &all=1이면 레포 전체(날짜·하루). GET ?root=&limit= 최근 / ?root=&q= 검색(#1049) / ?root=&day=YYYY-MM-DD 하루 / ?root=&days=1 기록 있는 날짜. POST {root, items, replace?} append(replace면 같은 key 교체).
+// 캐치업 기록(#994) — #1238 ?facets=1 풀다운 값 / ?tag=branch|agent|hash&v= 그 값 카드 / ?only=star|ask 별표·질문 카드. — #1181 저장은 레포 하나(메인 worktree), 읽기는 기본 그 폴더 것만 · &all=1이면 레포 전체(날짜·하루). GET ?root=&limit= 최근 / ?root=&q= 검색(#1049) / ?root=&day=YYYY-MM-DD 하루 / ?root=&days=1 기록 있는 날짜. POST {root, items, replace?} append(replace면 같은 key 교체).
 import { isAbsolute } from "node:path";
-import { appendItems, replaceItems, findItem, itemsForHashes, listDays, readDay, readRecent, sanitize, searchItems, type CatchupItem } from "@/lib/catchupStore";
+import { appendItems, replaceItems, askCounts, filterItems, findItem, itemFacets, itemsForHashes, listDays, readDay, readRecent, readStars, sanitize, searchItems, tagItems, type CatchupItem } from "@/lib/catchupStore";
 
 export const runtime = "nodejs";
 
@@ -15,6 +15,15 @@ export async function GET(request: Request): Promise<Response> {
     if (key) return Response.json({ ok: true, item: findItem(root, key.slice(0, 600)) });
     const hashes = sp.get("hashes"); // #1081 커밋 해시들(쉼표) → 그 커밋의 diff·세션 카드
     if (hashes) return Response.json({ ok: true, items: itemsForHashes(root, hashes.split(",").slice(0, 20)) });
+    // #1238 풀다운 값(브랜치·에이전트·해시 최신순) / 그 값 카드 / 별표·질문 있는 카드 — 전체 날짜
+    if (sp.get("facets")) return Response.json({ ok: true, facets: itemFacets(root, all) });
+    const tag = sp.get("tag"), v = sp.get("v") ?? "";
+    if (tag === "branch" || tag === "agent" || tag === "hash") return Response.json({ ok: true, items: tagItems(root, tag, v.slice(0, 300), 300, all) });
+    const only = sp.get("only");
+    if (only === "star" || only === "ask") {
+      const keys = new Set(only === "star" ? Object.keys(readStars(root)) : Object.entries(askCounts(root)).filter(([, n]) => n > 0).map(([k]) => k));
+      return Response.json({ ok: true, items: keys.size ? filterItems(root, (x) => keys.has(x.key), 300, all) : [] });
+    }
     const q = sp.get("q");
     if (q) return Response.json({ ok: true, items: searchItems(root, q.slice(0, 200), 200, all) });
     const day = sp.get("day");

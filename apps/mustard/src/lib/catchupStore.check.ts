@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appendItems, replaceItems, askCounts, catchupRoots, dayKey, findItem, itemsForHashes, listDays, mainOf, readAsk, readDay, readRecent, readSession, searchItems, sanitize, writeAsk, writeSession } from "./catchupStore.ts";
+import { appendItems, replaceItems, askCounts, filterItems, itemFacets, readStars, setStar, tagItems, catchupRoots, dayKey, findItem, itemsForHashes, listDays, mainOf, readAsk, readDay, readRecent, readSession, searchItems, sanitize, writeAsk, writeSession } from "./catchupStore.ts";
 
 assert.ok(process.env.MUSTARD_STREAM_DIR, "임시 디렉터리 필수(실 기록 보호)");
 const root = "/tmp/repo-a";
@@ -116,5 +116,26 @@ console.log("catchupStore ok");
   const got = readDay(wt, "2026-10-08");
   assert.ok(got.length === 1 && got[0].wt === wt && got[0].br === "feat/y", "빈 메인 자리여도 worktree 옛 기록엔 wt·br");
   assert.strictEqual(readDay(main, "2026-10-08").length, 0, "메인 화면엔 안 섞임");
+}
+// #1238 전체 날짜 필터·풀다운·별표
+{
+  const r = "/tmp/repo-1238";
+  const t1 = new Date(2026, 9, 20, 9).getTime(), t2 = new Date(2026, 9, 22, 9).getTime();
+  appendItems(r, [
+    { key: "diff|aaaaaaa111|x.ts", kind: "diff", target: "x.ts @aaaaaaa", tool: "main · 옛 고침", ts: t1, expl: "e" },
+    { key: "session|aaaaaaa111", kind: "session", target: "옛 고침 @aaaaaaa", tool: "Codex · main", ts: t1 + 1, expl: "e" },
+    { key: "session|bbbbbbb222", kind: "session", target: "새 기능 @bbbbbbb", tool: "Claude Code · feat/b", ts: t2, expl: "e" },
+    { key: "narration|1|n", kind: "narration", target: "n", tool: "narration", ts: t2 + 1, expl: "e" },
+  ]);
+  assert.deepStrictEqual(tagItems(r, "branch", "main", 10).map((x) => x.key), ["session|aaaaaaa111", "diff|aaaaaaa111|x.ts"], "브랜치 카드(다른 날짜까지)");
+  assert.deepStrictEqual(tagItems(r, "hash", "aaaaaaa", 10).length, 2);
+  assert.deepStrictEqual(filterItems(r, (x) => x.kind === "narration", 10).map((x) => x.key), ["narration|1|n"]);
+  const f = itemFacets(r);
+  assert.deepStrictEqual(f.branch.map((x) => x.value), ["feat/b", "main"], "풀다운 최신순");
+  assert.deepStrictEqual(f.hash.map((x) => x.label), ["새 기능", "옛 고침"]);
+  assert.deepStrictEqual(readStars(r), {}, "별표 없음");
+  setStar(r, "session|bbbbbbb222", true, 5); setStar(r, "narration|1|n", true, 6);
+  assert.deepStrictEqual(readStars(r), { "session|bbbbbbb222": 5, "narration|1|n": 6 });
+  assert.deepStrictEqual(setStar(r, "narration|1|n", false, 7), { "session|bbbbbbb222": 5 }, "끄기");
 }
 console.log("catchupStore.check ok");
