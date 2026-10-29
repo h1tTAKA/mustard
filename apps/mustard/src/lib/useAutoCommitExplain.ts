@@ -8,6 +8,7 @@ import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { parseDiff, groupHunks, diffMark, DIFF_SEP, noteStoreKey, loadNotes, saveNote, explainDiffText } from "@/lib/hunkNotes";
 import { buildSessionItem } from "@/lib/sessionCard";
 import { useCatchupRepoPrefs } from "@/lib/useCatchupRepoPrefs";
+import { beginBusy } from "@/lib/catchupBusy";
 import { isFailedNote, RUNTIME_FAIL_PREFIXES } from "@/lib/failText";
 
 // #1056 캐치업 연동 — 파일 하나 설명이 끝나면 캐치업 카드(kind diff)로. key에 hash·파일을 담아 카드에서 diff를 열 수 있게.
@@ -90,7 +91,8 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           const { providerId: pid, providerSettings: ps, locale: loc } = cfg.current;
           for (const wait of RETRY_MS) { // #1093 실패면 잠시 뒤 다시(런타임 상한·일시 오류) — 최대 3번
             if (!alive || !cfg.current.diffOn) return; // 재시도 대기 뒤에도 다시 확인
-            try { const text = await explainDiffText(h.diffText, pid, ps, loc); saveNote(file.store, h.diffText, text); file.texts[i] = diffMark(h) + text; break; }
+            const endBusy = beginBusy(root, "diff"); // #1240 머리 줄 "만드는 중"(AI 호출 동안만)
+            try { const text = await explainDiffText(h.diffText, pid, ps, loc).finally(endBusy); saveNote(file.store, h.diffText, text); file.texts[i] = diffMark(h) + text; break; }
             catch { if (wait < 0) break; await new Promise((r) => setTimeout(r, wait)); } // 끝내 실패 — 카드엔 빠지고 복구 주기에서 다시
           }
           if (--file.left === 0) emit(file); // 이 파일 끝 → 바로 카드
@@ -111,7 +113,8 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         if (Date.now() - pd.at > 60 * 60_000) continue; // 1시간 넘게 계속 실패 — 포기
         const { spid: sp, sps: sset, locale: sl } = cfg.current;
         budget--;
-        const r = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, Date.now() - pd.at > 20 * 60_000, !!pd.merge).catch(() => "error" as const);
+        const endBusy = beginBusy(root, "session"); // #1240
+        const r = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, Date.now() - pd.at > 20 * 60_000, !!pd.merge).catch(() => "error" as const).finally(endBusy);
         if (r === "wait") { keep.push({ ...pd, errAt: undefined }); continue; } // 오류 창은 연속 오류만(옛 오류 시각이 남아 나중 한 번에 버려지지 않게, 리뷰)
         if (r === "error") { const at = pd.errAt ?? Date.now(); if (Date.now() - at < 5 * 60_000) keep.push({ ...pd, errAt: at }); continue; } // 서버 오류 — 처음 실패부터 5분까지만 다시(리뷰)
         if (r !== "none" && alive) {
