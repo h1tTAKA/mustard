@@ -7,7 +7,7 @@ import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
 import { diffSections, groupHunks, parseDiff } from "@/lib/hunkDiff";
-import { diffCardMarkdown, sessionCardMarkdown } from "@/lib/catchupMarkdown";
+import { diffCardMarkdown, sessionCardMarkdown, sessionRawText } from "@/lib/catchupMarkdown";
 import CatchupSessionRaw from "@/components/workspace/CatchupSessionRaw";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import { sendToAgent } from "@/lib/browser/sendToAgent";
@@ -531,6 +531,14 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     } else return;
     try { await navigator.clipboard.writeText(md); toast(t("learn.copiedMd")); } catch { toast(t("learn.copyFailed")); }
   }, [root, t, toast]);
+  // #1238 세션 카드 원본 대화만(요약·머리말 없이) — 다른 에이전트·문서에 그대로 붙이기
+  const copyRaw = useCallback(async (c: Concept) => {
+    const hash = c.key.slice("session|".length);
+    const j = await fetch(`/api/repo/session-link?root=${encodeURIComponent(root)}&hash=${encodeURIComponent(hash)}`).then((r) => r.json()).catch(() => null);
+    const text = sessionRawText(Array.isArray(j?.session?.messages) ? j.session.messages : [], Array.isArray(j?.session?.crew) ? j.session.crew : []);
+    if (!text) { toast(t(j?.ok ? "learn.copyRawEmpty" : "learn.copyFailed")); return; }
+    try { await navigator.clipboard.writeText(text); toast(t("learn.copiedRaw")); } catch { toast(t("learn.copyFailed")); }
+  }, [root, t, toast]);
   const shownTerms = query ? terms.filter((x) => `${x.term}\n${x.def}`.toLowerCase().includes(query.toLowerCase())) : terms;
   const viewLabel = viewDay ? (() => { try { return new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${viewDay}T00:00:00`)); } catch { return viewDay; } })() : "";
 
@@ -722,12 +730,15 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {/* #1078 마크다운 복사(요약 + 원본 대화 전체) */}
                       <button type="button" onClick={() => void copyCard(c)} title={t("learn.copyMd")} aria-label={t("learn.copyMd")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconCopy size={13} stroke={2} aria-hidden /></button>
+                      {/* #1238 원본 대화만 복사 */}
+                      <button type="button" onClick={() => void copyRaw(c)} title={t("learn.copyRaw")} aria-label={t("learn.copyRaw")}
+                        className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconMessages size={13} stroke={2} aria-hidden /></button>
                       {starBtn(c)}
                       {askBtn(c, false)}
                     </span>
                   )}
                   {!(c.kind === "diff" && parseDiffItemKey(c.key)) && !(c.kind === "session" && c.status === "done") && c.status === "done" && <span className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5">{starBtn(c)}{askBtn(c, false)}</span>}
-                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" || c.kind === "session" ? "pr-28" : "pr-14"}`}>
+                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "session" ? "pr-32" : c.kind === "diff" ? "pr-28" : "pr-14"}`}>
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
                       {/* #1181 모든 작업 폴더 보기 — 어느 worktree(브랜치)에서 쌓인 건지. 메인 것은 표시 없음 */}

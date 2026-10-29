@@ -1,6 +1,6 @@
 // catchupMarkdown 점검 — node --experimental-strip-types src/lib/catchupMarkdown.check.ts
 import assert from "node:assert";
-import { commitHashesIn, diffCardMarkdown, sessionCardMarkdown, withRelatedCards } from "./catchupMarkdown.ts";
+import { commitHashesIn, diffCardMarkdown, sessionCardMarkdown, sessionRawText, withRelatedCards } from "./catchupMarkdown.ts";
 
 const d = diffCardMarkdown({ path: "src/a.ts", hash: "abcdef1234", branch: "feat/x", subject: "fix a", ts: 0, expl: "",
   sections: [{ from: 4, to: 13, text: "요약\n\n---\n\n본문", code: "- a\n+ b" }, { from: 21, to: 21, text: "둘째" }] });
@@ -15,4 +15,8 @@ const wr = withRelatedCards("답\n```nunopi-cards\n[]\n```", [{ key: "diff|9f677
 assert.ok(wr.indexOf("관련 카드") < wr.indexOf("```nunopi-cards") && wr.includes("[a.ts @9f677d4](<catchup:diff|9f677d4|a.ts>)"), "카드 블록 앞에");
 assert.deepStrictEqual(commitHashesIn("color: #deadbe1f; var(--abc1234a)"), [], "CSS 색·변수 제외(리뷰)");
 assert.strictEqual(withRelatedCards("답", [], "관련 카드"), "답");
+// #1238 원본 대화만
+assert.strictEqual(sessionRawText([{ role: "user", text: "고쳐줘" }, { role: "assistant", text: "고침" }, { role: "tool", text: "ok" }]), "[User] 고쳐줘\n\n[Agent] 고침\n\n[Tool] ok");
+assert.strictEqual(sessionRawText([{ role: "user", text: "u" }], [{ from: "pm", to: ["dev"], text: "해" }]), "[@pm → @dev] 해\n\n[User] u", "Crew 글이 앞에");
+assert.strictEqual(sessionRawText([]), "");
 console.log("catchupMarkdown ok");
