@@ -10,7 +10,10 @@ try { ({ DAEMON_VERSION } = require("./daemon-version.cjs")); } catch { /* 터�
 const fs = require("node:fs");
 // #1226 색 능력 env — 파일이 빠져도 데몬은 떠야 함(못 읽으면 그대로 둠, 리뷰)
 let applyTerminalEnv = (env) => env;
-try { ({ applyTerminalEnv } = require("./terminal-env.cjs")); } catch (e) { console.error("[term-daemon] terminal-env 로드 실패 — 색 능력 env 없이 진행:", e); }
+try { ({ applyTerminalEnv } = require("./terminal-env.cjs")); } catch (e) {
+  // 데몬은 stdio를 버리고 떠서 console은 안 보임 → 소켓 옆 로그 파일에 남김(재리뷰)
+  try { fs.appendFileSync(`${process.env.NUNOPI_TERM_SOCK || "/tmp/mustard-term"}.log`, `${new Date().toISOString()} terminal-env 로드 실패 — 색 능력 env 없이 진행: ${(e && e.message) || e}\n`); } catch { /* ignore */ }
+}
 
 const SOCK = process.env.NUNOPI_TERM_SOCK;   // 소켓 경로
 const TOKEN = process.env.NUNOPI_TERM_TOKEN; // 인증 토큰
