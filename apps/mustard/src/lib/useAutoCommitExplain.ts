@@ -46,7 +46,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     if (!on) { try { localStorage.removeItem(stateKey); } catch { /* ignore */ } return; } // 다시 켜면 그때부터
     // pending = 세션 턴이 아직 안 끝나 카드를 미룬 커밋(#1064) — 다음 주기마다 다시, 20분 지나면 그대로 만듦
     type Pend = { hash: string; ts: number; subject: string; branch: string; at: number; merge?: boolean };
-    type State = { since: number; done: string[]; pending?: Pend[]; revived?: number };
+    type State = { since: number; done: string[]; pending?: Pend[]; revived?: number; reviveTries?: number };
     const read = (): State | null => { try { return JSON.parse(localStorage.getItem(stateKey) || "null") as State | null; } catch { return null; } };
     const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
     let alive = true, busy = false;
@@ -141,18 +141,27 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         // #1235 되살리기(레포마다 1회) — 예전엔 서버 일시 오류도 "세션 없음"으로 버려 세션 카드가 빠졌음.
         //  최근 24시간 처리한 커밋 중 저장된 세션이 없는 것만 다시 줄 세움(카드 있는 커밋은 세션 파일이 있어 건너뜀, 사람 커밋은 다시 none).
         //  ponytail: 최대 100개 — 하루에 커밋이 더 많으면 오래된 쪽은 못 되살림(done도 최근 50개만 기억).
-        if (!st.revived && cfg.current.sessOn) {
+        //  세션 분석이 꺼져 있으면 되살리기는 건너뛰고 끝으로 찍음(나중에 켰을 때 꺼져 있던 동안의 커밋을 한꺼번에 요약하지 않게, 리뷰).
+        //  한계: 이 기능 전부터 켜 둔 레포에서, 켜기 전 24시간 안 커밋도 처리된 것으로 봄(최대 100개 1회).
+        if (!st.revived && !cfg.current.sessOn) { st = { ...st, revived: 1 }; write(st); }
+        if (!st.revived) {
           const back = await post("/api/repo/git-recent", { path: root, since: Math.floor(Date.now() / 1000) - 86_400, limit: 100 });
           const add: Pend[] = [];
-          for (const c of (back?.commits ?? []) as { hash: string; ts: number; subject?: string; merge?: boolean; branch?: string }[]) {
+          let failed = !Array.isArray(back?.commits) || !!back?.note; // git 실패도 빈 목록으로 옴(note) — 실패로 봄
+          for (const c of (failed ? [] : back.commits) as { hash: string; ts: number; subject?: string; merge?: boolean; branch?: string }[]) {
             if (!alive) return;
             const handled = c.ts < st.since || st.done.includes(c.hash); // 이미 지나간 커밋(done은 50개만 기억 — 시각으로도 판정)
-            if (!handled || st.pending?.some((p) => p.hash === c.hash)) continue; // 아직 안 본 커밋은 평소 흐름이 처리
+            if (!handled) continue; // 아직 안 본 커밋은 평소 흐름이 처리
             const saved = await fetch(`/api/repo/session-link?root=${encodeURIComponent(root)}&hash=${c.hash}`).then((r) => r.json()).catch(() => null);
-            if (saved?.ok !== true || saved.session) continue; // 확인 못 함·이미 있음 — 건너뜀
+            if (saved?.ok !== true) { failed = true; continue; } // 확인 못 함 — 이번엔 건너뛰고 다음에 다시
+            if (saved.session) continue; // 이미 카드 있음
             add.push({ hash: c.hash, ts: c.ts, subject: c.subject ?? "", branch: c.branch || back.branch || "", at: Date.now(), merge: !!c.merge });
           }
-          const cur = read() ?? st; st = { ...cur, revived: 1, pending: [...(cur.pending ?? []), ...add] }; write(st);
+          if (!alive) return; // 꺼진 뒤 옛 상태로 덮어쓰지 않게(리뷰)
+          // 일시 오류면 끝으로 찍지 않음(다음 주기에 다시) — 단 3번까지(계속 실패해도 매 주기 훑지 않게, 리뷰)
+          const cur = read() ?? st, tries = (cur.reviveTries ?? 0) + 1;
+          st = { ...cur, ...(failed && tries < 3 ? { reviveTries: tries } : { revived: 1 }), pending: [...(cur.pending ?? []), ...add.filter((a) => !cur.pending?.some((p) => p.hash === a.hash))] };
+          write(st);
         }
         const j = await post("/api/repo/git-recent", { path: root, since: st.since });
         const pendingAdd: Pend[] = [];
