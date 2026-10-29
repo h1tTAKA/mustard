@@ -485,14 +485,14 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   // 변경 파일 경로 집합(챗 승계 판별용, #689) — fileStatus 바뀔 때만 새 identity(effect 무한루프 방지).
   const changedFileSet = useMemo(() => new Set(Object.keys(fileStatus)), [fileStatus]);
   const chatEl = <WorkspaceChat root={path} files={files} focus={chatFocus} prefill={chatPrefill} changedFiles={changedFileSet} providerId={chatPid} providerSettings={chatPs} cardsEnabled={chatCards} onOpenCard={catchupOn ? (key) => { setCatchupChat(false); setRightMode("learn"); setCardJump((j) => ({ key, n: (j?.n ?? 0) + 1 })); } : undefined} />; // #1078 캐치업 안·단독 모드 공용, #1081 카드 링크
+  const [gitNonce, setGitNonce] = useState(0);
+  const [treeNonce, setTreeNonce] = useState(0); // 워처 변경 시 파일트리·문서 목록 재조회 신호(#830)
   // 깃 그래프 새로고침 시 상태맵도 갱신 — stable(inline이면 GitGraph load가 매 렌더 재생성→무한 fetch).
   // #1225 git 새로고침 때 파일 목록도 — 방금(2초 안) 다시 읽었으면 건너뜀(fs 이벤트 refresh와 겹침 방지)
   const handleGitRefreshed = useCallback(() => { if (path) { void loadGitStatus(path); if (Date.now() - lastTreeAt.current > 2000) setTreeNonce((n) => n + 1); } }, [path, loadGitStatus]);
 
   // 실시간 갱신(#739) — 활성 워크스페이스의 레포를 파일 워처로 감시. 변경 시 도트 재로드 + gitNonce↑(GitGraph 재fetch).
   // 활성 path만 watch(keep-alive 멀티탭 중복 방지). recursive 미지원이면 폴링 폴백.
-  const [gitNonce, setGitNonce] = useState(0);
-  const [treeNonce, setTreeNonce] = useState(0); // 워처 변경 시 파일트리·문서 목록 재조회 신호(#830)
   useEffect(() => {
     if (!mounted || !active || !path) return;
     const api = window.nunopiDesktop;
