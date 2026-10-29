@@ -43,3 +43,12 @@ export function readFontWeight(stored: unknown, fallback: number): number {
 
 // 터미널 여백(px) — 0~40, 숫자 아니면 기본.
 export const readPadding = (stored: unknown, fallback: number) => (typeof stored === "number" && Number.isFinite(stored) ? Math.min(40, Math.max(0, Math.round(stored))) : fallback);
+
+// 커서 투명도 — #rrggbb·#rgb를 rgba로(0.1~1). 1이거나 hex가 아니면 그대로.
+export function withAlpha(hex: string, alpha: unknown): string {
+  const a = typeof alpha === "number" && Number.isFinite(alpha) ? Math.min(1, Math.max(0.1, alpha)) : 1;
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex);
+  if (a >= 1 || !m) return hex;
+  const h = m[1].length === 3 ? m[1].replace(/./g, "$&$&") : m[1];
+  return `rgba(${parseInt(h.slice(0, 2), 16)}, ${parseInt(h.slice(2, 4), 16)}, ${parseInt(h.slice(4, 6), 16)}, ${a})`;
+}

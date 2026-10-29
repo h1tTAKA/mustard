@@ -1,6 +1,6 @@
 // terminalRender 점검 — node --experimental-strip-types packages/core/src/terminalRender.check.ts
 import assert from "node:assert";
-import { readFontWeight as fw, readPadding as pad, readGpuMode as gpu, gpuAllowed as ok, resolveMinContrast as mc, isLightColor as light } from "./terminalRender.ts";
+import { withAlpha as alpha, readFontWeight as fw, readPadding as pad, readGpuMode as gpu, gpuAllowed as ok, resolveMinContrast as mc, isLightColor as light } from "./terminalRender.ts";
 
 assert.strictEqual(gpu(undefined, true), "auto", "옛 켜짐 = 자동");
 assert.strictEqual(gpu(undefined, false), "off", "옛 꺼짐 = 끄기");
@@ -28,4 +28,9 @@ assert.strictEqual(pad(12, 6), 12);
 assert.strictEqual(pad(-3, 6), 0);
 assert.strictEqual(pad(99, 6), 40);
 assert.strictEqual(pad("8", 6), 6, "숫자만");
+assert.strictEqual(alpha("#ffffff", 1), "#ffffff");
+assert.strictEqual(alpha("#fff", 0.5), "rgba(255, 255, 255, 0.5)");
+assert.strictEqual(alpha("#2e3434", 0), "rgba(46, 52, 52, 0.1)", "최소 0.1(안 보이게는 안 함)");
+assert.strictEqual(alpha("red", 0.5), "red", "hex만");
+assert.strictEqual(alpha("#000000", "x"), "#000000");
 console.log("terminalRender ok");

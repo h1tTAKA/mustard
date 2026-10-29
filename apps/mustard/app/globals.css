@@ -254,3 +254,6 @@ samp {
 
 /* 인앱 브라우저(#1034) — 패널 경계 드래그 중(body user-select:none)엔 webview가 마우스를 삼켜 리사이즈가 끊김 → 그동안만 통과. */
 body[style*="user-select: none"] webview { pointer-events: none; }
+
+/* #1214 타이핑 중 마우스 숨기기 — 터미널에서 치는 동안(마우스를 움직이면 다시). xterm 안쪽 요소가 각자 cursor를 정해서 모두 덮음. */
+.mustard-hide-mouse, .mustard-hide-mouse * { cursor: none !important; }

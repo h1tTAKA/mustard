@@ -1,5 +1,5 @@
 "use client";
-// 설정 > 터미널 > 렌더링(#1214) — GPU 자동/켜짐/끄기(새 탭부터), 최소 색상 대비 자동/끄기/직접, 글자 굵기 2개, 여백 가로·세로(열린 탭 바로).
+// 설정 > 터미널 > 렌더링(#1214) — GPU 자동/켜짐/끄기(새 탭부터), 최소 색상 대비 자동/끄기/직접, 글자 굵기 2개, 여백 가로·세로, 커서 투명도, 타이핑 중 마우스 숨기기(열린 탭 바로).
 import { useT, useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, readGpuMode, GPU_MODES, readFontWeight, readPadding } from "@mustard/core";
 import { Segmented, SettingRow, Stepper } from "./settingsControls";
 
@@ -13,11 +13,14 @@ export default function TerminalRenderSection() {
   const weightBold = readFontWeight(useSetting<unknown>(TKEYS.fontWeightBold, undefined), TERMINAL_DEFAULTS.fontWeightBold);
   const padX = readPadding(useSetting<unknown>(TKEYS.paddingX, undefined), TERMINAL_DEFAULTS.paddingX);
   const padY = readPadding(useSetting<unknown>(TKEYS.paddingY, undefined), TERMINAL_DEFAULTS.paddingY);
+  const cursorOpacity = useSetting<number>(TKEYS.cursorOpacity, TERMINAL_DEFAULTS.cursorOpacity);
+  const hideMouse = useSetting<boolean>(TKEYS.hideMouseWhileTyping, TERMINAL_DEFAULTS.hideMouseWhileTyping);
   const rows = [
     { k: "fontWeight", key: TKEYS.fontWeight, v: weight, min: 100, max: 900, step: 100, fmt: (v: number) => String(v) },
     { k: "fontWeightBold", key: TKEYS.fontWeightBold, v: weightBold, min: 100, max: 900, step: 100, fmt: (v: number) => String(v) },
     { k: "paddingX", key: TKEYS.paddingX, v: padX, min: 0, max: 40, step: 2, fmt: (v: number) => `${v}px` },
     { k: "paddingY", key: TKEYS.paddingY, v: padY, min: 0, max: 40, step: 2, fmt: (v: number) => `${v}px` },
+    { k: "cursorOpacity", key: TKEYS.cursorOpacity, v: typeof cursorOpacity === "number" ? cursorOpacity : 1, min: 0.1, max: 1, step: 0.1, fmt: (v: number) => `${Math.round(v * 100)}%` },
   ] as const;
   const cMode = typeof contrast !== "number" ? "auto" : contrast <= 1 ? "off" : "custom";
   return (
@@ -45,6 +48,13 @@ export default function TerminalRenderSection() {
           </div>
         ))}
       </div>
+      <SettingRow title={t("settings.render.hideMouse")} desc={t("settings.render.hideMouseDesc")}>
+        <button type="button" role="switch" aria-checked={hideMouse} aria-label={t("settings.render.hideMouse")}
+          onClick={() => setSetting(TKEYS.hideMouseWhileTyping, !hideMouse)}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition ${hideMouse ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${hideMouse ? "left-[22px]" : "left-0.5"}`} />
+        </button>
+      </SettingRow>
     </>
   );
 }

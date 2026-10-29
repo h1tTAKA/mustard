@@ -30,6 +30,8 @@ export const TERMINAL_DEFAULTS = {
   fontWeightBold: 700,                         // #1214 굵은 글자 굵기
   paddingX: 6,                                 // #1214 터미널 여백(px, 0~40)
   paddingY: 6,
+  cursorOpacity: 1,                            // #1214 커서 투명도(0.1~1)
+  hideMouseWhileTyping: false,                 // #1214 타이핑 중 마우스 숨기기
   scrollSensitivity: 1,                        // 높을수록 빠름(한 틱에 더 많이 이동)
   fastScrollSensitivity: 5,                    // #1212 ⌥ 누른 채 휠 배율(1~10)
   tuiScrollSensitivity: 1,                     // #1212 전체 화면 프로그램(마우스 추적 중) 휠 배율(정수 1~10)
@@ -67,6 +69,8 @@ export const TKEYS = {
   fontWeightBold: "terminal.fontWeightBold",
   paddingX: "terminal.paddingX",
   paddingY: "terminal.paddingY",
+  cursorOpacity: "terminal.cursorOpacity",
+  hideMouseWhileTyping: "terminal.hideMouseWhileTyping",
   scrollSensitivity: "terminal.scrollSensitivity",
   fastScrollSensitivity: "terminal.fastScrollSensitivity",
   tuiScrollSensitivity: "terminal.tuiScrollSensitivity",
