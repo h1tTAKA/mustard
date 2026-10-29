@@ -18,6 +18,7 @@ import { mergeTerms, parseNarrationTerms, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
+import { cardMeta, tagMatches } from "@/lib/catchupMeta";
 import { openCrewTask } from "@/components/workspace/crew/CrewChat";
 import { useFlyCard, collectCards } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
@@ -363,12 +364,6 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   type Tag = { type: "agent" | "branch" | "hash"; value: string };
   const [tag, setTag] = useState<Tag | null>(null);
   const toggleTag = (t2: Tag) => setTag((cur) => (cur && cur.type === t2.type && cur.value === t2.value ? null : t2));
-  const cardMeta = (c: { kind: string; key: string; tool: string }) => {
-    const cut = c.tool.indexOf(" · ");
-    if (c.kind === "diff") { const h = c.key.split("|")[1] ?? ""; const info = c.tool !== "diff" ? c.tool : ""; return { hash: h.slice(0, 7), branch: cut >= 0 ? info.slice(0, cut) : info, agent: "" }; }
-    if (c.kind === "session") return { hash: c.key.slice("session|".length, "session|".length + 7), agent: cut >= 0 ? c.tool.slice(0, cut) : c.tool, branch: cut >= 0 ? c.tool.slice(cut + 3) : "" };
-    return null;
-  };
   // #1135 Crew 작업 카드 → 그 Crew 카드 id. 역할 보고 = tool "crew|<id>", diff·세션 = crew/<id8> 브랜치(보드가 앞 8자로 찾음).
   const crewTask = (c: { kind: string; key: string; tool: string }) => {
     if (c.kind === "narration") return c.tool.startsWith("crew|") ? c.tool.slice(5) : null;
@@ -381,7 +376,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); openCrewTask(root, id); } }}
       className="inline-flex cursor-pointer items-center gap-0.5 rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 transition hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"><IconLayoutKanban size={10} stroke={2} className="shrink-0" aria-hidden />Crew</span>
   );
-  const tagMatch = (c: { kind: string; key: string; tool: string }) => { if (!tag) return true; const m = cardMeta(c); return !!m && (tag.type === "hash" ? m.hash === tag.value.slice(0, 7) : m[tag.type] === tag.value); };
+  const tagMatch = (c: { kind: string; key: string; tool: string }) => !tag || tagMatches(c, tag.type, tag.value);
   // 칩을 버튼처럼(카드 헤더 버튼 안이라 span + 전파 막기)
   const chipProps = (t2: Tag) => ({ role: "button" as const, tabIndex: 0, title: t("learn.chipFilter"),
     onClick: (e: React.MouseEvent) => { e.stopPropagation(); toggleTag(t2); },
