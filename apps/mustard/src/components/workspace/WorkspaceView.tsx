@@ -2,12 +2,13 @@
 // 워크스페이스 모드(#647) — 누노피 안에서 화면전환 없이 에이전트 코딩+즉시 학습.
 // 골격(커밋1): 4존 셸 [파일트리 | 터미널 | 코드 | 챗]. 각 존은 후속 커밋서 채움(트리·코드·챗·pty터미널).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld, IconLayoutKanban, IconMessageChatbot } from "@tabler/icons-react";
+import { IconRefresh, IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld, IconLayoutKanban, IconMessageChatbot } from "@tabler/icons-react";
 import { isNunopiEnabled } from "@/lib/product";
 import { NunopiGlyph } from "@/components/brand/ModeSwapToggle";
 import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, GKEYS, withModel, BROWSER_KEYS, BROWSER_DEFAULTS } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
 import FileTree from "@/components/workspace/FileTree";
+import { POLL_MS, pollPlan, sameFiles, sameStatus, treeDue } from "@/lib/repoRefresh";
 import CodePane from "@/components/workspace/CodePane";
 import WorkspaceChat, { type ChatFocus } from "@/components/workspace/WorkspaceChat";
 import GithubPanel from "@/components/workspace/GithubPanel";
@@ -462,27 +463,36 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     setChatPrefill((p) => ({ text, n: (p?.n ?? 0) + 1 }));
   };
 
-  // 워킹트리 변경 상태맵 로드(#687 도트 + #689 챗 승계 트리거). 경로 로드·깃 새로고침 시 호출.
+  const statusRef = useRef<Record<string, "added" | "modified">>({});
+  const pathRef = useRef(path); // 늦게 온 다른 레포 응답 거르기(리뷰)
+  useLayoutEffect(() => { pathRef.current = path; }, [path]); // 렌더 중 대입 대신 — 커밋된 path만, 다른 effect보다 먼저
+  const lastTreeAt = useRef(0); // 트리 마지막 재조회 시각(중복 호출 줄이기)
+  const prevActivePath = useRef<string | null>(null); // 같은 레포가 다시 활성화됐는지
+  // 워킹트리 변경 상태맵 로드(#687 도트 + #689 챗 승계 트리거). 경로 로드·깃 새로고침 시 호출. 바뀌었으면 true(#1225).
   const loadGitStatus = useCallback(async (p: string) => {
     try {
       const rs = await fetch("/api/repo/git-status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p }) });
       const ds = await rs.json();
+      if (p !== pathRef.current) return false; // 그새 레포가 바뀜 — 옛 레포 상태로 덮지 않음(#712 펼침 섞임 방지)
       const map: Record<string, "added" | "modified"> = {};
       // 키는 트리(scan)와 같은 repo-relative POSIX. git porcelain은 항상 "/"지만 방어적 정규화.
       if (rs.ok && ds.isGit && Array.isArray(ds.files)) for (const f of ds.files) { const k = statusKind(f.index ?? "", f.work ?? ""); if (k && typeof f.path === "string") map[f.path.replace(/\\/g, "/")] = k; }
-      setFileStatus(map);
-    } catch { setFileStatus({}); }
+      const changed = !sameStatus(statusRef.current, map);
+      if (changed) { statusRef.current = map; setFileStatus(map); } // 같으면 그대로(#1225 리뷰 — 접어 둔 변경 폴더가 다시 펴지지 않게)
+      return changed;
+    } catch { if (p === pathRef.current && Object.keys(statusRef.current).length) { statusRef.current = {}; setFileStatus({}); return true; } return false; }
   }, []);
   // 변경 파일 경로 집합(챗 승계 판별용, #689) — fileStatus 바뀔 때만 새 identity(effect 무한루프 방지).
   const changedFileSet = useMemo(() => new Set(Object.keys(fileStatus)), [fileStatus]);
   const chatEl = <WorkspaceChat root={path} files={files} focus={chatFocus} prefill={chatPrefill} changedFiles={changedFileSet} providerId={chatPid} providerSettings={chatPs} cardsEnabled={chatCards} onOpenCard={catchupOn ? (key) => { setCatchupChat(false); setRightMode("learn"); setCardJump((j) => ({ key, n: (j?.n ?? 0) + 1 })); } : undefined} />; // #1078 캐치업 안·단독 모드 공용, #1081 카드 링크
+  const [gitNonce, setGitNonce] = useState(0);
+  const [treeNonce, setTreeNonce] = useState(0); // 워처 변경 시 파일트리·문서 목록 재조회 신호(#830)
   // 깃 그래프 새로고침 시 상태맵도 갱신 — stable(inline이면 GitGraph load가 매 렌더 재생성→무한 fetch).
-  const handleGitRefreshed = useCallback(() => { if (path) void loadGitStatus(path); }, [path, loadGitStatus]);
+  // #1225 git 새로고침 때 파일 목록도 — 방금(2초 안) 다시 읽었으면 건너뜀(fs 이벤트 refresh와 겹침 방지)
+  const handleGitRefreshed = useCallback(() => { if (path) { void loadGitStatus(path); if (Date.now() - lastTreeAt.current > 2000) setTreeNonce((n) => n + 1); } }, [path, loadGitStatus]);
 
   // 실시간 갱신(#739) — 활성 워크스페이스의 레포를 파일 워처로 감시. 변경 시 도트 재로드 + gitNonce↑(GitGraph 재fetch).
   // 활성 path만 watch(keep-alive 멀티탭 중복 방지). recursive 미지원이면 폴링 폴백.
-  const [gitNonce, setGitNonce] = useState(0);
-  const [treeNonce, setTreeNonce] = useState(0); // 워처 변경 시 파일트리·문서 목록 재조회 신호(#830)
   useEffect(() => {
     if (!mounted || !active || !path) return;
     const api = window.nunopiDesktop;
@@ -493,18 +503,32 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     // heavy 갱신 — 상태 도트 + GitGraph(gitNonce) + 파일트리·문서(treeNonce). 실제 fs 변경 때만(#838).
     const refresh = () => { void loadGitStatus(path); setGitNonce((n) => n + 1); setTreeNonce((n) => n + 1); };
     const onChange = () => { if (debounce) clearTimeout(debounce); debounce = setTimeout(refresh, 250); };
-    const off = api.repo.onChanged((p) => { if (p.id === id) onChange(); });
+    const off = api.repo.onChanged((p) => { if (p.id !== id) return; onChange(); if (p.dead) startPoll(false); }); // #1225 감시가 죽으면 폴링이 그래프까지
     // 성능(#838): 그래프(1965커밋 재조회+재렌더)·트리 통째 재조회(heavy)는 fs 이벤트서만. 안전망 폴링은 도트(git status)만
     // 저비용 갱신 — 변경 없어도 15초마다 heavy로 돌던 churn 제거. fs.watch가 조용히 죽어도 도트는 유지, 그래프·트리는 수동 새로고침 커버.
     // 단 watch 미지원/실패면 fs 이벤트가 아예 없으니 폴링이 heavy 유일 수단 → 그땐 refresh(heavy) 유지.
+    // #1225 감시가 "된다"고 해도 OS 알림이 조용히 멈출 수 있음(실측: fseventsd 고장으로 0건) → 안전망 폴링이 트리도 다시 읽음
+    // (목록이 같으면 교체 안 함 — 깜빡임 없음). 그래프(무거움)는 감시가 없을 때만 폴링. 규칙은 lib/repoRefresh(점검 있음).
+    let tick = 0;
+    let alive = true;
+    const startPoll = (supported: boolean) => {
+      if (poll) clearInterval(poll);
+      const plan = pollPlan(supported);
+      poll = setInterval(() => {
+        if (typeof document !== "undefined" && document.hidden) return; // 창이 안 보이면 쉼
+        tick++;
+        if (plan.graph) setGitNonce((n) => n + 1);
+        void loadGitStatus(path).then((changed) => { if (treeDue(plan, tick, changed)) setTreeNonce((n) => n + 1); });
+      }, supported ? POLL_MS.watching : POLL_MS.fallback);
+    };
     void api.repo.watch({ id, root: path })
-      .then((r) => {
-        poll = (r && r.supported === false)
-          ? setInterval(refresh, 3000)                             // 미지원: fs 이벤트 없음 → 폴링이 heavy
-          : setInterval(() => void loadGitStatus(path), 15000);    // 지원: 폴링은 도트만(heavy는 fs 이벤트서)
-      })
-      .catch(() => { poll = setInterval(refresh, 3000); });         // watch 실패 → heavy 폴링(유일 수단)
+      .then((r) => { if (alive) startPoll(!(r && r.supported === false)); })
+      .catch(() => { if (alive) startPoll(false); }); // 정리 뒤 늦게 온 응답은 무시(리뷰 — 못 지우는 폴링 방지)                               // watch 실패 → 폴링이 유일 수단
+    // #1225 같은 레포 탭이 다시 활성화되면 그동안 생긴 파일 바로 반영(가벼운 것만 — 그래프는 #838대로 fs 이벤트 때만). 첫 마운트는 로드 effect가 함.
+    if (prevActivePath.current === path) { void loadGitStatus(path); setTreeNonce((n) => n + 1); }
+    prevActivePath.current = path;
     return () => {
+      alive = false;
       off();
       if (debounce) clearTimeout(debounce);
       if (poll) clearInterval(poll);
@@ -515,12 +539,12 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   // 폴더 정해지면 파일트리 로드(레포 전환 시). 스피너는 이 전환 로드에만 — 워처 갱신과 분리(무한 스피너 방지, #830).
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 폴더 바뀌면 트리 재로드(경로 변경 시)
-    if (!path) { setFiles([]); setFileStatus({}); return; }
+    if (!path) { setFiles([]); setFileStatus({}); statusRef.current = {}; return; }
     let cancelled = false;
     setTreeLoading(true);
     // 레포 전환 시 이전 목록·상태 즉시 비움 — key={path}로 리마운트되는 FileTree가 옛 레포의 changedAncestors(변경 폴더)를
     // 물어 그 폴더 펼침이 새 레포 저장분에 섞이는 것 방지(#712 리뷰). 열린 파일 초기화는 안 함(위 path 이펙트가 레포별 복원).
-    setFiles([]); setFileStatus({});
+    setFiles([]); setFileStatus({}); statusRef.current = {}; // 레포 바뀌면 비교 기준도 비움(#1225)
     (async () => {
       try {
         const r = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
@@ -542,7 +566,8 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       try {
         const r = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
         const d = await r.json();
-        if (!cancelled && r.ok && Array.isArray(d.files)) setFiles(d.files); // 실패 시 기존 목록 유지
+        lastTreeAt.current = Date.now();
+        if (!cancelled && r.ok && Array.isArray(d.files)) setFiles((prev) => (sameFiles(prev, d.files) ? prev : d.files)); // 같으면 그대로(#1225 폴링), 실패 시 기존 목록 유지
       } catch { /* 기존 목록 유지 */ }
     })();
     return () => { cancelled = true; };
@@ -557,7 +582,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       try {
         const r = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: docsRoot }) });
         const d = await r.json();
-        if (!cancelled && r.ok && Array.isArray(d.files)) setDocsFiles(d.files); // 실패 시 기존 유지
+        if (!cancelled && r.ok && Array.isArray(d.files)) setDocsFiles((prev) => (sameFiles(prev, d.files) ? prev : d.files)); // 같으면 그대로(#1225), 실패 시 기존 유지
       } catch { /* 기존 목록 유지 */ }
     })();
     return () => { cancelled = true; };
@@ -762,7 +787,14 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
         {leftOpen && (
         <aside ref={asideRef} style={{ width: treeW }} className="flex shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
           {treeOpen && (
-            <div className="min-h-0 flex-1 overflow-hidden">
+            <div className="group/tree relative min-h-0 flex-1 overflow-hidden">
+              {/* #1225 수동 새로고침 — 마우스 올릴 때(파일 감시가 멈춰도 바로 다시 읽기) */}
+              {path && !treeLoading && (
+                <button type="button" onClick={() => { void loadGitStatus(path); setTreeNonce((n) => n + 1); }} aria-label={t("workspace.treeRefresh")} title={t("workspace.treeRefresh")}
+                  className="pointer-events-none absolute right-1.5 top-1 z-10 rounded-md bg-white p-1 text-zinc-400 opacity-0 shadow-sm transition group-hover/tree:pointer-events-auto focus-visible:pointer-events-auto dark:bg-zinc-900 [@media(hover:none)]:pointer-events-auto hover:bg-zinc-100 hover:text-zinc-700 focus-visible:opacity-100 group-hover/tree:opacity-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 [@media(hover:none)]:opacity-100">
+                  <IconRefresh size={13} stroke={2} aria-hidden />
+                </button>
+              )}
               {treeLoading ? (
                 <div className="flex h-full items-center justify-center text-zinc-400"><IconLoader2 size={16} stroke={2} className="animate-spin" aria-hidden /></div>
               ) : files.length > 0 ? (
