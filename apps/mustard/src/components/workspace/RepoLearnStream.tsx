@@ -797,14 +797,11 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {/* #1078 마크다운 복사(요약 + 원본 대화 전체) */}
                       <button type="button" onClick={() => void copyCard(c)} title={t("learn.copyMd")} aria-label={t("learn.copyMd")}
                         className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconCopy size={13} stroke={2} aria-hidden /></button>
-                      {/* #1238 원본 대화만 복사 */}
-                      <button type="button" onClick={() => void copyRaw(c)} title={t("learn.copyRaw")} aria-label={t("learn.copyRaw")}
-                        className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-mustard-400"><IconMessages size={13} stroke={2} aria-hidden /></button>
                       {askBtn(c, false)}
                     </span>
                   )}
                   {!(c.kind === "diff" && parseDiffItemKey(c.key)) && !(c.kind === "session" && c.status === "done") && askBtn(c, true)}
-                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "session" ? "pr-32" : c.kind === "diff" ? "pr-28" : "pr-10"}`}>
+                  <button type="button" onClick={() => toggleExpand(c.key)} className={`flex w-full items-start gap-2 py-2 pl-3 text-left ${c.kind === "diff" || c.kind === "session" ? "pr-28" : "pr-10"}`}>
                     {pinMark(c)}
                     <Icon size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
                     <span className="min-w-0 flex-1">
@@ -868,7 +865,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           </div>
                         </div>
                       )}
-                      {c.kind === "session" && c.key.startsWith("session|") && <CatchupSessionRaw root={root} hash={c.key.slice(8)} />}
+                      {c.kind === "session" && c.key.startsWith("session|") && <CatchupSessionRaw root={root} hash={c.key.slice(8)} onCopy={() => void copyRaw(c)} />}
                       {c.status === "done" ? (() => {
                         // #1066 diff 구간별: [N~M번째 줄 ▸ 그 구간 코드 펼치기] + 설명. 한 파일 여러 변경이 한 카드여도 어느 설명이 어느 줄인지 보임
                         const d = c.kind === "diff" ? parseDiffItemKey(c.key) : null; const secs = d ? diffSections(c.expl ?? "") : null;
