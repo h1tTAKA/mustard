@@ -6,7 +6,7 @@
 import { useEffect, useRef } from "react";
 import { getSetting, setSetting, useSetting, TKEYS, TERMINAL_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS } from "./settings";
 import { applyUiZoom } from "./appearance";
-import { SHORTCUTS, bindingsOf, chordFromEvent, formatChord, matchShortcut, type ShortcutDef, type ShortcutOverrides } from "./shortcuts";
+import { SHORTCUTS, bindingsOf, chordFromEvent, formatChord, matchShortcut, terminalKeepsChord, type ShortcutDef, type ShortcutOverrides } from "./shortcuts";
 
 export const SHORTCUT_OVERRIDES_KEY = "shortcuts.overrides";
 export type ShortcutHandler = (def: ShortcutDef) => boolean | void;
@@ -67,6 +67,7 @@ function onKey(e: KeyboardEvent) {
   const chord = chordFromEvent(e, isMac());
   if (!chord) return;
   const inTerminal = !!(e.target as Element | null)?.closest?.(".xterm");
+  if (inTerminal && getSetting<string>(TKEYS.shortcutPriority, TERMINAL_DEFAULTS.shortcutPriority) === "terminal" && terminalKeepsChord(chord, isMac())) return; // #1224 터미널 먼저
   const def = matchShortcut(chord, inTerminal, getSetting<ShortcutOverrides>(SHORTCUT_OVERRIDES_KEY, {}));
   if (!def) return;
   let handled = builtin(def);

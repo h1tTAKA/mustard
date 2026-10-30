@@ -9,7 +9,7 @@ import { Segmented, SettingRow } from "./settingsControls";
 
 const PAGE = 48;
 let catalog: Promise<TermTheme[]> | null = null; // 한 번만 불러옴
-function loadCatalog(): Promise<TermTheme[]> {
+export function loadCatalog(): Promise<TermTheme[]> {
   catalog ??= fetch("/terminal-themes.json")
     .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); }) // 404·500도 실패로(다시 시도)
     .then((d: { themes?: unknown[] }) => (Array.isArray(d.themes) ? d.themes.flatMap((p) => { const t = unpackTheme(p); return t ? [t] : []; }) : []))

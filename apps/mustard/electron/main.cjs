@@ -11,7 +11,7 @@ require("./claude-env.cjs").stripParentClaudeEnv(process.env);
   if (extra.length) process.env.PATH = [...have, ...extra].join(":");
 }
 const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents, WebContentsView, globalShortcut, powerSaveBlocker, nativeImage } = require("electron");
-const { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, cpSync, chmodSync } = require("node:fs");
+const { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, cpSync, chmodSync, statSync } = require("node:fs");
 const {
   startSnaServer,
   resolveClaudeCli,
@@ -1658,6 +1658,18 @@ function persistBuffers() {
   try { mkdirSync(app.getPath("userData"), { recursive: true }); writeFileSync(bufFile(), JSON.stringify(out)); } catch { /* ignore */ }
 }
 // #1211 저장된 스크롤백 지우기 — 데몬에 세션이 없는 탭(닫혔거나 끝난 세션)의 저장 화면만. 살아 있는 세션 것은 그대로.
+// #1224 Ghostty 설정 가져오기 — 정해진 위치만 읽음(렌더러가 경로를 고르지 않음). 없거나 256KB 넘으면 null → 화면이 파일 고르기로.
+ipcMain.handle("terminal:read-ghostty-config", () => {
+  const home = app.getPath("home");
+  const xdg = process.env.XDG_CONFIG_HOME || join(home, ".config");
+  // Ghostty가 읽는 순서대로 이어 붙임(뒤 파일 값이 이김). 새 이름 config.ghostty도.
+  const found = [];
+  for (const dir of [join(xdg, "ghostty"), join(home, "Library", "Application Support", "com.mitchellh.ghostty")]) for (const name of ["config", "config.ghostty"]) {
+    const p = join(dir, name);
+    try { if (statSync(p).isFile() && statSync(p).size <= 256 * 1024) found.push({ path: p, text: readFileSync(p, "utf8") }); } catch { /* 없음 */ }
+  }
+  return found.length ? { path: found.map((f) => f.path).join(", "), text: found.map((f) => f.text).join("\n") } : null;
+});
 ipcMain.handle("terminal:clear-saved", async () => {
   // 목록 응답은 FIFO라 앞서 타임아웃된 요청의 늦은 스냅샷(최대 ~1.2초 전)을 받을 수 있음 — 그 사이 새로 생긴 세션은 저장분이 없어 영향 없음(리뷰)
   const ss = await termClient.list({ strict: true }).catch(() => null);

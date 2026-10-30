@@ -8,6 +8,8 @@ import UpdateSection from "./UpdateSection";
 import BrowserSection from "./BrowserSection";
 import TerminalSessionsSection from "./TerminalSessionsSection";
 import TerminalKeyboardSection from "./TerminalKeyboardSection";
+import { listMonospaceFonts } from "./localFonts";
+import GhosttyImportRow from "./GhosttyImportRow";
 import TerminalRenderSection from "./TerminalRenderSection";
 import TerminalThemeSection from "./TerminalThemeSection";
 import { IconKeyboard, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus } from "@tabler/icons-react";
@@ -175,6 +177,7 @@ export default function SettingsDrawer({
   // 터미널 설정(#926) — useSetting으로 구독(변경 즉시 반영). 모든 훅은 early-return 위.
   const tFontSize = useSetting<number>(TKEYS.fontSize, TERMINAL_DEFAULTS.fontSize);
   const tFontFamily = useSetting<string>(TKEYS.fontFamily, TERMINAL_DEFAULTS.fontFamily);
+  const [fontList, setFontList] = useState<string[]>([]); // #1224 설치된 고정폭 글꼴(입력칸 처음 누를 때 읽음)
   const tShellArgs = useSetting<string>(TKEYS.shellArgs, TERMINAL_DEFAULTS.shellArgs); // #1213
   const tShell = useSetting<string>(TKEYS.shell, TERMINAL_DEFAULTS.shell); // #1196
   const tOsc52 = useSetting<boolean>(TKEYS.osc52, TERMINAL_DEFAULTS.osc52);
@@ -190,12 +193,14 @@ export default function SettingsDrawer({
   const tCopyOnSelect = useSetting<boolean>(TKEYS.copyOnSelect, TERMINAL_DEFAULTS.copyOnSelect);
   const tCopyTrim = useSetting<boolean>(TKEYS.copyTrimGutter, TERMINAL_DEFAULTS.copyTrimGutter); // #1212
   const tRightClickPaste = useSetting<boolean>(TKEYS.rightClickPaste, TERMINAL_DEFAULTS.rightClickPaste);
+  const tMiddleClickPaste = useSetting<boolean>(TKEYS.middleClickPaste, TERMINAL_DEFAULTS.middleClickPaste);
   // 터미널 심화(#941)
   const tScrollSensitivity = useSetting<number>(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity);
   const tFastScroll = useSetting<number>(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity); // #1212
   const tTuiScroll = useSetting<number>(TKEYS.tuiScrollSensitivity, TERMINAL_DEFAULTS.tuiScrollSensitivity);
   const tFocusFollowsMouse = useSetting<boolean>(TKEYS.focusFollowsMouse, TERMINAL_DEFAULTS.focusFollowsMouse);
   const tLinkTarget = useSetting<"app" | "external">(TKEYS.linkTarget, TERMINAL_DEFAULTS.linkTarget); // #1193
+  const tLinkClick = useSetting<"open" | "menu" | "off">(TKEYS.linkClick, TERMINAL_DEFAULTS.linkClick);
   // 알림(#928)
   const nAgentDone = useSetting<boolean>(NKEYS.agentDone, NOTIF_DEFAULTS.agentDone);
   const nSuppress = useSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching);
@@ -681,6 +686,7 @@ export default function SettingsDrawer({
           {/* 터미널 설정 카드(#926) — 폰트·커서·스크롤백·클립보드·GPU */}
           {activeSection === "set-terminal" && (
           <section id="set-terminal" className="scroll-mt-4 space-y-4 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+            <GhosttyImportRow />{/* #1224 Ghostty 설정 한 번에 가져오기 */}
             <TerminalThemeSection />{/* #1215 다크용·라이트용 테마 카드 */}
             {/* 폰트 크기 */}
             <div className="flex items-center justify-between gap-3">
@@ -707,8 +713,11 @@ export default function SettingsDrawer({
             <label className="block space-y-1.5">
               <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalFontFamily")}</span>
               <input type="text" value={tFontFamily} onChange={(e) => setSetting(TKEYS.fontFamily, e.target.value)}
-                placeholder={TERMINAL_DEFAULTS.fontFamily}
+                placeholder={TERMINAL_DEFAULTS.fontFamily} list="mustard-terminal-fonts" spellCheck={false}
+                onFocus={() => { if (!fontList.length) void listMonospaceFonts().then(setFontList); }}
                 className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-mono text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+              {/* 마지막 쉼표 뒤를 치면 그 자리만 채움 — 앞쪽 글꼴 목록은 그대로(브라우저 자동완성은 값 전체로 거르므로 앞부분을 붙여 둠) */}
+              <datalist id="mustard-terminal-fonts">{fontList.map((f) => { const head = tFontFamily.slice(0, tFontFamily.lastIndexOf(",") + 1).replace(/,\s*$/, ", "); return <option key={f} value={`${head}${/^[\w -]+$/.test(f) && !/^\d/.test(f) ? f : `"${f.replace(/"/g, "")}"`}`} />; })}</datalist>
             </label>
             {/* 행간 */}
             <div className="flex items-center justify-between gap-3">
@@ -742,12 +751,25 @@ export default function SettingsDrawer({
               </div>
               <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.terminalLinkHint")}</p>
             </div>
+            {/* #1224 링크 클릭 동작 — 바로 열기/메뉴/열지 않음 */}
+            <div className="space-y-1.5">
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalLinkClick")}</span>
+              <div className="inline-flex w-full rounded-xl border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-900">
+                {(["open", "menu", "off"] as const).map((lc) => (
+                  <button key={lc} type="button" onClick={() => setSetting(TKEYS.linkClick, lc)}
+                    className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition ${tLinkClick === lc ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
+                    {t(`settings.terminalLinkClick.${lc}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
             {/* 토글들 */}
             {([
               { key: TKEYS.cursorBlink, on: tCursorBlink, label: t("settings.terminalCursorBlink") },
               { key: TKEYS.copyOnSelect, on: tCopyOnSelect, label: t("settings.terminalCopyOnSelect") },
               { key: TKEYS.copyTrimGutter, on: tCopyTrim, label: t("settings.terminalCopyTrimGutter") }, // #1212
               { key: TKEYS.rightClickPaste, on: tRightClickPaste, label: t("settings.terminalRightClickPaste") },
+              { key: TKEYS.middleClickPaste, on: tMiddleClickPaste, label: t("settings.terminalMiddleClickPaste") },
               { key: TKEYS.focusFollowsMouse, on: tFocusFollowsMouse, label: t("settings.terminalFocusFollowsMouse") },
               { key: TKEYS.osc52, on: tOsc52, label: t("settings.terminalOsc52") }, // #1196
               { key: TKEYS.images, on: tImages, label: t("settings.terminalImages") }, // #1196

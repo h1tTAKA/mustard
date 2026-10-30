@@ -20,6 +20,7 @@ export * from "./terminalSelection";
 export * from "./terminalKeyboard";
 export * from "./terminalRender";
 export * from "./terminalThemes";
+export * from "./ghosttyConfig"; // #1224
 export * from "./terminalThemeCurrent";
 export * from "./appearance";
 export * from "./notify";
