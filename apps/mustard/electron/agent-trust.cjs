@@ -1,6 +1,7 @@
 // 에이전트 작업 폴더 미리 신뢰(#1216) — Mustard가 만든 작업공간(worktree)에서 Claude가 "이 폴더를 믿나요?"를 매번 묻지 않게, 띄우기 직전 신뢰로 기록.
 // 조건: Mustard 작업공간 안쪽 + 그 레포의 메인 폴더를 사용자가 이미 Claude에서 신뢰함 + 작업공간의 지금 커밋이 기본 브랜치(origin/HEAD·main·master) 끝의 조상(같거나 이전)
-// + 에이전트 설정(.claude/·.mcp.json)에 커밋 안 한 변경 없음 → 그 신뢰를 작업공간에 물려줌.
+// + 에이전트 설정(.claude/·.mcp.json, 무시된 파일 포함)과 작업공간 전체(무시된 파일 제외)에 커밋 안 한 변경·새 파일 없음 → 그 신뢰를 작업공간에 물려줌.
+// 무시된 경로(node_modules·.env 등)는 그 PC의 setup·복사가 만든 것이라 남의 코드가 들어올 길이 아님 — 전체 검사에서 뺌(느려지기도 함).
 // 메인에 아직 안 들어온 커밋(PR·다른 브랜치, 같은 레포라도)에서 시작한 작업공간은 원래대로 물어봄(리뷰).
 // 한계: 신뢰를 준 뒤 그 작업공간에서 바뀌는 것(에이전트 자신의 작업)은 Claude가 다시 묻지 않음 — 사람이 직접 "믿어요"를 눌렀을 때와 같음.
 // 실패(설정 파일 없음·깨짐·잠금 못 잡음)면 아무것도 안 함 — 그때는 Claude가 원래대로 물어볼 뿐.
@@ -12,7 +13,7 @@ const { dirname, join, resolve, sep } = require("node:path");
 
 const real = (p) => { try { return realpathSync.native(p); } catch { return p; } };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const git = async (cwd, args) => (await promisify(execFile)("git", args, { cwd, encoding: "utf8", timeout: 3000 })).stdout.trim(); // 비동기 — main을 막지 않게(리뷰)
+const git = async (cwd, args, timeout = 3000) => (await promisify(execFile)("git", args, { cwd, encoding: "utf8", timeout })).stdout.trim(); // 비동기 — main을 막지 않게(리뷰)
 const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 
 // Mustard가 만든 작업공간 루트(사람용·Crew) — 렌더러가 다른 경로를 넘겨도 여기서 걸림
@@ -38,7 +39,7 @@ async function knownCode(dir, main) {
     if (!base) return false;
     await git(dir, ["merge-base", "--is-ancestor", "HEAD", base]); // 조상이 아니면 종료 코드 1 → throw
     if (await git(dir, ["status", "--porcelain", "--ignored", "--untracked-files=all", "--", ...AGENT_CONFIG])) return false; // 에이전트 설정: 무시된 파일·새 파일까지(레포 설정과 상관없이, 리뷰)
-    return !(await git(dir, ["status", "--porcelain", "--untracked-files=all"])); // 전체 트리: 설정이 부르는 스크립트를 커밋 밖에서 고쳐 둔 경우(리뷰). 무시된 파일(node_modules 등)은 뺌
+    return !(await git(dir, ["status", "--porcelain", "--untracked-files=all"], 10_000)); // 큰 레포는 오래 걸림 — 비동기라 넉넉히 // 전체 트리: 설정이 부르는 스크립트를 커밋 밖에서 고쳐 둔 경우(리뷰). 무시된 파일(node_modules 등)은 뺌
   } catch { return false; }
 }
 
