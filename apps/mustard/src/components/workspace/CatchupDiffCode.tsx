@@ -6,12 +6,14 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ThemedToken } from "shiki";
 import { langOf } from "@/lib/codeLang";
+import { useCodeFont } from "@/lib/codeFont";
 import { IconChevronDown, IconLoader2 } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import { type DLine, parseDiff, groupHunks } from "@/lib/hunkDiff";
 
 export default function CatchupDiffCode({ root, hash, file, range, label }: { root: string; hash: string; file: string; range?: { from: number; to: number }; label?: string }) {
   const t = useT();
+  const font = useCodeFont(-1.5); // #1218 기본 10.5px
   const [open, setOpen] = useState(false);
   const [hunks, setHunks] = useState<DLine[][] | null>(null); // null = 아직/불러오는 중
   const [failed, setFailed] = useState(false);
@@ -87,7 +89,7 @@ export default function CatchupDiffCode({ root, hash, file, range, label }: { ro
         : !hunks.length ? <p className="mt-1 text-[10px] text-zinc-400 dark:text-zinc-500">{t("workspace.diffEmpty")}</p> // 바이너리 등 줄 단위 변경 없음(또는 그 뒤 파일이 바뀜)
         : (
           // 길면 상자 안에서 스크롤(가로도) — 카드 목록 흐름을 안 밀어냄
-          <div className="nunopi-scroll mt-1 max-h-80 overflow-auto rounded-md border border-zinc-200 bg-white font-mono text-[10.5px] leading-[1.45] dark:border-zinc-800 dark:bg-zinc-950">
+          <div style={font} className="nunopi-scroll mt-1 max-h-80 overflow-auto rounded-md border border-zinc-200 bg-white leading-[1.45] dark:border-zinc-800 dark:bg-zinc-950">
             {/* 안쪽 = 가장 긴 줄 폭(w-max, 최소 상자 폭) → 가로 스크롤해도 줄 배경(빨강/초록)이 끝까지(#1062에서 수정) */}
             <div className="w-max min-w-full">
             {hunks.map((h, i) => (

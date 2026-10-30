@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { codeToHtml } from "shiki";
 import { IconLoader2, IconAlertTriangle, IconFileOff, IconZoomIn, IconZoomOut, IconArrowsMinimize, IconArrowsMaximize } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
+import { useCodeFont } from "@/lib/codeFont";
 
 // 확장자 → shiki 언어. 없으면 text.
 // 바이트 → 사람이 읽는 크기(#657 미리보기 안내용).
@@ -19,6 +20,7 @@ export default function CodePane({ root, file }: { root: string; file: string })
   const [isDark, setIsDark] = useState(false);
   const [bin, setBin] = useState<BinaryInfo | null>(null); // 텍스트 아닌 파일(#657)
   const t = useT();
+  const font = useCodeFont(); // #1218 기본 12px·--font-mono
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -66,7 +68,7 @@ export default function CodePane({ root, file }: { root: string; file: string })
   }
 
   return (
-    <div className="nunopi-scroll h-full overflow-auto bg-white p-3 text-[12px] dark:bg-[var(--s-pane)] [&_pre]:!m-0 [&_pre]:!bg-transparent">
+    <div style={font} className="nunopi-scroll h-full overflow-auto bg-white p-3 dark:bg-[var(--s-pane)] [&_pre]:!m-0 [&_pre]:!bg-transparent [&_pre]:[font-family:inherit]">
       {html ? <div dangerouslySetInnerHTML={{ __html: html }} /> : <pre className="text-zinc-700 dark:text-zinc-200">{raw}</pre>}
     </div>
   );

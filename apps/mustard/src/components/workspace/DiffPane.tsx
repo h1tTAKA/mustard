@@ -1,6 +1,7 @@
 "use client";
 // 워크스페이스 diff 뷰(#649) — 커밋+파일의 git diff. shiki 신택스 하이라이팅 + 빨강(−)/초록(+) 배경.
 import { langOf } from "@/lib/codeLang";
+import { useCodeFont } from "@/lib/codeFont";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { codeToTokens, type ThemedToken, type BundledLanguage } from "shiki";
 import { IconLoader2, IconAlertTriangle, IconGitCompare, IconSparkles, IconRefresh, IconBrandGithub, IconRobot, IconCheck, IconX, IconPlus, IconPlusMinus, IconClock } from "@tabler/icons-react";
@@ -23,6 +24,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const t = useT();
   const { locale } = useLocale();
   const toast = useToast();
+  const font = useCodeFont(-1); // #1218 기본 11px
   // 변경 구간별 에이전트 노트. key = diffText 해시(구간 내용 기반 안정 키 → 같은 diff 재오픈 시 매칭).
   const [notes, setNotes] = useState<Record<string, { status: "loading" | "done" | "error"; text?: string }>>({});
   const [lines, setLines] = useState<DLine[] | null>(null);
@@ -271,7 +273,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
     <div className={`relative bg-white dark:bg-[var(--s-pane)] min-h-0 flex-1`}
       onMouseEnter={() => { if (hideTimer.current) clearTimeout(hideTimer.current); setShowRuler(true); }}
       onMouseLeave={() => { if (hideTimer.current) clearTimeout(hideTimer.current); hideTimer.current = setTimeout(() => setShowRuler(false), 400); }}>
-      <div ref={scrollRef} onScroll={() => { syncVp(); reveal(); }} className="h-full overflow-auto pr-3 font-mono text-[11px] leading-[1.55] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div ref={scrollRef} onScroll={() => { syncVp(); reveal(); }} style={font} className="h-full overflow-auto pr-3 leading-[1.55] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {lines.map((l, i) => {
         // meta(diff/index/+++/---) + hunk(@@) 헤더 숨김 — -U100000으로 전체 컨텍스트라 생략 구분선 불필요.
         if (l.kind === "meta" || l.kind === "hunk") return null;
