@@ -1,6 +1,6 @@
 const assert = require("node:assert");
 const { execFileSync } = require("node:child_process");
-const { mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync, existsSync, statSync, chmodSync, symlinkSync, lstatSync, utimesSync } = require("node:fs");
+const { mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync, existsSync, statSync, chmodSync, symlinkSync, lstatSync } = require("node:fs");
 const { join } = require("node:path");
 const { tmpdir } = require("node:os");
 const { trustAgentFolder, claudeConfigFile } = require("./agent-trust.cjs");
@@ -52,12 +52,20 @@ const { trustAgentFolder, claudeConfigFile } = require("./agent-trust.cjs");
   const alias = join(ws, "alias"); symlinkSync(dir, alias);
   assert.strictEqual(await trustAgentFolder("claude", alias, opts), "granted");
   assert.strictEqual(JSON.parse(readFileSync(realCfg, "utf8")).projects[alias].hasTrustDialogAccepted, true);
-  // 잠금이 살아 있으면 포기, 10초 넘은 죽은 잠금은 치우고 진행
+  // 잠금이 있으면(죽은 것이라도) 건드리지 않고 포기
   mkdirSync(`${realCfg}.lock`);
   assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "locked");
-  const old = (Date.now() - 60_000) / 1000; utimesSync(`${realCfg}.lock`, old, old);
-  assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "granted", "죽은 잠금");
-  assert.ok(!existsSync(`${realCfg}.lock`));
+  require("node:fs").rmdirSync(`${realCfg}.lock`);
+  // 에이전트 설정(.mcp.json·.claude/)을 바꾼 브랜치(포크 PR 등)는 안 함 — 커밋했든 안 했든
+  writeFileSync(join(dir2, ".mcp.json"), "{}");
+  assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "agent-config-changed");
+  require("node:fs").rmSync(join(dir2, ".mcp.json"));
+  assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "granted");
+  // 권한 0664도 그대로(umask에 안 깎임)
+  chmodSync(realCfg, 0o664);
+  const dir3 = join(ws, "c"); git(main, "worktree", "add", "-q", dir3, "-b", "c");
+  assert.strictEqual(await trustAgentFolder("claude", dir3, opts), "granted");
+  assert.strictEqual(statSync(realCfg).mode & 0o777, 0o664);
   // 깨진 파일은 안 씀
   writeFileSync(realCfg, "{broken");
   assert.strictEqual(await trustAgentFolder("claude", dir, opts), "unreadable");
