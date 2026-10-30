@@ -584,13 +584,13 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: docsRoot, hideIgnored: !showIgnored }) });
+        const r = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: docsRoot }) });
         const d = await r.json();
         if (!cancelled && r.ok && Array.isArray(d.files)) setDocsFiles((prev) => (sameFiles(prev, d.files) ? prev : d.files)); // 같으면 그대로(#1225), 실패 시 기존 유지
       } catch { /* 기존 목록 유지 */ }
     })();
     return () => { cancelled = true; };
-  }, [docsRoot, treeNonce, showIgnored]);
+  }, [docsRoot, treeNonce]); // #1218 문서 폴더는 직접 고른 곳이라 gitignore 숨기기 안 씀(흔히 그 폴더 자체가 무시 대상 — 목록이 통째로 비었음)
 
   // 문서 폴더 선택(#693) — 범용 폴더 선택기 재사용.
   async function pickDocs() {
