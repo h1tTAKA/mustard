@@ -34,7 +34,7 @@ export async function POST(request: Request): Promise<Response> {
     const reflog = commits.length ? (await pexecFile("git", ["reflog", "-n", "2000", "--format=%H%x1f%gs"], { cwd: path, timeout: 4000 }).catch(() => ({ stdout: "" }))).stdout : "";
     const at = branchesFromReflog(reflog.split("\n").filter(Boolean));
     // #1255 ms = 카드 시각(같은 초 커밋도 커밋 순서대로) — --date-order라 자식이 부모보다 먼저
-    // 개수 상한(-n)에 걸리면 같은 초 묶음이 잘렸을 수 있음 → 최근 1000개를 다시 받아 목록의 가장 이른 초 이후 전체로 셈(리뷰).
+    // 개수 상한(-n)에 걸렸을 때만(평소 폴링은 since 이후라 드묾) 같은 초 묶음이 잘렸을 수 있음 → 최근 1000개를 다시 받아 목록의 가장 이른 초 이후 전체로 셈(리뷰).
     //  --since는 시계가 어긋난 커밋이 있으면 탐색이 일찍 끊겨 빠질 수 있어 안 쓰고 JS에서 거름. 1000개 상한에 닿으면 경고.
     let full: { hash: string; ts: number }[] = commits;
     if (commits.length >= n) {
@@ -43,7 +43,7 @@ export async function POST(request: Request): Promise<Response> {
         .catch((e) => { console.warn("[git-recent] 같은 초 커밋 다시 받기 실패 — 받은 목록으로만 셈:", (e as Error).message); return null; });
       if (g) {
         const all = g.stdout.split("\n").filter(Boolean).map((l) => { const [hash, ct] = l.split("\x1f"); return { hash, ts: Number(ct) }; });
-        if (all.length >= 1000) console.warn("[git-recent] 다시 받기 1000개 상한 — 같은 초 순서가 조금 어긋날 수 있음");
+        if (all.length >= 1000 && all[all.length - 1].ts >= minT) console.warn("[git-recent] 다시 받기 1000개 상한에서 잘림 — 같은 초 순서가 조금 어긋날 수 있음"); // 실제로 창 안에서 잘렸을 때만(리뷰)
         full = all.filter((c) => c.ts >= minT);
       }
     }
