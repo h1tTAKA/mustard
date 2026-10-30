@@ -14,6 +14,7 @@ export default function TerminalKeyboardSection() {
   const mode = readMacOptionAsAlt(stored, legacy);
   const yen = useSetting<boolean>(TKEYS.jisYenToBackslash, TERMINAL_DEFAULTS.jisYenToBackslash);
   const wordSep = useSetting<string>(TKEYS.wordSeparator, TERMINAL_DEFAULTS.wordSeparator);
+  const priority = useSetting<"app" | "terminal">(TKEYS.shortcutPriority, TERMINAL_DEFAULTS.shortcutPriority);
   const [source, setSource] = useState<string | null | undefined>(undefined); // undefined = 아직 모름
   useEffect(() => {
     const read = readSource();
@@ -55,6 +56,19 @@ export default function TerminalKeyboardSection() {
         </button>
       </div>
     )}
+    {/* #1224 터미널 안 단축키 우선순위 */}
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="min-w-0">
+        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.shortcutPriority")}</span>
+        <p className="text-xs text-zinc-400 dark:text-zinc-500">{t(isMac ? "settings.shortcutPriorityDescMac" : "settings.shortcutPriorityDesc")}</p>
+      </div>
+      <div className="inline-flex shrink-0 rounded-xl border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-900" role="radiogroup" aria-label={t("settings.shortcutPriority")}>
+        {(["app", "terminal"] as const).map((p) => (
+          <button key={p} type="button" role="radio" aria-checked={priority === p} onClick={() => setSetting(TKEYS.shortcutPriority, p)}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${priority === p ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>{t(`settings.shortcutPriority.${p}`)}</button>
+        ))}
+      </div>
+    </div>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <span className="min-w-0"><span className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.wordSeparator")}</span><span className="block text-xs text-zinc-400 dark:text-zinc-500">{t("settings.wordSeparatorDesc")}</span></span>
       <input type="text" value={wordSep} placeholder={DEFAULT_WORD_SEPARATOR} spellCheck={false} aria-label={t("settings.wordSeparator")}

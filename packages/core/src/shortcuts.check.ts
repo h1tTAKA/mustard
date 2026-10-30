@@ -1,6 +1,6 @@
 // shortcuts 점검(#1027) — 실행: node --experimental-strip-types packages/core/src/shortcuts.check.ts
 import assert from "node:assert";
-import { SHORTCUTS, appChords, chordFromEvent, findConflicts, formatChord, matchShortcut, normalizeChord } from "./shortcuts.ts";
+import { SHORTCUTS, appChords, chordFromEvent, findConflicts, formatChord, matchShortcut, normalizeChord, terminalKeepsChord } from "./shortcuts.ts";
 
 const ev = (code: string, m: Partial<{ meta: boolean; ctrl: boolean; alt: boolean; shift: boolean }> = {}) =>
   ({ code, metaKey: !!m.meta, ctrlKey: !!m.ctrl, altKey: !!m.alt, shiftKey: !!m.shift });
@@ -43,4 +43,9 @@ assert.ok(ac.includes("Mod+K") && ac.includes("Mod+W") && ac.includes("Mod+1"));
 assert.strictEqual(ac.length, new Set(ac).size);
 const ac2 = appChords({ "view.left": [], palette: ["Mod+Shift+P"] });
 assert.ok(!ac2.includes("Mod+B") && !ac2.includes("Mod+K"));
+// #1224 터미널 먼저 — ⇧ 없는 Ctrl만 셸로
+assert.ok(terminalKeepsChord("Mod+W", false) && terminalKeepsChord("Mod+Alt+T", false), "Windows·Linux Ctrl+W·Ctrl+Alt+T = 셸");
+assert.ok(!terminalKeepsChord("Mod+Shift+]", false), "Ctrl+Shift = 앱");
+assert.ok(!terminalKeepsChord("Mod+W", true), "맥 ⌘ = 앱");
+assert.ok(terminalKeepsChord("Ctrl+W", true) && !terminalKeepsChord("Ctrl+Shift+W", true), "맥 ⌃ = 셸, ⌃⇧ = 앱");
 console.log("shortcuts.check OK");

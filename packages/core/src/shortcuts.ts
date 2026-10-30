@@ -86,6 +86,13 @@ export function chordFromEvent(e: KeyLike, isMac: boolean): string | null {
   return mods.length ? [...mods, key].join("+") : null;
 }
 
+// #1224 단축키 우선순위 "터미널 먼저" — 터미널 안에선 ⇧ 없는 Ctrl 조합(Windows·Linux Ctrl+W 단어 지우기·Ctrl+K 등)을 셸로 보냄.
+// Ctrl+⇧ 조합과 맥 ⌘ 조합은 계속 앱. 맥 기본값은 전부 ⌘라 거의 영향 없음(사용자가 ⌃로 바꾼 것만).
+export function terminalKeepsChord(chord: string, isMac: boolean): boolean {
+  const parts = chord.split("+");
+  return parts.includes(isMac ? "Ctrl" : "Mod") && !parts.includes("Shift");
+}
+
 export function bindingsOf(def: ShortcutDef, overrides: ShortcutOverrides): string[] {
   const raw = overrides[def.id] ?? def.defaults;
   return raw.map(normalizeChord).filter((c): c is string => !!c);
