@@ -6,5 +6,7 @@ import { useSetting, EKEYS, EDITOR_DEFAULTS } from "@mustard/core";
 export function useCodeFont(delta = 0): CSSProperties {
   const family = useSetting<string>(EKEYS.fontFamily, EDITOR_DEFAULTS.fontFamily);
   const size = useSetting<number>(EKEYS.fontSize, EDITOR_DEFAULTS.fontSize);
-  return { fontFamily: family.trim() ? `${family.trim()}, var(--font-mono)` : "var(--font-mono)", fontSize: size + delta }; // 없는 글꼴·오타면 기본 고정폭으로(리뷰)
+  // 없는 글꼴·오타면 뒤의 기본 고정폭으로, CSS 문법에 안 맞는 값(따옴표 없는 숫자 시작 이름 등)은 통째로 무시돼 UI 글꼴이 되니 기본만(리뷰)
+  const f = family.trim(), ok = !!f && typeof CSS !== "undefined" && CSS.supports("font-family", f);
+  return { fontFamily: ok ? `${f}, var(--font-mono)` : "var(--font-mono)", fontSize: size + delta };
 }
