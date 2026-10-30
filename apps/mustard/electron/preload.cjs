@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
   liftAgentArgs: (agent, args) => ipcRenderer.invoke("agents:lift", { agent, args }), // #1184 인자 속 권한 플래그 → 권한 선택 // #1171 에이전트 CLI 설치·경로·로그인 상태
   relaunch: () => ipcRenderer.invoke("app:relaunch"),
   notify: (payload) => ipcRenderer.invoke("notify", payload),
+  notifySound: (name, volume) => ipcRenderer.invoke("notify:sound", { name, volume }), // #1217 미리 듣기
   // #989 알림 클릭 → {repoPath, sessionId}. 해제 함수 반환.
   onNotifyActivate: (cb) => { const h = (_e, p) => cb(p); ipcRenderer.on("notify:activate", h); return () => ipcRenderer.removeListener("notify:activate", h); },
   pickRepoFolder: (opts) => ipcRenderer.invoke("repo:pickFolder", opts),

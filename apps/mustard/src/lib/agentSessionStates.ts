@@ -19,5 +19,19 @@ export function sessionState(sessionId: string): string | null {
   return null;
 }
 const subscribe = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
-// 바뀔 때 다시 그리게 하는 훅(값은 sessionState로 읽음).
-export function useAgentSessionStates() { useSyncExternalStore(subscribe, () => version, () => 0); }
+// 바뀔 때 다시 그리게 하는 훅(값은 sessionState·isUnread로 읽음). 돌려주는 값 = 바뀔 때마다 오르는 번호.
+export function useAgentSessionStates() { return useSyncExternalStore(subscribe, () => version, () => 0); }
+
+// #1217 안 본 사이 끝난(또는 물어보는) 세션 — 일하다 멈춘 순간 표시, 그 터미널 탭이 보이면 지움. 메모리만(앱 다시 켜면 다 본 것).
+const unread = new Set<string>();
+const bump = () => { version++; for (const f of subs) f(); };
+export function markUnread(sessionId: string) { if (!unread.has(sessionId)) { unread.add(sessionId); bump(); } }
+export function clearUnread(sessionId: string) { if (unread.delete(sessionId)) bump(); }
+export const isUnread = (sessionId: string) => unread.has(sessionId);
+// 레포 탭 점 — 그 레포에 지금 열린 세션 중 안 본 게 있으면
+export function repoUnread(repo: string): boolean {
+  const m = byRepo.get(repo);
+  if (!m) return false;
+  for (const id of m.keys()) if (unread.has(id)) return true;
+  return false;
+}

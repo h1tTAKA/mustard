@@ -1291,13 +1291,28 @@ function notifyIconPath() {
 }
 
 // 데스크톱 네이티브 알림(분석 완료 등). 창을 보고 있으면(포커스) 스킵 — 안 보고 있을 때만 알림.
+// #1217 알림 소리 — 맥 시스템 소리 이름만(목록 밖은 무시), afplay -v 크기(0~1). 미리 듣기도 같은 함수.
+// 목록은 packages/core/src/settings.ts NOTIF_SOUNDS와 같게 유지(main은 TS를 못 읽음 — 한쪽만 고치면 그 소리가 조용히 기본음이 됨, 리뷰).
+// 앞 소리가 아직 나는 중이면 끄고 새로(크기 칸 연타·알림 겹침에 afplay가 쌓이지 않게, 리뷰).
+let notifSoundProc = null;
+const NOTIF_SOUNDS = new Set(["Glass", "Ping", "Pop", "Tink", "Hero", "Submarine", "Purr", "Funk", "Blow", "Bottle", "Frog", "Basso", "Morse", "Sosumi"]);
+function playNotifSound(name, volume) {
+  if (process.platform !== "darwin" || !NOTIF_SOUNDS.has(name)) return false;
+  const v = Math.max(0, Math.min(100, Number(volume) || 0)) / 100;
+  try { notifSoundProc?.kill(); } catch { /* 이미 끝남 */ }
+  const p = require("node:child_process").execFile("afplay", ["-v", String(v), `/System/Library/Sounds/${name}.aiff`], () => { if (notifSoundProc === p) notifSoundProc = null; });
+  notifSoundProc = p;
+  return true;
+}
+ipcMain.handle("notify:sound", (_e, { name, volume } = {}) => ({ ok: playNotifSound(name, volume) }));
 ipcMain.handle("notify", (_e, payload) => {
-  const { title, body, suppressWhileFocused, silent, target } = payload ?? {};
+  const { title, body, suppressWhileFocused, silent, target, sound, volume } = payload ?? {};
+  const own = process.platform === "darwin" && NOTIF_SOUNDS.has(sound); // 고른 소리면 알림 자체는 무음, 소리는 직접
   if (!Notification.isSupported()) return { ok: false, reason: "unsupported" };
   // #928 설정: suppressWhileFocused=false면 포커스여도 알림(기본 true=기존 동작).
   if (suppressWhileFocused !== false && win && win.isFocused()) return { ok: false, reason: "focused" };
   // #939 silent=true면 무음 알림.
-  const n = new Notification({ title: title || "nunopi", body: body || "", icon: notifyIconPath(), silent: !!silent });
+  const n = new Notification({ title: title || "nunopi", body: body || "", icon: notifyIconPath(), silent: !!silent || own });
   n.on("click", () => {
     if (!win) return;
     if (win.isMinimized()) win.restore();
@@ -1306,6 +1321,7 @@ ipcMain.handle("notify", (_e, payload) => {
     // #989 그 레포·터미널로 이동 — 렌더러(WorkspaceTabs·LearningHome)가 받아 탭 전환.
     if (target && typeof target.repoPath === "string") win.webContents.send("notify:activate", { repoPath: target.repoPath, sessionId: typeof target.sessionId === "string" ? target.sessionId : undefined });
   });
+  if (own && !silent) n.on("show", () => playNotifSound(sound, volume)); // 알림이 실제로 떴을 때만(권한 거부 등엔 소리도 없게, 리뷰)
   n.show();
   return { ok: true };
 });

@@ -71,7 +71,7 @@ interface NunopiDesktopApi {
   liftAgentArgs?(agent: string, args: string): Promise<{ choice: string; rest: string } | null>; // #1184
   relaunch(): Promise<void>;
   // 데스크톱 네이티브 알림. 창 포커스 중이면 스킵(reason:"focused").
-  notify(payload: { title: string; body?: string; suppressWhileFocused?: boolean; silent?: boolean; target?: { repoPath: string; sessionId?: string } }): Promise<{ ok: boolean; reason?: string }>;
+  notify(payload: { title: string; body?: string; suppressWhileFocused?: boolean; silent?: boolean; sound?: string; volume?: number; target?: { repoPath: string; sessionId?: string } }): Promise<{ ok: boolean; reason?: string }>;
   // #989 알림 클릭 시 이동 대상. 해제 함수 반환.
   onNotifyActivate?(cb: (p: { repoPath: string; sessionId?: string }) => void): () => void;
   // 레포 폴더 선택(OS 네이티브 창). 취소 시 { canceled: true }. defaultPath=시작 경로(#939).

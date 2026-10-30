@@ -3,7 +3,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { IconFiles, IconFolderOpen, IconPlus, IconX, IconMessages, IconFileCode, IconFileText, IconCards, IconBell, IconBellOff } from "@tabler/icons-react";
 import { useT, useShortcut } from "@mustard/core";
-import { getSetting, setSetting, subscribeSettings, useSetting, AKEYS, AGENT_DEFAULTS, UPDATE_KEYS, BROWSER_KEYS, BROWSER_DEFAULTS, NKEYS, NOTIF_DEFAULTS, CKEYS, desktopNotify, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
+import { agentNotifyOn, getSetting, setSetting, subscribeSettings, useSetting, AKEYS, AGENT_DEFAULTS, UPDATE_KEYS, BROWSER_KEYS, BROWSER_DEFAULTS, NKEYS, NOTIF_DEFAULTS, CKEYS, desktopNotify, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
 import { crewRoomOpen } from "./crew/crewUi";
 import { useToast } from "@mustard/core";
 import { useConfirm } from "@mustard/core";
@@ -19,7 +19,7 @@ import RemoveWorkspaceDialog from "@/components/workspace/RemoveWorkspaceDialog"
 import { openNewWorkspace, CLOSE_WORKSPACE_EVENT, NEW_WORKSPACE_EVENT, OPEN_REPO_TAB_EVENT, REMOVE_WORKSPACE_EVENT, WORKSPACE_SETTINGS_EVENT, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
 import DaemonOutdatedNotice from "@/components/workspace/DaemonOutdatedNotice";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
-import { publishRepoSessions } from "@/lib/agentSessionStates";
+import { markUnread, publishRepoSessions, repoUnread, useAgentSessionStates } from "@/lib/agentSessionStates";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import MustardMark from "@/components/brand/MustardMark";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
@@ -145,6 +145,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   const tabsRef = useRef<Tab[]>([]);
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
   useEffect(() => () => { for (const h of Object.values(pendingNotify.current)) clearTimeout(h); }, []);
+  useAgentSessionStates(); // #1217 안 본 탭 점이 바뀌면 다시 그림
   const notifyWarmupUntil = useRef(0); // #973 실행 후 워밍업 종료 시각 — 복원 버퍼 정착 전 flicker 전이 알림 억제
   const [notifyOn, setNotifyOn] = useState(true);                     // #876 알림 on/off(벨 토글, localStorage 영속)
   const notifyOnRef = useRef(true);                                   // poll .then 클로저서 최신값 읽기(effect 재실행 회피)
@@ -152,6 +153,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     const next = !notifyOnRef.current;
     notifyOnRef.current = next; setNotifyOn(next);
     setSetting(NKEYS.agentDone, next); // #928 설정 스토어로 이관(설정 페이지와 동기)
+    setSetting(NKEYS.agentAsk, next); // #1217 벨은 완료·질문 둘 다
   };
   // 설정 페이지서 알림 토글 변경 시 인탭 벨 동기(#928).
   // #1200 업데이트 자동 확인 — 앱 시작 때 하루 한 번(설정으로 끔), 새 버전이면 알림(누르면 릴리스 페이지)
@@ -176,7 +178,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   const keepAwake = useSetting<string>(AKEYS.keepAwake, AGENT_DEFAULTS.keepAwake);
   useEffect(() => { window.nunopiDesktop?.setKeepAwake?.(keepAwake === "working" || keepAwake === "always" ? keepAwake : "off"); }, [keepAwake]);
   useEffect(() => subscribeSettings(() => {
-    const v = getSetting<boolean>(NKEYS.agentDone, NOTIF_DEFAULTS.agentDone);
+    const v = agentNotifyOn("done") || agentNotifyOn("ask"); // #1217 벨 = 둘 중 하나라도 켜짐
     notifyOnRef.current = v; setNotifyOn(v);
   }), []);
   useEffect(() => {
@@ -218,14 +220,16 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
             const prev = prevSession.current[k];
             prevSession.current[k] = s.state;
             if (s.state === "working") { clearTimeout(pendingNotify.current[k]); delete pendingNotify.current[k]; continue; }
-            if (prev !== "working" || warming || !notifyOnRef.current || pendingNotify.current[k] || s.silent) continue;
+            if (prev !== "working" || warming || pendingNotify.current[k] || s.silent) continue; // #1217 알림이 꺼져도 확인은 함(안 본 탭 표시용) — 알림 여부는 아래에서 종류별로
             const fired = latestSession.current[k];
             pendingNotify.current[k] = setTimeout(() => {
               delete pendingNotify.current[k];
-              if (latestSession.current[k] !== fired || !notifyOnRef.current) return; // 그새 바뀜 → 취소
+              if (latestSession.current[k] !== fired) return; // 그새 바뀜 → 취소
+              markUnread(s.sessionId); // #1217 안 본 사이 끝남·물어봄 — 그 터미널 탭이 지금 보이면 TerminalPane이 바로 지움
               const focused = typeof document !== "undefined" && document.hasFocus();
               const at = tabsRef.current.find((x) => tabKey(x) === activeKeyRef.current);
               const watching = focused && !!at && at.type === "repo" && (at.wt ?? at.path) === p; // 지금 이 레포(작업 폴더)를 보고 있음(#1170 wt 기준)
+              if (!agentNotifyOn(s.state === "done" ? "done" : "ask")) return; // #1217 완료 / 질문·막힘 따로
               if (getSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching) && watching) return;
               const now = Date.now();
               if (now - (lastNotifyAt.current[p] ?? 0) < 5000) return; // 레포별 5s 쿨다운(세션 여러 개 동시 완료 등)
@@ -321,7 +325,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     } catch { /* ignore */ }
     // #928 설정 스토어서 복원. 옛 키(nunopi:notifyAgentDone) 있으면 1회 이관.
     try { const old = localStorage.getItem("nunopi:notifyAgentDone"); if (old !== null && getSetting(NKEYS.agentDone, null) === null) { setSetting(NKEYS.agentDone, old !== "0"); localStorage.removeItem("nunopi:notifyAgentDone"); } } catch { /* ignore */ }
-    const notif = getSetting<boolean>(NKEYS.agentDone, NOTIF_DEFAULTS.agentDone);
+    const notif = agentNotifyOn("done") || agentNotifyOn("ask"); // #1217 벨 = 둘 중 하나라도
     notifyOnRef.current = notif;
     /* eslint-disable react-hooks/set-state-in-effect -- 마운트 1회 복원 */
     setMounted(true);
@@ -651,6 +655,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
             onMouseEnter={p ? (e) => openHover(p, e.currentTarget) : undefined} onMouseLeave={p ? scheduleClose : undefined}
             className={`group relative flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12px] transition ${draggingKey ? "cursor-grabbing" : "cursor-grab"} ${isDragging ? "opacity-50" : ""} ${on ? "bg-brown-500/12 text-zinc-900 shadow-sm ring-1 ring-inset ring-brown-500/45 dark:bg-brown-400/12 dark:text-zinc-50 dark:ring-brown-400/45" : "text-zinc-500 hover:bg-zinc-200/60 dark:text-zinc-400 dark:hover:bg-zinc-800/60"} ${dropBar}`}>
             {p ? tabDot(repoStatus[(tab.type === "repo" && tab.wt) || p] ?? null) : null}
+            {p && repoUnread((tab.type === "repo" && tab.wt) || p) && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mustard-500 dark:bg-mustard-400" title={t("tabs.unread")} aria-label={t("tabs.unread")} />}
             {p ? <RepoAvatar path={p} size={13} iconClassName={`shrink-0 ${iconColor}`} /> : <Icon size={13} stroke={2} className={`shrink-0 ${iconColor}`} aria-hidden />}
             <span className="max-w-[12rem] truncate whitespace-nowrap font-medium">{label}</span>
             {/* #1170 레포 탭 안 작업 폴더 전환 — 활성 탭이거나 worktree를 보고 있을 때 */}
