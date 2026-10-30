@@ -232,6 +232,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         // 새 커밋 → 세션 줄(턴이 안 끝났으면 flushPending이 지금까지 대화로 먼저 만들고 끝나면 교체, #1260)
         const j = await post("/api/repo/git-recent", { path: root, since: sessSince, limit: 100 });
         const head = typeof j?.branch === "string" ? j.branch : "";
+        if ((j?.commits ?? []).length >= 100) console.warn("[catchup] 새 커밋이 100개 넘게 몰림 — 빠진 세션은 30분 되살리기가 채움");
         const fresh = ((j?.commits ?? []) as Recent[]).reverse().filter((c) => !(st!.queued ?? []).includes(c.hash));
         if (fresh.length && alive) {
           const cur = read() ?? st;
