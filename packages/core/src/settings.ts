@@ -172,6 +172,20 @@ export const NKEYS = {
 export const WORKSPACE_DEFAULTS = { defaultFolder: "", killTerminalsOnClose: false };
 export const WKEYS = { defaultFolder: "workspace.defaultFolder", killTerminalsOnClose: "workspace.killTerminalsOnClose" } as const; // #1211 레포 탭 닫을 때 터미널 세션도 끄기(기본 끔 = 다시 열면 그대로)
 
+// 코드·diff·파일(#1218) — 기본값 = 그 전 화면 그대로(한 줄 diff, 접기 없음, 줄바꿈·공백 표시 없음, 코드 12px·diff 11px, 무시 파일 보임)
+export type DiffView = "unified" | "split";
+export const EDITOR_DEFAULTS = { diffView: "unified" as DiffView, diffFold: false, diffFoldContext: 3, wordWrap: false, showWhitespace: false, fontFamily: "", fontSize: 12, showIgnored: true };
+export const EKEYS = {
+  diffView: "editor.diffView",
+  diffFold: "editor.diffFold", // 안 바뀐 구간 접기
+  diffFoldContext: "editor.diffFoldContext", // 접을 때 바뀐 줄 앞뒤로 남길 줄(1~20)
+  wordWrap: "editor.wordWrap",
+  showWhitespace: "editor.showWhitespace",
+  fontFamily: "editor.fontFamily", // 비우면 --font-mono
+  fontSize: "editor.fontSize", // diff는 1px 작게
+  showIgnored: "editor.showIgnored", // 파일 목록에 gitignore 파일
+} as const;
+
 // 확인 다이얼로그(#929) — 파괴적 액션 confirm 토글.
 // skipDelete/skipCloseTab: 이미 confirm 있는 액션의 확인을 "건너뛰기"(기본 false=확인 유지).
 // confirmCloseTerminal: 실행 중 터미널 닫기 시 확인을 "추가"(opt-in, 기본 false=바로 닫기).
