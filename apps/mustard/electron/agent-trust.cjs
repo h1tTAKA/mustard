@@ -1,7 +1,7 @@
 // 에이전트 작업 폴더 미리 신뢰(#1216) — Mustard가 만든 작업공간에서 Claude·Codex가 "이 폴더를 믿나요?"를 매번 묻지 않게, 띄우기 직전 신뢰로 기록.
 // 실패(설정 파일 없음·깨짐·잠금 못 잡음·모르는 형식)면 아무것도 안 함 — 그때는 에이전트가 원래대로 물어볼 뿐.
-const { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmdirSync, statSync, writeFileSync } = require("node:fs");
-const { dirname, join, sep } = require("node:path");
+const { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmdirSync, statSync, writeFileSync } = require("node:fs");
+const { dirname, join, resolve, sep } = require("node:path");
 
 const real = (p) => { try { return realpathSync.native(p); } catch { return p; } };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -27,7 +27,8 @@ async function withLock(target, fn) {
   for (let i = 0; i < 4; i++) {
     try { mkdirSync(lock); } catch (e) {
       if (e.code !== "EEXIST") return "unreadable";
-      try { if (Date.now() - statSync(lock).mtimeMs > STALE_MS) { rmdirSync(lock); continue; } } catch { continue; }
+      // 죽은 잠금 — 고유 이름으로 옮긴 쪽만 치움(확인과 지우기 사이에 남이 새로 잡은 잠금을 지우지 않게, 리뷰)
+      try { if (Date.now() - statSync(lock).mtimeMs > STALE_MS) { const gone = `${lock}.stale-${process.pid}-${Date.now()}`; renameSync(lock, gone); rmdirSync(gone); continue; } } catch { continue; }
       await wait(25 * 2 ** i);
       continue;
     }
@@ -62,27 +63,33 @@ async function trustClaude(dir, { home, env = process.env } = {}) {
 }
 
 // Codex: config.toml에 [projects."<폴더>"] trust_level = "trusted".
-// 그 경로가 파일 어디에든 있거나, projects를 점 키·인라인 표로 쓰고 있으면 손대지 않음(같은 표를 두 번 정의하면 Codex 설정 전체가 안 열림, 리뷰).
+// 그 폴더 표 머리가 이미 있으면(어떤 따옴표든) 그대로, projects를 점 키·인라인 표로 쓰고 있으면 손대지 않음(같은 표를 두 번 정의하면 Codex 설정 전체가 안 열림, 리뷰).
 const tomlStr = (s) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[\u0000-\u001f\u007f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`)}"`;
+const HEADER = /^\s*\[\s*projects\s*\.\s*("(?:[^"\\]|\\.)*"|'[^']*')\s*\]\s*(#.*)?$/;
+const hasHeader = (text, key) => text.split(/\r?\n/).some((l) => { const m = HEADER.exec(l); return !!m && (m[1] === tomlStr(key) || m[1] === `'${key}'`); });
 async function trustCodex(dir, { home, env = process.env } = {}) {
   const codexHome = env.CODEX_HOME || join(home, ".codex");
   if (!existsSync(codexHome)) return "missing-config"; // Codex를 안 씀
   const file = join(codexHome, "config.toml");
-  const path = real(dir);
-  const table = `[projects.${tomlStr(path)}]\ntrust_level = "trusted"\n`;
-  if (!existsSync(file)) { writeFileSync(file, table, { mode: 0o600 }); return "granted"; }
+  const keys = [...new Set([real(dir).normalize("NFC"), dir.normalize("NFC")])];
+  const tables = (ks) => ks.map((k) => `[projects.${tomlStr(k)}]\ntrust_level = "trusted"\n`).join("\n");
+  let link = false;
+  try { link = lstatSync(file).isSymbolicLink(); } catch { /* 없음 */ }
+  if (!existsSync(file)) { if (link) return "unreadable"; writeFileSync(file, tables(keys), { mode: 0o600 }); return "granted"; } // 끊긴 링크면 안 만듦
   const target = real(file);
   let text;
   try { text = readFileSync(target, "utf8"); } catch { return "unreadable"; }
-  if (text.includes(path) || text.includes(tomlStr(path).slice(1, -1))) return "unchanged";
-  if (/^\s*projects\s*(=|\.)/m.test(text)) return "unsupported";
-  replaceFile(target, `${text}${text && !text.endsWith("\n") ? "\n" : ""}\n${table}`);
+  if (keys.some((k) => hasHeader(text, k))) return "unchanged";
+  if (/^\s*(projects|"projects"|'projects')\s*(=|\.)/m.test(text)) return "unsupported";
+  replaceFile(target, `${text}${text && !text.endsWith("\n") ? "\n" : ""}\n${tables(keys)}`);
   return "granted";
 }
 
 // 에이전트별 — 지원하는 것만, Mustard 작업공간 안쪽만(그 밖은 그대로 물어봄)
 async function trustAgentFolder(agent, dir, opts = {}) {
   if (!dir || (agent !== "claude" && agent !== "codex")) return "skipped";
+  dir = resolve(dir); // ".." 조각 정리 — 없는 경로가 루트 검사를 통과하지 않게(리뷰)
+  try { if (!statSync(dir).isDirectory()) return "skipped"; } catch { return "skipped"; }
   if (!inRoots(dir, trustRoots(opts.home, opts.env))) return "outside";
   try { return agent === "claude" ? await trustClaude(dir, opts) : await trustCodex(dir, opts); } catch { return "unreadable"; }
 }
