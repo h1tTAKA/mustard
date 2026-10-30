@@ -47,7 +47,7 @@ interface NunopiDesktopApi {
   liftAgentArgs?(agent: string, args: string): Promise<{ choice: string; rest: string } | null>; // #1184
   relaunch(): Promise<void>;
   // 데스크톱 네이티브 알림. 창 포커스 중이면 스킵(reason:"focused").
-  notify(payload: { title: string; body?: string; suppressWhileFocused?: boolean }): Promise<{ ok: boolean; reason?: string }>;
+  notify(payload: { title: string; body?: string; suppressWhileFocused?: boolean; silent?: boolean; sound?: string; volume?: number }): Promise<{ ok: boolean; reason?: string }>;
   // 클립보드 이미지를 임시 PNG로 저장하고 경로 반환(#799). 이미지 없으면 ok:false.
   saveClipboardImage?(): Promise<{ ok: boolean; path?: string; error?: string }>;
   // 학습 모드를 별도 창으로 열기(#789) — 멀티모니터. ok:false(reason:"exists")면 이미 떠 있음.
