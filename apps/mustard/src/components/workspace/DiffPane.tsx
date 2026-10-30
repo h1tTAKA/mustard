@@ -3,9 +3,10 @@
 import { langOf } from "@/lib/codeLang";
 import { useCodeFont } from "@/lib/codeFont";
 import { showWs } from "@/lib/codeWs";
+import { foldRuns } from "@/lib/diffFold";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { codeToTokens, type ThemedToken, type BundledLanguage } from "shiki";
-import { IconLoader2, IconAlertTriangle, IconGitCompare, IconSparkles, IconRefresh, IconBrandGithub, IconRobot, IconCheck, IconX, IconPlus, IconPlusMinus, IconClock } from "@tabler/icons-react";
+import { IconLoader2, IconAlertTriangle, IconGitCompare, IconSparkles, IconRefresh, IconBrandGithub, IconRobot, IconCheck, IconX, IconPlus, IconPlusMinus, IconClock, IconArrowsVertical } from "@tabler/icons-react";
 import { loadPrReview, prReviewKey, PR_REVIEW_EVENT, type Finding } from "@/lib/prReview";
 import { setFindingStatus, postFinding } from "@/lib/prReviewRun";
 import { useLocale, useT, useToast, useSetting, EKEYS, EDITOR_DEFAULTS } from "@mustard/core";
@@ -29,6 +30,9 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const wrap = useSetting<boolean>(EKEYS.wordWrap, EDITOR_DEFAULTS.wordWrap);
   const ws = useSetting<boolean>(EKEYS.showWhitespace, EDITOR_DEFAULTS.showWhitespace);
   const txt = (s: string) => (ws ? showWs(s) : s);
+  const fold = useSetting<boolean>(EKEYS.diffFold, EDITOR_DEFAULTS.diffFold);
+  const foldCtx = useSetting<number>(EKEYS.diffFoldContext, EDITOR_DEFAULTS.diffFoldContext);
+  const [openRuns, setOpenRuns] = useState<Set<number>>(new Set()); // 펼친 접힌 묶음(시작 줄 위치)
   // 변경 구간별 에이전트 노트. key = diffText 해시(구간 내용 기반 안정 키 → 같은 diff 재오픈 시 매칭).
   const [notes, setNotes] = useState<Record<string, { status: "loading" | "done" | "error"; text?: string }>>({});
   const [lines, setLines] = useState<DLine[] | null>(null);
@@ -176,7 +180,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   useEffect(() => {
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- diff 바뀌면 로딩 리셋(키 변경 시)
-    setStatus("loading"); setLines(null); setTokens([]); setHead(undefined); setPick(null); // head·고른 줄도 — 다시 받으면 줄·커밋 기준이 바뀔 수 있음(입력칸은 로딩 동안 어차피 사라짐, 리뷰)
+    setStatus("loading"); setLines(null); setTokens([]); setHead(undefined); setPick(null); setOpenRuns(new Set()); // head·고른 줄도 — 다시 받으면 줄·커밋 기준이 바뀔 수 있음(입력칸은 로딩 동안 어차피 사라짐, 리뷰)
     (async () => {
       try {
         // 워킹트리(커밋 전) diff면 git-diff, 커밋 diff면 git-show.
@@ -273,6 +277,12 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const allHunks = groupHunks(lines);
   const hunkStart = new Map(allHunks.map((h) => [h.startLine, h]));
   const hunkEnd = new Map(allHunks.map((h) => [h.endLine, h]));
+  // #1218 안 바뀐 구간 접기 — 바뀐 줄에서 foldCtx줄보다 먼 안 바뀐 줄이 4줄 이상 이어지면 "N줄 펼치기" 한 줄로(diffFold).
+  // 메모·댓글·보류·지적·AI 설명 버튼/노트가 달린 줄은 안 접음(접힌 줄에 달린 게 안 보이게 되지 않게)
+  const keep = (i: number) => { const l = lines[i]; return (!pr && (hunkStart.has(i) || hunkEnd.has(i))) // AI 설명 버튼·노트 자리(구간 = 바뀐 줄 ±3이라 3줄보다 좁게는 안 접힘)
+    || (l.newN != null && (byLine.has(l.newN) || noteAt.has(l.newN) || threadAt.has(`RIGHT:${l.newN}`) || draftAt.has(`RIGHT:${l.newN}`)))
+    || (l.oldN != null && (threadAt.has(`LEFT:${l.oldN}`) || draftAt.has(`LEFT:${l.oldN}`))); };
+  const { hidden, runLen } = fold ? foldRuns(lines.map((l) => l.kind), foldCtx, keep, openRuns) : { hidden: new Map<number, number>(), runLen: new Map<number, number>() };
   const body = (
     <div className={`relative bg-white dark:bg-[var(--s-pane)] min-h-0 flex-1`}
       onMouseEnter={() => { if (hideTimer.current) clearTimeout(hideTimer.current); setShowRuler(true); }}
@@ -282,6 +292,13 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
         // meta(diff/index/+++/---) + hunk(@@) 헤더 숨김 — -U100000으로 전체 컨텍스트라 생략 구분선 불필요.
         if (l.kind === "meta" || l.kind === "hunk") return null;
         const tok = tokens[codeIdx++]; // 이 코드줄의 토큰
+        const runAt = hidden.get(i); // 접힌 줄 — 묶음 첫 줄 자리에만 펼치기 버튼(토큰 순서는 위에서 이미 셈)
+        if (runAt !== undefined) return runAt !== i ? null : (
+          <button key={`fold-${i}`} type="button" onClick={() => setOpenRuns((s) => new Set(s).add(i))}
+            className="sticky left-0 flex w-full items-center gap-1 border-y border-zinc-100 bg-zinc-50 py-0.5 pl-[4.75rem] font-sans text-[10.5px] text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+            <IconArrowsVertical size={11} stroke={2} aria-hidden />{t("codeDiff.expand", { n: runLen.get(i) ?? 0 })}
+          </button>
+        );
         const bg = l.kind === "add" ? "bg-emerald-500/20" : l.kind === "del" ? "bg-rose-500/20" : "";
         const mark = l.kind === "add" ? "+" : l.kind === "del" ? "−" : " ";
         const markCls = l.kind === "add" ? "text-emerald-600 dark:text-emerald-500" : l.kind === "del" ? "text-rose-600 dark:text-rose-500" : "text-transparent";
