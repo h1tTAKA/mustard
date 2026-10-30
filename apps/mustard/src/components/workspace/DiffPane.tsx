@@ -278,8 +278,9 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const hunkStart = new Map(allHunks.map((h) => [h.startLine, h]));
   const hunkEnd = new Map(allHunks.map((h) => [h.endLine, h]));
   // #1218 안 바뀐 구간 접기 — 바뀐 줄에서 foldCtx줄보다 먼 안 바뀐 줄이 4줄 이상 이어지면 "N줄 펼치기" 한 줄로(diffFold).
-  // 메모·댓글·보류·지적·AI 설명 버튼/노트가 달린 줄은 안 접음(접힌 줄에 달린 게 안 보이게 되지 않게)
-  const keep = (i: number) => { const l = lines[i]; return (!pr && (hunkStart.has(i) || hunkEnd.has(i))) // AI 설명 버튼·노트 자리(구간 = 바뀐 줄 ±3이라 3줄보다 좁게는 안 접힘)
+  // 메모·댓글·보류·지적·AI 설명 버튼/노트가 달린 줄, 고른 줄(입력칸 — 설정을 바꿔도 쓰던 글이 안 사라지게, 리뷰)은 안 접음
+  const inSelOf = (l: DLine) => { const selLn = sel?.side === "LEFT" ? l.oldN : l.newN; return !!sel && selLn != null && l.kind !== (sel.side === "LEFT" ? "add" : "del") && selLn >= (sel.start ?? sel.line) && selLn <= sel.line; }; // 범위 테두리 — LEFT 범위엔 안 바뀐 줄도(옛 번호로)
+  const keep = (i: number) => { const l = lines[i]; return inSelOf(l) || (!pr && (hunkStart.has(i) || hunkEnd.has(i))) // AI 설명 버튼·노트 자리(구간 = 바뀐 줄 ±3이라 3줄보다 좁게는 안 접힘)
     || (l.newN != null && (byLine.has(l.newN) || noteAt.has(l.newN) || threadAt.has(`RIGHT:${l.newN}`) || draftAt.has(`RIGHT:${l.newN}`)))
     || (l.oldN != null && (threadAt.has(`LEFT:${l.oldN}`) || draftAt.has(`LEFT:${l.oldN}`))); };
   const { hidden, runLen } = fold ? foldRuns(lines.map((l) => l.kind), foldCtx, keep, openRuns) : { hidden: new Map<number, number>(), runLen: new Map<number, number>() };
@@ -300,7 +301,6 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const codeOf = (i: number) => { const tok = tokAt.get(i); return tok ? tok.map((tk, j) => <span key={j} style={{ color: tk.color }}>{txt(tk.content)}</span>) : <span className="text-zinc-700 dark:text-zinc-200">{txt(lines[i].text)}</span>; };
   const sideOf = (l: DLine): "LEFT" | "RIGHT" => (l.kind === "del" ? "LEFT" : "RIGHT"); // 바뀌지 않은 줄은 새 코드 쪽에
   const lnOf = (l: DLine) => (sideOf(l) === "LEFT" ? l.oldN : l.newN) ?? 0;
-  const inSelOf = (l: DLine) => { const selLn = sel?.side === "LEFT" ? l.oldN : l.newN; return !!sel && selLn != null && l.kind !== (sel.side === "LEFT" ? "add" : "del") && selLn >= (sel.start ?? sel.line) && selLn <= sel.line; }; // 범위 테두리 — LEFT 범위엔 안 바뀐 줄도(옛 번호로)
   const findingsOf = (l: DLine) => (pr && l.newN != null ? byLine.get(l.newN) : undefined); // #1127 이 줄의 에이전트 지적
   const markOf = (l: DLine) => (l.kind === "add" ? "+" : l.kind === "del" ? "−" : " ");
   const markClsOf = (l: DLine) => (l.kind === "add" ? "text-emerald-600 dark:text-emerald-500" : l.kind === "del" ? "text-rose-600 dark:text-rose-500" : "text-transparent");
