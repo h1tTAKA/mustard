@@ -109,8 +109,8 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
       for (const pd of [...st0.pending.filter((p) => !p.rv), ...st0.pending.filter((p) => p.rv)]) { // 새 커밋 먼저, 되살리기는 몫이 남을 때(리뷰)
         if (!alive) return;
         if (budget <= 0) { skipped.push(pd); continue; } // 이번 주기 몫 다 씀 — 다음 주기에
-        if (pd.retryAt && Date.now() < pd.retryAt) { keep.push(pd); continue; } // #1262 오류 뒤 2분 쉼(30초 주기마다 두드리지 않게, 리뷰)
         if (!cfg.current.sessOn) continue; // 세션 분석 꺼짐 — 미룬 것도 버림
+        if (pd.retryAt && Date.now() < pd.retryAt) { keep.push(pd); continue; } // #1262 오류 뒤 2분 쉼(30초 주기마다 두드리지 않게, 리뷰)
         if (Date.now() - pd.at > 60 * 60_000) { noSession.push(pd.hash); continue; } // 1시간 넘게 계속 실패 — 포기(되살리기도 다시 안 봄, 리뷰)
         const { spid: sp, sps: sset, locale: sl } = cfg.current;
         budget--;
