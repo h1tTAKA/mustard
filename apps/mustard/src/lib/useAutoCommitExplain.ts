@@ -120,7 +120,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           if (!pd.early && budget > 0 && alive) {
             budget--;
             const endEarly = beginBusy(root, "session");
-            const e = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, true, !!pd.merge, pd.ms).catch(() => "error" as const).finally(endEarly);
+            const e = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, true, !!pd.merge, pd.ms, true).catch(() => "error" as const).finally(endEarly);
             if (typeof e === "object" && alive) {
               void post("/api/repo/stream", { root, items: [e] }).catch(() => {});
               window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item: e } }));
@@ -132,8 +132,11 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         }
         if (r === "error") { const at = pd.errAt ?? Date.now(); if (Date.now() - at < 5 * 60_000) keep.push({ ...pd, errAt: at }); continue; } // 서버 오류 — 처음 실패부터 5분까지만 다시(리뷰)
         if (r !== "none" && alive) {
-          void post("/api/repo/stream", { root, items: [r], replace: !!pd.early }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ }); // #1260 먼저 만든 카드가 있으면 교체
           window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item: r } }));
+          if (pd.early) { // #1260 먼저 만든 카드 교체 — 기록이 실패하면 부분본이 남지 않게 다음 주기에 다시
+            const saved = await post("/api/repo/stream", { root, items: [r], replace: true }).then((j) => j?.ok !== false, () => false);
+            if (!saved) keep.push(pd);
+          } else void post("/api/repo/stream", { root, items: [r] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
         }
       }
       if (alive) { const cur = read() ?? st0; write({ ...cur, pending: [...skipped, ...keep, ...(cur.pending ?? []).filter((p) => !st0.pending!.some((q) => q.hash === p.hash))] }); }
@@ -203,6 +206,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           const branch = c.branch || head; // #1068 그 커밋을 만들 때 브랜치(reflog)
           // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드. #1260 diff 설명(파일 많으면 몇 분)보다 먼저 줄 세우고 바로 시도 —
           //  예전엔 diff가 다 끝나야 세션 차례라 여러 커밋이면 한참 늦었음. 이미 줄에 있으면(diff 도중 꺼져 다시 온 커밋) 안 넣음.
+          st = read() ?? st; // 다른 창이 그새 쓴 상태 위에(리뷰)
           if (alive && cfg.current.sessOn && !(st.queued ?? []).includes(c.hash)) { // queued = 세션 줄에 이미 넣은 커밋(diff 도중 꺼져 다시 와도 카드 두 번 안 만듦)
             pendingAdd.push({ hash: c.hash, ts: c.ts, ms: c.ms, subject: c.subject ?? "", branch, at: Date.now(), merge: !!c.merge });
             st = { ...st, queued: [...(st.queued ?? []), c.hash].slice(-50), pending: [...(st.pending ?? []), ...pendingAdd.splice(0)] };
