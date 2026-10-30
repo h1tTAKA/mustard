@@ -1321,8 +1321,10 @@ ipcMain.handle("notify", (_e, payload) => {
     // #989 그 레포·터미널로 이동 — 렌더러(WorkspaceTabs·LearningHome)가 받아 탭 전환.
     if (target && typeof target.repoPath === "string") win.webContents.send("notify:activate", { repoPath: target.repoPath, sessionId: typeof target.sessionId === "string" ? target.sessionId : undefined });
   });
-  if (own && !silent) n.on("show", () => playNotifSound(sound, volume)); // 알림이 실제로 떴을 때만(권한 거부 등엔 소리도 없게, 리뷰)
   n.show();
+  // 고른 소리는 바로 재생 — 'show' 이벤트는 앱이 앞에 없을 때 등 안 오는 경우가 있어 에이전트 알림이 무음이 됐음(#1267).
+  //  한계: 알림 권한이 꺼져 있거나 집중 모드여도 소리는 남(설정 설명에 적음).
+  if (own && !silent) playNotifSound(sound, volume);
   return { ok: true };
 });
 
