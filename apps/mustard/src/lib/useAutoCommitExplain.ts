@@ -50,8 +50,8 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     const stateKey = `nunopi:auto-explain:${root}`;
     if (!on) { try { localStorage.removeItem(stateKey); } catch { /* ignore */ } return; } // 다시 켜면 그때부터
     // pending = 세션 턴이 아직 안 끝나 카드를 미룬 커밋(#1064) — 다음 주기마다 다시, 20분 지나면 그대로 만듦
-    type Pend = { hash: string; ts: number; ms?: number; subject: string; branch: string; at: number; merge?: boolean; errAt?: number; rv?: 1 }; // rv = 되살리기로 넣은 것(새 커밋 뒤에 처리)
-    type State = { since: number; done: string[]; pending?: Pend[]; revived?: number; reviveTries?: number; reviveAt?: number };
+    type Pend = { hash: string; ts: number; ms?: number; subject: string; branch: string; at: number; early?: 1; merge?: boolean; errAt?: number; rv?: 1 }; // rv = 되살리기로 넣은 것(새 커밋 뒤에 처리)
+    type State = { since: number; done: string[]; queued?: string[]; pending?: Pend[]; revived?: number; reviveTries?: number; reviveAt?: number };
     const read = (): State | null => { try { return JSON.parse(localStorage.getItem(stateKey) || "null") as State | null; } catch { return null; } };
     const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
     let alive = true, busy = false;
@@ -115,10 +115,24 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         budget--;
         const endBusy = beginBusy(root, "session"); // #1240
         const r = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, Date.now() - pd.at > 20 * 60_000, !!pd.merge, pd.ms).catch(() => "error" as const).finally(endBusy);
-        if (r === "wait") { keep.push({ ...pd, errAt: undefined }); continue; } // 오류 창은 연속 오류만(옛 오류 시각이 남아 나중 한 번에 버려지지 않게, 리뷰)
+        if (r === "wait") {
+          // #1260 턴이 아직 안 끝남 — 지금까지의 대화로 카드를 먼저 만들고(바로 보이게), 턴이 끝나면 전체 구간으로 다시 만들어 같은 카드를 교체
+          if (!pd.early && budget > 0 && alive) {
+            budget--;
+            const endEarly = beginBusy(root, "session");
+            const e = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, true, !!pd.merge, pd.ms).catch(() => "error" as const).finally(endEarly);
+            if (typeof e === "object" && alive) {
+              void post("/api/repo/stream", { root, items: [e] }).catch(() => {});
+              window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item: e } }));
+              keep.push({ ...pd, early: 1, errAt: undefined });
+              continue;
+            }
+          }
+          keep.push({ ...pd, errAt: undefined }); continue; // 오류 창은 연속 오류만(옛 오류 시각이 남아 나중 한 번에 버려지지 않게, 리뷰)
+        }
         if (r === "error") { const at = pd.errAt ?? Date.now(); if (Date.now() - at < 5 * 60_000) keep.push({ ...pd, errAt: at }); continue; } // 서버 오류 — 처음 실패부터 5분까지만 다시(리뷰)
         if (r !== "none" && alive) {
-          void post("/api/repo/stream", { root, items: [r] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
+          void post("/api/repo/stream", { root, items: [r], replace: !!pd.early }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ }); // #1260 먼저 만든 카드가 있으면 교체
           window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item: r } }));
         }
       }
@@ -187,14 +201,20 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         for (const c of fresh) {
           if (!alive) return;
           const branch = c.branch || head; // #1068 그 커밋을 만들 때 브랜치(reflog)
+          // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드. #1260 diff 설명(파일 많으면 몇 분)보다 먼저 줄 세우고 바로 시도 —
+          //  예전엔 diff가 다 끝나야 세션 차례라 여러 커밋이면 한참 늦었음. 이미 줄에 있으면(diff 도중 꺼져 다시 온 커밋) 안 넣음.
+          if (alive && cfg.current.sessOn && !(st.queued ?? []).includes(c.hash)) { // queued = 세션 줄에 이미 넣은 커밋(diff 도중 꺼져 다시 와도 카드 두 번 안 만듦)
+            pendingAdd.push({ hash: c.hash, ts: c.ts, ms: c.ms, subject: c.subject ?? "", branch, at: Date.now(), merge: !!c.merge });
+            st = { ...st, queued: [...(st.queued ?? []), c.hash].slice(-50), pending: [...(st.pending ?? []), ...pendingAdd.splice(0)] };
+            write(st);
+            await flushPending();
+            st = read() ?? st;
+          }
           if (cfg.current.diffOn && !c.merge && !(await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200), { commitMs: c.ms ?? c.ts * 1000 }))) return; // 도중에 끔 — 이 커밋부터 다음 주기에(리뷰)
-          // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드. 턴이 끝날 때까지(마무리 말 포함) 미뤘다가 만듦.
-          if (alive && cfg.current.sessOn) pendingAdd.push({ hash: c.hash, ts: c.ts, ms: c.ms, subject: c.subject ?? "", branch, at: Date.now(), merge: !!c.merge });
           if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)
-          st = { ...st, since: Math.max(st.since, c.ts), done: [...st.done, c.hash].slice(-50), pending: [...(st.pending ?? []), ...pendingAdd.splice(0)] }; // 같은 초 커밋은 done으로 중복 차단
-          write(st);
-          await flushPending(); // #1090 커밋 하나 끝날 때마다 그 세션 카드도 바로(회차 전체를 기다리지 않음)
           st = read() ?? st;
+          st = { ...st, since: Math.max(st.since, c.ts), done: [...st.done, c.hash].slice(-50) }; // 같은 초 커밋은 done으로 중복 차단
+          write(st);
         }
         await flushPending();
         await repairFailed();
