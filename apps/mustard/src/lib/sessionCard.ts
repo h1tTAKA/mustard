@@ -30,7 +30,7 @@ export interface LinkedSession { agent: string; sessionId: string; branch?: stri
 // 세션 찾기 → 요약 → 카드 항목. 세션 없으면(사람이 직접 커밋 등) "none".
 // 턴이 아직 안 끝났으면 "wait"(마무리 말까지 담으려고 — 다음 주기에 다시). force면 안 끝났어도 만듦(오래 기다린 경우).
 export async function buildSessionItem(root: string, hash: string, ts: number, subject: string, branch: string,
-  providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string, force = false, merge = false, cardMs?: number) {
+  providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string, force = false, merge = false, cardMs?: number, noFallback = false) {
   const r = await fetch("/api/repo/session-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, hash, ts, merge, branch }) });
   const j = await r.json().catch(() => null);
   // #1235 서버 오류·JSON 아님은 "세션 없음"이 아님 — 다음 주기에 다시(예전엔 none으로 버려 머지 카드가 영영 빠졌음). none은 서버가 ok로 null을 줄 때만.
@@ -42,7 +42,7 @@ export async function buildSessionItem(root: string, hash: string, ts: number, s
   let expl: string;
   try { expl = await askAgent(sessionDigest(s.messages, s.crew), s.crew?.length ? CREW_PROMPT + PROMPT : PROMPT, providerId, providerSettings, locale); }
   catch {
-    if (!force) return "wait" as const; // #1093 요약 실패(런타임 상한 등) — 다음 주기에 다시
+    if (!force || noFallback) return "wait" as const; // #1093 요약 실패(런타임 상한 등) — 다음 주기에 다시. #1260 먼저 보여 주는 카드는 원문 대체 문구로 만들지 않음
     expl = s.messages.find((m) => m.role === "user")?.text.slice(0, 400) || translate(locale, "fallback.summaryFailed"); // 20분 넘게 실패 — 원본이라도 볼 수 있게 카드는 만듦
   }
   return {
