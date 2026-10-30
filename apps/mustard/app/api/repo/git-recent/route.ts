@@ -34,16 +34,17 @@ export async function POST(request: Request): Promise<Response> {
     const reflog = commits.length ? (await pexecFile("git", ["reflog", "-n", "2000", "--format=%H%x1f%gs"], { cwd: path, timeout: 4000 }).catch(() => ({ stdout: "" }))).stdout : "";
     const at = branchesFromReflog(reflog.split("\n").filter(Boolean));
     // #1255 ms = 카드 시각(같은 초 커밋도 커밋 순서대로) — --date-order라 자식이 부모보다 먼저
-    // 개수 상한(-n)에 걸리면 맨 끝(가장 오래된) 초의 같은 초 커밋이 잘렸을 수 있음 → 그 초만 따로 다 받아 "나보다 오래된 수"를 맞게 셈(리뷰)
-    let older: { ts: number }[] = [];
+    // 개수 상한(-n)에 걸리면 같은 초 묶음이 잘렸을 수 있음 → 목록의 가장 이른 초부터 상한 없이(1000개까지) 다시 받아 그 전체로 셈(리뷰).
+    //  "끝 초 하나만"은 시계가 어긋난 커밋(부모가 자식보다 늦은 시각)이 있으면 깨져서 최소 시각부터 통째로.
+    let full: { hash: string; ts: number }[] = commits;
     if (commits.length >= n) {
-      const T = commits[commits.length - 1].ts;
-      const g = await pexecFile("git", ["log", "HEAD", "--branches=crew/*", "--date-order", `--since=@${T}`, `--until=@${T}`, "--format=%H"], { cwd: path, timeout: 8000 }).catch(() => ({ stdout: "" }));
-      const seen = new Set(commits.map((c) => c.hash));
-      older = g.stdout.split("\n").filter((h) => h && !seen.has(h)).map(() => ({ ts: T }));
+      const minT = Math.min(...commits.map((c) => c.ts));
+      const g = await pexecFile("git", ["log", "HEAD", "--branches=crew/*", "--date-order", "-n", "1000", `--since=@${minT}`, "--format=%H%x1f%ct"], { cwd: path, timeout: 8000 })
+        .catch((e) => { console.warn("[git-recent] 같은 초 커밋 다시 받기 실패 — 받은 목록으로만 셈:", (e as Error).message); return null; });
+      if (g) full = g.stdout.split("\n").filter(Boolean).map((l) => { const [hash, ct] = l.split("\x1f"); return { hash, ts: Number(ct) }; });
     }
-    const ms = commitMs<{ ts: number }>([...commits, ...older]);
-    return Response.json({ ok: true, commits: commits.map((c, i) => ({ ...c, ms: ms[i].ms, branch: crewOnly.get(c.hash) ?? at.get(c.hash) ?? branch })), branch });
+    const msBy = new Map(commitMs(full).map((c) => [c.hash, c.ms]));
+    return Response.json({ ok: true, commits: commits.map((c) => ({ ...c, ms: msBy.get(c.hash) ?? c.ts * 1000, branch: crewOnly.get(c.hash) ?? at.get(c.hash) ?? branch })), branch });
   } catch (e) {
     // 커밋 없는 새 레포(HEAD 없음) 등 — 빈 목록
     return Response.json({ ok: true, commits: [], note: String((e as Error)?.message ?? e).slice(0, 200) });
