@@ -17,6 +17,8 @@ export const diffItemKey = (hash: string, file: string) => `diff|${hash}|${file}
 export const parseDiffItemKey = (key: string) => { const m = /^diff\|([0-9a-fA-F]{4,64})\|(.+)$/.exec(key); return m ? { hash: m[1], file: m[2] } : null; };
 
 const POLL_MS = 30_000;
+// #1264 지금 요약 중인 세션(레포\0해시) — 효과가 다시 돌아 새 줄이 생겨도 같은 커밋을 동시에 두 번 요약하지 않게(리뷰). 모듈 전역.
+const flying = new Set<string>();
 const RETRY_MS = [5_000, 20_000, -1]; // #1093 덩어리 재시도 간격(-1 = 마지막 시도)
 const EXPLAIN_CONCURRENCY = 4; // #1090 덩어리 설명 동시 호출 수(AI CLI 동시 실행 — 너무 많으면 레이트 리밋)
 // 설명 가치 없는 파일 — 문서·lockfile·이미지 등(삭제 파일은 상태 D로 따로 거름).
@@ -51,10 +53,10 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     if (!on) { try { localStorage.removeItem(stateKey); } catch { /* ignore */ } return; } // 다시 켜면 그때부터
     // pending = 세션 턴이 아직 안 끝나 카드를 미룬 커밋(#1064) — 다음 주기마다 다시, 20분 지나면 그대로 만듦
     type Pend = { hash: string; ts: number; ms?: number; subject: string; branch: string; at: number; early?: 1; retryAt?: number; merge?: boolean; errAt?: number; rv?: 1 }; // rv = 되살리기로 넣은 것(새 커밋 뒤에 처리)
-    type State = { since: number; done: string[]; queued?: string[]; noSession?: string[]; hasCard?: string[]; from?: number; pending?: Pend[]; revived?: number; reviveTries?: number; reviveAt?: number };
+    type State = { since: number; done: string[]; sessSince?: number; queued?: string[]; noSession?: string[]; hasCard?: string[]; from?: number; pending?: Pend[]; revived?: number; reviveTries?: number; reviveAt?: number };
     const read = (): State | null => { try { return JSON.parse(localStorage.getItem(stateKey) || "null") as State | null; } catch { return null; } };
     const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
-    let alive = true, busy = false;
+    let alive = true, busy = false, sbusy = false, fbusy = false; // #1264 diff 줄(busy)·세션 줄 세우기(sbusy)·세션 카드 만들기(fbusy)는 따로 돎
     let budget = 0; // #1235 주기마다 세션 카드 조회 5번까지(되살리기로 쌓여도 새 커밋 설명·서버를 오래 붙잡지 않게, 리뷰) — tick 시작에 채움
 
     // info = 카드 메타("브랜치 · 커밋 제목", #1062) — tool 필드에 담아 저장(스키마 변경 없이).
@@ -110,10 +112,14 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         if (!alive) return;
         if (budget <= 0) { skipped.push(pd); continue; } // 이번 주기 몫 다 씀 — 다음 주기에
         if (!cfg.current.sessOn) continue; // 세션 분석 꺼짐 — 미룬 것도 버림
+        const fk = `${root}\0${pd.hash}`;
+        if (flying.has(fk)) { keep.push(pd); continue; } // 다른 줄이 지금 만드는 중
         if (pd.retryAt && Date.now() < pd.retryAt) { keep.push(pd); continue; } // #1262 오류 뒤 2분 쉼(30초 주기마다 두드리지 않게, 리뷰)
         if (Date.now() - pd.at > 60 * 60_000) { noSession.push(pd.hash); continue; } // 1시간 넘게 계속 실패 — 포기(되살리기도 다시 안 봄, 리뷰)
         const { spid: sp, sps: sset, locale: sl } = cfg.current;
         budget--;
+        flying.add(fk);
+        try {
         const endBusy = beginBusy(root, "session"); // #1240
         const r = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, Date.now() - pd.at > 20 * 60_000, !!pd.merge, pd.ms, !!pd.early).catch(() => "error" as const).finally(endBusy); // #1260 이미 요약 카드가 떠 있으면 원문 대체 문구로 덮지 않음(리뷰)
         if (r === "wait") {
@@ -140,6 +146,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
             if (!saved) keep.push(pd);
           } else void post("/api/repo/stream", { root, items: [r] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
         }
+        } finally { flying.delete(fk); }
       }
       if (alive) { const cur = read() ?? st0; write({ ...cur, noSession: [...(cur.noSession ?? []), ...noSession].slice(-300), pending: [...skipped, ...keep, ...(cur.pending ?? []).filter((p) => !st0.pending!.some((q) => q.hash === p.hash))] }); }
     };
@@ -163,28 +170,53 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
       }
     };
 
+    type Recent = { hash: string; ts: number; ms?: number; subject?: string; merge?: boolean; branch?: string };
+    // diff 줄 — 새 커밋 diff 설명(파일 많으면 몇 분). 세션은 안 건드림(#1264: 예전엔 같은 줄이라 diff가 끝나야 다음 커밋 세션 차례였음).
     const tick = async () => {
       if (busy || !alive || !cfg.current.providerId || !cfg.current.loaded) return; // 레포 설정 받기 전엔 쉼(상태는 안 건드림)
       busy = true;
-      budget = 5;
+      try {
+        const st = read();
+        if (!st) { const now = Math.floor(Date.now() / 1000); write({ since: now, sessSince: now, done: [], from: now, reviveAt: Date.now() + 30 * 60_000 }); return; } // 처음 켬 → 지금부터(켜기 전 커밋은 되살리지 않음)
+        const j = await post("/api/repo/git-recent", { path: root, since: st.since, limit: 100 }); // 기본 20이면 몰린 커밋 중 오래된 쪽 diff가 영영 빠짐(리뷰). ponytail: 30초에 100개 넘게 오면 잘림
+        const all = ((j?.commits ?? []) as Recent[]).reverse(); // 오래된 것부터
+        if (all.length >= 100) console.warn("[catchup] 새 커밋이 100개 넘게 몰림 — 오래된 쪽 diff 설명은 빠질 수 있음");
+        const fresh = all.filter((c) => !st.done.includes(c.hash));
+        const head = typeof j?.branch === "string" ? j.branch : "";
+        for (const c of fresh) {
+          if (!alive) return;
+          const branch = c.branch || head; // #1068 그 커밋을 만들 때 브랜치(reflog)
+          if (cfg.current.diffOn && !c.merge && !(await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200), { commitMs: c.ms ?? c.ts * 1000 }))) return; // 도중에 끔 — 이 커밋부터 다음 주기에(리뷰)
+          if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)
+          const cur = read() ?? st; // 세션 줄이 그새 쓴 것 위에 — 내 칸(since·done)만 바꿈
+          write({ ...cur, since: Math.max(cur.since, c.ts), done: [...cur.done, c.hash].slice(-50) }); // 같은 초 커밋은 done으로 중복 차단
+        }
+        await repairFailed();
+      } catch { /* 서버 미준비 등 — 다음 주기 */ } finally { busy = false; }
+    };
+
+    // 세션 줄(#1064·#1260·#1262·#1264) — 새 커밋을 바로 세션 줄에 넣고 카드 만들기, 되살리기. diff 설명과 서로 기다리지 않음.
+    //  자기 since(sessSince, 없으면 diff since — 옛 상태)와 queued(최근 50)로 커밋마다 한 번만. 상태는 내 칸만 바꿈.
+    const sessTick = async () => {
+      if (sbusy || !alive || !cfg.current.providerId || !cfg.current.loaded) return;
+      sbusy = true;
       try {
         let st = read();
-        if (!st) { const now = Math.floor(Date.now() / 1000); write({ since: now, done: [], from: now, reviveAt: Date.now() + 30 * 60_000 }); return; } // 처음 켬 → 지금부터(켜기 전 커밋은 되살리지 않음)
-        // #1235 → #1262 되살리기 — 30분마다 최근 24시간(켠 뒤) 처리한 커밋 중 카드가 없는 세션 카드를 다시 줄 세움.
-        //  예전엔 레포마다 한 번뿐이고 "저장된 세션 있음 = 카드 있음"으로 봐서, 패키징 중 404로 버려진 머지 카드가 영영 안 돌아왔음.
-        //  카드 존재는 캐치업 기록(key "session|hash")에서 확인, 세션 없는 커밋(사람 커밋)은 noSession(최근 100)으로 다시 안 봄.
-        //  카드 있다고 확인한 커밋은 hasCard(최근 300)로 다시 조회 안 함. 실패해도 다음은 30분 뒤(무한 5분 반복 없게, 리뷰).
+        if (!st) return; // 처음 상태는 diff 줄이 만듦
+        // 세션 분석이 꺼져 있는 동안엔 from·sessSince를 지금으로 — 다시 켰을 때 꺼져 있던 동안의 커밋을 한꺼번에 요약하지 않게(리뷰)
+        if (!cfg.current.sessOn) { const now = Math.floor(Date.now() / 1000); write({ ...st, from: now, sessSince: now, pending: [] }); return; } // 미룬 것도 버림(예전 동작, 리뷰)
+        const sessSince = st.sessSince ?? st.since;
+        // #1235 → #1262 되살리기 — 30분마다 최근 24시간(켠 뒤) 줄에 넣었던 커밋 중 카드가 없는 것을 다시 줄 세움.
+        //  카드 존재는 캐치업 기록(key "session|hash")에서 확인, 세션 없는 커밋은 noSession, 카드 확인한 커밋은 hasCard로 다시 안 봄.
         //  ponytail: 최대 100개·한 번에 20개, 조회는 주기 몫 밖(로컬 파일).
-        // 세션 분석이 꺼져 있는 동안엔 from을 지금으로 — 다시 켰을 때 꺼져 있던 동안의 커밋을 한꺼번에 요약하지 않게(리뷰)
-        if (!cfg.current.sessOn) { st = { ...st, from: Math.floor(Date.now() / 1000) }; write(st); }
-        else if (Date.now() >= (st.reviveAt ?? 0)) {
+        if (Date.now() >= (st.reviveAt ?? 0)) {
           const since = Math.max(Math.floor(Date.now() / 1000) - 86_400, st.from ?? 0);
           const back = await post("/api/repo/git-recent", { path: root, since, limit: 100 }).catch(() => null);
           const add: Pend[] = [], has: string[] = [];
           const failed = !Array.isArray(back?.commits) || !!back?.note; // git 실패도 빈 목록으로 옴(note) — 실패로 봄
-          for (const c of (failed ? [] : back.commits) as { hash: string; ts: number; ms?: number; subject?: string; merge?: boolean; branch?: string }[]) {
+          for (const c of (failed ? [] : back.commits) as Recent[]) {
             if (!alive) return;
-            const handled = c.ts < st.since || st.done.includes(c.hash); // 이미 지나간 커밋(아직 안 본 건 평소 흐름이)
+            const handled = c.ts < sessSince || (st.queued ?? []).includes(c.hash); // 이미 줄에 넣었던 커밋(아직 안 본 건 아래 평소 흐름이)
             if (!handled || (st.noSession ?? []).includes(c.hash) || (st.hasCard ?? []).includes(c.hash) || (st.pending ?? []).some((p) => p.hash === c.hash)) continue;
             const got = await fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&key=${encodeURIComponent(`session|${c.hash}`)}`).then((r) => r.json()).catch(() => null);
             if (got?.ok !== true) continue; // 확인 못 함 — 이번엔 건너뛰고 30분 뒤에
@@ -197,36 +229,22 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           st = { ...cur, reviveAt: Date.now() + 30 * 60_000, hasCard: [...(cur.hasCard ?? []), ...has].slice(-300), pending: [...(cur.pending ?? []), ...add.filter((a) => !cur.pending?.some((p) => p.hash === a.hash))] };
           write(st);
         }
-        const j = await post("/api/repo/git-recent", { path: root, since: st.since });
-        const pendingAdd: Pend[] = [];
-        const all = ((j?.commits ?? []) as { hash: string; ts: number; ms?: number; subject?: string; merge?: boolean; branch?: string }[]).reverse(); // 오래된 것부터
-        const fresh = all.filter((c) => !st!.done.includes(c.hash));
+        // 새 커밋 → 세션 줄(턴이 안 끝났으면 flushPending이 지금까지 대화로 먼저 만들고 끝나면 교체, #1260)
+        const j = await post("/api/repo/git-recent", { path: root, since: sessSince, limit: 100 });
         const head = typeof j?.branch === "string" ? j.branch : "";
-        for (const c of fresh) {
-          if (!alive) return;
-          const branch = c.branch || head; // #1068 그 커밋을 만들 때 브랜치(reflog)
-          // #1064 이 커밋을 만든 에이전트 세션 → 요약 카드. #1260 diff 설명(파일 많으면 몇 분)보다 먼저 줄 세우고 바로 시도 —
-          //  예전엔 diff가 다 끝나야 세션 차례라 여러 커밋이면 한참 늦었음. 이미 줄에 있으면(diff 도중 꺼져 다시 온 커밋) 안 넣음.
-          st = read() ?? st; // 다른 창이 그새 쓴 상태 위에(리뷰)
-          if (alive && cfg.current.sessOn && !(st.queued ?? []).includes(c.hash)) { // queued = 세션 줄에 이미 넣은 커밋(diff 도중 꺼져 다시 와도 카드 두 번 안 만듦)
-            pendingAdd.push({ hash: c.hash, ts: c.ts, ms: c.ms, subject: c.subject ?? "", branch, at: Date.now(), merge: !!c.merge });
-            st = { ...st, queued: [...(st.queued ?? []), c.hash].slice(-50), pending: [...(st.pending ?? []), ...pendingAdd.splice(0)] };
-            write(st);
-            await flushPending();
-            st = read() ?? st;
-          }
-          if (cfg.current.diffOn && !c.merge && !(await explainCommit(c.hash, [branch, c.subject].filter(Boolean).join(" · ").slice(0, 200), { commitMs: c.ms ?? c.ts * 1000 }))) return; // 도중에 끔 — 이 커밋부터 다음 주기에(리뷰)
-          if (!alive) return; // 중간에 꺼졌으면 처리 완료로 안 적음(다음에 이어서)
-          st = read() ?? st;
-          st = { ...st, since: Math.max(st.since, c.ts), done: [...st.done, c.hash].slice(-50) }; // 같은 초 커밋은 done으로 중복 차단
-          write(st);
+        if ((j?.commits ?? []).length >= 100) console.warn("[catchup] 새 커밋이 100개 넘게 몰림 — 빠진 세션은 30분 되살리기가 채움");
+        const fresh = ((j?.commits ?? []) as Recent[]).reverse().filter((c) => !(st!.queued ?? []).includes(c.hash));
+        if (fresh.length && alive) {
+          const cur = read() ?? st;
+          const add = fresh.filter((c) => !(cur.queued ?? []).includes(c.hash)).map((c): Pend => ({ hash: c.hash, ts: c.ts, ms: c.ms, subject: c.subject ?? "", branch: c.branch || head, at: Date.now(), merge: !!c.merge }));
+          write({ ...cur, sessSince: Math.max(cur.sessSince ?? cur.since, ...fresh.map((c) => c.ts)), queued: [...(cur.queued ?? []), ...add.map((a) => a.hash)].slice(-50), pending: [...(cur.pending ?? []), ...add] });
         }
-        await flushPending();
-        await repairFailed();
-      } catch { /* 서버 미준비 등 — 다음 주기 */ } finally { busy = false; }
+        // 카드 만들기(AI 요약, 몇 분)는 기다리지 않음 — 그동안 들어온 새 커밋도 다음 주기에 바로 줄에 서게(리뷰)
+        if (!fbusy) { fbusy = true; budget = 5; void flushPending().catch(() => {}).finally(() => { fbusy = false; }); }
+      } catch { /* 서버 미준비 등 — 다음 주기 */ } finally { sbusy = false; }
     };
-    void tick();
-    const id = setInterval(() => void tick(), POLL_MS);
+    void tick(); void sessTick();
+    const id = setInterval(() => { void tick(); void sessTick(); }, POLL_MS);
     return () => { alive = false; clearInterval(id); };
   }, [on, root]);
 }
