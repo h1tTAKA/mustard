@@ -165,7 +165,7 @@ interface NunopiDesktopApi {
     clearSaved?(): Promise<{ ok: boolean; cleared: number }>; // #1211
     killSession?(id: string): Promise<boolean>; // #1211
     // 에이전트 직접 실행(#864) — 신원을 실행 기록에 확정 + pty에 실행 커맨드 주입. 이후 탭 아이콘/이름=이 에이전트.
-    launchAgent(payload: { id: string; agent: string; dark?: boolean; permission?: string; args?: string; extraArgs?: string; cwd?: string; env?: string }): Promise<{ ok: boolean; reason?: string }>; // cwd = #1110 Crew 넘겨받기
+    launchAgent(payload: { id: string; agent: string; dark?: boolean; permission?: string; args?: string; extraArgs?: string; cwd?: string; env?: string; trust?: boolean }): Promise<{ ok: boolean; reason?: string }>; // cwd = #1110 Crew 넘겨받기
     onData(cb: (p: { id: string; data: string }) => void): () => void;
     onExit(cb: (p: { id: string }) => void): () => void;
   };

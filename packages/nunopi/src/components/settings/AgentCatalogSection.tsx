@@ -63,6 +63,7 @@ export default function AgentCatalogSection({ list, checking, onRefresh, agentLo
   const def = useSetting<string>(AKEYS.default, AGENT_DEFAULTS.default);
   const all = useSetting<string>(AKEYS.perm, AGENT_DEFAULTS.perm);
   const awake = useSetting<string>(AKEYS.keepAwake, AGENT_DEFAULTS.keepAwake); // #1197
+  const trustFolder = useSetting<boolean>(AKEYS.trustFolder, AGENT_DEFAULTS.trustFolder); // #1216
   useSetting<number>("agent.rev", 0); // 줄별 키(off·perm) 변경도 다시 그리게(아래 setAgent가 올림)
   const guard = useFullAccessGuard();
   const [showAvail, setShowAvail] = useState(false);
@@ -129,6 +130,18 @@ export default function AgentCatalogSection({ list, checking, onRefresh, agentLo
         <div className="flex shrink-0 gap-0.5 rounded-xl border border-zinc-200 p-0.5 dark:border-zinc-700" role="radiogroup" aria-label={t("agents.awakeTitle")}>
           {(["off", "working", "always"] as const).map((c) => <button key={c} type="button" role="radio" aria-checked={awake === c} onClick={() => setSetting(AKEYS.keepAwake, c)} className={seg(awake === c)}>{t(`agents.awake.${c}`)}</button>)}
         </div>
+      </div>
+
+      {/* #1216 작업 폴더 자동 신뢰 — 새 작업공간에서 Claude·Codex가 "이 폴더를 믿나요?"를 안 묻게 */}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1 space-y-1">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t("agents.trustTitle")}</h4>
+          <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("agents.trustHint")}</p>
+        </div>
+        <button type="button" role="switch" aria-checked={trustFolder} aria-label={t("agents.trustTitle")} onClick={() => setSetting(AKEYS.trustFolder, !trustFolder)}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition ${trustFolder ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${trustFolder ? "left-[22px]" : "left-0.5"}`} />
+        </button>
       </div>
 
       {/* 설치됨 / 설치 가능 */}
