@@ -132,7 +132,7 @@ export default function AgentCatalogSection({ list, checking, onRefresh, agentLo
         </div>
       </div>
 
-      {/* #1216 작업 폴더 자동 신뢰 — 새 작업공간에서 Claude·Codex가 "이 폴더를 믿나요?"를 안 묻게 */}
+      {/* #1216 작업 폴더 자동 신뢰 — 메인 폴더를 믿은 레포의 작업공간에서 Claude가 "이 폴더를 믿나요?"를 안 묻게 */}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1 space-y-1">
           <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{t("agents.trustTitle")}</h4>

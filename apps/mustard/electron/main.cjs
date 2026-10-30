@@ -1735,7 +1735,7 @@ ipcMain.handle("terminal:launchAgent", async (_e, { id, agent, dark, permission,
   // 에코는 따옴표 이스케이프된 모양으로 찍히니 원문 + 셸·fish 이스케이프 모양 모두(리뷰)
   const secrets = [...new Set(Object.entries(agentCatalog.parseEnv(typeof env === "string" ? env : "")).filter(([, v]) => v.length >= 4).flatMap(([k, v]) => [v, agentCatalog.shq(v).slice(1, -1), agentCatalog.fishVal(k, v).slice(1, -1)]))];
   if (secrets.length) envSecrets.set(id, secrets); else envSecrets.delete(id);
-  // #1216 작업 폴더 미리 신뢰(설정 켬이 기본) — Mustard 작업공간 안에서만, Claude·Codex가 "믿나요?"를 안 묻게. 실패하면 원래대로 물어볼 뿐.
+  // #1216 작업 폴더 미리 신뢰(설정 켬이 기본) — Mustard 작업공간 + 메인 폴더를 이미 믿은 레포만, Claude가 "믿나요?"를 안 묻게. 실패하면 원래대로 물어볼 뿐.
   if (trust !== false) await require("./agent-trust.cjs").trustAgentFolder(agent, typeof cwd === "string" && cwd ? cwd : cwdById.get(id), { home: app.getPath("home") }).catch(() => {});
   launchRegistry.set(id, { agent, confirmed: false, at: Date.now() }); // 즉시 신원(아이콘). 부팅 중 셸이어도 유지.
   let ready = false;

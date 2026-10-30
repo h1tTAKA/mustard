@@ -112,7 +112,7 @@ export const AKEYS = {
   argsLifted: "agent.argsLifted",
   usedAt: (agentId: string) => `agent.used.${agentId}`, // 마지막으로 띄운 시각(ms) — 우리 규칙: 최근 쓴 순서·자동 = 마지막에 쓴 것
   keepAwake: "agent.keepAwake", // #1197 잠자기 막기 off | working | always
-  trustFolder: "agent.trustFolder", // #1216 띄우기 전 작업 폴더 미리 신뢰(Claude·Codex)
+  trustFolder: "agent.trustFolder", // #1216 띄우기 전 작업공간 미리 신뢰(Claude, 메인 폴더 신뢰를 물려줌)
   fullOk: "agent.fullAccessOk", // 전체 액세스 처음 고를 때 확인 — 한 번 확인하면 다시 안 물음
 } as const;
 export type AgentPermission = "own" | "ask" | "accept-edits" | "auto" | "full-access";

@@ -1,32 +1,45 @@
 const assert = require("node:assert");
-const { mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync, existsSync, statSync, chmodSync, symlinkSync, lstatSync, rmdirSync, utimesSync } = require("node:fs");
+const { execFileSync } = require("node:child_process");
+const { mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync, existsSync, statSync, chmodSync, symlinkSync, lstatSync, utimesSync } = require("node:fs");
 const { join } = require("node:path");
 const { tmpdir } = require("node:os");
 const { trustAgentFolder, claudeConfigFile } = require("./agent-trust.cjs");
 
 (async () => {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "trust-home-")));
-  const env = {};
+  const env = {}, opts = { home, env };
+  // 메인 레포 + Mustard 작업공간 루트 아래 worktree 2개
+  const main = join(home, "code", "repo");
+  mkdirSync(main, { recursive: true });
+  const git = (cwd, ...a) => execFileSync("git", a, { cwd, stdio: "ignore" });
+  git(main, "init", "-q"); git(main, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "i");
   const ws = join(home, "mustard", "workspaces", "repo");
+  mkdirSync(ws, { recursive: true });
   const dir = join(ws, "a"), dir2 = join(ws, "b");
-  mkdirSync(dir, { recursive: true }); mkdirSync(dir2, { recursive: true });
-  const opts = { home, env };
+  git(main, "worktree", "add", "-q", dir, "-b", "a"); git(main, "worktree", "add", "-q", dir2, "-b", "b");
 
-  // Mustard 작업공간 밖은 안 함(클론한 레포·렌더러가 넘긴 아무 경로)
-  assert.strictEqual(await trustAgentFolder("claude", home, opts), "outside");
+  // 작업공간 밖·.. ·없는 폴더·worktree 아님·다른 에이전트
+  assert.strictEqual(await trustAgentFolder("claude", main, opts), "outside", "메인 폴더(작업공간 밖)");
   mkdirSync(join(home, "mustard", "workspaces-evil", "x"), { recursive: true });
   assert.strictEqual(await trustAgentFolder("claude", join(home, "mustard", "workspaces-evil", "x"), opts), "outside", "앞부분만 같은 경로");
-  assert.strictEqual(await trustAgentFolder("claude", `${dir}/../../../../..`, opts), "outside", ".. 정리");
+  assert.strictEqual(await trustAgentFolder("claude", `${dir}/../../../..`, opts), "outside", ".. 정리");
   assert.strictEqual(await trustAgentFolder("claude", join(ws, "nope"), opts), "skipped", "없는 폴더");
+  const plain = join(ws, "plain"); mkdirSync(plain);
+  assert.strictEqual(await trustAgentFolder("claude", plain, opts), "not-worktree", "작업공간 안이어도 worktree가 아니면 안 함");
+  assert.strictEqual(await trustAgentFolder("codex", dir, opts), "skipped");
+  assert.strictEqual(await trustAgentFolder("claude", "", opts), "skipped");
 
-  // Claude — 설정 파일 없으면 손대지 않음
+  // 설정 파일 없음 → 손대지 않음
   assert.strictEqual(await trustAgentFolder("claude", dir, opts), "missing-config");
-  // .claude.json이 링크 — 실제 파일에 쓰고 링크는 그대로(리뷰)
+  // .claude.json이 링크 — 실제 파일에 쓰고 링크는 그대로
   const realCfg = join(home, "dotfiles-claude.json");
   writeFileSync(realCfg, JSON.stringify({ userID: "u", projects: { [dir]: { allowedTools: ["x"] } } }));
   chmodSync(realCfg, 0o600);
   const f = join(home, ".claude.json");
   symlinkSync(realCfg, f);
+  // 메인 폴더를 아직 안 믿으면 물려줄 신뢰 없음
+  assert.strictEqual(await trustAgentFolder("claude", dir, opts), "main-untrusted");
+  writeFileSync(realCfg, JSON.stringify({ userID: "u", projects: { [main]: { hasTrustDialogAccepted: true }, [dir]: { allowedTools: ["x"] } } }));
   assert.strictEqual(await trustAgentFolder("claude", dir, opts), "granted");
   assert.ok(lstatSync(f).isSymbolicLink(), "링크 유지");
   const j = JSON.parse(readFileSync(realCfg, "utf8"));
@@ -35,6 +48,10 @@ const { trustAgentFolder, claudeConfigFile } = require("./agent-trust.cjs");
   assert.strictEqual(statSync(realCfg).mode & 0o777, 0o600, "권한 그대로");
   assert.ok(!existsSync(`${realCfg}.lock`), "잠금 풀림");
   assert.strictEqual(await trustAgentFolder("claude", dir, opts), "unchanged", "이미 신뢰");
+  // 링크 경로로 띄우면 빠진 키(링크 경로)만 더 씀
+  const alias = join(ws, "alias"); symlinkSync(dir, alias);
+  assert.strictEqual(await trustAgentFolder("claude", alias, opts), "granted");
+  assert.strictEqual(JSON.parse(readFileSync(realCfg, "utf8")).projects[alias].hasTrustDialogAccepted, true);
   // 잠금이 살아 있으면 포기, 10초 넘은 죽은 잠금은 치우고 진행
   mkdirSync(`${realCfg}.lock`);
   assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "locked");
@@ -43,42 +60,8 @@ const { trustAgentFolder, claudeConfigFile } = require("./agent-trust.cjs");
   assert.ok(!existsSync(`${realCfg}.lock`));
   // 깨진 파일은 안 씀
   writeFileSync(realCfg, "{broken");
-  const dir3 = join(ws, "c"); mkdirSync(dir3);
-  assert.strictEqual(await trustAgentFolder("claude", dir3, opts), "unreadable");
+  assert.strictEqual(await trustAgentFolder("claude", dir, opts), "unreadable");
   assert.strictEqual(readFileSync(realCfg, "utf8"), "{broken");
   assert.strictEqual(claudeConfigFile(home, { CLAUDE_CONFIG_DIR: "/c" }), "/c/.claude.json");
-
-  // Codex — 홈 없으면 안 씀
-  assert.strictEqual(await trustAgentFolder("codex", dir, opts), "missing-config");
-  const ch = join(home, ".codex"); mkdirSync(ch);
-  const toml = join(ch, "config.toml");
-  writeFileSync(toml, 'model = "x"');
-  assert.strictEqual(await trustAgentFolder("codex", dir, opts), "granted");
-  const t = readFileSync(toml, "utf8");
-  assert.ok(t.startsWith('model = "x"\n') && t.includes(`[projects."${dir}"]\ntrust_level = "trusted"\n`), t);
-  assert.strictEqual(await trustAgentFolder("codex", dir, opts), "unchanged");
-  // 이미 다른 모양으로 그 경로가 있으면 그대로(리터럴 따옴표·점 키·주석)
-  for (const [v, want] of [[`[projects.'${dir2}'] # x\ntrust_level = "untrusted"\n`, "unchanged"], [`projects."${dir2}" = { trust_level = "untrusted" }\n`, "unsupported"]]) {
-    writeFileSync(toml, v);
-    assert.strictEqual(await trustAgentFolder("codex", dir2, opts), want, v);
-    assert.strictEqual(readFileSync(toml, "utf8"), v, "안 바꿈");
-  }
-  // projects를 인라인 표·따옴표 점 키로 쓰면 덧붙이지 않음
-  for (const v of [`projects = { "/other" = { trust_level = "trusted" } }\n`, `"projects"."/other".trust_level = "trusted"\n`]) {
-    writeFileSync(toml, v);
-    assert.strictEqual(await trustAgentFolder("codex", dir2, opts), "unsupported", v);
-  }
-  // 앞부분만 같은 다른 폴더 표가 있어도 내 표는 추가
-  writeFileSync(toml, `[projects."${dir2}x"]\ntrust_level = "trusted"\n`);
-  assert.strictEqual(await trustAgentFolder("codex", dir2, opts), "granted");
-  // 끊긴 링크면 새로 안 만듦
-  require("node:fs").rmSync(toml); symlinkSync(join(home, "nowhere.toml"), toml);
-  assert.strictEqual(await trustAgentFolder("codex", dir2, opts), "unreadable");
-  assert.ok(!existsSync(join(home, "nowhere.toml")));
-
-  // 그 밖 에이전트·빈 폴더
-  assert.strictEqual(await trustAgentFolder("gemini", dir, opts), "skipped");
-  assert.strictEqual(await trustAgentFolder("claude", "", opts), "skipped");
-  rmdirSync(dir3);
   console.log("agent-trust ok");
 })().catch((e) => { console.error(e); process.exit(1); });
