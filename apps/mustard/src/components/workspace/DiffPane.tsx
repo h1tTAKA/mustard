@@ -9,7 +9,7 @@ import { codeToTokens, type ThemedToken, type BundledLanguage } from "shiki";
 import { IconLoader2, IconAlertTriangle, IconGitCompare, IconSparkles, IconRefresh, IconBrandGithub, IconRobot, IconCheck, IconX, IconPlus, IconPlusMinus, IconClock, IconArrowsVertical } from "@tabler/icons-react";
 import { loadPrReview, prReviewKey, PR_REVIEW_EVENT, type Finding } from "@/lib/prReview";
 import { setFindingStatus, postFinding } from "@/lib/prReviewRun";
-import { useLocale, useT, useToast, useSetting, EKEYS, EDITOR_DEFAULTS } from "@mustard/core";
+import { useLocale, useT, useToast, useSetting, EKEYS, EDITOR_DEFAULTS, type DiffView } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Thread, type LineComment } from "@/components/workspace/github/PrReviewComments";
@@ -30,6 +30,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const wrap = useSetting<boolean>(EKEYS.wordWrap, EDITOR_DEFAULTS.wordWrap);
   const ws = useSetting<boolean>(EKEYS.showWhitespace, EDITOR_DEFAULTS.showWhitespace);
   const txt = (s: string) => (ws ? showWs(s) : s);
+  const view = useSetting<DiffView>(EKEYS.diffView, EDITOR_DEFAULTS.diffView);
   const fold = useSetting<boolean>(EKEYS.diffFold, EDITOR_DEFAULTS.diffFold);
   const foldCtx = useSetting<number>(EKEYS.diffFoldContext, EDITOR_DEFAULTS.diffFoldContext);
   const [openRuns, setOpenRuns] = useState<Set<number>>(new Set()); // 펼친 접힌 묶음(시작 줄 위치)
@@ -222,7 +223,6 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   if (status === "empty") return <div className="flex h-full flex-col items-center justify-center gap-1 px-4 text-center text-[12px] text-zinc-400 dark:text-zinc-500"><IconGitCompare size={16} stroke={1.75} aria-hidden /><span>{t("workspace.diffEmpty")}</span></div>;
   if (status === "error" || !lines) return <div className="flex h-full items-center justify-center gap-1.5 text-[12px] text-amber-600 dark:text-amber-500"><IconAlertTriangle size={14} stroke={2} aria-hidden /> {t("diff.loadFailed")}</div>;
 
-  let codeIdx = 0; // add/del/ctx 진행 인덱스 → tokens 매칭
   const byLine = new Map<number, Finding[]>();
   for (const f of findings) if (f.file === file && f.status !== "discarded") byLine.set(f.line, [...(byLine.get(f.line) ?? []), f]);
   const threadAt = new Map<string, LineComment[]>(); // "LEFT:12" → 그 줄(범위면 끝 줄)에 달린 스레드(첫 댓글), GitHub처럼
@@ -283,171 +283,217 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
     || (l.newN != null && (byLine.has(l.newN) || noteAt.has(l.newN) || threadAt.has(`RIGHT:${l.newN}`) || draftAt.has(`RIGHT:${l.newN}`)))
     || (l.oldN != null && (threadAt.has(`LEFT:${l.oldN}`) || draftAt.has(`LEFT:${l.oldN}`))); };
   const { hidden, runLen } = fold ? foldRuns(lines.map((l) => l.kind), foldCtx, keep, openRuns) : { hidden: new Map<number, number>(), runLen: new Map<number, number>() };
+  // #1218 나란히 보기 단위 — 안 바뀐 줄 하나 = {l, r} 같은 위치, 지운 줄 묶음·뒤따르는 추가 줄 묶음은 차례로 짝
+  const units: { l?: number; r?: number }[] = [];
+  if (view === "split") for (let i = 0; i < lines.length;) {
+    const k = lines[i].kind;
+    if (k === "ctx") { units.push({ l: i, r: i }); i++; continue; }
+    const dels: number[] = [], adds: number[] = [];
+    while (i < lines.length && lines[i].kind === "del") dels.push(i++);
+    while (i < lines.length && lines[i].kind === "add") adds.push(i++);
+    if (!dels.length && !adds.length) { i++; continue; } // meta·hunk
+    for (let j = 0; j < Math.max(dels.length, adds.length); j++) units.push({ l: dels[j], r: adds[j] });
+  }
+  // 줄 위치 → 그 줄의 하이라이트 토큰(코드줄 순서대로 칠했음 — 접기·나란히로 그리는 순서가 바뀌어도 맞게)
+  const tokAt = new Map<number, ThemedToken[]>();
+  { let k = 0; lines.forEach((l, i) => { if (l.kind === "add" || l.kind === "del" || l.kind === "ctx") { const tk = tokens[k++]; if (tk) tokAt.set(i, tk); } }); }
+  const codeOf = (i: number) => { const tok = tokAt.get(i); return tok ? tok.map((tk, j) => <span key={j} style={{ color: tk.color }}>{txt(tk.content)}</span>) : <span className="text-zinc-700 dark:text-zinc-200">{txt(lines[i].text)}</span>; };
+  const sideOf = (l: DLine): "LEFT" | "RIGHT" => (l.kind === "del" ? "LEFT" : "RIGHT"); // 바뀌지 않은 줄은 새 코드 쪽에
+  const lnOf = (l: DLine) => (sideOf(l) === "LEFT" ? l.oldN : l.newN) ?? 0;
+  const inSelOf = (l: DLine) => { const selLn = sel?.side === "LEFT" ? l.oldN : l.newN; return !!sel && selLn != null && l.kind !== (sel.side === "LEFT" ? "add" : "del") && selLn >= (sel.start ?? sel.line) && selLn <= sel.line; }; // 범위 테두리 — LEFT 범위엔 안 바뀐 줄도(옛 번호로)
+  const findingsOf = (l: DLine) => (pr && l.newN != null ? byLine.get(l.newN) : undefined); // #1127 이 줄의 에이전트 지적
+  const markOf = (l: DLine) => (l.kind === "add" ? "+" : l.kind === "del" ? "−" : " ");
+  const markClsOf = (l: DLine) => (l.kind === "add" ? "text-emerald-600 dark:text-emerald-500" : l.kind === "del" ? "text-rose-600 dark:text-rose-500" : "text-transparent");
+  const bgOf = (l: DLine) => (l.kind === "add" ? "bg-emerald-500/20" : l.kind === "del" ? "bg-rose-500/20" : "");
+  const numCls = "w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600";
+  // #1127 지적 있는 줄 — 옛 줄번호 칸 왼쪽에 눈에 띄는 배지(오른쪽 정렬 번호는 3자리까지 안 가림, 코드 정렬 그대로), 누르면 지적 펼침
+  const findingBadge = (lineF: Finding[], lineN: number) => (
+    <button type="button" title={lineF.map((f) => f.title).join("\n")} aria-label={`${t("github.tabAgentReview")}: ${lineF.map((f) => f.title).join(", ")}`} aria-expanded={openLines.has(lineN)} aria-controls={`prf-${lineN}`}
+      onClick={() => setOpenLines((s) => { const x = new Set(s); if (x.has(lineN)) x.delete(lineN); else x.add(lineN); return x; })}
+      className="absolute inset-y-px left-0 z-[1] flex w-[14px] items-center justify-center rounded-r bg-mustard-500 text-brown-900 shadow-sm hover:bg-mustard-400">
+      <IconRobot size={12} stroke={2.2} aria-hidden />
+    </button>
+  );
+  // #1145 줄 댓글 + / #1169 메모 + — 줄에 올리면 보임, Shift+누름 = 범위. left = 그 칸 안 위치
+  const plusBtn = (i: number, left: string) => {
+    const l = lines[i], side = sideOf(l), ln = lnOf(l);
+    // PR: 이 diff의 커밋을 모르면(받는 사이 push·조회 실패) 없음 — 지금 head로 달면 엉뚱한 줄(리뷰). 작업 폴더·커밋 diff: 새 코드 줄에만, 모은 메모는 위 막대에서 에이전트로
+    const show = ln > 0 && (pr ? !!head && near[i] : side === "RIGHT");
+    if (!show) return null;
+    const label = pr ? t("github.lineCommentAdd") : t("diffNotes.add");
+    return (
+      <button type="button" onClick={(e) => choose(side, ln, e.shiftKey)} title={label} aria-label={`${label} ${ln}`}
+        className={`absolute inset-y-px ${left} z-[1] flex w-[14px] items-center justify-center rounded bg-mustard-500 text-brown-900 opacity-0 shadow-sm hover:bg-mustard-400 focus:opacity-100 group-hover:opacity-100`}>
+        <IconPlus size={11} stroke={2.6} aria-hidden />
+      </button>
+    );
+  };
+  // #1218 줄바꿈이면 남은 폭 안에서 다음 줄로(넘치는 긴 낱말만 끊음), 공백 보이기면 ·/→. 나란히는 반쪽 폭이라 늘 줄바꿈
+  const codeCls = (w: boolean) => (w ? "min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] px-1" : "whitespace-pre px-1");
+  const unifiedRow = (i: number) => {
+    const l = lines[i], lineF = findingsOf(l);
+    return (
+      <div className={`group relative flex ${wrap ? "w-full" : "w-max min-w-full"} ${bgOf(l)} ${lineF || inSelOf(l) ? "ring-1 ring-inset ring-mustard-500/70" : ""}`}>
+        {lineF && findingBadge(lineF, l.newN as number)}
+        <span className={numCls}>{l.oldN ?? ""}</span>
+        {plusBtn(i, "left-9")}
+        <span className={numCls}>{l.newN ?? ""}</span>
+        <span className={`w-4 shrink-0 select-none text-center ${markClsOf(l)}`}>{markOf(l)}</span>
+        <span className={codeCls(wrap)}>{codeOf(i)}</span>
+      </div>
+    );
+  };
+  // #1218 나란히 한쪽 — LEFT = 옛 코드(지운 줄·안 바뀐 줄), RIGHT = 새 코드(추가 줄·안 바뀐 줄). 댓글·메모 +는 한 줄 보기와 같은 쪽에만(지운 줄 = 왼쪽, 나머지 = 오른쪽)
+  const half = (i: number | undefined, which: "LEFT" | "RIGHT") => {
+    const edge = which === "RIGHT" ? "border-l border-zinc-200 dark:border-zinc-800" : "";
+    if (i === undefined) return <div className={`w-1/2 min-w-0 bg-zinc-50 dark:bg-zinc-900/40 ${edge}`} />;
+    const l = lines[i], lineF = which === "RIGHT" ? findingsOf(l) : undefined;
+    const mine = sideOf(l) === which; // 안 바뀐 줄은 RIGHT
+    const ring = lineF || (inSelOf(l) && sel?.side === which);
+    return (
+      <div className={`group relative flex w-1/2 min-w-0 ${edge} ${bgOf(l)} ${ring ? "ring-1 ring-inset ring-mustard-500/70" : ""}`}>
+        {lineF && findingBadge(lineF, l.newN as number)}
+        {mine && plusBtn(i, "left-0")}
+        <span className={numCls}>{(which === "LEFT" ? l.oldN : l.newN) ?? ""}</span>
+        <span className={`w-4 shrink-0 select-none text-center ${markClsOf(l)}`}>{markOf(l)}</span>
+        <span className={codeCls(true)}>{codeOf(i)}</span>
+      </div>
+    );
+  };
+  // 접힌 줄 — 묶음 첫 줄 자리에만 펼치기 버튼, 나머지는 안 그림. 안 접힌 줄은 undefined
+  const foldBtn = (i: number) => {
+    const runAt = hidden.get(i);
+    if (runAt === undefined) return undefined;
+    return runAt !== i ? null : (
+      <button key={`fold-${i}`} type="button" onClick={() => setOpenRuns((s) => new Set(s).add(i))}
+        className="sticky left-0 flex w-full items-center gap-1 border-y border-zinc-100 bg-zinc-50 py-0.5 pl-[4.75rem] font-sans text-[10.5px] text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+        <IconArrowsVertical size={11} stroke={2} aria-hidden />{t("codeDiff.expand", { n: runLen.get(i) ?? 0 })}
+      </button>
+    );
+  };
+  // 줄 위(AI 구간 설명 버튼)·줄 밑(지적·스레드·보류·입력칸·메모·AI 노트) — 한 줄 보기·나란히 둘 다 같은 자리
+  const parts = (i: number) => {
+    const l = lines[i], side = sideOf(l), ln = lnOf(l), lineN = l.newN as number;
+    const startH = pr ? undefined : hunkStart.get(i); // PR diff는 AI 설명 없음 // 구간 시작 → 위에 설명 버튼
+    const endH = pr ? undefined : hunkEnd.get(i); // 구간 끝 → 아래에 노트(PR diff는 없음)
+    const lineF = findingsOf(l);
+    const lineD = pr ? draftAt.get(`${side}:${ln}`) ?? [] : [];
+    const composeHere = !!sel && !!head && sel.side === side && sel.line === ln;
+    const lineT = pr ? [...(l.oldN != null && l.kind !== "add" ? threadAt.get(`LEFT:${l.oldN}`) ?? [] : []), ...(l.newN != null ? threadAt.get(`RIGHT:${l.newN}`) ?? [] : [])] : [];
+    // #1169 이 줄의 메모 + 입력칸(PR 아닌 diff)
+    const lineNotes = !pr && side === "RIGHT" ? noteAt.get(ln) ?? [] : [];
+    const noteHere = !pr && !!sel && sel.side === "RIGHT" && side === "RIGHT" && sel.line === ln;
+    const opened = !!lineF && openLines.has(lineN);
+    const startNote = startH ? notes[hunkKey(startH)] : undefined;
+    const endNote = endH ? notes[hunkKey(endH)] : undefined;
+    const pre = startH ? (
+      <div key={`hs-${i}`} className="flex items-center py-1 pl-[4.75rem]">
+        <button type="button" onClick={() => void explainHunk(startH)} disabled={startNote?.status === "loading"}
+          className="inline-flex items-center gap-1 rounded-md bg-mustard-500/12 px-2 py-0.5 text-[10px] font-semibold text-mustard-700 ring-1 ring-inset ring-mustard-500/35 transition hover:bg-mustard-500/20 disabled:opacity-60 dark:bg-mustard-400/12 dark:text-mustard-400 dark:ring-mustard-400/30 dark:hover:bg-mustard-400/20">
+          {startNote?.status === "loading"
+            ? <><IconLoader2 size={11} stroke={2.5} className="animate-spin" aria-hidden />{t("workspace.hunkExplaining")}</>
+            : startNote?.status === "done"
+            ? <><IconRefresh size={11} stroke={2.5} aria-hidden />{t("workspace.hunkReexplain")}</>
+            : <><IconSparkles size={11} stroke={2.5} aria-hidden />{t("workspace.hunkExplain")}</>}
+        </button>
+      </div>
+    ) : null;
+    const post = (
+      <Fragment key={`p-${i}`}>
+        {opened && <div id={`prf-${lineN}`}>{lineF.map((f) => (
+          <div key={f.id} style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-mustard-500/30 bg-mustard-50/80 px-3 py-2 font-sans dark:bg-mustard-500/[0.07]">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400">
+              <IconRobot size={11} stroke={2} aria-hidden />{t(`prReview.sev.${f.severity}`)}
+              {f.status === "adopted" && (f.url ? <a href={f.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-emerald-600 hover:underline dark:text-emerald-400"><IconCheck size={10} aria-hidden />{t("prReview.adopted")}</a> : <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400"><IconCheck size={10} aria-hidden />{t("prReview.adopted")}</span>)}
+            </div>
+            <div className="mt-0.5 text-[12px] font-semibold text-zinc-800 dark:text-zinc-100">{f.title}</div>
+            {f.body && <div className="prose prose-sm max-w-none text-[11.5px] leading-relaxed text-zinc-700 dark:prose-invert dark:text-zinc-200 prose-p:my-1"><Markdown>{f.body}</Markdown></div>}
+            {f.status === "open" && (
+              <div className="mt-1 flex gap-1">
+                <button type="button" disabled={posting.has(f.id)} onClick={() => void adoptHere(f)} className="inline-flex items-center gap-1 rounded bg-mustard-500/15 px-1.5 py-0.5 text-[10.5px] font-medium text-mustard-700 hover:bg-mustard-500/25 dark:text-mustard-400"><IconCheck size={11} aria-hidden />{t("prReview.adopt")}</button>
+                <button type="button" onClick={() => { if (!setFindingStatus(root, pr!, f.id, "discarded")) toast(t("prReview.saveFailed"), "error"); }} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"><IconX size={11} aria-hidden />{t("prReview.discard")}</button>
+              </div>
+            )}
+          </div>
+        ))}</div>}
+        {lineT.map((c) => (
+          <div key={`t-${c.id}`} style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 bg-white font-sans dark:bg-[var(--s-pane)]">
+            <Thread root={root} number={pr!} prTitle="" top={c} replies={threads.filter((x) => x.inReplyTo === c.id)} onChanged={reloadThreads} />
+          </div>
+        ))}
+        {lineD.map((d) => (
+          <div key={`d-${d.id}`} style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-dashed border-mustard-500/50 bg-white px-3 py-2 font-sans dark:bg-[var(--s-pane)]">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400">
+              <IconClock size={11} stroke={2} aria-hidden />{t("github.draftPending")}{d.startLine ? ` · ${d.startLine}-${d.line}` : ""}
+              <button type="button" onClick={() => { if (!saveDrafts(root, pr!, removeDraft(loadDrafts(root, pr!), d.id))) toast(t("prReview.saveFailed"), "error"); }}
+                className="ml-auto inline-flex items-center gap-0.5 rounded px-1 font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"><IconX size={11} aria-hidden />{t("github.delete")}</button>
+            </div>
+            <div className="prose prose-sm max-w-none text-[11.5px] leading-relaxed text-zinc-700 dark:prose-invert dark:text-zinc-200 prose-p:my-1"><Markdown>{d.body}</Markdown></div>
+          </div>
+        ))}
+        {composeHere && sel && (
+          <div style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 font-sans">
+            <LineComposer root={root} pr={pr!} file={file} sel={sel} head={head}
+              code={sel.side === "RIGHT" ? rangeRows("RIGHT", sel.start ?? sel.line, sel.line)?.map((k) => lines[k].text) ?? null : null}
+              onClose={() => setPick(null)} onPosted={reloadThreads} />
+          </div>
+        )}
+        {lineNotes.map((n) => (
+          <div key={`n-${n.id}`} style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-dashed border-mustard-500/50 bg-white px-3 py-2 font-sans dark:bg-[var(--s-pane)]">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400">
+              <IconClock size={11} stroke={2} aria-hidden />{n.sentAt ? t("diffNotes.sent") : t("diffNotes.pending")}{n.startLine ? ` · ${n.startLine}-${n.line}` : ""}
+              {n.text !== undefined && n.text !== noteText(n.startLine, n.line) && <span className="font-medium text-amber-600 dark:text-amber-400">· {t("diffNotes.lineChanged")}</span>}
+              <button type="button" onClick={() => { if (!saveDiffNotes(root, removeNote(loadDiffNotes(root), n.id))) toast(t("prReview.saveFailed"), "error"); }}
+                className="ml-auto inline-flex items-center gap-0.5 rounded px-1 font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"><IconX size={11} aria-hidden />{n.sentAt ? t("diffNotes.resolve") : t("github.delete")}</button>
+            </div>
+            <div className="prose prose-sm max-w-none text-[11.5px] leading-relaxed text-zinc-700 dark:prose-invert dark:text-zinc-200 prose-p:my-1"><Markdown>{n.body}</Markdown></div>
+          </div>
+        ))}
+        {noteHere && sel && (
+          <div style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 font-sans">
+            <NoteComposer root={root} file={file} scope={scope} sel={sel} lineText={noteText(sel.start, sel.line)} onClose={() => setPick(null)} />
+          </div>
+        )}
+        {/* 구간 끝: 아래에 노트(변경 코드 밑) */}
+        {endNote?.status === "done" && (
+          <div style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-mustard-500/30 bg-mustard-500/10 px-3 py-2 font-sans backdrop-blur-sm dark:border-mustard-400/30 dark:bg-mustard-400/12">
+            <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400"><IconSparkles size={11} stroke={2.5} aria-hidden />{t("workspace.hunkNote")}</div>
+            <div className="prose prose-sm max-w-none text-[12px] leading-relaxed text-zinc-700 dark:prose-invert dark:text-zinc-200 prose-headings:my-1 prose-headings:text-[12px] prose-headings:font-semibold prose-p:my-1 prose-ul:my-1 prose-li:my-0"><Markdown>{endNote.text ?? ""}</Markdown></div>
+          </div>
+        )}
+        {endNote?.status === "error" && (
+          <div className="my-1 ml-[4.75rem] flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-500"><IconAlertTriangle size={12} stroke={2} aria-hidden />{t("workspace.hunkNoteError")}</div>
+        )}
+      </Fragment>
+    );
+    return { pre, post };
+  };
   const body = (
     <div className={`relative bg-white dark:bg-[var(--s-pane)] min-h-0 flex-1`}
       onMouseEnter={() => { if (hideTimer.current) clearTimeout(hideTimer.current); setShowRuler(true); }}
       onMouseLeave={() => { if (hideTimer.current) clearTimeout(hideTimer.current); hideTimer.current = setTimeout(() => setShowRuler(false), 400); }}>
       <div ref={scrollRef} onScroll={() => { syncVp(); reveal(); }} style={font} className="h-full overflow-auto pr-3 leading-[1.55] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {lines.map((l, i) => {
-        // meta(diff/index/+++/---) + hunk(@@) 헤더 숨김 — -U100000으로 전체 컨텍스트라 생략 구분선 불필요.
-        if (l.kind === "meta" || l.kind === "hunk") return null;
-        const tok = tokens[codeIdx++]; // 이 코드줄의 토큰
-        const runAt = hidden.get(i); // 접힌 줄 — 묶음 첫 줄 자리에만 펼치기 버튼(토큰 순서는 위에서 이미 셈)
-        if (runAt !== undefined) return runAt !== i ? null : (
-          <button key={`fold-${i}`} type="button" onClick={() => setOpenRuns((s) => new Set(s).add(i))}
-            className="sticky left-0 flex w-full items-center gap-1 border-y border-zinc-100 bg-zinc-50 py-0.5 pl-[4.75rem] font-sans text-[10.5px] text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
-            <IconArrowsVertical size={11} stroke={2} aria-hidden />{t("codeDiff.expand", { n: runLen.get(i) ?? 0 })}
-          </button>
-        );
-        const bg = l.kind === "add" ? "bg-emerald-500/20" : l.kind === "del" ? "bg-rose-500/20" : "";
-        const mark = l.kind === "add" ? "+" : l.kind === "del" ? "−" : " ";
-        const markCls = l.kind === "add" ? "text-emerald-600 dark:text-emerald-500" : l.kind === "del" ? "text-rose-600 dark:text-rose-500" : "text-transparent";
-        const startH = pr ? undefined : hunkStart.get(i); // PR diff는 AI 설명 없음 // 구간 시작 → 위에 설명 버튼
-        const endH = pr ? undefined : hunkEnd.get(i); // 구간 끝 → 아래에 노트(PR diff는 없음)
-        const lineF = pr && l.newN != null ? byLine.get(l.newN) : undefined; // #1127 이 줄의 에이전트 지적
-        const lineN = l.newN as number;
-        const side: "LEFT" | "RIGHT" = l.kind === "del" ? "LEFT" : "RIGHT"; // 바뀌지 않은 줄은 새 코드 쪽에
-        const ln = (side === "LEFT" ? l.oldN : l.newN) ?? 0;
-        const selLn = sel?.side === "LEFT" ? l.oldN : l.newN; // 범위 테두리 — LEFT 범위엔 안 바뀐 줄도(옛 번호로)
-        const inSel = !!sel && selLn != null && l.kind !== (sel.side === "LEFT" ? "add" : "del") && selLn >= (sel.start ?? sel.line) && selLn <= sel.line;
-        const lineD = pr ? draftAt.get(`${side}:${ln}`) ?? [] : [];
-        const composeHere = !!sel && !!head && sel.side === side && sel.line === ln;
-        const lineT = pr ? [...(l.oldN != null && l.kind !== "add" ? threadAt.get(`LEFT:${l.oldN}`) ?? [] : []), ...(l.newN != null ? threadAt.get(`RIGHT:${l.newN}`) ?? [] : [])] : [];
-        const row = (
-          <div key={i} className={`group relative flex ${wrap ? "w-full" : "w-max min-w-full"} ${bg} ${lineF || inSel ? "ring-1 ring-inset ring-mustard-500/70" : ""}`}>
-            {/* #1127 지적 있는 줄 — 옛 줄번호 칸 왼쪽에 눈에 띄는 배지(오른쪽 정렬 번호는 3자리까지 안 가림, 코드 정렬 그대로), 누르면 지적 펼침 */}
-            {lineF && (
-              <button type="button" title={lineF.map((f) => f.title).join("\n")} aria-label={`${t("github.tabAgentReview")}: ${lineF.map((f) => f.title).join(", ")}`} aria-expanded={openLines.has(lineN)} aria-controls={`prf-${lineN}`}
-                onClick={() => setOpenLines((s) => { const x = new Set(s); if (x.has(lineN)) x.delete(lineN); else x.add(lineN); return x; })}
-                className="absolute inset-y-px left-0 z-[1] flex w-[14px] items-center justify-center rounded-r bg-mustard-500 text-brown-900 shadow-sm hover:bg-mustard-400">
-                <IconRobot size={12} stroke={2.2} aria-hidden />
-              </button>
-            )}
-            <span className="w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">{l.oldN ?? ""}</span>
-            {/* #1145 줄 댓글 + — 새 줄번호 칸 왼쪽, 줄에 올리면 보임. Shift+누름 = 범위. 이 diff의 커밋을 모르면(받는 사이 push·조회 실패) 없음 — 지금 head로 달면 엉뚱한 줄(리뷰) */}
-            {pr && head && ln > 0 && near[i] && (
-              <button type="button" onClick={(e) => choose(side, ln, e.shiftKey)} title={t("github.lineCommentAdd")} aria-label={`${t("github.lineCommentAdd")} ${ln}`}
-                className="absolute inset-y-px left-9 z-[1] flex w-[14px] items-center justify-center rounded bg-mustard-500 text-brown-900 opacity-0 shadow-sm hover:bg-mustard-400 focus:opacity-100 group-hover:opacity-100">
-                <IconPlus size={11} stroke={2.6} aria-hidden />
-              </button>
-            )}
-            {/* #1169 작업 폴더·커밋 diff — 새 코드 줄에 메모 +(Shift = 범위), 모은 메모는 위 막대에서 에이전트로. PR diff와 같은 모양 */}
-            {!pr && side === "RIGHT" && ln > 0 && (
-              <button type="button" onClick={(e) => choose(side, ln, e.shiftKey)} title={t("diffNotes.add")} aria-label={`${t("diffNotes.add")} ${ln}`}
-                className="absolute inset-y-px left-9 z-[1] flex w-[14px] items-center justify-center rounded bg-mustard-500 text-brown-900 opacity-0 shadow-sm hover:bg-mustard-400 focus:opacity-100 group-hover:opacity-100">
-                <IconPlus size={11} stroke={2.6} aria-hidden />
-              </button>
-            )}
-            <span className="w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">{l.newN ?? ""}</span>
-            <span className={`w-4 shrink-0 select-none text-center ${markCls}`}>{mark}</span>
-            {/* #1218 줄바꿈이면 남은 폭 안에서 다음 줄로(넘치는 긴 낱말만 끊음), 공백 보이기면 ·/→ */}
-            <span className={wrap ? "min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] px-1" : "whitespace-pre px-1"}>
-              {tok ? tok.map((tk, j) => <span key={j} style={{ color: tk.color }}>{txt(tk.content)}</span>) : <span className="text-zinc-700 dark:text-zinc-200">{txt(l.text)}</span>}
-            </span>
-          </div>
-        );
-        if (lineF || lineT.length || lineD.length || composeHere) {
-          const opened = !!lineF && openLines.has(l.newN as number);
-          return (
-            <Fragment key={`f-${i}`}>
-              {row}
-              {opened && <div id={`prf-${lineN}`}>{lineF.map((f) => (
-                <div key={f.id} style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-mustard-500/30 bg-mustard-50/80 px-3 py-2 font-sans dark:bg-mustard-500/[0.07]">
-                  <div className="flex items-center gap-1.5 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400">
-                    <IconRobot size={11} stroke={2} aria-hidden />{t(`prReview.sev.${f.severity}`)}
-                    {f.status === "adopted" && (f.url ? <a href={f.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-emerald-600 hover:underline dark:text-emerald-400"><IconCheck size={10} aria-hidden />{t("prReview.adopted")}</a> : <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400"><IconCheck size={10} aria-hidden />{t("prReview.adopted")}</span>)}
-                  </div>
-                  <div className="mt-0.5 text-[12px] font-semibold text-zinc-800 dark:text-zinc-100">{f.title}</div>
-                  {f.body && <div className="prose prose-sm max-w-none text-[11.5px] leading-relaxed text-zinc-700 dark:prose-invert dark:text-zinc-200 prose-p:my-1"><Markdown>{f.body}</Markdown></div>}
-                  {f.status === "open" && (
-                    <div className="mt-1 flex gap-1">
-                      <button type="button" disabled={posting.has(f.id)} onClick={() => void adoptHere(f)} className="inline-flex items-center gap-1 rounded bg-mustard-500/15 px-1.5 py-0.5 text-[10.5px] font-medium text-mustard-700 hover:bg-mustard-500/25 dark:text-mustard-400"><IconCheck size={11} aria-hidden />{t("prReview.adopt")}</button>
-                      <button type="button" onClick={() => { if (!setFindingStatus(root, pr!, f.id, "discarded")) toast(t("prReview.saveFailed"), "error"); }} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"><IconX size={11} aria-hidden />{t("prReview.discard")}</button>
-                    </div>
-                  )}
-                </div>
-              ))}</div>}
-              {lineT.map((c) => (
-                <div key={`t-${c.id}`} style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 bg-white font-sans dark:bg-[var(--s-pane)]">
-                  <Thread root={root} number={pr!} prTitle="" top={c} replies={threads.filter((x) => x.inReplyTo === c.id)} onChanged={reloadThreads} />
-                </div>
-              ))}
-              {lineD.map((d) => (
-                <div key={`d-${d.id}`} style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-dashed border-mustard-500/50 bg-white px-3 py-2 font-sans dark:bg-[var(--s-pane)]">
-                  <div className="flex items-center gap-1.5 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400">
-                    <IconClock size={11} stroke={2} aria-hidden />{t("github.draftPending")}{d.startLine ? ` · ${d.startLine}-${d.line}` : ""}
-                    <button type="button" onClick={() => { if (!saveDrafts(root, pr!, removeDraft(loadDrafts(root, pr!), d.id))) toast(t("prReview.saveFailed"), "error"); }}
-                      className="ml-auto inline-flex items-center gap-0.5 rounded px-1 font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"><IconX size={11} aria-hidden />{t("github.delete")}</button>
-                  </div>
-                  <div className="prose prose-sm max-w-none text-[11.5px] leading-relaxed text-zinc-700 dark:prose-invert dark:text-zinc-200 prose-p:my-1"><Markdown>{d.body}</Markdown></div>
-                </div>
-              ))}
-              {composeHere && sel && (
-                <div style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 font-sans">
-                  <LineComposer root={root} pr={pr!} file={file} sel={sel} head={head}
-                    code={sel.side === "RIGHT" ? rangeRows("RIGHT", sel.start ?? sel.line, sel.line)?.map((k) => lines[k].text) ?? null : null}
-                    onClose={() => setPick(null)} onPosted={reloadThreads} />
-                </div>
-              )}
-            </Fragment>
-          );
-        }
-        // #1169 이 줄의 메모 + 입력칸(PR 아닌 diff)
-        const lineNotes = !pr && side === "RIGHT" ? noteAt.get(ln) ?? [] : [];
-        const noteHere = !pr && !!sel && sel.side === "RIGHT" && side === "RIGHT" && sel.line === ln;
-        const extra = lineNotes.length || noteHere ? (
-          <>
-            {lineNotes.map((n) => (
-              <div key={`n-${n.id}`} style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-dashed border-mustard-500/50 bg-white px-3 py-2 font-sans dark:bg-[var(--s-pane)]">
-                <div className="flex items-center gap-1.5 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400">
-                  <IconClock size={11} stroke={2} aria-hidden />{n.sentAt ? t("diffNotes.sent") : t("diffNotes.pending")}{n.startLine ? ` · ${n.startLine}-${n.line}` : ""}
-                  {n.text !== undefined && n.text !== noteText(n.startLine, n.line) && <span className="font-medium text-amber-600 dark:text-amber-400">· {t("diffNotes.lineChanged")}</span>}
-                  <button type="button" onClick={() => { if (!saveDiffNotes(root, removeNote(loadDiffNotes(root), n.id))) toast(t("prReview.saveFailed"), "error"); }}
-                    className="ml-auto inline-flex items-center gap-0.5 rounded px-1 font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"><IconX size={11} aria-hidden />{n.sentAt ? t("diffNotes.resolve") : t("github.delete")}</button>
-                </div>
-                <div className="prose prose-sm max-w-none text-[11.5px] leading-relaxed text-zinc-700 dark:prose-invert dark:text-zinc-200 prose-p:my-1"><Markdown>{n.body}</Markdown></div>
-              </div>
-            ))}
-            {noteHere && sel && (
-              <div style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 font-sans">
-                <NoteComposer root={root} file={file} scope={scope} sel={sel} lineText={noteText(sel.start, sel.line)} onClose={() => setPick(null)} />
-              </div>
-            )}
-          </>
-        ) : null;
-        if (!startH && !endH) return extra ? <Fragment key={`n-${i}`}>{row}{extra}</Fragment> : row;
-        const startNote = startH ? notes[hunkKey(startH)] : undefined;
-        const endNote = endH ? notes[hunkKey(endH)] : undefined;
-        return (
-          <Fragment key={`h-${i}`}>
-            {/* 구간 시작: 위에 설명 버튼 */}
-            {startH && (
-              <div className="flex items-center py-1 pl-[4.75rem]">
-                <button type="button" onClick={() => void explainHunk(startH)} disabled={startNote?.status === "loading"}
-                  className="inline-flex items-center gap-1 rounded-md bg-mustard-500/12 px-2 py-0.5 text-[10px] font-semibold text-mustard-700 ring-1 ring-inset ring-mustard-500/35 transition hover:bg-mustard-500/20 disabled:opacity-60 dark:bg-mustard-400/12 dark:text-mustard-400 dark:ring-mustard-400/30 dark:hover:bg-mustard-400/20">
-                  {startNote?.status === "loading"
-                    ? <><IconLoader2 size={11} stroke={2.5} className="animate-spin" aria-hidden />{t("workspace.hunkExplaining")}</>
-                    : startNote?.status === "done"
-                    ? <><IconRefresh size={11} stroke={2.5} aria-hidden />{t("workspace.hunkReexplain")}</>
-                    : <><IconSparkles size={11} stroke={2.5} aria-hidden />{t("workspace.hunkExplain")}</>}
-                </button>
-              </div>
-            )}
-            {row}
-            {extra}
-            {/* 구간 끝: 아래에 노트(변경 코드 밑) */}
-            {endNote?.status === "done" && (
-              <div style={boxW} className="sticky left-0 z-[5] my-1 ml-2.5 rounded-lg border border-mustard-500/30 bg-mustard-500/10 px-3 py-2 font-sans backdrop-blur-sm dark:border-mustard-400/30 dark:bg-mustard-400/12">
-                <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold text-mustard-700 dark:text-mustard-400"><IconSparkles size={11} stroke={2.5} aria-hidden />{t("workspace.hunkNote")}</div>
-                <div className="prose prose-sm max-w-none text-[12px] leading-relaxed text-zinc-700 dark:prose-invert dark:text-zinc-200 prose-headings:my-1 prose-headings:text-[12px] prose-headings:font-semibold prose-p:my-1 prose-ul:my-1 prose-li:my-0"><Markdown>{endNote.text ?? ""}</Markdown></div>
-              </div>
-            )}
-            {endNote?.status === "error" && (
-              <div className="my-1 ml-[4.75rem] flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-500"><IconAlertTriangle size={12} stroke={2} aria-hidden />{t("workspace.hunkNoteError")}</div>
-            )}
-          </Fragment>
-        );
-      })}
+      {view === "split"
+        ? units.map((u) => {
+            // #1218 나란히 — 안 바뀐 줄은 양쪽에 같은 줄, 지운 줄·추가 줄 묶음은 차례로 짝지음(남는 쪽은 빈 칸)
+            if (u.l === u.r) { const fb = foldBtn(u.l!); if (fb !== undefined) return fb; }
+            const ps = [...new Set([u.l, u.r])].filter((x): x is number => x !== undefined).map(parts);
+            return (
+              <Fragment key={`u-${u.l ?? "x"}-${u.r ?? "x"}`}>
+                {ps.map((p) => p.pre)}
+                <div className="flex w-full">{half(u.l, "LEFT")}{half(u.r, "RIGHT")}</div>
+                {ps.map((p) => p.post)}
+              </Fragment>
+            );
+          })
+        : lines.map((l, i) => {
+            // meta(diff/index/+++/---) + hunk(@@) 헤더 숨김 — -U100000으로 전체 컨텍스트라 생략 구분선 불필요.
+            if (l.kind === "meta" || l.kind === "hunk") return null;
+            const fb = foldBtn(i);
+            if (fb !== undefined) return fb;
+            const p = parts(i);
+            return <Fragment key={i}>{p.pre}{unifiedRow(i)}{p.post}</Fragment>;
+          })}
       </div>
       {/* 오른쪽 오버뷰 미니맵 스크롤바 — 트랙 + 변경 마크(초록/빨강) + 잡을 수 있는 뷰포트 썸. 드래그/클릭 이동. */}
       <div ref={rulerRef} onMouseDown={rulerDown} className="absolute inset-y-0 right-0 w-3.5 cursor-pointer border-l border-zinc-200 bg-zinc-100/70 dark:border-zinc-800 dark:bg-zinc-800/40">
