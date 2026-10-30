@@ -39,6 +39,7 @@ export const TERMINAL_DEFAULTS = {
   macOptionIsMeta: false,                      // mac Option→Alt(옛 스위치 — #1213부터 macOptionAsAlt로 옮겨 읽음)
   focusFollowsMouse: false,                    // 마우스 올리면 포커스
   linkTarget: "app" as "app" | "external",     // #1193 터미널 웹 링크 ⌘+클릭 = 앱 안 브라우저 / 외부 브라우저
+  linkClick: "open" as "open" | "menu" | "off", // #1224 링크 클릭 = 바로 열기/메뉴/열지 않음
   shell: "",                                   // #1196 셸 절대 경로(비우면 로그인 셸), 새 탭부터
   osc52: true,                                 // #1196 프로그램이 클립보드에 쓰기(OSC 52, 읽기는 항상 막음)
   images: true,                                // #1196 인라인 이미지(sixel·iTerm), 새 탭부터
@@ -80,6 +81,7 @@ export const TKEYS = {
   macOptionAsAlt: "terminal.macOptionAsAlt", // #1213 auto·both·left·right·off(없으면 옛 스위치에서)
   focusFollowsMouse: "terminal.focusFollowsMouse",
   linkTarget: "terminal.linkTarget",
+  linkClick: "terminal.linkClick",
   shell: "terminal.shell",
   osc52: "terminal.osc52",
   images: "terminal.images",

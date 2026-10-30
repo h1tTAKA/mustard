@@ -1,9 +1,10 @@
 "use client";
 // 워크스페이스 터미널(#647) — xterm.js(WebGL) 프론트 + detached pty 데몬 세션(#682).
 // pty는 앱과 분리된 데몬이 소유해 앱 종료에도 생존, 재마운트/재실행 시 scrollback 재생 + live reattach.
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { findLinks, resolvePath, type TerminalLink } from "@/lib/terminalLinks";
+import TerminalLinkMenu, { type TerminalLinkMenuState } from "./TerminalLinkMenu";
 import { useT, currentTerminalTheme, isCurrentTerminalDark, TERMINAL_THEME_EVENT, getSetting, subscribeSettings, TKEYS, TERMINAL_DEFAULTS, registerShortcut, trimSelectionGutter, readMacOptionAsAlt, effectiveMacOptionAsAlt, altCharForCode, jisYenInput, DEFAULT_WORD_SEPARATOR, parseShellArgs, readGpuMode, gpuAllowed, resolveMinContrast, isLightColor, readFontWeight, readPadding, withAlpha } from "@mustard/core";
 import { inputSourceId, refreshInputSource, subscribeInputSource } from "@/lib/inputSource";
 
@@ -57,9 +58,14 @@ const withMod = (ev: MouseEvent) => (isMac ? ev.metaKey : ev.ctrlKey);
 // #1209 여는 클릭 = ⌘/Ctrl+왼쪽 클릭 또는 가운데 클릭(브라우저 관례). ⌘⇧클릭 = 웹 링크를 설정과 반대쪽(앱 안 ↔ 외부)으로 이번만.
 const opens = (ev: MouseEvent) => (ev.button === 1 && !isLinux) || (ev.button === 0 && withMod(ev)); // 리눅스 가운데 클릭 = 붙여넣기 관례라 거기선 안 엶(리뷰)
 const flips = (ev: MouseEvent) => ev.button === 0 && ev.shiftKey;
+// #1224 링크 클릭 동작 — 바로 열기(기본)/메뉴/열지 않음(밑줄도 안 그림)
+const linkClick = () => getSetting<"open" | "menu" | "off">(TKEYS.linkClick, TERMINAL_DEFAULTS.linkClick);
 function openTerminalLink(cwd: string, l: TerminalLink | { kind: "url"; url: string }, flip = false) {
   const external = getSetting<string>(TKEYS.linkTarget, TERMINAL_DEFAULTS.linkTarget) === "external";
-  if (l.kind === "url" && external !== flip) { void window.nunopiDesktop?.openExternal?.(l.url); return; }
+  openLinkIn(cwd, l, external !== flip);
+}
+function openLinkIn(cwd: string, l: TerminalLink | { kind: "url"; url: string }, external: boolean) {
+  if (l.kind === "url" && external) { void window.nunopiDesktop?.openExternal?.(l.url); return; }
   const detail: TerminalLinkDetail = l.kind === "url" ? { cwd, kind: "url", url: l.url } : { cwd, kind: "file", path: l.path, line: l.line };
   window.dispatchEvent(new CustomEvent(TERMINAL_LINK_EVENT, { detail }));
 }
@@ -112,6 +118,8 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
   const tRef = useRef(t);
   useEffect(() => { tRef.current = t; }, [t]); // 최신 t 유지 — locale 바뀌어도 터미널 remount 없이 exit 안내 언어 반영
   const hostRef = useRef<HTMLDivElement>(null);
+  const [linkMenu, setLinkMenu] = useState<(TerminalLinkMenuState & { cwd: string }) | null>(null);
+  const closeLinkMenu = useCallback(() => setLinkMenu(null), []);
 
   useEffect(() => {
     const nd = window.nunopiDesktop;
@@ -132,6 +140,12 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
     let osc52Disp: { dispose(): void } | null = null;
     // 셸의 지금 폴더 — 셸이 OSC 7(file://호스트/경로)을 보내면 따라감(cd 뒤 상대 경로 링크용, 리뷰). 안 보내면 터미널을 연 폴더.
     let shellCwd = cwd;
+    const clickLink = (ev: MouseEvent, l: TerminalLink | { kind: "url"; url: string }) => {
+      if (!opens(ev)) return;
+      const mode = linkClick();
+      if (mode === "menu") setLinkMenu({ x: ev.clientX, y: ev.clientY, link: l, cwd: shellCwd });
+      else if (mode === "open") openTerminalLink(shellCwd, l, flips(ev));
+    };
     // #1027 ⌘K(터미널 포커스) = 화면 지우기 — 포커스가 이 터미널 안일 때만 처리(다른 터미널·탭이면 false로 넘김).
     const offClear = registerShortcut(["term.clear"], () => { if (!term || !host.contains(document.activeElement)) return false; term.clear(); });
     let onCtx: ((e: MouseEvent) => void) | null = null;
@@ -149,7 +163,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       ]);
       if (disposed) return;
       // OSC 8 하이퍼링크(요즘 CLI가 찍는 숨은 링크)도 같은 규칙 — http(s)만
-      term = new XTerm({ ...termOptionsFromSettings(), theme: buildTermTheme(), linkHandler: { activate: (ev, uri) => { if (opens(ev) && /^https?:\/\//i.test(uri)) openTerminalLink(shellCwd, { kind: "url", url: uri }, flips(ev)); } } });
+      term = new XTerm({ ...termOptionsFromSettings(), theme: buildTermTheme(), linkHandler: { activate: (ev, uri) => { if (/^https?:\/\//i.test(uri)) clickLink(ev, { kind: "url", url: uri }); } } });
       if (host) host.style.background = buildTermTheme().background;
       const fit = new FitAddon();
       term.loadAddon(fit);
@@ -182,13 +196,13 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       linkDisp = term.registerLinkProvider({
         provideLinks(y, cb) {
           const ln = term?.buffer.active.getLine(y - 1);
-          if (!ln) return cb(undefined);
+          if (!ln || linkClick() === "off") return cb(undefined);
           const { text, col, wid } = lineText(ln);
           const links = findLinks(text).map((l) => ({
             text: l.text,
             range: { start: { x: col[l.start] + 1, y }, end: { x: col[l.start + l.text.length - 1] + wid[l.start + l.text.length - 1], y } }, // 끝 글자가 두 칸이면 둘째 칸까지(리뷰)
             decorations: { underline: true, pointerCursor: true },
-            activate: (ev: MouseEvent) => { if (opens(ev)) openTerminalLink(shellCwd, l, flips(ev)); },
+            activate: (ev: MouseEvent) => clickLink(ev, l),
           }));
           cb(links.length ? links : undefined);
         },
@@ -393,5 +407,10 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
 
   // 초기 배경도 현재 터미널 테마에 맞춰(라이트 앱 첫 프레임 다크 깜빡임 방지). 클라이언트 전용 pane이라 안전.
   const initialBg = typeof document !== "undefined" ? buildTermTheme().background : "#0a0a0a"; // #956 pref별 배경(검정/그레이/흰색)
-  return <div ref={hostRef} className="h-full w-full overflow-hidden" style={{ background: initialBg, padding: padding() }} />;
+  return (
+    <>
+      <div ref={hostRef} className="h-full w-full overflow-hidden" style={{ background: initialBg, padding: padding() }} />
+      {linkMenu && <TerminalLinkMenu menu={linkMenu} onClose={closeLinkMenu} onOpen={(external) => openLinkIn(linkMenu.cwd, linkMenu.link, external)} />}
+    </>
+  );
 }
