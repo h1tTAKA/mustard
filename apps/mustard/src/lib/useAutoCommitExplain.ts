@@ -53,7 +53,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     if (!on) { try { localStorage.removeItem(stateKey); } catch { /* ignore */ } return; } // 다시 켜면 그때부터
     // pending = 세션 턴이 아직 안 끝나 카드를 미룬 커밋(#1064) — 다음 주기마다 다시, 20분 지나면 그대로 만듦
     type Pend = { hash: string; ts: number; ms?: number; subject: string; branch: string; at: number; early?: 1; retryAt?: number; merge?: boolean; errAt?: number; rv?: 1 }; // rv = 되살리기로 넣은 것(새 커밋 뒤에 처리)
-    type State = { since: number; done: string[]; sessSince?: number; queued?: string[]; noSession?: string[]; hasCard?: string[]; from?: number; pending?: Pend[]; revived?: number; reviveTries?: number; reviveAt?: number };
+    type State = { since: number; done: string[]; sessSince?: number; queued?: string[]; noSession?: string[]; hasCard?: string[]; from?: number; pending?: Pend[]; revived?: number; reviveTries?: number; reviveAt?: number; nsv?: 1 };
     const read = (): State | null => { try { return JSON.parse(localStorage.getItem(stateKey) || "null") as State | null; } catch { return null; } };
     const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
     let alive = true, busy = false, sbusy = false, fbusy = false; // #1264 diff 줄(busy)·세션 줄 세우기(sbusy)·세션 카드 만들기(fbusy)는 따로 돎
@@ -203,6 +203,8 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
       try {
         let st = read();
         if (!st) return; // 처음 상태는 diff 줄이 만듦
+        // #1269 옛 판정(파일 수정 시각 -1초)으로 잘못 '세션 없음'에 든 머지를 되살리기가 다시 보게 한 번 비움 — 사람 커밋은 다시 none이 됨(한 번뿐)
+        if (!st.nsv) { st = { ...st, noSession: [], nsv: 1, reviveAt: 0 }; write(st); } // reviveAt 0 = 이번 주기에 바로 되살리기
         // 세션 분석이 꺼져 있는 동안엔 from·sessSince를 지금으로 — 다시 켰을 때 꺼져 있던 동안의 커밋을 한꺼번에 요약하지 않게(리뷰)
         if (!cfg.current.sessOn) { const now = Math.floor(Date.now() / 1000); write({ ...st, from: now, sessSince: now, pending: [] }); return; } // 미룬 것도 버림(예전 동작, 리뷰)
         const sessSince = st.sessSince ?? st.since;
