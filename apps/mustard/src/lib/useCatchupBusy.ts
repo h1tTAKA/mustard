@@ -11,10 +11,10 @@ export function useCatchupBusy(root: string, poll: boolean): BusyCounts & { tota
     if (!poll) return;
     let alive = true;
     const ask = () => fetch(`/api/repo/learn/busy?root=${encodeURIComponent(root)}`).then((r) => r.json())
-      .then((j) => { if (alive && typeof j?.narrating === "number") setNarrating(j.narrating); }).catch(() => {});
+      .then((j) => { if (alive && typeof j?.narrating === "number") setNarrating(j.narrating); }).catch(() => { if (alive) setNarrating(0); }); // 실패면 옛 수에 고정되지 않게(리뷰)
     void ask();
     const id = setInterval(() => void ask(), 3000);
-    return () => { alive = false; clearInterval(id); };
+    return () => { alive = false; clearInterval(id); setNarrating(0); }; // 그만 물어보거나 레포가 바뀌면 옛 수 비움(리뷰)
   }, [poll, root]);
   const explain = local.explain + (poll ? narrating : 0); // 안 물어보는 동안의 옛 값은 안 셈
   return { ...local, explain, total: explain + local.commands + local.diff + local.session };
