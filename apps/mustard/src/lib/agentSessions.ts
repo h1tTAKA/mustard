@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { projectDirFor } from "@/lib/subagents";
-import { parseClaudeLine, parseCodexLine, segmentForCommit, activityInWindow, parseCursorMessages, parseAntigravitySteps, asIs, type AgentKind, type SessionMsg, type WindowActivity, type ParsedLine } from "@/lib/agentSessionParse";
+import { parseClaudeLine, parseCodexLine, segmentForCommit, MERGE_WINDOW_MS, activityInWindow, parseCursorMessages, parseAntigravitySteps, asIs, type AgentKind, type SessionMsg, type WindowActivity, type ParsedLine } from "@/lib/agentSessionParse";
 import { DatabaseSync } from "node:sqlite"; // #1086 Cursor·Antigravity 기록(SQLite) — Node 22+/Electron 내장, 추가 의존성 없음
 
 const TAIL_BYTES = 8 * 1024 * 1024;   // 보통은 끝 8MB — 방금 커밋이라 끝에 있음
@@ -85,7 +85,9 @@ async function sqlSessions(root: string, sinceMs: number): Promise<SqlSession[]>
 }
 
 export async function findCommitSession(root: string, commitSec: number, isMerge = false): Promise<CommitSession | null> {
-  const sinceMs = commitSec * 1000 - 1000;
+  // #1269 머지는 호출 창과 같게 — 'CI 기다렸다 머지' 같은 긴 명령은 도는 동안 기록 파일이 안 바뀌어 수정 시각이 머지보다 앞섬(예전 -1초면 그 세션이 빠져 머지 카드가 영영 안 생겼음).
+  //  일반 커밋은 그대로 -1초 — 넓히면 멈춘 지 몇 분 된 에이전트 세션의 옛 커밋 호출이 사람 커밋에 붙음(리뷰)
+  const sinceMs = commitSec * 1000 - (isMerge ? MERGE_WINDOW_MS : 1000);
   const found: CommitSession[] = [];
   // Claude Code — 레포 경로별 폴더
   for (const f of await recentFiles(projectDirFor(root), sinceMs)) {

@@ -76,6 +76,11 @@ assert.ok(!sbt.includes("커밋 a 완료했습니다"));
 const sm = segmentForCommit(flow, parseClaudeLine, MG, true)!;
 assert.deepStrictEqual(sm.msgs.filter((m) => m.role !== "tool").map((m) => m.text), ["머지 ㄱㄱ", "머지했습니다 ~~"], "머지 카드 = 커밋 b 뒤 ~ '머지했습니다'");
 assert.strictEqual(segmentForCommit(flow, parseClaudeLine, MG, false), null, "머지 시각엔 일반 커밋 호출 없음");
+// #1269 'CI 기다렸다 머지' — 호출 시작이 머지 30분 전이어도 머지 호출로 찾음(일반 커밋 창 15분은 그대로)
+const ciWait = [cl("user", "CI 끝나면 머지", MG - 1900), bash("until gh run list | grep -q success; do sleep 30; done; gh pr merge 9 --merge", MG - 1800)];
+assert.ok(segmentForCommit(ciWait, parseClaudeLine, MG, true), "긴 CI 대기 뒤 머지도 찾음");
+assert.strictEqual(segmentForCommit([cl("user", "커밋", MG - 1900), bash("git commit -m late", MG - 1800)], parseClaudeLine, MG), null, "일반 커밋은 15분 창 그대로");
+assert.strictEqual(segmentForCommit([cl("user", "pull", MG - 1900), bash("git pull", MG - 1800)], parseClaudeLine, MG, true), null, "머지의 pull 대체도 15분 창 그대로");
 const big = [cl("user", "시작", T - 800), ...Array.from({ length: 400 }, (_, i) => cl("assistant", [{ type: "text", text: `m${i}` }], T - 700 + i)), bash("git commit -m z", T - 2)];
 assert.strictEqual(segmentForCommit(big, parseClaudeLine, T)!.msgs.length, 402, "메시지 수 상한 없음");
 // 리뷰: 한 응답에 [커밋 호출, 글] 순서 — 호출 위치가 정확해야 결과·마무리 경계가 맞음
