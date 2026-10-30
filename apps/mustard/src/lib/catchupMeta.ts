@@ -6,7 +6,7 @@ export const byNewest = (a: { ts: number; key: string }, b: { ts: number; key: s
 // #1255 같은 초에 커밋 여러 개면 시각이 같아 key(해시 글자) 순으로 뒤섞임 → 커밋 순서로 ms를 나눔.
 // newestFirst = git log --date-order 순서(자식이 부모보다 먼저). ms = 초×1000 + (같은 초 중 나보다 오래된 커밋 수, 최대 999).
 // "오래된 수"로 세는 이유: 같은 초 커밋이 나중 주기에 더 와도(앞에 붙음) 이미 만든 카드의 ms가 안 바뀜.
-// 목록이 개수 상한에서 잘리면 잘린 같은 초 커밋도 세야 함 — git-recent가 가장 이른 초부터 다시 받은 전체 목록을 넘김.
+// 목록이 개수 상한에서 잘리면 잘린 같은 초 커밋도 세야 함 — git-recent 서버가 더 넓게 다시 받은 목록으로 ms만 계산(응답 목록은 그대로).
 export function commitMs<T extends { ts: number }>(newestFirst: T[]): (T & { ms: number })[] {
   return newestFirst.map((c, i) => ({ ...c, ms: c.ts * 1000 + Math.min(999, newestFirst.slice(i + 1).filter((o) => o.ts === c.ts).length) }));
 }
