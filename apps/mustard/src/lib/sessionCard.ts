@@ -30,7 +30,7 @@ export interface LinkedSession { agent: string; sessionId: string; branch?: stri
 // 세션 찾기 → 요약 → 카드 항목. 세션 없으면(사람이 직접 커밋 등) "none".
 // 턴이 아직 안 끝났으면 "wait"(마무리 말까지 담으려고 — 다음 주기에 다시). force면 안 끝났어도 만듦(오래 기다린 경우).
 export async function buildSessionItem(root: string, hash: string, ts: number, subject: string, branch: string,
-  providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string, force = false, merge = false) {
+  providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string, force = false, merge = false, cardMs?: number) {
   const r = await fetch("/api/repo/session-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, hash, ts, merge, branch }) });
   const j = await r.json().catch(() => null);
   // #1235 서버 오류·JSON 아님은 "세션 없음"이 아님 — 다음 주기에 다시(예전엔 none으로 버려 머지 카드가 영영 빠졌음). none은 서버가 ok로 null을 줄 때만.
@@ -47,6 +47,6 @@ export async function buildSessionItem(root: string, hash: string, ts: number, s
   }
   return {
     key: sessionItemKey(hash), kind: "session", target: `${subject || hash.slice(0, 7)} @${hash.slice(0, 7)}`,
-    tool: [s.crew?.length && s.agent !== "crew" ? `Crew/${AGENT_LABEL[s.agent] ?? s.agent}` : AGENT_LABEL[s.agent] ?? s.agent, s.branch || branch].filter(Boolean).join(" · ").slice(0, 200), ts: ts > 0 ? Math.min(ts * 1000, Date.now()) : Date.now(), expl: expl.slice(0, 8000), // #1244 카드 시각 = 커밋(머지) 시각 — 늦게·되살려 만들어도 그 자리에(미래·0이면 지금, 리뷰)
+    tool: [s.crew?.length && s.agent !== "crew" ? `Crew/${AGENT_LABEL[s.agent] ?? s.agent}` : AGENT_LABEL[s.agent] ?? s.agent, s.branch || branch].filter(Boolean).join(" · ").slice(0, 200), ts: cardMs && cardMs > 0 ? Math.min(cardMs, Date.now()) : ts > 0 ? Math.min(ts * 1000, Date.now()) : Date.now(), expl: expl.slice(0, 8000), // #1244 카드 시각 = 커밋(머지) 시각 — 늦게·되살려 만들어도 그 자리에(미래·0이면 지금, 리뷰)
   };
 }

@@ -1,6 +1,6 @@
 // catchupMeta 점검 — node --experimental-strip-types src/lib/catchupMeta.check.ts
 import assert from "node:assert";
-import { byNewest, cardMeta, collectFacets, tagMatches } from "./catchupMeta.ts";
+import { byNewest, cardMeta, collectFacets, commitMs, tagMatches } from "./catchupMeta.ts";
 
 const diff = (hash: string, tool: string, ts: number) => ({ kind: "diff", key: `diff|${hash}|a.ts`, tool, target: `a.ts @${hash.slice(0, 7)}`, ts });
 const sess = (hash: string, tool: string, subject: string, ts: number) => ({ kind: "session", key: `session|${hash}`, tool, target: `${subject} @${hash.slice(0, 7)}`, ts });
@@ -28,4 +28,6 @@ assert.strictEqual(f.hash[0].ts, 30, "해시 시각 = 가장 최신 카드");
 assert.strictEqual(collectFacets(Array.from({ length: 80 }, (_, i) => diff(`${String(i).padStart(7, "0")}abc`, `b${i} · s`, 100 - i)), 50).branch.length, 50, "종류마다 상한");
 // #1244 같은 시각이면 key 순서(diff → session), 아니면 최신 먼저
 assert.deepStrictEqual([{ ts: 5, key: "session|a" }, { ts: 5, key: "diff|a|y" }, { ts: 9, key: "z" }, { ts: 5, key: "diff|a|x" }].sort(byNewest).map((x) => x.key), ["z", "diff|a|x", "diff|a|y", "session|a"]);
+// #1255 같은 초 커밋 = 커밋 순서(최신이 큼), 다른 초는 그대로
+assert.deepStrictEqual(commitMs([{ ts: 20 }, { ts: 10 }, { ts: 10 }, { ts: 10 }, { ts: 9 }]).map((c) => c.ms), [20000, 10002, 10001, 10000, 9000]);
 console.log("catchupMeta.check ok");

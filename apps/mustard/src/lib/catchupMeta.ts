@@ -3,6 +3,11 @@
 export type TagType = "agent" | "branch" | "hash";
 // #1244 카드 정렬 — 최신 먼저, 같은 시각(한 커밋의 diff 여러 장·세션 카드)이면 key 순서(diff → session)로 늘 같게(실시간·새로고침이 같은 순서, 리뷰)
 export const byNewest = (a: { ts: number; key: string }, b: { ts: number; key: string }) => b.ts - a.ts || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+// #1255 같은 초에 커밋 여러 개면 시각이 같아 key(해시 글자) 순으로 뒤섞임 → 커밋 순서로 ms를 나눔.
+// newestFirst = git log --date-order 순서(자식이 부모보다 먼저). ms = 초×1000 + (같은 초 중 나보다 오래된 커밋 수, 최대 999).
+export function commitMs<T extends { ts: number }>(newestFirst: T[]): (T & { ms: number })[] {
+  return newestFirst.map((c, i) => ({ ...c, ms: c.ts * 1000 + Math.min(999, newestFirst.slice(i + 1).filter((o) => o.ts === c.ts).length) }));
+}
 type Card = { kind: string; key: string; tool: string; target?: string; ts?: number };
 
 export function cardMeta(c: Card): { hash: string; branch: string; agent: string } | null {
