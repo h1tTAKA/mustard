@@ -10,10 +10,11 @@ import TerminalSessionsSection from "./TerminalSessionsSection";
 import TerminalKeyboardSection from "./TerminalKeyboardSection";
 import { listMonospaceFonts } from "./localFonts";
 import GhosttyImportRow from "./GhosttyImportRow";
+import NotifySoundRow from "./NotifySoundRow";
 import TerminalRenderSection from "./TerminalRenderSection";
 import TerminalThemeSection from "./TerminalThemeSection";
 import { IconKeyboard, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus } from "@tabler/icons-react";
-import { useSetting, setSetting, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
+import { useSetting, setSetting, notifSound, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
 import ComputerUseSection from "./ComputerUseSection";
 import QuickCommandsSection from "./QuickCommandsSection";
@@ -150,7 +151,8 @@ export default function SettingsDrawer({
     const nd = typeof window !== "undefined" ? window.nunopiDesktop : undefined;
     if (!nd?.notify) { toast(t("settings.notifTestNoDesktop"), "error"); return; }
     try {
-      const r = await nd.notify({ title: t("settings.notifTestTitle"), body: t("settings.notifTestBody"), suppressWhileFocused: false });
+      const { sound, volume } = notifSound(); // #1217 고른 소리로 시험
+      const r = await nd.notify({ title: t("settings.notifTestTitle"), body: t("settings.notifTestBody"), suppressWhileFocused: false, silent: sound === "none", sound, volume });
       if (r?.ok) toast(t("settings.notifTestSent"), "success");
       else toast(t("settings.notifTestFailed") + (r?.reason ? ` (${r.reason})` : ""), "error");
     } catch { toast(t("settings.notifTestFailed"), "error"); }
@@ -205,7 +207,6 @@ export default function SettingsDrawer({
   const nAgentDone = useSetting<boolean>(NKEYS.agentDone, NOTIF_DEFAULTS.agentDone);
   const nSuppress = useSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching);
   const nMaster = useSetting<boolean>(NKEYS.master, NOTIF_DEFAULTS.master);   // #939
-  const nSilent = useSetting<boolean>(NKEYS.silent, NOTIF_DEFAULTS.silent);   // #939
   const wDefaultFolder = useSetting<string>(WKEYS.defaultFolder, WORKSPACE_DEFAULTS.defaultFolder); // #939
   // git/소스컨트롤(#954)
   const gPrBase = useSetting<string>(GKEYS.prBaseDefault, GIT_DEFAULTS.prBaseDefault);
@@ -1003,7 +1004,6 @@ export default function SettingsDrawer({
               { key: NKEYS.master, on: nMaster, label: t("settings.notifMaster"), desc: t("settings.notifMasterDesc") },
               { key: NKEYS.agentDone, on: nAgentDone, label: t("settings.notifAgentDone"), desc: t("settings.notifAgentDoneDesc") },
               { key: NKEYS.suppressWhileWatching, on: nSuppress, label: t("settings.notifSuppress"), desc: t("settings.notifSuppressDesc") },
-              { key: NKEYS.silent, on: nSilent, label: t("settings.notifSilent"), desc: t("settings.notifSilentDesc") },
             ]).map((row) => (
               <div key={row.key} className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
@@ -1017,6 +1017,7 @@ export default function SettingsDrawer({
                 </button>
               </div>
             ))}
+            <NotifySoundRow />{/* #1217 소리 고르기·크기(옛 무음 스위치 대신) */}
             <button type="button" onClick={() => void sendTestNotif()}
               className="rounded-lg border border-zinc-200 px-3 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800">
               {t("settings.notifTest")}
