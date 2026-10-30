@@ -37,7 +37,8 @@ async function knownCode(dir, main) {
     for (const ref of ["refs/remotes/origin/HEAD", "refs/heads/main", "refs/heads/master"]) { base = await git(main, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]).catch(() => ""); if (base) break; }
     if (!base) return false;
     await git(dir, ["merge-base", "--is-ancestor", "HEAD", base]); // 조상이 아니면 종료 코드 1 → throw
-    return !(await git(dir, ["status", "--porcelain", "--ignored", "--untracked-files=all", "--", ...AGENT_CONFIG])); // 레포 설정(showUntrackedFiles=no)과 상관없이 새 파일까지(리뷰)
+    if (await git(dir, ["status", "--porcelain", "--ignored", "--untracked-files=all", "--", ...AGENT_CONFIG])) return false; // 에이전트 설정: 무시된 파일·새 파일까지(레포 설정과 상관없이, 리뷰)
+    return !(await git(dir, ["status", "--porcelain", "--untracked-files=all"])); // 전체 트리: 설정이 부르는 스크립트를 커밋 밖에서 고쳐 둔 경우(리뷰). 무시된 파일(node_modules 등)은 뺌
   } catch { return false; }
 }
 

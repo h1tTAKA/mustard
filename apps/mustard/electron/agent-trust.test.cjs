@@ -75,6 +75,9 @@ const { trustAgentFolder, claudeConfigFile } = require("./agent-trust.cjs");
   writeFileSync(join(dir2, ".mcp.json"), "{}");
   assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "unknown-code");
   require("node:fs").rmSync(join(dir2, ".mcp.json"));
+  writeFileSync(join(dir2, "hook.sh"), "evil"); // 설정이 부를 스크립트를 커밋 밖에서 둔 경우
+  assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "unknown-code");
+  require("node:fs").rmSync(join(dir2, "hook.sh"));
   assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "granted", "메인과 같은 커밋에서 시작");
   // 권한 0664도 그대로(umask에 안 깎임)
   chmodSync(realCfg, 0o664);
