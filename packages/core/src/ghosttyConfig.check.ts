@@ -32,4 +32,5 @@ assert.deepStrictEqual(parseGhosttyConfig("theme = Nord").theme, { dark: "Nord" 
 assert.strictEqual(parseGhosttyConfig("font-family = A\nfont-family =\nfont-family = B").settings.fontFamily, "B, monospace", "빈 값 = 목록 비우기");
 assert.ok(parseGhosttyConfig("cursor-style = weird").skipped.includes("cursor-style"), "이상한 값은 건너뜀");
 assert.strictEqual(parseGhosttyConfig("font-size = 99").settings.fontSize, 28);
+assert.deepStrictEqual(parseGhosttyConfig("font-family =").used, [], "비우기만 = 가져온 것 없음");
 console.log("ghosttyConfig.check OK");

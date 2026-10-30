@@ -3,7 +3,7 @@
 // 글꼴·크기·커서·여백·선택 시 복사·Option=Alt 등 + 테마 이름(목록에서 찾기, light:/dark: 따로) + 색 줄(테마 위 덮어쓰기).
 import { useRef } from "react";
 import { IconUpload } from "@tabler/icons-react";
-import { useT, useToast, setSetting, getSetting, TKEYS, parseGhosttyConfig, parseGhosttyTheme, normalizeHex, readStoredTheme, BUILTIN_TERMINAL_THEMES, THEME_FILE_MAX, type TermTheme } from "@mustard/core";
+import { useT, useToast, setSetting, getSetting, TKEYS, parseGhosttyConfig, parseGhosttyTheme, normalizeHex, readStoredTheme, readOverrides, BUILTIN_TERMINAL_THEMES, THEME_FILE_MAX, type TermTheme } from "@mustard/core";
 import { SettingRow } from "./settingsControls";
 import { loadCatalog } from "./TerminalThemeSection";
 
@@ -32,7 +32,8 @@ export default function GhosttyImportRow() {
     // 색 줄 = 테마 위에 덮어쓰기(Ghostty도 테마 다음에 적용). 다크·라이트 둘 다.
     const part = parseGhosttyTheme(r.colorLines);
     const over = Object.fromEntries(Object.entries(part).flatMap(([k, v]) => { const c = normalizeHex(v); return c ? [[k, c]] : []; }));
-    if (Object.keys(over).length) { setSetting(TKEYS.colorOverridesDark, over); setSetting(TKEYS.colorOverridesLight, over); }
+    // 이미 바꿔 둔 색은 남기고 같은 칸만 Ghostty 값으로(리뷰)
+    if (Object.keys(over).length) for (const k of [TKEYS.colorOverridesDark, TKEYS.colorOverridesLight]) setSetting(k, { ...readOverrides(getSetting<unknown>(k, undefined)), ...over });
     const n = r.used.length - (skipped.has("theme") && r.used.includes("theme") ? 1 : 0);
     if (!n) { toast(t("settings.ghostty.none"), "error"); return; }
     toast(skipped.size ? t("settings.ghostty.doneSkipped", { n, m: skipped.size, keys: [...skipped].slice(0, 5).join(", ") }) : t("settings.ghostty.done", { n }));

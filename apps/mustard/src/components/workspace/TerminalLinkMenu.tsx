@@ -14,11 +14,11 @@ export default function TerminalLinkMenu({ menu, onOpen, onClose }: { menu: Term
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const close = (e?: Event) => { if (e?.target instanceof Node && box.current?.contains(e.target)) return; onClose(); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" || e.metaKey || e.ctrlKey) onClose(); }; // ⌘/Ctrl 단축키(탭·레포 전환)로 화면이 바뀌면 메뉴가 남지 않게(리뷰)
     const id = setTimeout(() => { window.addEventListener("mousedown", close); window.addEventListener("resize", close); window.addEventListener("blur", onClose); }, 0); // 연 클릭이 바로 닫지 않게
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true); // capture — 단축키 실행기가 처리하며 전파를 멈춰도 받게
     box.current?.querySelector("button")?.focus();
-    return () => { clearTimeout(id); window.removeEventListener("mousedown", close); window.removeEventListener("resize", close); window.removeEventListener("blur", onClose); window.removeEventListener("keydown", onKey); };
+    return () => { clearTimeout(id); window.removeEventListener("mousedown", close); window.removeEventListener("resize", close); window.removeEventListener("blur", onClose); window.removeEventListener("keydown", onKey, true); };
   }, [onClose]);
   const { link } = menu;
   const text = link.kind === "url" ? link.url : link.path;

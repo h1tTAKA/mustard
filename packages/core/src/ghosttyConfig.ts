@@ -33,7 +33,7 @@ export function parseGhosttyConfig(text: string): GhosttyImport {
     const key = line.slice(0, eq).trim(), v = unquote(line.slice(eq + 1).trim());
     if (COLOR_KEYS.has(key)) { colors.push(line); used.add(key); continue; }
     switch (key) {
-      case "font-family": fonts = v ? [...(fonts ?? []), v] : []; used.add(key); break; // 여러 줄 = 대체 글꼴, 빈 값 = 목록 비우기
+      case "font-family": fonts = v ? [...(fonts ?? []), v] : []; break; // 여러 줄 = 대체 글꼴, 빈 값 = 목록 비우기
       case "font-size": { const n = Number(v); take(key, "fontSize", Number.isFinite(n) && n > 0 ? Math.min(28, Math.max(9, Math.round(n))) : null); break; } // 설정 칸 범위 9~28
       case "cursor-style": take(key, "cursorStyle", v === "block_hollow" ? "block" : ["block", "bar", "underline"].includes(v) ? v : null); break;
       case "cursor-style-blink": take(key, "cursorBlink", bool(v)); break;
@@ -52,6 +52,6 @@ export function parseGhosttyConfig(text: string): GhosttyImport {
       default: skipped.add(key);
     }
   }
-  if (fonts?.length) settings.fontFamily = [...fonts.map(cssFamily), "monospace"].join(", ");
+  if (fonts?.length) { settings.fontFamily = [...fonts.map(cssFamily), "monospace"].join(", "); used.add("font-family"); } // 비우기만 있으면 가져온 것 없음(리뷰)
   return { settings, theme, colorLines: colors.join("\n"), used: [...used], skipped: [...skipped] };
 }
