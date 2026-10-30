@@ -114,7 +114,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         const { spid: sp, sps: sset, locale: sl } = cfg.current;
         budget--;
         const endBusy = beginBusy(root, "session"); // #1240
-        const r = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, Date.now() - pd.at > 20 * 60_000, !!pd.merge, pd.ms, !!pd.early) // #1260 이미 요약 카드가 떠 있으면 원문 대체 문구로 덮지 않음(리뷰).catch(() => "error" as const).finally(endBusy);
+        const r = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, Date.now() - pd.at > 20 * 60_000, !!pd.merge, pd.ms, !!pd.early).catch(() => "error" as const).finally(endBusy); // #1260 이미 요약 카드가 떠 있으면 원문 대체 문구로 덮지 않음(리뷰)
         if (r === "wait") {
           // #1260 턴이 아직 안 끝남 — 지금까지의 대화로 카드를 먼저 만들고(바로 보이게), 턴이 끝나면 전체 구간으로 다시 만들어 같은 카드를 교체
           if (!pd.early && budget > 0 && alive) {
