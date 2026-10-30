@@ -6,16 +6,18 @@ import { busyOf, subscribeBusy, type BusyCounts } from "@/lib/catchupBusy";
 
 export function useCatchupBusy(root: string, poll: boolean): BusyCounts & { total: number } {
   const local = useSyncExternalStore(useCallback((f: () => void) => subscribeBusy(root, f), [root]), () => busyOf(root), () => busyOf(""));
-  const [narrating, setNarrating] = useState(0);
+  // 서버 수는 어느 레포 것인지 같이 들고 있음 — 레포가 바뀐 첫 화면에 옛 레포 수가 섞이지 않게(리뷰)
+  const [srv, setSrv] = useState({ root: "", n: 0 });
   useEffect(() => {
     if (!poll) return;
     let alive = true;
-    const ask = () => fetch(`/api/repo/learn/busy?root=${encodeURIComponent(root)}`).then((r) => r.json())
-      .then((j) => { if (alive && typeof j?.narrating === "number") setNarrating(j.narrating); }).catch(() => { if (alive) setNarrating(0); }); // 실패면 옛 수에 고정되지 않게(리뷰)
+    const set = (n: number) => { if (alive) setSrv({ root, n }); };
+    const ask = () => fetch(`/api/repo/learn/busy?root=${encodeURIComponent(root)}`).then((r) => (r.ok ? r.json() : null))
+      .then((j) => set(typeof j?.narrating === "number" ? j.narrating : 0)).catch(() => set(0)); // 실패·이상한 답이면 0(옛 수에 고정되지 않게, 리뷰)
     void ask();
     const id = setInterval(() => void ask(), 3000);
-    return () => { alive = false; clearInterval(id); setNarrating(0); }; // 그만 물어보거나 레포가 바뀌면 옛 수 비움(리뷰)
+    return () => { alive = false; clearInterval(id); };
   }, [poll, root]);
-  const explain = local.explain + (poll ? narrating : 0); // 안 물어보는 동안의 옛 값은 안 셈
+  const explain = local.explain + (poll && srv.root === root ? srv.n : 0); // 안 물어보는 동안·다른 레포 값은 안 셈
   return { ...local, explain, total: explain + local.commands + local.diff + local.session };
 }
