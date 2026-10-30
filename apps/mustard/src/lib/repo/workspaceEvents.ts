@@ -11,3 +11,6 @@ export const REMOVE_WORKSPACE_EVENT = "mustard:remove-workspace";
 export const CLOSE_WORKSPACE_EVENT = "mustard:close-workspace";
 export const openRemoveWorkspace = (root: string, dir: string) => window.dispatchEvent(new CustomEvent(REMOVE_WORKSPACE_EVENT, { detail: { root, dir } }));
 export const closeWorkspace = (dir: string) => window.dispatchEvent(new CustomEvent(CLOSE_WORKSPACE_EVENT, { detail: dir }));
+// #1216 작업공간 설정 창(이 레포의 setup·archive·공유 폴더) 열기
+export const WORKSPACE_SETTINGS_EVENT = "mustard:workspace-settings";
+export const openWorkspaceSettings = (root: string) => window.dispatchEvent(new CustomEvent(WORKSPACE_SETTINGS_EVENT, { detail: root }));

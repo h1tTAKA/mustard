@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { IconGitBranch, IconGitCommit, IconCircleDot, IconGitPullRequest, IconLoader2, IconFolder } from "@tabler/icons-react";
 import { useT, useToast, getSetting, GKEYS, GIT_DEFAULTS } from "@mustard/core";
 import { branchFor, issueName, slugName } from "@/lib/repo/workspaceName";
-import { openRepoTab, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
+import { openRepoTab, openWorkspaceSettings, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
 
 // "새 작업공간"(#1170) — 메인 폴더는 그대로, 옆에 git worktree를 만들어 레포 탭으로 엶. 흐름:
 // 시작점(브랜치·커밋·이슈·PR) → 이름(이슈면 제목 slug, PR이면 pr-N) → 만들기 → 탭 열기 → setup(승인 안 된 스크립트면 내용 보여 주고 묻기).
@@ -183,6 +183,9 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
             </div>
           </div>
           <div className="flex items-center gap-2 rounded-b-2xl border-t border-zinc-100 bg-zinc-50/60 px-5 py-3 dark:border-white/5 dark:bg-white/[0.02]">
+            {/* #1216 setup 스크립트 등 이 레포 작업공간 설정 */}
+            <button type="button" onClick={() => { onClose(); openWorkspaceSettings(root); }} disabled={busy}
+              className="text-[12px] font-medium text-zinc-500 underline-offset-2 transition hover:text-zinc-700 hover:underline disabled:opacity-40 dark:text-zinc-400 dark:hover:text-zinc-200">{t("wsSettings.title")}</button>
             <span className="flex-1" />
             <button type="button" onClick={onClose} disabled={busy} className="rounded-lg px-3.5 py-2 disabled:opacity-40 text-[13px] font-medium text-zinc-600 transition hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-white/10">{t("crew.cancel")}</button>
             <button type="button" onClick={() => void create()} disabled={!ready}

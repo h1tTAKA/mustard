@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconGitFork, IconChevronDown, IconCheck, IconPlus, IconLoader2 } from "@tabler/icons-react";
+import { IconGitFork, IconChevronDown, IconCheck, IconPlus, IconLoader2, IconSettings } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
-import { openNewWorkspace } from "@/lib/repo/workspaceEvents";
+import { openNewWorkspace, openWorkspaceSettings } from "@/lib/repo/workspaceEvents";
 
 // 레포 탭 안 작업 폴더 전환(#1170, 유저 결정) — worktree를 따로 탭으로 열지 않고, 레포 탭 하나에서 메인 ↔ worktree를 바꿔 봄.
 // 활성 레포 탭 알약 안의 작은 칩 "⑂ 이름 ▾" → 목록(메인·사람용 worktree, Crew 것은 뺌) + "새 작업공간…".
@@ -69,6 +69,10 @@ export default function WorktreeSwitcher({ root, current, onPick }: { root: stri
           <button type="button" role="menuitem" onClick={() => { setPos(null); openNewWorkspace(root); }}
             className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-white/[0.08]">
             <IconPlus size={14} stroke={1.75} className="shrink-0 text-zinc-400" aria-hidden />{t("newWs.title")}…
+          </button>
+          <button type="button" role="menuitem" onClick={() => { setPos(null); openWorkspaceSettings(root); }}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-white/[0.08]">
+            <IconSettings size={14} stroke={1.75} className="shrink-0 text-zinc-400" aria-hidden />{t("wsSettings.title")}…
           </button>
         </div>,
         document.body,
