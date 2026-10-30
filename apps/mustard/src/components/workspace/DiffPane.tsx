@@ -260,19 +260,6 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
     if (shift && p && p.file === file && p.side === side && p.anchor !== ln && rangeRows(side, Math.min(p.anchor, ln), Math.max(p.anchor, ln))) return { file, side, line: Math.max(p.anchor, ln), start: Math.min(p.anchor, ln), anchor: p.anchor };
     return { file, side, line: ln, anchor: ln };
   });
-  // 오버뷰 룰러용: 연속 "같은 종류(추가/삭제)" 줄을 한 블록으로. 수정(삭제+추가)은 빨강 블록·초록 블록 따로 →
-  // 삭제도 빨강으로 보임. (줄마다 틱 찍으면 새파일서 바코드 벽이라 병합.)
-  const total = Math.max(1, lines.length);
-  const blocks: { top: number; height: number; add: boolean }[] = [];
-  { let s = -1; let kind: "add" | "del" | null = null;
-    const flush = (end: number) => { if (s >= 0 && kind) blocks.push({ top: (s / total) * 100, height: Math.max(0.5, ((end - s) / total) * 100), add: kind === "add" }); };
-    lines.forEach((l, i) => {
-      const k = l.kind === "add" ? "add" : l.kind === "del" ? "del" : null;
-      if (k) { if (s < 0) { s = i; kind = k; } else if (k !== kind) { flush(i); s = i; kind = k; } }
-      else if (s >= 0) { flush(i); s = -1; kind = null; }
-    });
-    if (s >= 0) flush(lines.length);
-  }
   // 변경 구간 → 시작 줄에 버튼(위), 끝 줄에 노트(아래) 앵커.
   const allHunks = groupHunks(lines);
   const hunkStart = new Map(allHunks.map((h) => [h.startLine, h]));
@@ -294,6 +281,29 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
     while (i < lines.length && lines[i].kind === "add") adds.push(i++);
     if (!dels.length && !adds.length) { i++; continue; } // meta·hunk
     for (let j = 0; j < Math.max(dels.length, adds.length); j++) units.push({ l: dels[j], r: adds[j] });
+  }
+  // 오버뷰 룰러용: 연속 "같은 종류(추가/삭제)" 줄을 한 블록으로. 수정(삭제+추가)은 빨강 블록·초록 블록 따로 →
+  // 삭제도 빨강으로 보임. (줄마다 틱 찍으면 새파일서 바코드 벽이라 병합.)
+  // #1218 위치는 화면에 그린 행 기준 — 접힌 묶음은 한 행, 나란히는 짝 하나가 한 행(리뷰: 줄 수로 재면 마크가 밀림). 기본(한 줄·접기 끔)은 예전과 같음
+  const rows: ("add" | "del" | null)[] = [];
+  if (view === "split") units.forEach((u) => {
+    if (u.l === u.r) { const r = hidden.get(u.l!); if (r === undefined || r === u.l) rows.push(null); }
+    else rows.push(u.r === undefined ? "del" : "add"); // 짝(수정)·추가만은 초록, 지운 것만은 빨강
+  });
+  else lines.forEach((l, i) => {
+    const r = hidden.get(i);
+    if (r !== undefined) { if (r === i) rows.push(null); return; }
+    rows.push(l.kind === "add" ? "add" : l.kind === "del" ? "del" : null);
+  });
+  const total = Math.max(1, rows.length);
+  const blocks: { top: number; height: number; add: boolean }[] = [];
+  { let s = -1; let kind: "add" | "del" | null = null;
+    const flush = (end: number) => { if (s >= 0 && kind) blocks.push({ top: (s / total) * 100, height: Math.max(0.5, ((end - s) / total) * 100), add: kind === "add" }); };
+    rows.forEach((k, i) => {
+      if (k) { if (s < 0) { s = i; kind = k; } else if (k !== kind) { flush(i); s = i; kind = k; } }
+      else if (s >= 0) { flush(i); s = -1; kind = null; }
+    });
+    if (s >= 0) flush(rows.length);
   }
   // 줄 위치 → 그 줄의 하이라이트 토큰(코드줄 순서대로 칠했음 — 접기·나란히로 그리는 순서가 바뀌어도 맞게)
   const tokAt = new Map<number, ThemedToken[]>();

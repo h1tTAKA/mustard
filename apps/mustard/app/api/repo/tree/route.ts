@@ -7,6 +7,7 @@ import { scanAllFiles } from "@/lib/repo/scan";
 // #1218 hideIgnored = .gitignore에 걸린 파일 빼기(설정 "gitignore 파일 보이기" 끔) — git 레포 아니거나 실패면 그대로.
 export const runtime = "nodejs";
 
+// --no-index 없음 = git이 이미 추적하는 파일은 규칙에 걸려도 남김(레포의 일부라서, 리뷰)
 // git check-ignore에 목록을 통째로(NUL 구분) 넣고 걸린 것만 받음. 0 = 하나 이상 걸림, 1 = 없음, 그 외(128 레포 아님 등) = 거르지 않음
 // ponytail: 상한(MAX_FILES)을 거르기 전에 셈 — 무시 파일이 많으면 거른 뒤 목록이 상한보다 짧음, 그때는 걷기 단계에서 거르기
 function ignoredOf(cwd: string, files: string[]): Promise<Set<string> | null> {

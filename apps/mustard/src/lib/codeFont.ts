@@ -6,5 +6,5 @@ import { useSetting, EKEYS, EDITOR_DEFAULTS } from "@mustard/core";
 export function useCodeFont(delta = 0): CSSProperties {
   const family = useSetting<string>(EKEYS.fontFamily, EDITOR_DEFAULTS.fontFamily);
   const size = useSetting<number>(EKEYS.fontSize, EDITOR_DEFAULTS.fontSize);
-  return { fontFamily: family.trim() || "var(--font-mono)", fontSize: size + delta };
+  return { fontFamily: family.trim() ? `${family.trim()}, var(--font-mono)` : "var(--font-mono)", fontSize: size + delta }; // 없는 글꼴·오타면 기본 고정폭으로(리뷰)
 }
