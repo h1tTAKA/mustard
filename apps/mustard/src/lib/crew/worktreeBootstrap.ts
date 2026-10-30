@@ -265,10 +265,12 @@ export const SETUP_TIMEOUT = 15 * 60_000, ARCHIVE_TIMEOUT = 5 * 60_000; // setup
 
 // 새 worktree의 setup — 없으면 none, 승인 전이면 untrusted(실행 안 함), 승인됐으면 실행.
 // 끝난 표시가 지금 스크립트와 같으면 다시 안 돎(none). 4000자 넘으면 too-long(사람이 끝까지 못 봄).
-// #1216 새 worktree에 설정 파일이 없으면(아직 커밋 안 한 앱 편집분) 메인 체크아웃 것 — 공유·archive처럼 메인 기준
-export const setupScriptFor = (root: string, dir: string) => readConfig(dir).setup ?? (dir !== root ? readConfig(root).setup : undefined);
-export async function runSetup(root: string, dir: string, timeoutMs = SETUP_TIMEOUT, logAt: "worktree" | "state" = "worktree"): Promise<SetupOutcome> {
-  const setup = setupScriptFor(root, dir);
+// #1216 사람용 작업공간만: 새 worktree에 설정 파일이 아예 없으면(아직 커밋 안 한 앱 편집분) 메인 체크아웃 것.
+// 파일이 있는데 setup이 없으면 그 브랜치가 일부러 뺀 것 → 메인 것 안 씀. Crew는 예전 그대로(worktree 것만, 리뷰).
+export const setupScriptFor = (root: string, dir: string, mainFallback = false) =>
+  readConfig(dir).setup ?? (mainFallback && dir !== root && !existsSync(join(dir, CONFIG_PATH)) ? readConfig(root).setup : undefined);
+export async function runSetup(root: string, dir: string, timeoutMs = SETUP_TIMEOUT, logAt: "worktree" | "state" = "worktree", mainFallback = false): Promise<SetupOutcome> {
+  const setup = setupScriptFor(root, dir, mainFallback);
   if (!setup) return { status: "none" };
   const done = setupDone(root, dir);
   if (done === scriptHash(setup) || done === "skipped") return { status: "none" };
@@ -305,6 +307,7 @@ export function readRepoScripts(root: string): RepoScripts & { broken: boolean }
 }
 export function writeRepoScripts(root: string, v: RepoScripts): "ok" | "broken" | "too-long" | "bad-path" {
   const { obj, broken } = rawConfig(root);
+  const before = readConfig(root);
   if (broken) return "broken";
   const setup = v.setup.trim(), archive = v.archive.trim();
   if (setup.length > MAX_REVIEW || archive.length > MAX_REVIEW) return "too-long"; // 승인·실행 한도와 같게
@@ -323,8 +326,9 @@ export function writeRepoScripts(root: string, v: RepoScripts): "ok" | "broken" 
   if (!Object.keys(next).length && !existsSync(p)) return "ok"; // 빈 설정 — 파일 안 만듦
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, `${JSON.stringify(next, null, 2)}\n`);
-  if (setup) trustScript(root, setup);
-  if (archive) trustScript(root, archive);
+  // 바꾼 스크립트만 승인 — 그대로 둔 채 저장(스위치만 바꿈 등)하면 레포가 넣어 둔 안 본 스크립트가 승인되지 않게(리뷰)
+  if (setup && setup !== before.setup) trustScript(root, setup);
+  if (archive && archive !== before.archive) trustScript(root, archive);
   return "ok";
 }
 // 레포별 내 PC 설정 — 팀 파일(.mustard/config.json)엔 안 넣음. setupAuto = 새 작업공간에서 setup 자동 실행(기본 켬)

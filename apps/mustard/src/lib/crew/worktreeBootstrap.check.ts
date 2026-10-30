@@ -125,6 +125,8 @@ assert.ok(a?.ok && existsSync(join(wt, "archived.txt")), "승인된 archive는 w
   assert.ok(!existsSync(join(r, ".mustard")), "빈 설정이면 파일 안 만듦");
   mkdirSync(join(r, ".mustard"));
   writeFileSync(join(r, ".mustard", "config.json"), JSON.stringify({ team: 1, scripts: { setup: "old", other: "x" }, setupAgentStartupPolicy: "wait-for-setup" }));
+  assert.strictEqual(writeRepoScripts(r, { setup: "old", archive: "", shared: [] }), "ok");
+  assert.ok(!isTrusted(r, "old"), "그대로 둔 채 저장하면 레포 스크립트를 승인하지 않음");
   assert.strictEqual(writeRepoScripts(r, { setup: " pnpm i ", archive: "", shared: ["node_modules/", " .cache "] }), "ok");
   const j = JSON.parse(readFileSync(join(r, ".mustard", "config.json"), "utf8"));
   assert.deepStrictEqual(j, { team: 1, scripts: { setup: "pnpm i", other: "x" }, setupAgentStartupPolicy: "wait-for-setup", worktree: { sharedDirectories: ["node_modules", ".cache"] } }, "모르는 키 보존");
@@ -138,7 +140,10 @@ assert.ok(a?.ok && existsSync(join(wt, "archived.txt")), "승인된 archive는 w
   // 새 worktree에 설정이 없으면 메인 것
   const wt2 = realpathSync(mkdtempSync(join(tmpdir(), "wtb-wt-")));
   writeFileSync(join(r, ".mustard", "config.json"), JSON.stringify({ scripts: { setup: "main-setup" } }));
-  assert.strictEqual(setupScriptFor(r, wt2), "main-setup");
+  assert.strictEqual(setupScriptFor(r, wt2, true), "main-setup", "사람용: 파일 없으면 메인 것");
+  assert.strictEqual(setupScriptFor(r, wt2), undefined, "Crew(기본): 메인 것 안 씀");
+  mkdirSync(join(wt2, ".mustard")); writeFileSync(join(wt2, ".mustard", "config.json"), "{}");
+  assert.strictEqual(setupScriptFor(r, wt2, true), undefined, "브랜치가 setup을 뺐으면 메인 것 안 씀");
   // 내 PC 설정
   assert.deepStrictEqual(readRepoPrefs(r), { setupAuto: true }, "기본 켬");
   writeRepoPrefs(r, { setupAuto: false });

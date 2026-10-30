@@ -42,12 +42,12 @@ export async function POST(request: Request): Promise<Response> {
       case "setup": { // 새 작업공간의 setup — 승인 전이면 untrusted(스크립트 내용 돌려줌), 승인됐으면 실행(#1176 runSetup, 로그는 작업 폴더 밖)
         await findWorktree(root, dir);
         if (!readRepoPrefs(root).setupAuto) return Response.json({ ok: true, status: "off" }); // #1216 이 레포는 자동 실행 끔
-        return Response.json({ ok: true, ...(await runSetup(root, dir, undefined, "state")) });
+        return Response.json({ ok: true, ...(await runSetup(root, dir, undefined, "state", true)) });
       }
       case "trust": { // 보여 준 내용과 지금 스크립트가 같을 때만 승인(#1176 decideCard와 같음). skip = 이번 setup 안 돌림
         const kind = b.kind === "archive" ? "archive" : "setup";
         if (kind === "setup") await findWorktree(root, dir);
-        const cur = kind === "archive" ? readConfig(root).archive : setupScriptFor(root, dir); // #1216 runSetup과 같은 출처
+        const cur = kind === "archive" ? readConfig(root).archive : setupScriptFor(root, dir, true); // #1216 runSetup과 같은 출처
         if (!cur || cur !== str(b.script) || cur.length > MAX_REVIEW) return Response.json({ ok: false, error: "script changed" });
         if (b.skip && kind === "setup") markSetupDone(root, dir, "skipped");
         else if (!b.skip) trustScript(root, cur);
