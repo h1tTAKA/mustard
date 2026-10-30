@@ -61,7 +61,14 @@ const { trustAgentFolder, claudeConfigFile } = require("./agent-trust.cjs");
   git(main, "worktree", "add", "-q", "--detach", fork);
   git(fork, "-c", "user.email=x@y", "-c", "user.name=x", "commit", "-q", "--allow-empty", "-m", "evil");
   git(fork, "switch", "-q", "-c", "pr-9");
-  assert.strictEqual(await trustAgentFolder("claude", fork, opts), "unknown-commit");
+  assert.strictEqual(await trustAgentFolder("claude", fork, opts), "unknown-code");
+  // 같은 레포 원격 브랜치처럼 메인에 아직 안 들어온 커밋도 안 함
+  git(main, "branch", "teammate", "pr-9");
+  assert.strictEqual(await trustAgentFolder("claude", fork, opts), "unknown-code", "다른 브랜치에 있어도 메인 조상이 아니면");
+  // 같은 커밋이어도 에이전트 설정에 미커밋 변경·새 파일이 있으면 안 함
+  writeFileSync(join(dir2, ".mcp.json"), "{}");
+  assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "unknown-code");
+  require("node:fs").rmSync(join(dir2, ".mcp.json"));
   assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "granted", "메인과 같은 커밋에서 시작");
   // 권한 0664도 그대로(umask에 안 깎임)
   chmodSync(realCfg, 0o664);
