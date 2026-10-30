@@ -11,7 +11,7 @@ export function useCatchupBusy(root: string, poll: boolean): BusyCounts & { tota
   useEffect(() => {
     if (!poll) return;
     let alive = true;
-    const set = (n: number) => { if (alive) setSrv({ root, n }); };
+    const set = (n: number) => { if (alive) setSrv((p) => (p.root === root && p.n === n ? p : { root, n })); }; // 같은 값이면 그대로(3초마다 다시 그리지 않게, 리뷰)
     const ask = () => fetch(`/api/repo/learn/busy?root=${encodeURIComponent(root)}`).then((r) => (r.ok ? r.json() : null))
       .then((j) => set(typeof j?.narrating === "number" ? j.narrating : 0)).catch(() => set(0)); // 실패·이상한 답이면 0(옛 수에 고정되지 않게, 리뷰)
     void ask();
