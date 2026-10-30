@@ -89,6 +89,7 @@ export function parseCodexLine(line: string): ParsedLine | null {
 //  시작 = 이전 경계가 든 턴 다음의 첫 프롬프트(같은 턴에 이전 경계가 있으면 그 결과 다음부터)
 //  끝 = 대상 호출이 든 턴의 끝("~했고 커밋했어요"까지). 같은 턴에 다음 경계가 있으면 대상 호출 결과까지.
 //  대상 호출 = 커밋 시각 직전(2초 여유~15분 전)의 마지막 호출 — 일반 커밋은 커밋 호출, 머지 커밋은 머지 호출(없으면 pull).
+export const CALL_WINDOW_MS = 15 * 60_000; // 커밋 시각 전 이만큼 안의 호출만 그 커밋 호출로 봄(세션 파일 거르기도 같은 창, #1269)
 export function segmentForCommit<L>(lines: L[], parse: (l: L) => ParsedLine | null, commitSec: number, isMerge = false): { msgs: SessionMsg[]; branch?: string; cwd?: string; callTs: number; closed: boolean } | null {
   const commitMs = commitSec * 1000;
   type Call = { at: number; ts: number; kind: CallKind; mergeToo: boolean; branch?: string };
@@ -104,7 +105,7 @@ export function segmentForCommit<L>(lines: L[], parse: (l: L) => ParsedLine | nu
   }
   turns.push(cur);
   const bound = (c: Call) => c.kind !== "pull"; // 대화를 끊는 경계
-  const inWin = (c: Call) => c.ts <= commitMs + 2000 && c.ts >= commitMs - 15 * 60_000;
+  const inWin = (c: Call) => c.ts <= commitMs + 2000 && c.ts >= commitMs - CALL_WINDOW_MS;
   const pick = (ok: (c: Call) => boolean) => { let r: [number, number] | null = null;
     turns.forEach((t, i) => t.calls.forEach((c, j) => { if (inWin(c) && ok(c) && (!r || c.ts >= turns[r[0]].calls[r[1]].ts)) r = [i, j]; })); return r as [number, number] | null; };
   const hit = isMerge ? pick((c) => c.kind === "merge" || c.mergeToo) ?? pick((c) => c.kind === "pull") : pick((c) => c.kind === "commit");
