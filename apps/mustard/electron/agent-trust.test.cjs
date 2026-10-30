@@ -65,7 +65,13 @@ const { trustAgentFolder, claudeConfigFile } = require("./agent-trust.cjs");
   // 같은 레포 원격 브랜치처럼 메인에 아직 안 들어온 커밋도 안 함
   git(main, "branch", "teammate", "pr-9");
   assert.strictEqual(await trustAgentFolder("claude", fork, opts), "unknown-code", "다른 브랜치에 있어도 메인 조상이 아니면");
-  // 같은 커밋이어도 에이전트 설정에 미커밋 변경·새 파일이 있으면 안 함
+  // 메인 폴더를 PR 브랜치에 둔 채(그 커밋에서) 만든 작업공간도 안 함 — 기준은 기본 브랜치
+  git(main, "switch", "-q", "teammate");
+  const fromPr = join(ws, "from-pr"); git(main, "worktree", "add", "-q", fromPr, "-b", "from-pr");
+  assert.strictEqual(await trustAgentFolder("claude", fromPr, opts), "unknown-code");
+  git(main, "switch", "-q", "-");
+  // 같은 커밋이어도 에이전트 설정에 미커밋 변경·새 파일이 있으면 안 함 — 레포가 새 파일을 숨겨도(showUntrackedFiles=no)
+  git(main, "config", "status.showUntrackedFiles", "no");
   writeFileSync(join(dir2, ".mcp.json"), "{}");
   assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "unknown-code");
   require("node:fs").rmSync(join(dir2, ".mcp.json"));

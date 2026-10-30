@@ -1,5 +1,5 @@
 // 에이전트 작업 폴더 미리 신뢰(#1216) — Mustard가 만든 작업공간(worktree)에서 Claude가 "이 폴더를 믿나요?"를 매번 묻지 않게, 띄우기 직전 신뢰로 기록.
-// 조건: Mustard 작업공간 안쪽 + 그 레포의 메인 폴더를 사용자가 이미 Claude에서 신뢰함 + 작업공간의 지금 커밋이 메인 폴더 지금 커밋의 조상(같거나 이전)
+// 조건: Mustard 작업공간 안쪽 + 그 레포의 메인 폴더를 사용자가 이미 Claude에서 신뢰함 + 작업공간의 지금 커밋이 기본 브랜치(origin/HEAD·main·master) 끝의 조상(같거나 이전)
 // + 에이전트 설정(.claude/·.mcp.json)에 커밋 안 한 변경 없음 → 그 신뢰를 작업공간에 물려줌.
 // 메인에 아직 안 들어온 커밋(PR·다른 브랜치, 같은 레포라도)에서 시작한 작업공간은 원래대로 물어봄(리뷰).
 // 한계: 신뢰를 준 뒤 그 작업공간에서 바뀌는 것(에이전트 자신의 작업)은 Claude가 다시 묻지 않음 — 사람이 직접 "믿어요"를 눌렀을 때와 같음.
@@ -28,13 +28,16 @@ async function mainOf(dir) {
     return gitDir !== common && common.endsWith(`${sep}.git`) ? real(dirname(common)) : null;
   } catch { return null; }
 }
-// 작업공간 HEAD가 메인 폴더 HEAD의 조상인지(= 사용자가 이미 받아 둔 코드) + 에이전트 설정에 미커밋·새 파일 없음. 확인 못 하면 false.
+// 작업공간 HEAD가 기본 브랜치 끝의 조상인지(= 이미 메인에 들어온 코드) + 에이전트 설정에 미커밋·새 파일 없음. 확인 못 하면 false.
 const AGENT_CONFIG = [".claude", ".mcp.json"];
 async function knownCode(dir, main) {
   try {
-    const mainHead = await git(main, ["rev-parse", "HEAD"]);
-    await git(dir, ["merge-base", "--is-ancestor", "HEAD", mainHead]); // 조상이 아니면 종료 코드 1 → throw
-    return !(await git(dir, ["status", "--porcelain", "--ignored", "--", ...AGENT_CONFIG]));
+    // 기준 = 기본 브랜치 끝(origin/HEAD → main → master). 메인 폴더 HEAD가 아님 — 메인 폴더를 PR 브랜치에 둔 채 만든 작업공간이 통과하지 않게(리뷰)
+    let base = "";
+    for (const ref of ["refs/remotes/origin/HEAD", "refs/heads/main", "refs/heads/master"]) { base = await git(main, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]).catch(() => ""); if (base) break; }
+    if (!base) return false;
+    await git(dir, ["merge-base", "--is-ancestor", "HEAD", base]); // 조상이 아니면 종료 코드 1 → throw
+    return !(await git(dir, ["status", "--porcelain", "--ignored", "--untracked-files=all", "--", ...AGENT_CONFIG])); // 레포 설정(showUntrackedFiles=no)과 상관없이 새 파일까지(리뷰)
   } catch { return false; }
 }
 
