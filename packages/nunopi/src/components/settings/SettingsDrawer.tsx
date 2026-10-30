@@ -190,6 +190,7 @@ export default function SettingsDrawer({
   const tCopyOnSelect = useSetting<boolean>(TKEYS.copyOnSelect, TERMINAL_DEFAULTS.copyOnSelect);
   const tCopyTrim = useSetting<boolean>(TKEYS.copyTrimGutter, TERMINAL_DEFAULTS.copyTrimGutter); // #1212
   const tRightClickPaste = useSetting<boolean>(TKEYS.rightClickPaste, TERMINAL_DEFAULTS.rightClickPaste);
+  const tMiddleClickPaste = useSetting<boolean>(TKEYS.middleClickPaste, TERMINAL_DEFAULTS.middleClickPaste);
   // 터미널 심화(#941)
   const tScrollSensitivity = useSetting<number>(TKEYS.scrollSensitivity, TERMINAL_DEFAULTS.scrollSensitivity);
   const tFastScroll = useSetting<number>(TKEYS.fastScrollSensitivity, TERMINAL_DEFAULTS.fastScrollSensitivity); // #1212
@@ -748,6 +749,7 @@ export default function SettingsDrawer({
               { key: TKEYS.copyOnSelect, on: tCopyOnSelect, label: t("settings.terminalCopyOnSelect") },
               { key: TKEYS.copyTrimGutter, on: tCopyTrim, label: t("settings.terminalCopyTrimGutter") }, // #1212
               { key: TKEYS.rightClickPaste, on: tRightClickPaste, label: t("settings.terminalRightClickPaste") },
+              { key: TKEYS.middleClickPaste, on: tMiddleClickPaste, label: t("settings.terminalMiddleClickPaste") },
               { key: TKEYS.focusFollowsMouse, on: tFocusFollowsMouse, label: t("settings.terminalFocusFollowsMouse") },
               { key: TKEYS.osc52, on: tOsc52, label: t("settings.terminalOsc52") }, // #1196
               { key: TKEYS.images, on: tImages, label: t("settings.terminalImages") }, // #1196

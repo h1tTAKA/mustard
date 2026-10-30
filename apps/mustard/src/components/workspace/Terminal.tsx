@@ -135,6 +135,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
     // #1027 ⌘K(터미널 포커스) = 화면 지우기 — 포커스가 이 터미널 안일 때만 처리(다른 터미널·탭이면 false로 넘김).
     const offClear = registerShortcut(["term.clear"], () => { if (!term || !host.contains(document.activeElement)) return false; term.clear(); });
     let onCtx: ((e: MouseEvent) => void) | null = null;
+    let onMid: ((e: MouseEvent) => void) | null = null;
     let onCopy: ((e: ClipboardEvent) => void) | null = null;
     let onEnter: (() => void) | null = null;
     const showMouse = () => host?.classList.remove("mustard-hide-mouse");
@@ -243,6 +244,17 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       onCtx = (e: MouseEvent) => { if (!getSetting<boolean>(TKEYS.rightClickPaste, TERMINAL_DEFAULTS.rightClickPaste)) return; e.preventDefault(); navigator.clipboard?.readText().then((txt) => { if (txt) nd.terminal.input({ id, data: txt }); }).catch(() => {}); };
       selDisp = term.onSelectionChange(onSelChange);
       host.addEventListener("contextmenu", onCtx);
+      // #1224 가운데 클릭 붙여넣기 — 켜면 터미널에서 선택한 글을 붙여넣음(term.paste = 괄호 붙여넣기 지원). 링크를 여는 가운데 클릭(리눅스 밖)은 링크가 먼저.
+      // mousedown에서 막아야 리눅스 기본 붙여넣기(시스템 선택 영역)와 두 번 들어가지 않음.
+      onMid = (e: MouseEvent) => {
+        if (e.button !== 1 || !term || !getSetting<boolean>(TKEYS.middleClickPaste, TERMINAL_DEFAULTS.middleClickPaste)) return;
+        if (!isLinux && host.querySelector(".xterm-cursor-pointer")) return; // 링크 위
+        if (term.modes.mouseTrackingMode !== "none") return; // 마우스를 받는 프로그램(TUI)엔 클릭 그대로
+        e.preventDefault();
+        const sel = copyText(term);
+        if (sel) term.paste(sel);
+      };
+      host.addEventListener("mousedown", onMid, true);
       // 마우스 포커스(#941) — 설정 켜지면 호버 시 터미널 포커스.
       onEnter = () => { if (getSetting<boolean>(TKEYS.focusFollowsMouse, TERMINAL_DEFAULTS.focusFollowsMouse)) term?.focus(); };
       host.addEventListener("mouseenter", onEnter);
@@ -376,7 +388,7 @@ export default function Terminal({ id, cwd }: { id: string; cwd: string }) {
       fallback = setTimeout(() => { if (!ensured && !disposed && term) { ensured = true; void firstEnsure(); } }, 1500);
     })();
 
-    return () => { offClear(); disposed = true; if (fallback) clearTimeout(fallback); if (onPaste) host.removeEventListener("paste", onPaste, true); if (onCopy) host.removeEventListener("copy", onCopy, true); offData?.(); offExit?.(); ro?.disconnect(); mo?.disconnect(); offTheme?.(); offSettings?.(); offInputSource?.(); selDisp?.dispose(); linkDisp?.dispose(); oscDisp?.dispose(); osc52Disp?.dispose(); if (onCtx) host.removeEventListener("contextmenu", onCtx); if (onEnter) host.removeEventListener("mouseenter", onEnter); host.removeEventListener("mousemove", showMouse); term?.dispose(); term = null; };
+    return () => { offClear(); disposed = true; if (fallback) clearTimeout(fallback); if (onPaste) host.removeEventListener("paste", onPaste, true); if (onCopy) host.removeEventListener("copy", onCopy, true); offData?.(); offExit?.(); ro?.disconnect(); mo?.disconnect(); offTheme?.(); offSettings?.(); offInputSource?.(); selDisp?.dispose(); linkDisp?.dispose(); oscDisp?.dispose(); osc52Disp?.dispose(); if (onCtx) host.removeEventListener("contextmenu", onCtx); if (onMid) host.removeEventListener("mousedown", onMid, true); if (onEnter) host.removeEventListener("mouseenter", onEnter); host.removeEventListener("mousemove", showMouse); term?.dispose(); term = null; };
   }, [id, cwd]);
 
   // 초기 배경도 현재 터미널 테마에 맞춰(라이트 앱 첫 프레임 다크 깜빡임 방지). 클라이언트 전용 pane이라 안전.

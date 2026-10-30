@@ -23,6 +23,7 @@ export const TERMINAL_DEFAULTS = {
   copyOnSelect: false,
   copyTrimGutter: true,                        // #1212 복사할 때 공통 왼쪽 여백 자르기
   rightClickPaste: false,
+  middleClickPaste: false,                     // #1224 가운데 클릭 = 터미널에서 선택한 글 붙여넣기
   gpu: true,                                   // 옛 스위치(#1214부터 gpuMode로 옮겨 읽음)
   minContrast: "auto" as "auto" | number,      // #1214 최소 색상 대비
   // 심화(#941)
@@ -62,6 +63,7 @@ export const TKEYS = {
   copyOnSelect: "terminal.copyOnSelect",
   copyTrimGutter: "terminal.copyTrimGutter",
   rightClickPaste: "terminal.rightClickPaste",
+  middleClickPaste: "terminal.middleClickPaste",
   gpu: "terminal.gpu",
   gpuMode: "terminal.gpuMode", // #1214 auto·on·off(없으면 옛 gpu 스위치에서)
   minContrast: "terminal.minContrast", // #1214 "auto" | 숫자(1 = 끄기)
