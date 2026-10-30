@@ -703,7 +703,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                 className="min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none placeholder:text-zinc-400 dark:text-zinc-200" />
             ) : (
               // 고르면 칩 필터와 같은 표시(아래 "필터 ✕")로 — 검색칸은 닫음
-              <select value="" autoFocus aria-label={t("learn.searchPick")} onChange={(e) => { const v = e.target.value; if (!v) return; setTag({ type: searchBy, value: v }); setQ(""); setSearchOpen(false); setSearchBy("text"); }}
+              <select value="" autoFocus aria-label={t(facets && !facets[searchBy].length ? "learn.searchNone" : "learn.searchPick")} onChange={(e) => { const v = e.target.value; if (!v) return; setTag({ type: searchBy, value: v }); setQ(""); setSearchOpen(false); setSearchBy("text"); }}
                 className={`min-w-0 flex-1 bg-transparent text-[11px] text-zinc-700 outline-none dark:text-zinc-200 ${searchBy === "hash" ? "font-mono" : ""}`}>
                 <option value="">{facets ? (facets[searchBy].length ? t("learn.searchPick") : t("learn.searchNone")) : "…"}</option>
                 {facets?.[searchBy].map((f) => <option key={f.value} value={f.value}>{searchBy === "hash" && f.label ? `${f.value} · ${f.label.slice(0, 60)}` : f.value}</option>)}
