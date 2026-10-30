@@ -9,6 +9,7 @@ import BrowserSection from "./BrowserSection";
 import TerminalSessionsSection from "./TerminalSessionsSection";
 import TerminalKeyboardSection from "./TerminalKeyboardSection";
 import { listMonospaceFonts } from "./localFonts";
+import GhosttyImportRow from "./GhosttyImportRow";
 import TerminalRenderSection from "./TerminalRenderSection";
 import TerminalThemeSection from "./TerminalThemeSection";
 import { IconKeyboard, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus } from "@tabler/icons-react";
@@ -685,6 +686,7 @@ export default function SettingsDrawer({
           {/* 터미널 설정 카드(#926) — 폰트·커서·스크롤백·클립보드·GPU */}
           {activeSection === "set-terminal" && (
           <section id="set-terminal" className="scroll-mt-4 space-y-4 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+            <GhosttyImportRow />{/* #1224 Ghostty 설정 한 번에 가져오기 */}
             <TerminalThemeSection />{/* #1215 다크용·라이트용 테마 카드 */}
             {/* 폰트 크기 */}
             <div className="flex items-center justify-between gap-3">
