@@ -17,6 +17,8 @@ export const diffItemKey = (hash: string, file: string) => `diff|${hash}|${file}
 export const parseDiffItemKey = (key: string) => { const m = /^diff\|([0-9a-fA-F]{4,64})\|(.+)$/.exec(key); return m ? { hash: m[1], file: m[2] } : null; };
 
 const POLL_MS = 30_000;
+// #1264 지금 요약 중인 세션(레포\0해시) — 효과가 다시 돌아 새 줄이 생겨도 같은 커밋을 동시에 두 번 요약하지 않게(리뷰). 모듈 전역.
+const flying = new Set<string>();
 const RETRY_MS = [5_000, 20_000, -1]; // #1093 덩어리 재시도 간격(-1 = 마지막 시도)
 const EXPLAIN_CONCURRENCY = 4; // #1090 덩어리 설명 동시 호출 수(AI CLI 동시 실행 — 너무 많으면 레이트 리밋)
 // 설명 가치 없는 파일 — 문서·lockfile·이미지 등(삭제 파일은 상태 D로 따로 거름).
@@ -110,10 +112,14 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         if (!alive) return;
         if (budget <= 0) { skipped.push(pd); continue; } // 이번 주기 몫 다 씀 — 다음 주기에
         if (!cfg.current.sessOn) continue; // 세션 분석 꺼짐 — 미룬 것도 버림
+        const fk = `${root}\0${pd.hash}`;
+        if (flying.has(fk)) { keep.push(pd); continue; } // 다른 줄이 지금 만드는 중
         if (pd.retryAt && Date.now() < pd.retryAt) { keep.push(pd); continue; } // #1262 오류 뒤 2분 쉼(30초 주기마다 두드리지 않게, 리뷰)
         if (Date.now() - pd.at > 60 * 60_000) { noSession.push(pd.hash); continue; } // 1시간 넘게 계속 실패 — 포기(되살리기도 다시 안 봄, 리뷰)
         const { spid: sp, sps: sset, locale: sl } = cfg.current;
         budget--;
+        flying.add(fk);
+        try {
         const endBusy = beginBusy(root, "session"); // #1240
         const r = await buildSessionItem(root, pd.hash, pd.ts, pd.subject, pd.branch, sp, sset, sl, Date.now() - pd.at > 20 * 60_000, !!pd.merge, pd.ms, !!pd.early).catch(() => "error" as const).finally(endBusy); // #1260 이미 요약 카드가 떠 있으면 원문 대체 문구로 덮지 않음(리뷰)
         if (r === "wait") {
@@ -140,6 +146,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
             if (!saved) keep.push(pd);
           } else void post("/api/repo/stream", { root, items: [r] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
         }
+        } finally { flying.delete(fk); }
       }
       if (alive) { const cur = read() ?? st0; write({ ...cur, noSession: [...(cur.noSession ?? []), ...noSession].slice(-300), pending: [...skipped, ...keep, ...(cur.pending ?? []).filter((p) => !st0.pending!.some((q) => q.hash === p.hash))] }); }
     };
@@ -173,6 +180,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         if (!st) { const now = Math.floor(Date.now() / 1000); write({ since: now, sessSince: now, done: [], from: now, reviveAt: Date.now() + 30 * 60_000 }); return; } // 처음 켬 → 지금부터(켜기 전 커밋은 되살리지 않음)
         const j = await post("/api/repo/git-recent", { path: root, since: st.since, limit: 100 }); // 기본 20이면 몰린 커밋 중 오래된 쪽 diff가 영영 빠짐(리뷰). ponytail: 30초에 100개 넘게 오면 잘림
         const all = ((j?.commits ?? []) as Recent[]).reverse(); // 오래된 것부터
+        if (all.length >= 100) console.warn("[catchup] 새 커밋이 100개 넘게 몰림 — 오래된 쪽 diff 설명은 빠질 수 있음");
         const fresh = all.filter((c) => !st.done.includes(c.hash));
         const head = typeof j?.branch === "string" ? j.branch : "";
         for (const c of fresh) {
