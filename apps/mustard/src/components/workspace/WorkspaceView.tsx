@@ -14,6 +14,7 @@ import WorkspaceChat, { type ChatFocus } from "@/components/workspace/WorkspaceC
 import GithubPanel from "@/components/workspace/GithubPanel";
 import RepoLearnStream from "@/components/workspace/RepoLearnStream";
 import { useAutoCommitExplain } from "@/lib/useAutoCommitExplain";
+import { useCatchupBusy } from "@/lib/useCatchupBusy";
 import { useBranchCi } from "@/components/workspace/github/useBranchCi";
 import TerminalPane from "@/components/workspace/TerminalPane";
 import UsageMonitor from "@/components/workspace/UsageMonitor";
@@ -93,6 +94,8 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze);
   // #1078 질문은 캐치업 안 — 캐치업 켜짐이면 GitHub 아니면 캐치업, 꺼짐이면 질문 단독 모드
   const rightMode = rightModeSel === "github" ? "github" : rightModeSel === "crew" ? "crew" : catchupOn ? "learn" : "chat";
+  // #1252 캐치업이 아닌 패널(GitHub·대화방)을 볼 때 캐치업 아이콘에 "만드는 중" 점 — 서버 해설 수는 그때만 물어봄(캐치업 화면은 자기가 물어봄)
+  const catchupBusy = useCatchupBusy(path, active && catchupOn && chatOpen && rightMode !== "learn");
   // #1078 질문은 캐치업 안 — 명시적으로 물을 때(브랜치·아키텍처)만 우측 패널을 질문 화면으로. 탭 전환 동기화(focusForTab)는 화면을 안 바꿈.
   const askChat = (key: string, kind: ChatFocus["kind"], label: string) => { focusChat(key, kind, label); setCatchupChat(true); setRightMode(catchupOn ? "learn" : "chat"); };
   const [gitFocus, setGitFocus] = useState<{ hash: string; n: number; file?: string } | null>(null); // #1064·#1074(diff 카드면 그 파일까지) 캐치업 세션 → git 그래프 커밋 짚기
@@ -740,9 +743,10 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
           <>
             <span className="mx-0.5 h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />
             {/* 캐치업(#855·#992) — 에이전트 작업 실시간 해설. 설정에서 끄면 버튼 없음(#1062). */}
-            {catchupOn && <button type="button" onClick={() => pickRightMode("learn")} aria-pressed={rightMode === "learn"} title={t("learn.mode")} aria-label={t("learn.mode")}
-              className={`shrink-0 rounded-lg p-1.5 transition ${rightMode === "learn" ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
+            {catchupOn && <button type="button" onClick={() => pickRightMode("learn")} aria-pressed={rightMode === "learn"} title={rightMode !== "learn" && catchupBusy.total > 0 ? `${t("learn.mode")} · ${t("learn.busy")}` : t("learn.mode")} aria-label={t("learn.mode")}
+              className={`relative shrink-0 rounded-lg p-1.5 transition ${rightMode === "learn" ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
               <IconActivity size={16} stroke={2} aria-hidden />
+              {rightMode !== "learn" && catchupBusy.total > 0 && <span className="absolute right-1 top-1 h-1.5 w-1.5 animate-pulse rounded-full bg-mustard-500 dark:bg-mustard-400" aria-hidden />}
             </button>}
             {!catchupOn && <button type="button" onClick={() => pickRightMode("chat")} aria-pressed={rightMode === "chat"} title={t("chat.title")} aria-label={t("chat.title")}
               className={`shrink-0 rounded-lg p-1.5 transition ${rightMode === "chat" ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
