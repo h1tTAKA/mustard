@@ -54,7 +54,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     type State = { since: number; done: string[]; sessSince?: number; queued?: string[]; noSession?: string[]; hasCard?: string[]; from?: number; pending?: Pend[]; revived?: number; reviveTries?: number; reviveAt?: number };
     const read = (): State | null => { try { return JSON.parse(localStorage.getItem(stateKey) || "null") as State | null; } catch { return null; } };
     const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
-    let alive = true, busy = false, sbusy = false; // #1264 diff 줄(busy)과 세션 줄(sbusy)은 따로 돎
+    let alive = true, busy = false, sbusy = false, fbusy = false; // #1264 diff 줄(busy)·세션 줄 세우기(sbusy)·세션 카드 만들기(fbusy)는 따로 돎
     let budget = 0; // #1235 주기마다 세션 카드 조회 5번까지(되살리기로 쌓여도 새 커밋 설명·서버를 오래 붙잡지 않게, 리뷰) — tick 시작에 채움
 
     // info = 카드 메타("브랜치 · 커밋 제목", #1062) — tool 필드에 담아 저장(스키마 변경 없이).
@@ -171,7 +171,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
       try {
         const st = read();
         if (!st) { const now = Math.floor(Date.now() / 1000); write({ since: now, sessSince: now, done: [], from: now, reviveAt: Date.now() + 30 * 60_000 }); return; } // 처음 켬 → 지금부터(켜기 전 커밋은 되살리지 않음)
-        const j = await post("/api/repo/git-recent", { path: root, since: st.since });
+        const j = await post("/api/repo/git-recent", { path: root, since: st.since, limit: 100 }); // 기본 20이면 몰린 커밋 중 오래된 쪽 diff가 영영 빠짐(리뷰). ponytail: 30초에 100개 넘게 오면 잘림
         const all = ((j?.commits ?? []) as Recent[]).reverse(); // 오래된 것부터
         const fresh = all.filter((c) => !st.done.includes(c.hash));
         const head = typeof j?.branch === "string" ? j.branch : "";
@@ -192,12 +192,11 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     const sessTick = async () => {
       if (sbusy || !alive || !cfg.current.providerId || !cfg.current.loaded) return;
       sbusy = true;
-      budget = 5;
       try {
         let st = read();
         if (!st) return; // 처음 상태는 diff 줄이 만듦
         // 세션 분석이 꺼져 있는 동안엔 from·sessSince를 지금으로 — 다시 켰을 때 꺼져 있던 동안의 커밋을 한꺼번에 요약하지 않게(리뷰)
-        if (!cfg.current.sessOn) { const now = Math.floor(Date.now() / 1000); write({ ...st, from: now, sessSince: now }); return; }
+        if (!cfg.current.sessOn) { const now = Math.floor(Date.now() / 1000); write({ ...st, from: now, sessSince: now, pending: [] }); return; } // 미룬 것도 버림(예전 동작, 리뷰)
         const sessSince = st.sessSince ?? st.since;
         // #1235 → #1262 되살리기 — 30분마다 최근 24시간(켠 뒤) 줄에 넣었던 커밋 중 카드가 없는 것을 다시 줄 세움.
         //  카드 존재는 캐치업 기록(key "session|hash")에서 확인, 세션 없는 커밋은 noSession, 카드 확인한 커밋은 hasCard로 다시 안 봄.
@@ -223,7 +222,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           write(st);
         }
         // 새 커밋 → 세션 줄(턴이 안 끝났으면 flushPending이 지금까지 대화로 먼저 만들고 끝나면 교체, #1260)
-        const j = await post("/api/repo/git-recent", { path: root, since: sessSince });
+        const j = await post("/api/repo/git-recent", { path: root, since: sessSince, limit: 100 });
         const head = typeof j?.branch === "string" ? j.branch : "";
         const fresh = ((j?.commits ?? []) as Recent[]).reverse().filter((c) => !(st!.queued ?? []).includes(c.hash));
         if (fresh.length && alive) {
@@ -231,7 +230,8 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           const add = fresh.filter((c) => !(cur.queued ?? []).includes(c.hash)).map((c): Pend => ({ hash: c.hash, ts: c.ts, ms: c.ms, subject: c.subject ?? "", branch: c.branch || head, at: Date.now(), merge: !!c.merge }));
           write({ ...cur, sessSince: Math.max(cur.sessSince ?? cur.since, ...fresh.map((c) => c.ts)), queued: [...(cur.queued ?? []), ...add.map((a) => a.hash)].slice(-50), pending: [...(cur.pending ?? []), ...add] });
         }
-        await flushPending();
+        // 카드 만들기(AI 요약, 몇 분)는 기다리지 않음 — 그동안 들어온 새 커밋도 다음 주기에 바로 줄에 서게(리뷰)
+        if (!fbusy) { fbusy = true; budget = 5; void flushPending().catch(() => {}).finally(() => { fbusy = false; }); }
       } catch { /* 서버 미준비 등 — 다음 주기 */ } finally { sbusy = false; }
     };
     void tick(); void sessTick();
