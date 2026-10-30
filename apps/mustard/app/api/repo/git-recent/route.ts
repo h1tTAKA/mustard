@@ -35,7 +35,7 @@ export async function POST(request: Request): Promise<Response> {
     const at = branchesFromReflog(reflog.split("\n").filter(Boolean));
     // #1255 ms = 카드 시각(같은 초 커밋도 커밋 순서대로) — --date-order라 자식이 부모보다 먼저
     // 개수 상한(-n)에 걸렸을 때만(평소 폴링은 since 이후라 드묾) 같은 초 묶음이 잘렸을 수 있음 → 최근 1000개를 다시 받아 목록의 가장 이른 초 이후 전체로 셈(리뷰).
-    //  --since는 시계가 어긋난 커밋이 있으면 탐색이 일찍 끊겨 빠질 수 있어 안 쓰고 JS에서 거름. 1000개 상한에 닿으면 경고.
+    //  --since는 시계가 어긋난 커밋이 있으면 탐색이 일찍 끊겨 빠질 수 있어 안 쓰고 JS에서 거름. 창 안에서 잘리면 경고(시각이 순서대로라는 전제 — 시계 어긋남 + 1000개 + 같은 초가 겹치면 경고 없이 몇 ms 어긋날 수 있음, 감수).
     let full: { hash: string; ts: number }[] = commits;
     if (commits.length >= n) {
       const minT = Math.min(...commits.map((c) => c.ts));
