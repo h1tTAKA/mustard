@@ -50,8 +50,8 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
     const stateKey = `nunopi:auto-explain:${root}`;
     if (!on) { try { localStorage.removeItem(stateKey); } catch { /* ignore */ } return; } // 다시 켜면 그때부터
     // pending = 세션 턴이 아직 안 끝나 카드를 미룬 커밋(#1064) — 다음 주기마다 다시, 20분 지나면 그대로 만듦
-    type Pend = { hash: string; ts: number; ms?: number; subject: string; branch: string; at: number; early?: 1; merge?: boolean; errAt?: number; rv?: 1 }; // rv = 되살리기로 넣은 것(새 커밋 뒤에 처리)
-    type State = { since: number; done: string[]; queued?: string[]; noSession?: string[]; from?: number; pending?: Pend[]; revived?: number; reviveTries?: number; reviveAt?: number };
+    type Pend = { hash: string; ts: number; ms?: number; subject: string; branch: string; at: number; early?: 1; retryAt?: number; merge?: boolean; errAt?: number; rv?: 1 }; // rv = 되살리기로 넣은 것(새 커밋 뒤에 처리)
+    type State = { since: number; done: string[]; queued?: string[]; noSession?: string[]; hasCard?: string[]; from?: number; pending?: Pend[]; revived?: number; reviveTries?: number; reviveAt?: number };
     const read = (): State | null => { try { return JSON.parse(localStorage.getItem(stateKey) || "null") as State | null; } catch { return null; } };
     const write = (st: State) => { try { localStorage.setItem(stateKey, JSON.stringify(st)); } catch { /* ignore */ } };
     let alive = true, busy = false;
@@ -109,8 +109,9 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
       for (const pd of [...st0.pending.filter((p) => !p.rv), ...st0.pending.filter((p) => p.rv)]) { // 새 커밋 먼저, 되살리기는 몫이 남을 때(리뷰)
         if (!alive) return;
         if (budget <= 0) { skipped.push(pd); continue; } // 이번 주기 몫 다 씀 — 다음 주기에
+        if (pd.retryAt && Date.now() < pd.retryAt) { keep.push(pd); continue; } // #1262 오류 뒤 2분 쉼(30초 주기마다 두드리지 않게, 리뷰)
         if (!cfg.current.sessOn) continue; // 세션 분석 꺼짐 — 미룬 것도 버림
-        if (Date.now() - pd.at > 60 * 60_000) continue; // 1시간 넘게 계속 실패 — 포기
+        if (Date.now() - pd.at > 60 * 60_000) { noSession.push(pd.hash); continue; } // 1시간 넘게 계속 실패 — 포기(되살리기도 다시 안 봄, 리뷰)
         const { spid: sp, sps: sset, locale: sl } = cfg.current;
         budget--;
         const endBusy = beginBusy(root, "session"); // #1240
@@ -130,7 +131,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           }
           keep.push({ ...pd, errAt: undefined }); continue; // 오류 창은 연속 오류만(옛 오류 시각이 남아 나중 한 번에 버려지지 않게, 리뷰)
         }
-        if (r === "error") { const at = pd.errAt ?? Date.now(); if (Date.now() - at < 30 * 60_000) keep.push({ ...pd, errAt: at }); continue; } // #1262 30분 — 패키징(서버가 몇 분 없음)도 견디게 // 서버 오류 — 처음 실패부터 5분까지만 다시(리뷰)
+        if (r === "error") { const at = pd.errAt ?? Date.now(); if (Date.now() - at < 30 * 60_000) keep.push({ ...pd, errAt: at, retryAt: Date.now() + 2 * 60_000 }); else noSession.push(pd.hash); continue; } // #1262 30분(2분 간격) — 패키징(서버가 몇 분 없음)도 견디게, 그래도 안 되면 되살리기도 다시 안 봄 // 서버 오류 — 처음 실패부터 5분까지만 다시(리뷰)
         if (r === "none") noSession.push(pd.hash); // #1262 세션 없는 커밋(사람 커밋) — 되살리기가 다시 안 봄
         if (r !== "none" && alive) {
           window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item: r } }));
@@ -140,7 +141,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           } else void post("/api/repo/stream", { root, items: [r] }).catch(() => { /* 기록 실패 — 화면엔 이벤트로 뜸 */ });
         }
       }
-      if (alive) { const cur = read() ?? st0; write({ ...cur, noSession: [...(cur.noSession ?? []), ...noSession].slice(-100), pending: [...skipped, ...keep, ...(cur.pending ?? []).filter((p) => !st0.pending!.some((q) => q.hash === p.hash))] }); }
+      if (alive) { const cur = read() ?? st0; write({ ...cur, noSession: [...(cur.noSession ?? []), ...noSession].slice(-300), pending: [...skipped, ...keep, ...(cur.pending ?? []).filter((p) => !st0.pending!.some((q) => q.hash === p.hash))] }); }
     };
 
     // #1093 복구 — 실패 문구가 설명으로 저장된 diff 카드를 찾아 그 파일만 다시(캐시된 정상 구간은 재사용, 실패 구간만 AI).
@@ -172,25 +173,28 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         // #1235 → #1262 되살리기 — 30분마다 최근 24시간(켠 뒤) 처리한 커밋 중 카드가 없는 세션 카드를 다시 줄 세움.
         //  예전엔 레포마다 한 번뿐이고 "저장된 세션 있음 = 카드 있음"으로 봐서, 패키징 중 404로 버려진 머지 카드가 영영 안 돌아왔음.
         //  카드 존재는 캐치업 기록(key "session|hash")에서 확인, 세션 없는 커밋(사람 커밋)은 noSession(최근 100)으로 다시 안 봄.
-        //  ponytail: 최대 100개·한 번에 20개, 조회는 주기 몫 밖(로컬 파일). 세션 분석이 꺼져 있으면 안 함.
-        if (cfg.current.sessOn && Date.now() >= (st.reviveAt ?? 0)) {
+        //  카드 있다고 확인한 커밋은 hasCard(최근 300)로 다시 조회 안 함. 실패해도 다음은 30분 뒤(무한 5분 반복 없게, 리뷰).
+        //  ponytail: 최대 100개·한 번에 20개, 조회는 주기 몫 밖(로컬 파일).
+        // 세션 분석이 꺼져 있는 동안엔 from을 지금으로 — 다시 켰을 때 꺼져 있던 동안의 커밋을 한꺼번에 요약하지 않게(리뷰)
+        if (!cfg.current.sessOn) { st = { ...st, from: Math.floor(Date.now() / 1000) }; write(st); }
+        else if (Date.now() >= (st.reviveAt ?? 0)) {
           const since = Math.max(Math.floor(Date.now() / 1000) - 86_400, st.from ?? 0);
           const back = await post("/api/repo/git-recent", { path: root, since, limit: 100 }).catch(() => null);
-          const add: Pend[] = [];
-          let failed = !Array.isArray(back?.commits) || !!back?.note; // git 실패도 빈 목록으로 옴(note) — 실패로 봄
+          const add: Pend[] = [], has: string[] = [];
+          const failed = !Array.isArray(back?.commits) || !!back?.note; // git 실패도 빈 목록으로 옴(note) — 실패로 봄
           for (const c of (failed ? [] : back.commits) as { hash: string; ts: number; ms?: number; subject?: string; merge?: boolean; branch?: string }[]) {
             if (!alive) return;
             const handled = c.ts < st.since || st.done.includes(c.hash); // 이미 지나간 커밋(아직 안 본 건 평소 흐름이)
-            if (!handled || (st.noSession ?? []).includes(c.hash) || (st.pending ?? []).some((p) => p.hash === c.hash)) continue;
+            if (!handled || (st.noSession ?? []).includes(c.hash) || (st.hasCard ?? []).includes(c.hash) || (st.pending ?? []).some((p) => p.hash === c.hash)) continue;
             const got = await fetch(`/api/repo/stream?root=${encodeURIComponent(root)}&key=${encodeURIComponent(`session|${c.hash}`)}`).then((r) => r.json()).catch(() => null);
-            if (got?.ok !== true) { failed = true; continue; } // 확인 못 함 — 이번엔 건너뛰고 다음에
-            if (got.item) continue; // 이미 카드 있음
+            if (got?.ok !== true) continue; // 확인 못 함 — 이번엔 건너뛰고 30분 뒤에
+            if (got.item) { has.push(c.hash); continue; } // 이미 카드 있음 — 다음엔 조회 안 함
             if (add.length >= 20) break;
             add.push({ hash: c.hash, ts: c.ts, ms: c.ms, subject: c.subject ?? "", branch: c.branch || back.branch || "", at: Date.now(), merge: !!c.merge, rv: 1 });
           }
           if (!alive) return; // 꺼진 뒤 옛 상태로 덮어쓰지 않게(리뷰)
           const cur = read() ?? st;
-          st = { ...cur, reviveAt: Date.now() + (failed ? 5 : 30) * 60_000, pending: [...(cur.pending ?? []), ...add.filter((a) => !cur.pending?.some((p) => p.hash === a.hash))] };
+          st = { ...cur, reviveAt: Date.now() + 30 * 60_000, hasCard: [...(cur.hasCard ?? []), ...has].slice(-300), pending: [...(cur.pending ?? []), ...add.filter((a) => !cur.pending?.some((p) => p.hash === a.hash))] };
           write(st);
         }
         const j = await post("/api/repo/git-recent", { path: root, since: st.since });
