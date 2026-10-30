@@ -2,12 +2,13 @@
 // 워크스페이스 diff 뷰(#649) — 커밋+파일의 git diff. shiki 신택스 하이라이팅 + 빨강(−)/초록(+) 배경.
 import { langOf } from "@/lib/codeLang";
 import { useCodeFont } from "@/lib/codeFont";
+import { showWs } from "@/lib/codeWs";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { codeToTokens, type ThemedToken, type BundledLanguage } from "shiki";
 import { IconLoader2, IconAlertTriangle, IconGitCompare, IconSparkles, IconRefresh, IconBrandGithub, IconRobot, IconCheck, IconX, IconPlus, IconPlusMinus, IconClock } from "@tabler/icons-react";
 import { loadPrReview, prReviewKey, PR_REVIEW_EVENT, type Finding } from "@/lib/prReview";
 import { setFindingStatus, postFinding } from "@/lib/prReviewRun";
-import { useLocale, useT, useToast } from "@mustard/core";
+import { useLocale, useT, useToast, useSetting, EKEYS, EDITOR_DEFAULTS } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Thread, type LineComment } from "@/components/workspace/github/PrReviewComments";
@@ -25,6 +26,9 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
   const { locale } = useLocale();
   const toast = useToast();
   const font = useCodeFont(-1); // #1218 기본 11px
+  const wrap = useSetting<boolean>(EKEYS.wordWrap, EDITOR_DEFAULTS.wordWrap);
+  const ws = useSetting<boolean>(EKEYS.showWhitespace, EDITOR_DEFAULTS.showWhitespace);
+  const txt = (s: string) => (ws ? showWs(s) : s);
   // 변경 구간별 에이전트 노트. key = diffText 해시(구간 내용 기반 안정 키 → 같은 diff 재오픈 시 매칭).
   const [notes, setNotes] = useState<Record<string, { status: "loading" | "done" | "error"; text?: string }>>({});
   const [lines, setLines] = useState<DLine[] | null>(null);
@@ -293,7 +297,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
         const composeHere = !!sel && !!head && sel.side === side && sel.line === ln;
         const lineT = pr ? [...(l.oldN != null && l.kind !== "add" ? threadAt.get(`LEFT:${l.oldN}`) ?? [] : []), ...(l.newN != null ? threadAt.get(`RIGHT:${l.newN}`) ?? [] : [])] : [];
         const row = (
-          <div key={i} className={`group relative flex w-max min-w-full ${bg} ${lineF || inSel ? "ring-1 ring-inset ring-mustard-500/70" : ""}`}>
+          <div key={i} className={`group relative flex ${wrap ? "w-full" : "w-max min-w-full"} ${bg} ${lineF || inSel ? "ring-1 ring-inset ring-mustard-500/70" : ""}`}>
             {/* #1127 지적 있는 줄 — 옛 줄번호 칸 왼쪽에 눈에 띄는 배지(오른쪽 정렬 번호는 3자리까지 안 가림, 코드 정렬 그대로), 누르면 지적 펼침 */}
             {lineF && (
               <button type="button" title={lineF.map((f) => f.title).join("\n")} aria-label={`${t("github.tabAgentReview")}: ${lineF.map((f) => f.title).join(", ")}`} aria-expanded={openLines.has(lineN)} aria-controls={`prf-${lineN}`}
@@ -319,8 +323,9 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
             )}
             <span className="w-9 shrink-0 select-none border-r border-zinc-100 px-1 text-right text-[10px] text-zinc-300 dark:border-zinc-800 dark:text-zinc-600">{l.newN ?? ""}</span>
             <span className={`w-4 shrink-0 select-none text-center ${markCls}`}>{mark}</span>
-            <span className="whitespace-pre px-1">
-              {tok ? tok.map((tk, j) => <span key={j} style={{ color: tk.color }}>{tk.content}</span>) : <span className="text-zinc-700 dark:text-zinc-200">{l.text}</span>}
+            {/* #1218 줄바꿈이면 남은 폭 안에서 다음 줄로(넘치는 긴 낱말만 끊음), 공백 보이기면 ·/→ */}
+            <span className={wrap ? "min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] px-1" : "whitespace-pre px-1"}>
+              {tok ? tok.map((tk, j) => <span key={j} style={{ color: tk.color }}>{txt(tk.content)}</span>) : <span className="text-zinc-700 dark:text-zinc-200">{txt(l.text)}</span>}
             </span>
           </div>
         );
