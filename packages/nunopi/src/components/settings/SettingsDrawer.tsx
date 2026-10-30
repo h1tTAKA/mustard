@@ -205,6 +205,8 @@ export default function SettingsDrawer({
   const tLinkClick = useSetting<"open" | "menu" | "off">(TKEYS.linkClick, TERMINAL_DEFAULTS.linkClick);
   // 알림(#928)
   const nAgentDone = useSetting<boolean>(NKEYS.agentDone, NOTIF_DEFAULTS.agentDone);
+  const nAgentAskRaw = useSetting<unknown>(NKEYS.agentAsk, undefined); // #1217 정한 적 없으면 완료 스위치를 따름
+  const nAgentAsk = typeof nAgentAskRaw === "boolean" ? nAgentAskRaw : nAgentDone;
   const nSuppress = useSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching);
   const nMaster = useSetting<boolean>(NKEYS.master, NOTIF_DEFAULTS.master);   // #939
   const wDefaultFolder = useSetting<string>(WKEYS.defaultFolder, WORKSPACE_DEFAULTS.defaultFolder); // #939
@@ -1003,6 +1005,7 @@ export default function SettingsDrawer({
             {([
               { key: NKEYS.master, on: nMaster, label: t("settings.notifMaster"), desc: t("settings.notifMasterDesc") },
               { key: NKEYS.agentDone, on: nAgentDone, label: t("settings.notifAgentDone"), desc: t("settings.notifAgentDoneDesc") },
+              { key: NKEYS.agentAsk, on: nAgentAsk, label: t("settings.notifAgentAsk"), desc: t("settings.notifAgentAskDesc") },
               { key: NKEYS.suppressWhileWatching, on: nSuppress, label: t("settings.notifSuppress"), desc: t("settings.notifSuppressDesc") },
             ]).map((row) => (
               <div key={row.key} className="flex items-center justify-between gap-3">

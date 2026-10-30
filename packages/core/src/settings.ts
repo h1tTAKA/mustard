@@ -148,6 +148,13 @@ export function pickDefaultAgent(detected: string[], weak: string[] = []): strin
 // suppressWhileWatching(#1021, 옛 suppressWhileFocused): "지금 보고 있는 레포 탭"의 에이전트 완료 알림만 억제(#973~). 다른 레포는 포커스여도 알림.
 export const NOTIF_DEFAULTS = { agentDone: true, suppressWhileWatching: true, terminalBell: false, master: true, silent: false, crew: true, volume: 70 };
 // #1217 알림 소리 — "default"(OS 기본) | "none"(무음) | 맥 시스템 소리 이름(main이 /System/Library/Sounds/<이름>.aiff 재생, 크기 조절)
+// #1217 에이전트 알림 켜짐 — 완료(done) / 질문·막힘(ask, 따로 정한 적 없으면 완료 스위치를 따름)
+export function agentNotifyOn(kind: "done" | "ask"): boolean {
+  const done = getSetting<boolean>(NKEYS.agentDone, NOTIF_DEFAULTS.agentDone);
+  if (kind === "done") return done;
+  const ask = getSetting<unknown>(NKEYS.agentAsk, undefined);
+  return typeof ask === "boolean" ? ask : done;
+}
 export const NOTIF_SOUNDS = ["Glass", "Ping", "Pop", "Tink", "Hero", "Submarine", "Purr", "Funk", "Blow", "Bottle", "Frog", "Basso", "Morse", "Sosumi"] as const;
 export const NKEYS = {
   agentDone: "notif.agentDone",
@@ -155,6 +162,7 @@ export const NKEYS = {
   terminalBell: "notif.terminalBell",
   master: "notif.master",   // #939 알림 전체 on/off
   silent: "notif.silent",   // #939 소리 없이(무음 알림) — #1217부터 sound가 없을 때만 읽음(켜져 있으면 "none")
+  agentAsk: "notif.agentAsk", // #1217 에이전트가 물어봄·막힘(waiting/blocked) 알림 — 없으면 agentDone 값(예전엔 한 스위치)
   sound: "notif.sound",     // #1217 알림 소리
   volume: "notif.volume",   // #1217 고른 소리 크기 0~100
   crew: "notif.crew",       // #1167 Crew 역할이 사람을 부르면(질문·권한·관문·막힘) 알림 — 에이전트 대화방 헤더 🔔

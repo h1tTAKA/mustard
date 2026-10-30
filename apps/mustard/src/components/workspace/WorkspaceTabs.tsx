@@ -3,7 +3,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { IconFiles, IconFolderOpen, IconPlus, IconX, IconMessages, IconFileCode, IconFileText, IconCards, IconBell, IconBellOff } from "@tabler/icons-react";
 import { useT, useShortcut } from "@mustard/core";
-import { getSetting, setSetting, subscribeSettings, useSetting, AKEYS, AGENT_DEFAULTS, UPDATE_KEYS, BROWSER_KEYS, BROWSER_DEFAULTS, NKEYS, NOTIF_DEFAULTS, CKEYS, desktopNotify, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
+import { agentNotifyOn, getSetting, setSetting, subscribeSettings, useSetting, AKEYS, AGENT_DEFAULTS, UPDATE_KEYS, BROWSER_KEYS, BROWSER_DEFAULTS, NKEYS, NOTIF_DEFAULTS, CKEYS, desktopNotify, WKEYS, WORKSPACE_DEFAULTS } from "@mustard/core";
 import { crewRoomOpen } from "./crew/crewUi";
 import { useToast } from "@mustard/core";
 import { useConfirm } from "@mustard/core";
@@ -152,6 +152,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     const next = !notifyOnRef.current;
     notifyOnRef.current = next; setNotifyOn(next);
     setSetting(NKEYS.agentDone, next); // #928 설정 스토어로 이관(설정 페이지와 동기)
+    setSetting(NKEYS.agentAsk, next); // #1217 벨은 완료·질문 둘 다
   };
   // 설정 페이지서 알림 토글 변경 시 인탭 벨 동기(#928).
   // #1200 업데이트 자동 확인 — 앱 시작 때 하루 한 번(설정으로 끔), 새 버전이면 알림(누르면 릴리스 페이지)
@@ -176,7 +177,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   const keepAwake = useSetting<string>(AKEYS.keepAwake, AGENT_DEFAULTS.keepAwake);
   useEffect(() => { window.nunopiDesktop?.setKeepAwake?.(keepAwake === "working" || keepAwake === "always" ? keepAwake : "off"); }, [keepAwake]);
   useEffect(() => subscribeSettings(() => {
-    const v = getSetting<boolean>(NKEYS.agentDone, NOTIF_DEFAULTS.agentDone);
+    const v = agentNotifyOn("done") || agentNotifyOn("ask"); // #1217 벨 = 둘 중 하나라도 켜짐
     notifyOnRef.current = v; setNotifyOn(v);
   }), []);
   useEffect(() => {
@@ -218,14 +219,15 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
             const prev = prevSession.current[k];
             prevSession.current[k] = s.state;
             if (s.state === "working") { clearTimeout(pendingNotify.current[k]); delete pendingNotify.current[k]; continue; }
-            if (prev !== "working" || warming || !notifyOnRef.current || pendingNotify.current[k] || s.silent) continue;
+            if (prev !== "working" || warming || pendingNotify.current[k] || s.silent) continue; // #1217 알림이 꺼져도 확인은 함(안 본 탭 표시용) — 알림 여부는 아래에서 종류별로
             const fired = latestSession.current[k];
             pendingNotify.current[k] = setTimeout(() => {
               delete pendingNotify.current[k];
-              if (latestSession.current[k] !== fired || !notifyOnRef.current) return; // 그새 바뀜 → 취소
+              if (latestSession.current[k] !== fired) return; // 그새 바뀜 → 취소
               const focused = typeof document !== "undefined" && document.hasFocus();
               const at = tabsRef.current.find((x) => tabKey(x) === activeKeyRef.current);
               const watching = focused && !!at && at.type === "repo" && (at.wt ?? at.path) === p; // 지금 이 레포(작업 폴더)를 보고 있음(#1170 wt 기준)
+              if (!agentNotifyOn(s.state === "done" ? "done" : "ask")) return; // #1217 완료 / 질문·막힘 따로
               if (getSetting<boolean>(NKEYS.suppressWhileWatching, NOTIF_DEFAULTS.suppressWhileWatching) && watching) return;
               const now = Date.now();
               if (now - (lastNotifyAt.current[p] ?? 0) < 5000) return; // 레포별 5s 쿨다운(세션 여러 개 동시 완료 등)
@@ -321,7 +323,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     } catch { /* ignore */ }
     // #928 설정 스토어서 복원. 옛 키(nunopi:notifyAgentDone) 있으면 1회 이관.
     try { const old = localStorage.getItem("nunopi:notifyAgentDone"); if (old !== null && getSetting(NKEYS.agentDone, null) === null) { setSetting(NKEYS.agentDone, old !== "0"); localStorage.removeItem("nunopi:notifyAgentDone"); } } catch { /* ignore */ }
-    const notif = getSetting<boolean>(NKEYS.agentDone, NOTIF_DEFAULTS.agentDone);
+    const notif = agentNotifyOn("done") || agentNotifyOn("ask"); // #1217 벨 = 둘 중 하나라도
     notifyOnRef.current = notif;
     /* eslint-disable react-hooks/set-state-in-effect -- 마운트 1회 복원 */
     setMounted(true);
