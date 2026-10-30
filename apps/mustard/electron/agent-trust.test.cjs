@@ -56,11 +56,13 @@ const { trustAgentFolder, claudeConfigFile } = require("./agent-trust.cjs");
   mkdirSync(`${realCfg}.lock`);
   assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "locked");
   require("node:fs").rmdirSync(`${realCfg}.lock`);
-  // 에이전트 설정(.mcp.json·.claude/)을 바꾼 브랜치(포크 PR 등)는 안 함 — 커밋했든 안 했든
-  writeFileSync(join(dir2, ".mcp.json"), "{}");
-  assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "agent-config-changed");
-  require("node:fs").rmSync(join(dir2, ".mcp.json"));
-  assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "granted");
+  // 남의 커밋(레포 어느 브랜치에도 없음, 포크 PR 등)에서 시작한 작업공간은 안 함
+  const fork = join(ws, "fork");
+  git(main, "worktree", "add", "-q", "--detach", fork);
+  git(fork, "-c", "user.email=x@y", "-c", "user.name=x", "commit", "-q", "--allow-empty", "-m", "evil");
+  git(fork, "switch", "-q", "-c", "pr-9");
+  assert.strictEqual(await trustAgentFolder("claude", fork, opts), "unknown-commit");
+  assert.strictEqual(await trustAgentFolder("claude", dir2, opts), "granted", "메인과 같은 커밋에서 시작");
   // 권한 0664도 그대로(umask에 안 깎임)
   chmodSync(realCfg, 0o664);
   const dir3 = join(ws, "c"); git(main, "worktree", "add", "-q", dir3, "-b", "c");

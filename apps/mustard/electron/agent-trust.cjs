@@ -1,6 +1,7 @@
 // 에이전트 작업 폴더 미리 신뢰(#1216) — Mustard가 만든 작업공간(worktree)에서 Claude가 "이 폴더를 믿나요?"를 매번 묻지 않게, 띄우기 직전 신뢰로 기록.
-// 조건: Mustard 작업공간 안쪽 + 그 레포의 메인 폴더를 사용자가 이미 Claude에서 신뢰함 + 에이전트가 실행하는 설정(.claude/·.mcp.json)이
-// 메인과 같음 → 그 신뢰를 작업공간에 물려줌. 포크 PR처럼 남이 hooks·MCP를 바꾼 브랜치는 원래대로 물어봄(리뷰).
+// 조건: Mustard 작업공간 안쪽 + 그 레포의 메인 폴더를 사용자가 이미 Claude에서 신뢰함 + 작업공간의 지금 커밋이 이미 레포에 있는 코드
+// (내 로컬 브랜치나 origin 브랜치에 들어 있음) → 그 신뢰를 작업공간에 물려줌. 포크 PR처럼 남의 커밋에서 시작한 작업공간은 원래대로 물어봄(리뷰).
+// 한계: 신뢰를 준 뒤 그 작업공간에서 바뀌는 것(에이전트 자신의 작업)은 Claude가 다시 묻지 않음 — 사람이 직접 "믿어요"를 눌렀을 때와 같음.
 // 실패(설정 파일 없음·깨짐·잠금 못 잡음)면 아무것도 안 함 — 그때는 Claude가 원래대로 물어볼 뿐.
 // ponytail: Claude만. Codex(config.toml)는 TOML 형식이 여러 가지라 안전하게 덧붙이기 어려움 — 필요해지면 TOML 파서로.
 const { execFile } = require("node:child_process");
@@ -26,13 +27,13 @@ async function mainOf(dir) {
     return gitDir !== common && common.endsWith(`${sep}.git`) ? real(dirname(common)) : null;
   } catch { return null; }
 }
-// 에이전트가 실행하는 설정(hooks·MCP)이 메인 폴더의 지금 커밋과 같은지 — 다르거나 확인 못 하면 false
-const AGENT_CONFIG = [".claude", ".mcp.json"];
-async function sameAgentConfig(dir, main) {
+// 작업공간의 지금 커밋(HEAD)이 그 작업공간 자기 브랜치 말고 다른 로컬 브랜치나 origin 브랜치에도 들어 있는지 = 이미 레포에 있는 코드.
+// 포크 PR(refs/pull로 받아 만든 브랜치)은 자기 브랜치에만 있어 false. 확인 못 하면 false.
+async function knownCommit(dir) {
   try {
-    const head = await git(main, ["rev-parse", "HEAD"]);
-    await git(dir, ["diff", "--quiet", head, "--", ...AGENT_CONFIG]); // 추적 파일: 작업 폴더(커밋 안 한 것 포함) vs 메인 커밋 — 같으면 종료 코드 0
-    return !(await git(dir, ["ls-files", "--others", "--", ...AGENT_CONFIG])); // 새로 생긴 파일(무시 목록 포함)은 diff에 안 잡힘 — 하나라도 있으면 다름
+    const own = await git(dir, ["symbolic-ref", "-q", "HEAD"]).catch(() => "");
+    const refs = (await git(dir, ["for-each-ref", "--contains", "HEAD", "--format=%(refname)", "refs/heads", "refs/remotes/origin"])).split("\n").filter(Boolean);
+    return refs.some((r) => r !== own && r !== "refs/remotes/origin/HEAD");
   } catch { return false; }
 }
 
@@ -97,7 +98,7 @@ async function trustAgentFolder(agent, dir, opts = {}) {
   if (!inRoots(real(dir), trustRoots(opts.home, opts.env))) return "outside";
   const main = await mainOf(dir);
   if (!main) return "not-worktree";
-  if (!(await sameAgentConfig(dir, main))) return "agent-config-changed";
+  if (!(await knownCommit(dir))) return "unknown-commit";
   try { return await trustClaude(dir, main, opts); } catch { return "unreadable"; }
 }
 
