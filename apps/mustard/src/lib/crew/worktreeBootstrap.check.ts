@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { isTrusted, markSetupDone, materialize, noLinkUnder, normRel, parseConfig, parseInclude, readConfig, runArchive, runSetup, setupDone, trustScript } from "./worktreeBootstrap.ts";
+import { isTrusted, markSetupDone, materialize, noLinkUnder, normRel, parseConfig, parseInclude, readConfig, readRepoPrefs, readRepoScripts, runArchive, runSetup, setupDone, setupScriptFor, trustScript, writeRepoPrefs, writeRepoScripts } from "./worktreeBootstrap.ts";
 
 // 경로 정리·거부
 assert.strictEqual(normRel("./.env/"), ".env");
@@ -117,4 +117,31 @@ assert.strictEqual(await runArchive(root, wt), null, "승인 전 archive 안 돎
 trustScript(root, "touch archived.txt");
 const a = await runArchive(root, wt);
 assert.ok(a?.ok && existsSync(join(wt, "archived.txt")), "승인된 archive는 worktree에서 실행");
+// ── 앱에서 편집(#1216) — 모르는 키 보존, 쓴 스크립트는 승인, 깨진 파일·링크·나쁜 경로 거부 ──
+{
+  const r = realpathSync(mkdtempSync(join(tmpdir(), "wtb-edit-")));
+  assert.deepStrictEqual(readRepoScripts(r), { setup: "", archive: "", shared: [], broken: false }, "파일 없음 = 빈 값");
+  assert.strictEqual(writeRepoScripts(r, { setup: "", archive: "", shared: [] }), "ok");
+  assert.ok(!existsSync(join(r, ".mustard")), "빈 설정이면 파일 안 만듦");
+  mkdirSync(join(r, ".mustard"));
+  writeFileSync(join(r, ".mustard", "config.json"), JSON.stringify({ team: 1, scripts: { setup: "old", other: "x" }, setupAgentStartupPolicy: "wait-for-setup" }));
+  assert.strictEqual(writeRepoScripts(r, { setup: " pnpm i ", archive: "", shared: ["node_modules/", " .cache "] }), "ok");
+  const j = JSON.parse(readFileSync(join(r, ".mustard", "config.json"), "utf8"));
+  assert.deepStrictEqual(j, { team: 1, scripts: { setup: "pnpm i", other: "x" }, setupAgentStartupPolicy: "wait-for-setup", worktree: { sharedDirectories: ["node_modules", ".cache"] } }, "모르는 키 보존");
+  assert.ok(isTrusted(r, "pnpm i"), "앱에서 쓴 스크립트는 승인");
+  assert.strictEqual(writeRepoScripts(r, { setup: "x", archive: "", shared: ["../up"] }), "bad-path");
+  assert.strictEqual(writeRepoScripts(r, { setup: "x".repeat(4001), archive: "", shared: [] }), "too-long");
+  writeFileSync(join(r, ".mustard", "config.json"), "{broken");
+  assert.strictEqual(readRepoScripts(r).broken, true);
+  assert.strictEqual(writeRepoScripts(r, { setup: "y", archive: "", shared: [] }), "broken", "깨진 파일은 안 덮어씀");
+  assert.strictEqual(readFileSync(join(r, ".mustard", "config.json"), "utf8"), "{broken");
+  // 새 worktree에 설정이 없으면 메인 것
+  const wt2 = realpathSync(mkdtempSync(join(tmpdir(), "wtb-wt-")));
+  writeFileSync(join(r, ".mustard", "config.json"), JSON.stringify({ scripts: { setup: "main-setup" } }));
+  assert.strictEqual(setupScriptFor(r, wt2), "main-setup");
+  // 내 PC 설정
+  assert.deepStrictEqual(readRepoPrefs(r), { setupAuto: true }, "기본 켬");
+  writeRepoPrefs(r, { setupAuto: false });
+  assert.deepStrictEqual(readRepoPrefs(r), { setupAuto: false });
+}
 console.log("worktreeBootstrap.check ok");
