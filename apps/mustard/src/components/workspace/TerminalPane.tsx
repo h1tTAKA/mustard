@@ -8,7 +8,7 @@ import { useShortcut, useT, isCurrentTerminalDark, getSetting, CKEYS, useConfirm
 import Terminal from "@/components/workspace/Terminal";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
-import { sessionState, useAgentSessionStates } from "@/lib/agentSessionStates";
+import { clearUnread, isUnread, sessionState, useAgentSessionStates } from "@/lib/agentSessionStates";
 
 interface Tab { id: string; title: string; customTitle?: string } // customTitle=유저 더블클릭 리네임(최우선, 영속)
 const genId = () => globalThis.crypto?.randomUUID?.() ?? String(Math.random()).slice(2);
@@ -108,13 +108,20 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   }
 
   const active = tabs.find((x) => x.id === activeId) ?? tabs[0];
+  // #1217 지금 보이는 터미널 탭(레포 탭 활성 + 창 포커스)이면 "안 봄" 점을 지움 — 상태가 바뀔 때·창에 돌아올 때
+  const sessVer = useAgentSessionStates(); // #1036 탭별 에이전트 상태가 바뀌면 다시 그림(WorkspaceTabs 폴링 결과 공유)
+  useEffect(() => {
+    const clear = () => { if (paneActive && active && document.hasFocus()) clearUnread(active.id); };
+    clear();
+    window.addEventListener("focus", clear);
+    return () => window.removeEventListener("focus", clear);
+  }, [paneActive, active, sessVer]);
   // 활성 터미널 탭이 오버플로로 스크롤 밖이면 안 보임(#801) — 활성 탭에 콜백 ref로 스크롤 인투 뷰.
   // (터미널 자동 펴기는 N/A: 접히면 pane·+버튼이 dock에서 제거돼 외부 "열기" 트리거가 없고, 재표시는 헤더 토글=이미 펴짐.)
   const scrollTabIntoView = useCallback((el: HTMLElement | null) => { el?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, []);
 
   // 탭별 실행 중 에이전트(#803) — main이 버퍼 파싱으로 판정한 agent id(node 래퍼 CLI도 잡음). 탭 이름·아이콘용.
   // pty는 push 이벤트가 없어(에이전트 실행/종료=프로세스 교체) 2s 폴링. list()는 전 세션 반환 → tab.id로 조회.
-  useAgentSessionStates(); // #1036 탭별 에이전트 상태가 바뀌면 다시 그림(WorkspaceTabs 폴링 결과 공유)
   const [agentById, setAgentById] = useState<Record<string, AgentId>>({});
   const [sessionTitleById, setSessionTitleById] = useState<Record<string, string>>({}); // #970 세션 제목(OSC 타이틀)
   useEffect(() => {
@@ -257,6 +264,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
               {on && <span className="absolute inset-x-0 top-0 h-0.5 bg-mustard-500" aria-hidden />}
               {overId === tab.id && <span className="absolute inset-y-0 left-0 w-0.5 bg-mustard-500" aria-hidden />}
               {agent && <AgentStateIcon state={sessionState(tab.id)} />}{/* #1036 에이전트 아이콘 왼쪽에 상태 */}
+              {isUnread(tab.id) && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mustard-500 dark:bg-mustard-400" title={t("tabs.unread")} aria-label={t("tabs.unread")} />}{/* #1217 안 본 사이 끝남·물어봄 */}
               {agent
                 ? <span className="shrink-0"><AgentLogo agent={agent} size={13} /></span>
                 : <IconTerminal2 size={13} stroke={2} className={`shrink-0 ${on ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400"}`} aria-hidden />}
