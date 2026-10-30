@@ -8,6 +8,7 @@ import UpdateSection from "./UpdateSection";
 import BrowserSection from "./BrowserSection";
 import TerminalSessionsSection from "./TerminalSessionsSection";
 import TerminalKeyboardSection from "./TerminalKeyboardSection";
+import { listMonospaceFonts } from "./localFonts";
 import TerminalRenderSection from "./TerminalRenderSection";
 import TerminalThemeSection from "./TerminalThemeSection";
 import { IconKeyboard, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus } from "@tabler/icons-react";
@@ -175,6 +176,7 @@ export default function SettingsDrawer({
   // 터미널 설정(#926) — useSetting으로 구독(변경 즉시 반영). 모든 훅은 early-return 위.
   const tFontSize = useSetting<number>(TKEYS.fontSize, TERMINAL_DEFAULTS.fontSize);
   const tFontFamily = useSetting<string>(TKEYS.fontFamily, TERMINAL_DEFAULTS.fontFamily);
+  const [fontList, setFontList] = useState<string[]>([]); // #1224 설치된 고정폭 글꼴(입력칸 처음 누를 때 읽음)
   const tShellArgs = useSetting<string>(TKEYS.shellArgs, TERMINAL_DEFAULTS.shellArgs); // #1213
   const tShell = useSetting<string>(TKEYS.shell, TERMINAL_DEFAULTS.shell); // #1196
   const tOsc52 = useSetting<boolean>(TKEYS.osc52, TERMINAL_DEFAULTS.osc52);
@@ -709,8 +711,11 @@ export default function SettingsDrawer({
             <label className="block space-y-1.5">
               <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.terminalFontFamily")}</span>
               <input type="text" value={tFontFamily} onChange={(e) => setSetting(TKEYS.fontFamily, e.target.value)}
-                placeholder={TERMINAL_DEFAULTS.fontFamily}
+                placeholder={TERMINAL_DEFAULTS.fontFamily} list="mustard-terminal-fonts" spellCheck={false}
+                onFocus={() => { if (!fontList.length) void listMonospaceFonts().then(setFontList); }}
                 className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 font-mono text-[13px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+              {/* 마지막 쉼표 뒤를 치면 그 자리만 채움 — 앞쪽 글꼴 목록은 그대로(브라우저 자동완성은 값 전체로 거르므로 앞부분을 붙여 둠) */}
+              <datalist id="mustard-terminal-fonts">{fontList.map((f) => { const head = tFontFamily.slice(0, tFontFamily.lastIndexOf(",") + 1).replace(/,\s*$/, ", "); return <option key={f} value={`${head}${/^[\w -]+$/.test(f) && !/^\d/.test(f) ? f : `"${f.replace(/"/g, "")}"`}`} />; })}</datalist>
             </label>
             {/* 행간 */}
             <div className="flex items-center justify-between gap-3">
