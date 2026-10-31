@@ -17,7 +17,7 @@ const files = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" })
 
 // 지우기 실패는 넘김(시간 초과로 끊긴 점검이 아직 쓰는 중일 수 있음 — 요약까지는 가야 함).
 // Ctrl-C면 점검(자식)이 끊겨 FAIL로 적히고 그 임시 폴더도 지운 뒤 exit 1(spawnSync가 기다리는 동안엔 신호 처리기가 못 돎 — 확인함).
-// ponytail: 시간 초과면 직접 자식만 끔(손자 프로세스는 남을 수 있음) — 서버를 띄우는 점검이 생기면 detached + 프로세스 그룹 kill로.
+// 한계: 시간 초과면 직접 자식만 끔(손자 프로세스는 남을 수 있음) — 서버를 띄우는 점검이 생기면 detached + 프로세스 그룹 kill로.
 const clean = (dir) => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* 넘김 */ } };
 
 const fails = [];

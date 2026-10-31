@@ -91,7 +91,7 @@ export function parseCodexLine(line: string): ParsedLine | null {
 //  대상 호출 = 커밋 시각 직전(2초 여유~15분 전)의 마지막 호출 — 일반 커밋은 커밋 호출, 머지 커밋은 머지 호출(없으면 pull).
 export const CALL_WINDOW_MS = 15 * 60_000; // 커밋 시각 전 이만큼 안의 호출만 그 커밋 호출로 봄
 // #1269 머지는 'CI 기다렸다 머지'처럼 호출 시작이 머지보다 한참 앞설 수 있어 더 넓게(세션 파일 거르기도 같은 창 — 도는 동안 기록이 안 바뀜)
-export const MERGE_WINDOW_MS = 60 * 60_000; // ponytail: 머지 호출 시작이 60분보다 앞서면 여전히 놓침 — 그 이상 기다리는 명령이 생기면 늘림
+export const MERGE_WINDOW_MS = 60 * 60_000; // 한계: 머지 호출 시작이 60분보다 앞서면 여전히 놓침 — 그 이상 기다리는 명령이 생기면 늘림
 export function segmentForCommit<L>(lines: L[], parse: (l: L) => ParsedLine | null, commitSec: number, isMerge = false): { msgs: SessionMsg[]; branch?: string; cwd?: string; callTs: number; closed: boolean } | null {
   const commitMs = commitSec * 1000;
   type Call = { at: number; ts: number; kind: CallKind; mergeToo: boolean; branch?: string };

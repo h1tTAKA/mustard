@@ -4,6 +4,25 @@ import { memo } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import { common } from "lowlight";
+import dart from "highlight.js/lib/languages/dart";
+import dockerfile from "highlight.js/lib/languages/dockerfile";
+import scala from "highlight.js/lib/languages/scala";
+import elixir from "highlight.js/lib/languages/elixir";
+import haskell from "highlight.js/lib/languages/haskell";
+import groovy from "highlight.js/lib/languages/groovy";
+import gradle from "highlight.js/lib/languages/gradle";
+import protobuf from "highlight.js/lib/languages/protobuf";
+import powershell from "highlight.js/lib/languages/powershell";
+import ocaml from "highlight.js/lib/languages/ocaml";
+import clojure from "highlight.js/lib/languages/clojure";
+import erlang from "highlight.js/lib/languages/erlang";
+import julia from "highlight.js/lib/languages/julia";
+import nix from "highlight.js/lib/languages/nix";
+import cmake from "highlight.js/lib/languages/cmake";
+import nginx from "highlight.js/lib/languages/nginx";
+import fsharp from "highlight.js/lib/languages/fsharp";
+import properties from "highlight.js/lib/languages/properties";
 
 // CJK 강조 버그 보정: 닫는 `*`/`**` 앞이 ASCII 문장부호이고 바로 뒤가 한글/가나/한자면
 // CommonMark flanking 규칙상 강조가 안 닫혀 `**`가 리터럴로 남는다(예: `**A (a.ts)**는`).
@@ -24,11 +43,13 @@ const fixCjkEmphasis = (s: string) =>
 // onLink(선택, #1081): 링크 클릭을 앱이 먼저 처리(true 반환 = 처리함, 기본 이동 막음). catchup: 같은 앱 내부 스킴은 지우지 않음.
 // 빈 href(javascript: 등이 걸러져 ""가 된 것)는 이동 막음 — 같은 문서로 이동 = 화면 새로고침(#1139 리뷰).
 const keepAppLinks = (url: string) => (/^catchup:/i.test(url) ? url : defaultUrlTransform(url));
-// #1228 ReactMarkdown은 그릴 때마다 플러그인을 새로 붙이는데, rehype-highlight는 붙을 때마다 언어 37개를 새로 등록(createLowlight)함
+// #1228 ReactMarkdown은 그릴 때마다 플러그인을 새로 붙이는데, rehype-highlight는 붙을 때마다 언어 수십 개를 새로 등록(createLowlight)함
 // → 카드가 많은 화면이 다시 그려질 때마다 정규식 수천 개를 만들고 버려 화면 CPU 100%+·GC 30% 가까이(실측). 한 번 만든 변환기를 계속 씀.
 // memo — 부모가 다시 그려져도 같은 글이면 다시 파싱하지 않음(onLink를 매번 새로 넘기는 곳은 효과 없음).
+// #1272 기본 37개(common)에 없던 언어(dart 등)를 더 등록. 표기 없는 펜스 자동 감지는 지금처럼 37개 안에서만(subset).
+const EXTRA = { dart, dockerfile, scala, elixir, haskell, groovy, gradle, protobuf, powershell, ocaml, clojure, erlang, julia, nix, cmake, nginx, fsharp, properties };
 let highlight: ReturnType<typeof rehypeHighlight> | undefined;
-const highlightOnce = () => (highlight ??= rehypeHighlight({ detect: true }));
+const highlightOnce = () => (highlight ??= rehypeHighlight({ detect: true, languages: { ...common, ...EXTRA }, subset: Object.keys(common), aliases: { xml: ["vue", "svelte"] } }));
 export default memo(function Markdown({ children, className, onLink }: { children: string; className?: string; onLink?: (href: string) => boolean }) {
   return (
     <div className={className ? `nunopi-md ${className}` : "nunopi-md"}>

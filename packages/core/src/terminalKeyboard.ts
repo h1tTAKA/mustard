@@ -20,7 +20,7 @@ export function readMacOptionAsAlt(stored: unknown, legacyOn: unknown): MacOptio
 }
 
 // 한쪽 ⌥만 Alt일 때 보낼 글자 — 그 키를 Option 없이 친 글자(물리 위치 기준, US 배열).
-// ponytail: US 배열 고정, 다른 배열의 왼쪽/오른쪽 모드가 필요해지면 navigator.keyboard.getLayoutMap()으로.
+// 한계: US 배열 고정, 다른 배열의 왼쪽/오른쪽 모드가 필요해지면 navigator.keyboard.getLayoutMap()으로.
 const PUNCT: Record<string, [string, string]> = { Minus: ["-", "_"], Equal: ["=", "+"], BracketLeft: ["[", "{"], BracketRight: ["]", "}"], Backslash: ["\\", "|"], Semicolon: [";", ":"], Quote: ["'", '"'], Comma: [",", "<"], Period: [".", ">"], Slash: ["/", "?"], Backquote: ["`", "~"] };
 const SHIFT_DIGIT = ")!@#$%^&*(";
 export function altCharForCode(code: string, shift = false): string | null {
