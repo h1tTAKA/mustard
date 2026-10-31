@@ -178,7 +178,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
       try {
         const st = read();
         if (!st) { const now = Math.floor(Date.now() / 1000); write({ since: now, sessSince: now, done: [], from: now, reviveAt: Date.now() + 30 * 60_000 }); return; } // 처음 켬 → 지금부터(켜기 전 커밋은 되살리지 않음)
-        const j = await post("/api/repo/git-recent", { path: root, since: st.since, limit: 100 }); // 기본 20이면 몰린 커밋 중 오래된 쪽 diff가 영영 빠짐(리뷰). ponytail: 30초에 100개 넘게 오면 잘림
+        const j = await post("/api/repo/git-recent", { path: root, since: st.since, limit: 100 }); // 기본 20이면 몰린 커밋 중 오래된 쪽 diff가 영영 빠짐(리뷰). 한계: 30초에 100개 넘게 오면 잘림
         const all = ((j?.commits ?? []) as Recent[]).reverse(); // 오래된 것부터
         if (all.length >= 100) console.warn("[catchup] 새 커밋이 100개 넘게 몰림 — 오래된 쪽 diff 설명은 빠질 수 있음");
         const fresh = all.filter((c) => !st.done.includes(c.hash));
@@ -210,7 +210,7 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
         const sessSince = st.sessSince ?? st.since;
         // #1235 → #1262 되살리기 — 30분마다 최근 24시간(켠 뒤) 줄에 넣었던 커밋 중 카드가 없는 것을 다시 줄 세움.
         //  카드 존재는 캐치업 기록(key "session|hash")에서 확인, 세션 없는 커밋은 noSession, 카드 확인한 커밋은 hasCard로 다시 안 봄.
-        //  ponytail: 최대 100개·한 번에 20개, 조회는 주기 몫 밖(로컬 파일).
+        //  한계: 최대 100개·한 번에 20개, 조회는 주기 몫 밖(로컬 파일).
         if (Date.now() >= (st.reviveAt ?? 0)) {
           const since = Math.max(Math.floor(Date.now() / 1000) - 86_400, st.from ?? 0);
           const back = await post("/api/repo/git-recent", { path: root, since, limit: 100 }).catch(() => null);

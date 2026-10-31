@@ -5,7 +5,7 @@
 // 메인에 아직 안 들어온 커밋(PR·다른 브랜치, 같은 레포라도)에서 시작한 작업공간은 원래대로 물어봄(리뷰).
 // 한계: 신뢰를 준 뒤 그 작업공간에서 바뀌는 것(에이전트 자신의 작업)은 Claude가 다시 묻지 않음 — 사람이 직접 "믿어요"를 눌렀을 때와 같음.
 // 실패(설정 파일 없음·깨짐·잠금 못 잡음)면 아무것도 안 함 — 그때는 Claude가 원래대로 물어볼 뿐.
-// ponytail: Claude만. Codex(config.toml)는 TOML 형식이 여러 가지라 안전하게 덧붙이기 어려움 — 필요해지면 TOML 파서로.
+// 한계: Claude만. Codex(config.toml)는 TOML 형식이 여러 가지라 안전하게 덧붙이기 어려움 — 필요해지면 TOML 파서로.
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } = require("node:fs");

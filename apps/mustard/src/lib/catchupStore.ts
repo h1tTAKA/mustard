@@ -235,7 +235,7 @@ export function filterItems(root: string, pred: (x: CatchupItem) => boolean, lim
 export const tagItems = (root: string, type: TagType, value: string, limit: number, all = false) => filterItems(root, (x) => tagMatches(x, type, value), limit, all);
 
 // #1238 풀다운 값 — 브랜치·에이전트·해시를 최신순으로(종류마다 50개). 다 차면 더 안 읽음.
-// ponytail: 전수 스캔(최대 120일) — 기록이 아주 커지면 색인.
+// 한계: 전수 스캔(최대 120일) — 기록이 아주 커지면 색인.
 export function itemFacets(root: string, all = false): Record<TagType, Facet[]> {
   const items: CatchupItem[] = [];
   for (const day of allDays(root).slice(0, 120)) {
