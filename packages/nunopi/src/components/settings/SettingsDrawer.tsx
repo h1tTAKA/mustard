@@ -6,6 +6,7 @@ import { XIcon } from "../learning/icons";
 import ShortcutsSection from "./ShortcutsSection";
 import UpdateSection from "./UpdateSection";
 import BrowserSection from "./BrowserSection";
+import CodeDiffSection from "./CodeDiffSection";
 import TerminalSessionsSection from "./TerminalSessionsSection";
 import TerminalKeyboardSection from "./TerminalKeyboardSection";
 import { listMonospaceFonts } from "./localFonts";
@@ -13,7 +14,7 @@ import GhosttyImportRow from "./GhosttyImportRow";
 import NotifySoundRow from "./NotifySoundRow";
 import TerminalRenderSection from "./TerminalRenderSection";
 import TerminalThemeSection from "./TerminalThemeSection";
-import { IconKeyboard, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus } from "@tabler/icons-react";
+import { IconKeyboard, IconCode, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus } from "@tabler/icons-react";
 import { useSetting, setSetting, notifSound, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
 import ComputerUseSection from "./ComputerUseSection";
@@ -460,6 +461,7 @@ export default function SettingsDrawer({
     { id: "set-update", label: t("update.section"), Icon: IconRefresh, show: workspaceSettings && typeof window !== "undefined" && !!window.nunopiDesktop?.checkUpdate, group: t("settings.groupGeneral") }, // #1200
     { id: "set-terminal", label: t("settings.terminalSection"), Icon: IconTerminal2, show: workspaceSettings, group: t("settings.groupEnvironment") },
     { id: "set-workspace", label: t("settings.workspaceSection"), Icon: IconFolder, show: workspaceSettings, group: t("settings.groupEnvironment") },
+    { id: "set-code", label: t("codeDiff.section"), Icon: IconCode, show: workspaceSettings, group: t("settings.groupEnvironment") }, // #1218
     { id: "set-git", label: t("settings.gitSection"), Icon: IconGitBranch, show: workspaceSettings, group: t("settings.groupEnvironment") },
     { id: "set-quick", label: t("quick.title"), Icon: IconBolt, show: workspaceSettings, group: t("settings.groupEnvironment") }, // #1194
     { id: "set-browser", label: t("browser.section"), Icon: IconWorld, show: workspaceSettings, group: t("settings.groupEnvironment") }, // #1209
@@ -1161,6 +1163,7 @@ export default function SettingsDrawer({
           {activeSection === "set-shortcuts" && <ShortcutsSection />}
           {activeSection === "set-update" && <UpdateSection />}
           {activeSection === "set-browser" && <BrowserSection />}
+          {activeSection === "set-code" && <CodeDiffSection />}
 
           {/* 연동(#958) — 소스 호스트 연결. 현재 GitHub(gh CLI + PAT). */}
           {activeSection === "set-integrations" && (

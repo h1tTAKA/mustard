@@ -103,6 +103,12 @@ samp {
   font-family: var(--font-mono);
 }
 
+/* #1218 공백 보이기 — 기호는 그림만(복사엔 원래 공백) */
+.ws-s, .ws-t { position: relative; }
+.ws-s::before, .ws-t::before { position: absolute; left: 0; opacity: 0.35; pointer-events: none; }
+.ws-s::before { content: "·"; right: 0; text-align: center; }
+.ws-t::before { content: "→"; }
+
 /* 학습패널 ↔ 에디터 줄 링크: 활성 코드 줄 하이라이트 (Monaco decoration className) */
 .nunopi-active-line {
   background: rgba(46, 125, 246, 0.22);

@@ -4,7 +4,9 @@ import { langOf } from "@/lib/codeLang";
 import { useEffect, useRef, useState } from "react";
 import { codeToHtml } from "shiki";
 import { IconLoader2, IconAlertTriangle, IconFileOff, IconZoomIn, IconZoomOut, IconArrowsMinimize, IconArrowsMaximize } from "@tabler/icons-react";
-import { useT } from "@mustard/core";
+import { useT, useSetting, EKEYS, EDITOR_DEFAULTS } from "@mustard/core";
+import { useCodeFont } from "@/lib/codeFont";
+import { wsTransformer } from "@/lib/codeWs";
 
 // 확장자 → shiki 언어. 없으면 text.
 // 바이트 → 사람이 읽는 크기(#657 미리보기 안내용).
@@ -19,6 +21,9 @@ export default function CodePane({ root, file }: { root: string; file: string })
   const [isDark, setIsDark] = useState(false);
   const [bin, setBin] = useState<BinaryInfo | null>(null); // 텍스트 아닌 파일(#657)
   const t = useT();
+  const font = useCodeFont(); // #1218 기본 12px·--font-mono
+  const wrap = useSetting<boolean>(EKEYS.wordWrap, EDITOR_DEFAULTS.wordWrap);
+  const ws = useSetting<boolean>(EKEYS.showWhitespace, EDITOR_DEFAULTS.showWhitespace);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -49,11 +54,11 @@ export default function CodePane({ root, file }: { root: string; file: string })
   useEffect(() => {
     if (status !== "ok" || bin) return;
     let cancelled = false;
-    codeToHtml(raw, { lang: langOf(file), theme: isDark ? "github-dark" : "github-light" })
+    codeToHtml(raw, { lang: langOf(file), theme: isDark ? "github-dark" : "github-light", transformers: ws ? [wsTransformer] : [] })
       .then((out) => { if (!cancelled) setHtml(out); })
       .catch(() => { if (!cancelled) setHtml(""); });
     return () => { cancelled = true; };
-  }, [raw, file, isDark, status, bin]);
+  }, [raw, file, isDark, status, bin, ws]);
 
   if (status === "loading") return <div className="flex h-full items-center justify-center text-zinc-400"><IconLoader2 size={16} stroke={2} className="animate-spin" aria-hidden /></div>;
   if (status === "error") return <div className="flex h-full items-center justify-center gap-1.5 text-[12px] text-amber-600 dark:text-amber-500"><IconAlertTriangle size={14} stroke={2} aria-hidden /> {file}</div>;
@@ -66,7 +71,7 @@ export default function CodePane({ root, file }: { root: string; file: string })
   }
 
   return (
-    <div className="nunopi-scroll h-full overflow-auto bg-white p-3 text-[12px] dark:bg-[var(--s-pane)] [&_pre]:!m-0 [&_pre]:!bg-transparent">
+    <div style={font} className={`nunopi-scroll h-full overflow-auto bg-white p-3 dark:bg-[var(--s-pane)] [&_pre]:!m-0 [&_pre]:!bg-transparent [&_pre]:[font-family:inherit] ${wrap ? "[&_pre]:whitespace-pre-wrap [&_pre]:[overflow-wrap:anywhere]" : ""}`}>
       {html ? <div dangerouslySetInnerHTML={{ __html: html }} /> : <pre className="text-zinc-700 dark:text-zinc-200">{raw}</pre>}
     </div>
   );

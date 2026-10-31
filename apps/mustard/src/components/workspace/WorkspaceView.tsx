@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { IconRefresh, IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld, IconLayoutKanban, IconMessageChatbot } from "@tabler/icons-react";
 import { isNunopiEnabled } from "@/lib/product";
 import { NunopiGlyph } from "@/components/brand/ModeSwapToggle";
-import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, GKEYS, withModel, BROWSER_KEYS, BROWSER_DEFAULTS } from "@mustard/core";
+import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, GKEYS, withModel, BROWSER_KEYS, BROWSER_DEFAULTS, EKEYS, EDITOR_DEFAULTS } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
 import FileTree from "@/components/workspace/FileTree";
 import { POLL_MS, pollPlan, sameFiles, sameStatus, treeDue } from "@/lib/repoRefresh";
@@ -91,6 +91,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const [cardJump, setCardJump] = useState<{ key: string; n: number } | null>(null); // #1081 질문 답변 링크 → 캐치업 카드
   // #1062 캐치업 전체 끄기 — 패널·버튼 숨김(선택돼 있었으면 질문으로), 실시간 해설 서버 플래그도 끔(패널이 안 떠도 여기서 알림).
   const catchupOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
+  const showIgnored = useSetting<boolean>(EKEYS.showIgnored, EDITOR_DEFAULTS.showIgnored); // #1218 파일 목록에 gitignore 파일
   const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze);
   // #1078 질문은 캐치업 안 — 캐치업 켜짐이면 GitHub 아니면 캐치업, 꺼짐이면 질문 단독 모드
   const rightMode = rightModeSel === "github" ? "github" : rightModeSel === "crew" ? "crew" : catchupOn ? "learn" : "chat";
@@ -550,7 +551,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     setFiles([]); setFileStatus({}); statusRef.current = {}; // 레포 바뀌면 비교 기준도 비움(#1225)
     (async () => {
       try {
-        const r = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
+        const r = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, hideIgnored: !showIgnored }) });
         const d = await r.json();
         if (!cancelled) { setFiles(r.ok && Array.isArray(d.files) ? d.files : []); setFilesCapped(!!d.capped); }
       } catch { if (!cancelled) setFiles([]); }
@@ -558,7 +559,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       if (!cancelled) void loadGitStatus(path); // 변경 파일 상태 도트(#687)·워킹트리 챗 승계(#689)용
     })();
     return () => { cancelled = true; };
-  }, [path, loadGitStatus]);
+  }, [path, loadGitStatus, showIgnored]); // #1218 설정 바꾸면 다시
 
   // 워처 변경(treeNonce) 시 파일트리 무-스피너 재조회(#830) — 목록 안 비우고 결과만 in-place 교체(깜빡임 없음).
   // treeLoading을 안 건드려 스피너가 갱신에 끼지 않게 함(전환 로드와 분리).
@@ -567,14 +568,14 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
+        const r = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, hideIgnored: !showIgnored }) });
         const d = await r.json();
         lastTreeAt.current = Date.now();
         if (!cancelled && r.ok && Array.isArray(d.files)) setFiles((prev) => (sameFiles(prev, d.files) ? prev : d.files)); // 같으면 그대로(#1225 폴링), 실패 시 기존 목록 유지
       } catch { /* 기존 목록 유지 */ }
     })();
     return () => { cancelled = true; };
-  }, [path, treeNonce]);
+  }, [path, treeNonce, showIgnored]);
 
   // 문서 폴더 파일 목록 로드(#693) — /api/repo/tree 재사용(root=docsRoot). 워처 변경(treeNonce) 시 재조회(#830).
   useEffect(() => {
@@ -589,7 +590,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       } catch { /* 기존 목록 유지 */ }
     })();
     return () => { cancelled = true; };
-  }, [docsRoot, treeNonce]);
+  }, [docsRoot, treeNonce]); // #1218 문서 폴더는 직접 고른 곳이라 gitignore 숨기기 안 씀(흔히 그 폴더 자체가 무시 대상 — 목록이 통째로 비었음)
 
   // 문서 폴더 선택(#693) — 범용 폴더 선택기 재사용.
   async function pickDocs() {
