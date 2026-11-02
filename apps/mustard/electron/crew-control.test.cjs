@@ -49,7 +49,7 @@ const { createCrewControl, repoOf } = require("./crew-control.cjs");
   const fakeTrunc = async (url, init) => { if (init.method === "POST") board.tasks.push({ id: "tLong", title: JSON.parse(init.body).title.slice(0, 200), status: "backlog", createdAt: 1 }); return { ok: true, status: 200, json: async () => ({ ok: true, board }) }; };
   r = JSON.parse((await createCrewControl({ appBase: () => base, uiToken: "x", fetch: fakeTrunc }).call("crew_add_task", { title: long }, repo)).content[0].text);
   assert.strictEqual(r.id, "tLong");
-  const spaced = "a".repeat(199) + " " + "b".repeat(10); // 200번째 글자가 공백 — 저장소(crewStore create)는 trim 후 자르기만, 끝 공백 남음
+  const spaced = "a".repeat(199) + " " + "b".repeat(10); // 200번째 글자가 공백 — 미리 자른 값의 끝 공백을 저장소가 trim으로 지우므로 도구도 지워 보내야 맞음
   const fakeTrim = async (url, init) => { if (init.method === "POST") board.tasks.push({ id: "tSp", title: String(JSON.parse(init.body).title).trim().slice(0, 200), status: "backlog", createdAt: 1 }); return { ok: true, status: 200, json: async () => ({ ok: true, board }) }; };
   r = JSON.parse((await createCrewControl({ appBase: () => base, uiToken: "x", fetch: fakeTrim }).call("crew_add_task", { title: spaced }, repo)).content[0].text);
   assert.strictEqual(r.id, "tSp");
