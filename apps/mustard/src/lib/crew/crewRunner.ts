@@ -68,7 +68,7 @@ function writeRuns(root: string, runs: CrewRun[]) {
 
 // ── 프로세스 싱글톤 상태 ──────────────────────────────────────────────
 type Pending = { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> };
-type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending>; answering: Set<string>; delegated?: Map<string, { until: number; kind: string; stage: number }>; answerNext?: Map<string, { human: CrewMsg; roleId: string; taskId?: string; everyone?: boolean; mentioned?: string[]; routed?: boolean }[]> };
+type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending>; answering: Set<string>; delegated?: Map<string, { until: number; kind: string; stage: number; text: string }>; answerNext?: Map<string, { human: CrewMsg; roleId: string; taskId?: string; everyone?: boolean; mentioned?: string[]; routed?: boolean }[]> };
 const g = ((globalThis as unknown as { __mustardCrew?: G }).__mustardCrew ??= { roots: new Set(), origin: "", starting: new Set(), runs: new Map(), bySession: new Map(), wired: false, reconciled: new Set(), flush: new Map(), tokens: new Map(), pending: new Map(), answering: new Set() } as G);
 
 // ── Claude 권한 훅 ───────────────────────────────────────────────────
@@ -537,6 +537,7 @@ export function decideCard(root: string, taskId: string, action: "approve" | "re
     } else throw new Error("approve or skip"); // 답변으로 건너뛰기 금지(리뷰)
   }
   const r = decideGate(task, action, text);
+  g.delegated?.delete(`${root}\n${taskId}`); // 결정됨 — 사람이든 에이전트든, 맡김은 끝(같은 단계에 새 관문이 와도 이어받지 않게, 리뷰)
   if (action === "approve" && task.gate?.kind === "spec" && task.split?.length) return splitCard(root, task); // #1114 쪼개기 승인
   const board = patchTask(root, taskId, { ...r.patch, status: r.status });
   say(root, { from: "human", kind: "decision", taskId, taskTitle: task.title,
@@ -550,14 +551,15 @@ export function decideCard(root: string, taskId: string, action: "approve" | "re
 export function delegateGate(root: string, taskId: string) {
   const t = readBoard(root).tasks.find((x) => x.id === taskId);
   if (!t?.gate || t.gate.kind === "setup") throw new Error("no gate to delegate");
-  (g.delegated ??= new Map()).set(`${root}\n${taskId}`, { until: Date.now() + 30 * 60_000, kind: t.gate.kind, stage: t.gate.stage });
+  (g.delegated ??= new Map()).set(`${root}\n${taskId}`, { until: Date.now() + 30 * 60_000, kind: t.gate.kind, stage: t.gate.stage, text: t.gate.text ?? "" });
 }
+export const undelegateGate = (root: string, taskId: string) => { g.delegated?.delete(`${root}\n${taskId}`); }; // 붙여넣기 실패 — 맡김 취소(리뷰)
 export function decideDelegated(root: string, taskId: string, action: "approve" | "reject" | "answer", text = "") {
   const k = `${root}\n${taskId}`, d = g.delegated?.get(k);
   const t = readBoard(root).tasks.find((x) => x.id === taskId);
-  if (!d || d.until < Date.now() || !t?.gate || t.gate.kind !== d.kind || t.gate.stage !== d.stage) throw new Error("not delegated — ask the user to press \"Let the agent decide\" on this card in Mustard");
-  const board = decideCard(root, taskId, action, text);
-  g.delegated!.delete(k); // 한 번만(결정이 성공한 뒤 — 잘못된 값으로 실패하면 다시 시도 가능)
+  if (action === "answer" && !text.trim()) throw new Error("answer text required");
+  if (!d || d.until < Date.now() || !t?.gate || t.gate.kind !== d.kind || t.gate.stage !== d.stage || (t.gate.text ?? "") !== d.text) throw new Error("not delegated — ask the user to press \"Let the agent decide\" on this card in Mustard");
+  const board = decideCard(root, taskId, action, text); // 성공하면 decideCard가 맡김도 지움(한 번만) — 실패면 남아 다시 시도 가능
   say(root, { from: "board", kind: "decision", taskId, taskTitle: t.title, ...tx("crewchat.delegatedDecision") });
   return board;
 }

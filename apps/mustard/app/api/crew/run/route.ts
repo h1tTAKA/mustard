@@ -1,7 +1,7 @@
 // Crew 실행(#1100) — GET ?root= 실행 기록(진행 중 포함) / POST {root, taskId, action:"start"|"stop"|"permission"|"gate", approved?, decision?, text?}.
 // 권한 승인은 이 경로(사람 클릭)로만 — 에이전트 메시지로 승인되지 않음.
 import { isAbsolute } from "node:path";
-import { createPr, decideCard, decideDelegated, delegateGate, listRuns, respondPermission, startRun, stopRun, takeover, MAX_CONCURRENT } from "@/lib/crew/crewRunner";
+import { createPr, decideCard, decideDelegated, delegateGate, undelegateGate, listRuns, respondPermission, startRun, stopRun, takeover, MAX_CONCURRENT } from "@/lib/crew/crewRunner";
 import { crossSite } from "@/lib/crew/crewPolicy";
 
 export const runtime = "nodejs";
@@ -29,6 +29,7 @@ export async function POST(request: Request): Promise<Response> {
       return Response.json({ ok: true, board: decideCard(root, taskId, d, typeof b.text === "string" ? b.text : "") });
     }
     if (b.action === "delegate") { delegateGate(root, taskId); return Response.json({ ok: true }); } // 사람 클릭 — 이 관문 하나를 터미널 에이전트에게
+    if (b.action === "undelegate") { undelegateGate(root, taskId); return Response.json({ ok: true }); }
     if (b.action === "agent-gate") { // 터미널 에이전트(MCP crew_decide) — 사람이 맡긴 관문만
       const d = b.decision === "approve" || b.decision === "reject" || b.decision === "answer" ? b.decision : null;
       if (!d) return Response.json({ ok: false, error: "bad decision" }, { status: 400 });

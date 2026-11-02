@@ -114,8 +114,10 @@ export default function CrewChat({ root }: { root: string }) {
     try {
       await runPost({ taskId: task.id, action: "delegate" });
       const g = task.gate!;
-      const r = await sendToAgent(root, t("crewchat.delegatePrompt", { title: task.title, taskId: task.id, kind: t(`crew.gate.${g.kind}`), gate: relocalize(g.text ?? "", CREW_TEXT_KEYS, t), branch: runs.get(task.id)?.branch ?? "crew/…" }));
-      if (!r.ok) { toast(r.reason === "no-agent" ? t("browser.pickNoAgent") : t("github.sendFailed"), "error"); return; }
+      // 관문 글은 크루가 쓴 것 — 인용(데이터)으로만, 길이 제한(리뷰)
+      const quoted = relocalize(g.text ?? "", CREW_TEXT_KEYS, t).slice(0, 1500).split("\n").map((l) => `> ${l}`).join("\n");
+      const r = await sendToAgent(root, t("crewchat.delegatePrompt", { title: task.title, taskId: task.id, kind: t(`crew.gate.${g.kind}`), gate: quoted, branch: runs.get(task.id)?.branch ?? "crew/…" }));
+      if (!r.ok) { void runPost({ taskId: task.id, action: "undelegate" }).catch(() => {}); toast(r.reason === "no-agent" ? t("browser.pickNoAgent") : t("github.sendFailed"), "error"); return; }
       requestTerminalFocus(root, r.id);
       toast(t("crewchat.delegated"), "success");
     } catch (e) { toast(`${t("crew.runFailed")}: ${String((e as Error)?.message ?? e)}`, "error"); }
