@@ -279,7 +279,7 @@ function bashDecision(raw0: string, worktree: string): Inner {
     if (!/^[\w./-]+$/.test(w0)) return "hold"; // 따옴표·변수·백슬래시로 꾸민 명령 이름(su""do → su§do)
     const base = w0.split("/").pop()!;
     // gh 읽기(이슈·PR·실행 보기)는 인터넷 항목 — 앱 확인에서 크루가 gh issue list로 계속 멈춤. 쓰기(pr merge·create·api·auth token 등)는 그대로 사람
-    if (base === "gh" && GH_READ.test(`${words[1] ?? ""} ${words[2] ?? ""}`) && !words.some((a) => /^(--web|-w)$/.test(a))) { cats.push("network"); continue; }
+    if (base === "gh" && GH_READ.test(`${words[1] ?? ""} ${words[2] ?? ""}`) && !words.some((a) => /^(--web(=|$)|-w$|-O|--pre|--exec|--output|--out-file)|(^|=)@/.test(a)) && !/(^|[\s=])@/.test(unquote(raw))) { cats.push("network"); continue; }
     if (HOLD_CMD.has(base)) return "hold";
     // #1279 인터넷 항목 = 아는 옵션만 쓴 curl·wget. 따옴표를 벗긴 원문 토큰으로 봄 — "-o"·"@file"처럼 따옴표로 감싼 옵션·값도(리뷰)
     if ((base === "curl" || base === "wget") && !plainFetch(base, rawArgs(raw, base), worktree)) return "hold";
