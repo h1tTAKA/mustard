@@ -122,6 +122,7 @@ const inside = (dir: string, p: string) => { const r = relative(dir, resolve(dir
 
 // #1137 사람에게(hold) — 셸·코드 실행·네트워크·권한·지속성. 'ask'와 같지만 이유를 구분해 둠(샌드박스 위 '전부 알아서'가 생겨도 이건 묻기).
 // #1279 유저 설정 항목으로 옮긴 것(code·network·system) — 설정에서 '알아서 허용'이면 자동. 남은 HOLD_CMD = 권한 올리기·밖에 쓰기라 항상 사람.
+const GH_READ = /^(issue|pr|run|release|repo|workflow|label) (list|view|status|diff|checks)$|^(status|search \w+)/;
 const HOLD_CMD = new Set(["su", "doas", "chmod", "chown", "ln", "dd", "tee", "install", "sed", "gh", "security", "osascript", "defaults", "crontab", "launchctl", "ssh", "scp", "sftp", "rsync", "nc", "ncat", "socat"]); // gh = pr merge·토큰 출력, security = 키체인, osascript·defaults·crontab·launchctl = 임의 실행·지속(리뷰)
 const CMD_CAT: Record<string, CrewPermCat> = Object.fromEntries([
   ...["sh", "bash", "zsh", "fish", "dash", "ksh", "eval", "exec", "env", "xargs", "source", ".", "perl", "ruby", "php", "awk", "gawk"].map((c) => [c, "code"]),
@@ -277,6 +278,8 @@ function bashDecision(raw0: string, worktree: string): Inner {
     if (!w0) continue;
     if (!/^[\w./-]+$/.test(w0)) return "hold"; // 따옴표·변수·백슬래시로 꾸민 명령 이름(su""do → su§do)
     const base = w0.split("/").pop()!;
+    // gh 읽기(이슈·PR·실행 보기)는 인터넷 항목 — 앱 확인에서 크루가 gh issue list로 계속 멈춤. 쓰기(pr merge·create·api·auth token 등)는 그대로 사람
+    if (base === "gh" && GH_READ.test(`${words[1] ?? ""} ${words[2] ?? ""}`) && !words.some((a) => /^(--web|-w)$/.test(a))) { cats.push("network"); continue; }
     if (HOLD_CMD.has(base)) return "hold";
     // #1279 인터넷 항목 = 아는 옵션만 쓴 curl·wget. 따옴표를 벗긴 원문 토큰으로 봄 — "-o"·"@file"처럼 따옴표로 감싼 옵션·값도(리뷰)
     if ((base === "curl" || base === "wget") && !plainFetch(base, rawArgs(raw, base), worktree)) return "hold";

@@ -345,6 +345,10 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   // Crew 자기 레포 작업 — 경로에 api/crew가 있는 파일 읽기·수정은 됨
   assert.strictEqual(decide("Read", { file_path: `${W}/apps/mustard/app/api/crew/run/route.ts` }, W, ALL), "allow");
   assert.strictEqual(decide("Edit", { file_path: `${W}/a.ts`, old_string: "x", new_string: "fetch('/api/crew/run')" }, W, ALL), "allow");
+  // 앱 확인 — 크루가 gh issue list로 멈춤 → gh 읽기는 인터넷 항목, 쓰기는 사람
+  for (const c of ["gh issue list --state all --limit 15", "gh pr view 3", "gh pr diff 3", "gh run list", "gh repo view", "gh issue view 8 --comments", "gh pr list --json number --jq .number"]) assert.strictEqual(P(c, ALL), "allow", c);
+  assert.strictEqual(P("gh issue list", DEF), "ask", "인터넷 꺼져 있으면 묻기");
+  for (const c of ["gh pr merge 1", "gh pr create", "gh api repos/x", "gh auth token", "gh issue close 3", "gh pr view 3 --web"]) assert.strictEqual(P(c, ALL), "ask", c);
   // 기본 인자 = 전부 묻기(예전과 같음)
   assert.strictEqual(P("flutter test", {}), "ask");
 }
