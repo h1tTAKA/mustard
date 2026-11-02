@@ -122,10 +122,10 @@ const inside = (dir: string, p: string) => { const r = relative(dir, resolve(dir
 
 // #1137 사람에게(hold) — 셸·코드 실행·네트워크·권한·지속성. 'ask'와 같지만 이유를 구분해 둠(샌드박스 위 '전부 알아서'가 생겨도 이건 묻기).
 // #1279 유저 설정 항목으로 옮긴 것(code·network·system) — 설정에서 '알아서 허용'이면 자동. 남은 HOLD_CMD = 권한 올리기·밖에 쓰기라 항상 사람.
-const HOLD_CMD = new Set(["su", "doas", "chmod", "chown", "ln", "dd", "tee", "install", "sed", "gh", "security", "osascript", "defaults", "crontab", "launchctl"]); // gh = pr merge·토큰 출력, security = 키체인, osascript·defaults·crontab·launchctl = 임의 실행·지속(리뷰)
+const HOLD_CMD = new Set(["su", "doas", "chmod", "chown", "ln", "dd", "tee", "install", "sed", "gh", "security", "osascript", "defaults", "crontab", "launchctl", "ssh", "scp", "sftp", "rsync", "nc", "ncat", "socat"]); // gh = pr merge·토큰 출력, security = 키체인, osascript·defaults·crontab·launchctl = 임의 실행·지속(리뷰)
 const CMD_CAT: Record<string, CrewPermCat> = Object.fromEntries([
   ...["sh", "bash", "zsh", "fish", "dash", "ksh", "eval", "exec", "env", "xargs", "source", ".", "perl", "ruby", "php", "awk", "gawk"].map((c) => [c, "code"]),
-  ...["ssh", "scp", "sftp", "rsync", "nc", "ncat", "socat", "curl", "wget"].map((c) => [c, "network"]),
+  ...["curl", "wget"].map((c) => [c, "network"]), // ssh·scp·rsync·nc·socat은 설정·원격 셸·로컬 실행 옵션이 끝없어 항상 사람(리뷰 4회)
   ...["open", "kill", "killall", "pkill"].map((c) => [c, "system"]),
 ]);
 const SAFE_NPX = new Set(["tsc", "eslint", "prettier", "vitest", "jest", "tsx", "playwright", "next"]); // npx는 모르는 패키지를 받아 실행 → 이것만
@@ -219,19 +219,28 @@ function unsafeWrite(worktree: string, p: string): boolean {
   return false;
 }
 
-// 원문에 작업 폴더 밖·보호 경로가 보이나(인터넷 명령용, #1279) — URL(://)은 빼고, 토큰을 = : , @ ; 로 더 쪼개 앞 옵션 글자를 뗀 조각만.
-//  /dev/null은 괜찮음. 한계: -oout/x.json처럼 붙여 쓴 상대 경로는 /x.json으로 보여 사람에게 감(안전한 쪽).
-function outsidePath(text: string, worktree: string, remoteHost = false): boolean {
-  for (const tok of text.split(/\s+/)) {
-    if (!tok || tok.includes("://")) continue;
-    if (remoteHost && /^[^/\s-][^/\s]*:/.test(tok)) continue; // scp·rsync host:경로 = 원격 쪽
-    for (let piece of tok.split(/[=:,@;]/)) {
-      piece = piece.replace(/^-+[a-zA-Z-]*/, "").replace(/^["']+|["']+$/g, "");
-      if (!piece || piece === "/dev/null" || !/[/~$]|^\./.test(piece)) continue; // 경로처럼 생긴 것(밖 + 안의 .git/hooks·.npmrc 같은 보호 경로)
-      if (unsafeWrite(worktree, piece)) return true;
-    }
+// #1279 인터넷 항목으로 자동 허락하는 curl·wget — 아는 옵션만(허용 목록). 모르는 옵션·따옴표로 꾸민 옵션(-"K")·파일 올리기(@)·
+//  밖·보호 경로 저장·받은 이름 그대로 저장(-O, 보호 파일 .mcp.json 등)이면 사람. 옵션을 쫓아 막는 방식은 리뷰마다 새 우회가 나와서 뒤집음.
+const CURL_FLAGS = /^-[sSLfiIkv]+$/;
+const CURL_VAL = new Set(["-X", "--request", "-H", "--header", "-d", "--data", "--data-raw", "--data-binary", "--json", "-w", "--write-out", "-o", "--output", "-m", "--max-time", "--connect-timeout", "--retry", "-u", "--user", "-A", "--user-agent", "--compressed"]);
+const WGET_FLAGS = new Set(["-q", "--quiet", "-nv", "--no-verbose", "-c", "--continue"]);
+const WGET_VAL = new Set(["-O", "--output-document", "-T", "--timeout", "-t", "--tries"]);
+function plainFetch(base: string, args: string[], worktree: string): boolean {
+  for (let i = 0; i < args.length; i++) {
+    let a = args[i], v: string | undefined;
+    if (!a.startsWith("-")) { if (base === "wget" && /\/\.[^/§]*$/.test(a)) return false; continue; } // 주소(따옴표 § 포함 가능). wget이 점 이름(.mcp.json)으로 저장하면 사람
+    if (a === "--compressed" || (base === "curl" ? CURL_FLAGS.test(a) : WGET_FLAGS.has(a))) continue;
+    const eq = a.indexOf("=");
+    if (a.startsWith("--") && eq > 0) { v = a.slice(eq + 1); a = a.slice(0, eq); }
+    const cl = base === "curl" ? /^-[sSLfiIkv]*([oXHdwmuA])(.*)$/.exec(a) : null; // 묶음·붙여 쓰기: -sSo out.json, -fsSLo x, -oout.json
+    if (cl) { a = `-${cl[1]}`; v = cl[2] || undefined; }
+    if (!(base === "curl" ? CURL_VAL : WGET_VAL).has(a)) return false;
+    if (v === undefined) v = args[++i];
+    if (v === undefined) return false;
+    if (/^(-d|--data|--data-raw|--data-binary|--json)$/.test(a) && v.startsWith("@")) return false; // 파일 올리기
+    if (/^(-o|--output|-O|--output-document)$/.test(a)) { if (v !== "/dev/null" && v !== "-" && (v.includes("§") || unsafeWrite(worktree, v))) return false; }
   }
-  return false;
+  return true;
 }
 
 function bashDecision(raw0: string, worktree: string): Inner {
@@ -259,14 +268,8 @@ function bashDecision(raw0: string, worktree: string): Inner {
     if (!/^[\w./-]+$/.test(w0)) return "hold"; // 따옴표·변수·백슬래시로 꾸민 명령 이름(su""do → su§do)
     const base = w0.split("/").pop()!;
     if (HOLD_CMD.has(base)) return "hold";
-    // 인터넷 명령(#1279) — 옵션 이름을 하나하나 쫓지 않고(-o·-sSo~/x·-c·-D·-T·-F f=@x·scp/rsync 받는 곳·socat OPEN: …, 리뷰 3회),
-    //  따옴표 벗긴 원문의 경로처럼 생긴 조각이 하나라도 작업 폴더 밖·보호 경로면 사람. 받기·올리기 모두. 설정 파일·원격 셸 지정도 사람.
-    if (CMD_CAT[base] === "network") {
-      if (words.slice(1).some((a) => /^(-[a-zA-Z]*K|--config|--e)/.test(a) || (base === "wget" && /^-[a-zA-Z]*e/.test(a)) || (/^(rsync|scp)$/.test(base) && /^(-[a-zA-Z]*[eS]|--rsh)/.test(a)))) return "hold";
-      if (/ProxyCommand|LocalCommand/i.test(raw)) return "hold";
-      if (base === "socat" && /(OPEN|CREATE|GOPEN|EXEC|SYSTEM|PIPE|UNIX-\w+):/i.test(raw)) return "hold"; // 로컬 파일·명령 주소
-      if (outsidePath(unquote(raw), worktree, /^(scp|rsync|sftp)$/.test(base))) return "hold";
-    }
+    if ((base === "curl" || base === "wget") && !plainFetch(base, words.slice(1), worktree)) return "hold"; // #1279 인터넷 항목 = 아는 옵션만 쓴 curl·wget
+    if (base === "env" && words.some((a) => /^(-[a-zA-Z]*C|--chdir)/.test(a))) return "hold"; // 다른 폴더에서 실행(리뷰)
     if (Object.hasOwn(CMD_CAT, base)) { cats.push(CMD_CAT[base]); continue; }
     const args = words.slice(1).filter((a) => !a.startsWith("-"));
     const writes = WRITERS.has(base), files = args;

