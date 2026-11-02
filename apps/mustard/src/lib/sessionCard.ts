@@ -13,11 +13,17 @@ const PROMPT = "아래는 AI 코딩 에이전트와 사용자의 대화 기록�
   + "사람 이름·감정 묘사·메타 발언 금지. 큰 제목(#) 쓰지 말고, 카드는 만들지 마세요.";
 
 // #1135 Crew 커밋 — 역할끼리 주고받은 대화방 글이 앞에. "누가 누구에게 무엇을 지시했나"부터 쓰게.
-const CREW_PROMPT = "앞부분 [Crew 대화]는 역할 에이전트(@역할)끼리 주고받은 지시·인계·질문입니다. 첫 줄 다음에 \"@역할이 @역할에게 무엇을 지시·질문했고 어떻게 이어졌는지\" 흐름을 1~3줄로 먼저 쓰세요.\n";
+const CREW_PROMPT = "앞부분 [Crew 대화]는 역할 에이전트(@역할)끼리 주고받은 지시·인계·질문이고, [실행] 줄은 역할별 실행(시각·결과·요약)입니다. 첫 줄 다음에 \"@역할이 @역할에게 무엇을 지시·질문했고 어떻게 이어졌는지\" 흐름을 1~3줄로 먼저 쓰세요.\n";
 export interface CrewTalk { from: string; kind: string; to: string[]; text: string }
+// #1281 크루 작업 기록 — 칸반 카드와 역할별 실행
+export interface CrewTaskInfo { id: string; title: string; status: string; pipeline?: string[]; role?: string }
+export interface CrewRunInfo { role: string; stage?: number; state: string; startedAt: number; endedAt?: number; summary?: string; error?: string; toolCount: number; tokens?: { input: number; output: number } }
+const hhmm = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
+export const crewRunLine = (r: CrewRunInfo) =>
+  `@${r.role} ${hhmm(r.startedAt)}${r.endedAt ? `–${hhmm(r.endedAt)}` : ""} ${r.state} · tools ${r.toolCount}${r.tokens ? ` · ${Math.round((r.tokens.input + r.tokens.output) / 1000)}k tok` : ""}${r.summary ? ` — ${r.summary}` : r.error ? ` — ${r.error}` : ""}`;
 
-export function sessionDigest(msgs: SessionMsg[], crew: CrewTalk[] = []): string {
-  const talk = crew.map((c) => `@${c.from}${c.to.length ? ` → ${c.to.map((x) => `@${x}`).join(" ")}` : ""} (${c.kind}): ${c.text}`);
+export function sessionDigest(msgs: SessionMsg[], crew: CrewTalk[] = [], runs: CrewRunInfo[] = []): string {
+  const talk = [...runs.map((r) => `[실행] ${crewRunLine(r)}`), ...crew.map((c) => `@${c.from}${c.to.length ? ` → ${c.to.map((x) => `@${x}`).join(" ")}` : ""} (${c.kind}): ${c.text}`)];
   const lines = msgs.map((m) => (m.role === "user" ? "[사용자] " : m.role === "assistant" ? "[AI] " : "[도구] ") + (m.role === "tool" ? m.text.slice(0, TOOL_CLIP) : m.text));
   // Crew 대화는 앞에 고정(상한 반), 에이전트 기록은 남은 만큼 최근 쪽. 구역 표지는 자르지 않음(리뷰)
   const head = talk.length ? `[Crew 대화]\n${talk.join("\n").slice(0, INPUT_MAX / 2)}\n[에이전트 기록]\n` : "";
@@ -25,7 +31,7 @@ export function sessionDigest(msgs: SessionMsg[], crew: CrewTalk[] = []): string
   return head + (all.length > room ? all.slice(-room) : all);
 }
 
-export interface LinkedSession { agent: string; sessionId: string; branch?: string; messages: SessionMsg[]; closed?: boolean; crew?: CrewTalk[] }
+export interface LinkedSession { agent: string; sessionId: string; branch?: string; messages: SessionMsg[]; closed?: boolean; crew?: CrewTalk[]; crewTask?: CrewTaskInfo; crewRuns?: CrewRunInfo[] }
 
 // 세션 찾기 → 요약 → 카드 항목. 세션 없으면(사람이 직접 커밋 등) "none".
 // 턴이 아직 안 끝났으면 "wait"(마무리 말까지 담으려고 — 다음 주기에 다시). force면 안 끝났어도 만듦(오래 기다린 경우).
@@ -37,10 +43,10 @@ export async function buildSessionItem(root: string, hash: string, ts: number, s
   if (r.status === 400) return "none" as const; // #1262 400만(경로·hash 형식) — 404·5xx·JSON 아님은 서버가 잠깐 없음(패키징 중 등)이라 오류로 다시. // 요청 자체가 잘못됨(경로·hash 형식) — 다시 해도 같음(리뷰)
   if (!r.ok || j?.ok !== true) return "error" as const; // 서버 오류·JSON 아님 — 호출부가 몇 번만 다시
   const s = j.session as LinkedSession | null | undefined;
-  if (!s?.messages?.length && !s?.crew?.length) return "none" as const;
+  if (!s?.messages?.length && !s?.crew?.length && !s?.crewRuns?.length) return "none" as const;
   if (s.closed === false && !force) return "wait" as const;
   let expl: string;
-  try { expl = await askAgent(sessionDigest(s.messages, s.crew), s.crew?.length ? CREW_PROMPT + PROMPT : PROMPT, providerId, providerSettings, locale); }
+  try { expl = await askAgent(sessionDigest(s.messages, s.crew, s.crewRuns), s.crew?.length || s.crewRuns?.length ? CREW_PROMPT + PROMPT : PROMPT, providerId, providerSettings, locale); }
   catch {
     if (!force || noFallback) return "wait" as const; // #1093 요약 실패(런타임 상한 등) — 다음 주기에 다시. #1260 먼저 보여 주는 카드는 원문 대체 문구로 만들지 않음
     expl = s.messages.find((m) => m.role === "user")?.text.slice(0, 400) || translate(locale, "fallback.summaryFailed"); // 20분 넘게 실패 — 원본이라도 볼 수 있게 카드는 만듦
