@@ -227,9 +227,21 @@ const CURL_VAL = new Set(["-X", "--request", "-H", "--header", "-d", "--data", "
 const WGET_FLAGS = new Set(["-q", "--quiet", "-nv", "--no-verbose", "-c", "--continue"]);
 const WGET_VAL = new Set(["-O", "--output-document", "-T", "--timeout", "-t", "--tries"]);
 // 따옴표 벗긴 원문에서 그 명령 뒤 인자들(다음 연결 기호 전까지). 한 줄에 같은 명령이 여러 번이면 전부 합쳐 봄(안전한 쪽)
+// 따옴표 밖의 ;|&() 앞뒤에 공백 — "a;b" 안은 그대로(안을 자르면 뒤 옵션이 검사에서 빠짐, 리뷰)
+function spaceOps(raw: string): string {
+  let out = "", q = "";
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (ch === "\\" && q !== "'") { out += ch + (raw[i + 1] ?? ""); i++; continue; }
+    if (q) { if (ch === q) q = ""; out += ch; continue; }
+    if (ch === "'" || ch === '"') { q = ch; out += ch; continue; }
+    out += /[;|&()]/.test(ch) ? ` ${ch} ` : ch;
+  }
+  return out;
+}
 function rawArgs(raw: string, base: string): string[] {
   const out: string[] = []; let on = false;
-  for (const t of unquote(raw).replace(/(&&|\|\||[;|&()])/g, " $1 ").split(/\s+/)) { // ls;curl·(curl 처럼 붙여 쓴 구분자도 끊음
+  for (const t of unquote(spaceOps(raw)).split(/\s+/)) { // ls;curl·(curl 처럼 붙여 쓴 구분자도 끊음
     if (/^(\||&&|\|\||;|&|\(|\))$/.test(t)) { on = false; continue; }
     if (on) out.push(t);
     else if (t.split("/").pop() === base) on = true;
