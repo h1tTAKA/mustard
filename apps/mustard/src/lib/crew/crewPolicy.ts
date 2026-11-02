@@ -232,8 +232,10 @@ function spaceOps(raw: string): string {
   let out = "", q = "";
   for (let i = 0; i < raw.length; i++) {
     const ch = raw[i];
-    if (ch === "\\" && q !== "'") { out += ch + (raw[i + 1] ?? ""); i++; continue; }
+    if (q === "$") { if (ch === "\\") { out += ch + (raw[i + 1] ?? ""); i++; continue; } if (ch === "'") q = ""; out += ch; continue; } // $'…' 안은 \'가 글자(리뷰)
+    if (ch === "\\" && q !== "'") { const n = raw[i + 1] ?? ""; out += !q && /[;|&()]/.test(n) ? "§" : ch + n; i++; continue; } // 따옴표 밖 \; = 글자 — unquote가 맨 ;로 바꾸지 않게(리뷰)
     if (q) { if (ch === q) q = ""; out += ch; continue; }
+    if (ch === "$" && raw[i + 1] === "'") { q = "$"; out += "$'"; i++; continue; }
     if (ch === "'" || ch === '"') { q = ch; out += ch; continue; }
     out += /[;|&()]/.test(ch) ? ` ${ch} ` : ch;
   }
