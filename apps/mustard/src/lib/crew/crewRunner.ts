@@ -16,6 +16,7 @@ import { crewProtocol, type CrewRole } from "./crewRoleDefaults";
 import { ensureWorktree, worktreeFor } from "./crewWorktree";
 import { killSetup, markSetupDone, readConfig, runSetup, trustScript } from "./worktreeBootstrap";
 import { decide, fromAgentRequest } from "./crewPolicy";
+import { readPerms } from "./crewPermStore";
 import { narrationLocale } from "@/lib/narrationConfig";
 import { defaultSnaModel } from "@mustard/nunopi/server";
 import { translate } from "@mustard/core/messages";
@@ -96,7 +97,7 @@ export async function hookDecision(runId: string, token: string, tool: string, i
   const run = g.runs.get(runId);
   if (!run || g.tokens.get(runId) !== token || !ACTIVE.includes(run.state)) return { decision: "deny", reason: "unknown or finished run" };
   run.lastEventAt = Date.now();
-  const d = decide(tool, input ?? {}, run.worktree);
+  const d = decide(tool, input ?? {}, run.worktree, readPerms()); // #1279 유저가 허용한 항목은 자동;
   if (d === "allow") return { decision: "allow" };
   if (d === "deny") { run.lastActivity = `⛔ ${tool} blocked by policy`; persist(run); return { decision: "deny", reason: "Blocked by Mustard Crew policy (push/merge/destructive git are human-only)" }; }
   if (g.pending.has(runId)) return { decision: "deny", reason: "another permission is pending" };
@@ -334,7 +335,7 @@ async function wire() {
     if (run.state === "needs-permission") return;
     const req = (request ?? {}) as Record<string, unknown>;
     const { tool, input } = fromAgentRequest(req);
-    const d = decide(tool, input, run.worktree);
+    const d = decide(tool, input, run.worktree, readPerms()); // #1279 유저가 허용한 항목은 자동;
     if (d !== "ask") {
       run.lastActivity = d === "allow" ? `⚙ ${tool}` : `⛔ ${tool} blocked by policy`;
       persist(run);

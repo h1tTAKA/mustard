@@ -25,3 +25,8 @@ export type CrewOp =
   | { op: "update"; id: string; title?: string; body?: string; role?: string; pipeline?: string[] } // pipeline [] = 지움(담당 하나·자동)
   | { op: "move"; id: string; status: CrewStatus; index: number }
   | { op: "delete"; id: string };
+// #1279 Crew 권한 항목 — 유저가 설정에서 항목마다 '알아서 허용(true) / 물어보기'를 고름. 고정 항목(비밀·밖 쓰기·파괴 git·검사 회피)은 여기 없음.
+export const CREW_PERM_CATS = ["unknownCmd", "git", "code", "network", "system", "publish", "mcp"] as const;
+export type CrewPermCat = (typeof CREW_PERM_CATS)[number];
+export type CrewPerms = Partial<Record<CrewPermCat, boolean>>;
+export const CREW_PERM_DEFAULTS: Record<CrewPermCat, boolean> = { unknownCmd: true, git: true, code: true, network: false, system: false, publish: false, mcp: false };

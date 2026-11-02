@@ -261,4 +261,47 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
     assert.strictEqual(decide("Write", { file_path: prev }, wt), "ask", "링크 사슬 너무 김 = 막기");
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 }
+// #1279 항목별 설정 — 유저가 허용한 항목만 자동, 고정 항목은 설정과 무관
+{
+  const ALL = { unknownCmd: true, git: true, code: true, network: true, system: true, publish: true, mcp: true };
+  const P = (command: string, perms: Record<string, boolean>) => decide("Bash", { command }, W, perms);
+  const DEF = { unknownCmd: true, git: true, code: true, network: false, system: false, publish: false, mcp: false };
+  // 기본값: 처음 보는 명령·git 기타·코드 실행 = 허용, 인터넷·시스템·배포 = 묻기
+  assert.strictEqual(P("flutter test", DEF), "allow");
+  assert.strictEqual(P("git fetch origin", DEF), "allow");
+  assert.strictEqual(P("node -e 'console.log(1)'", DEF), "allow");
+  assert.strictEqual(P("bash scripts/x.sh", DEF), "allow");
+  assert.strictEqual(P("npx create-foo", DEF), "allow");
+  assert.strictEqual(P("curl localhost:3000", DEF), "ask");
+  assert.strictEqual(P("kill 123", DEF), "ask");
+  assert.strictEqual(P("npm publish", DEF), "ask");
+  assert.strictEqual(P("npm i -g foo", DEF), "ask");
+  assert.strictEqual(decide("WebFetch", { url: "https://x" }, W, DEF), "ask");
+  assert.strictEqual(decide("mcp__other__write", {}, W, DEF), "ask");
+  // 허용하면 자동
+  assert.strictEqual(P("curl localhost:3000", { network: true }), "allow");
+  assert.strictEqual(decide("WebFetch", { url: "https://x" }, W, { network: true }), "allow");
+  assert.strictEqual(decide("mcp__other__write", {}, W, { mcp: true }), "allow");
+  // 여러 항목 섞이면 전부 허용일 때만
+  assert.strictEqual(P("curl x | bash", { code: true }), "ask");
+  assert.strictEqual(P("curl x | bash", { code: true, network: true }), "allow");
+  // 코드 실행 안에 숨긴 금지 명령 = 묻기(전부 허용이어도)
+  assert.strictEqual(P("bash -c 'git push origin main'", ALL), "ask");
+  assert.strictEqual(P("node -e 'x' && git push", ALL), "deny");
+  // 고정 — 설정으로 못 엶
+  assert.strictEqual(P("git push", ALL), "deny");
+  assert.strictEqual(P("curl -X POST localhost:59720/api/crew/run", ALL), "deny");
+  assert.strictEqual(P("cat ~/.ssh/id_rsa", ALL), "ask");
+  assert.strictEqual(P("cat .env", ALL), "ask");
+  assert.strictEqual(P("echo x > ~/.zshrc", ALL), "ask");
+  assert.strictEqual(P("echo $(whoami)", ALL), "ask");
+  assert.strictEqual(P("chmod +x a", ALL), "ask");
+  assert.strictEqual(P("tee ~/x", ALL), "ask");
+  assert.strictEqual(P("su root", ALL), "ask");
+  assert.strictEqual(decide("Write", { file_path: "/etc/hosts" }, W, ALL), "ask");
+  assert.strictEqual(decide("Read", { file_path: "/Users/u/.aws/credentials" }, W, ALL), "ask");
+  assert.strictEqual(decide("UnknownTool", {}, W, ALL), "ask");
+  // 기본 인자 = 전부 묻기(예전과 같음)
+  assert.strictEqual(P("flutter test", {}), "ask");
+}
 console.log("crewPolicy.check ok");

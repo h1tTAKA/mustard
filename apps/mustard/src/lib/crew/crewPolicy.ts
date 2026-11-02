@@ -7,6 +7,7 @@ import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { lstatSync, readlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { timingSafeEqual } from "node:crypto";
+import type { CrewPermCat, CrewPerms } from "./crewTypes.ts";
 
 export type Decision = "allow" | "deny" | "ask";
 
@@ -119,12 +120,17 @@ function toolSecret(tool: string, input: Record<string, unknown>, worktree: stri
 const inside = (dir: string, p: string) => { const r = relative(dir, resolve(dir, p)); return !!dir && !r.startsWith("..") && !isAbsolute(r); };
 
 // #1137 사람에게(hold) — 셸·코드 실행·네트워크·권한·지속성. 'ask'와 같지만 이유를 구분해 둠(샌드박스 위 '전부 알아서'가 생겨도 이건 묻기).
-const HOLD_CMD = new Set(["sh", "bash", "zsh", "fish", "dash", "ksh", "eval", "exec", "env", "xargs", "source", ".", "su", "doas", "perl", "ruby", "php", "osascript", "awk", "gawk",
-  "ssh", "scp", "sftp", "rsync", "nc", "ncat", "socat", "curl", "wget", "open", "launchctl", "crontab", "defaults", "security", "chmod", "chown", "ln", "dd", "kill", "killall", "pkill", "gh", "tee", "install"]);
+// #1279 유저 설정 항목으로 옮긴 것(code·network·system) — 설정에서 '알아서 허용'이면 자동. 남은 HOLD_CMD = 권한 올리기·밖에 쓰기라 항상 사람.
+const HOLD_CMD = new Set(["su", "doas", "chmod", "chown", "ln", "dd", "tee", "install"]);
+const CMD_CAT: Record<string, CrewPermCat> = Object.fromEntries([
+  ...["sh", "bash", "zsh", "fish", "dash", "ksh", "eval", "exec", "env", "xargs", "source", ".", "perl", "ruby", "php", "awk", "gawk"].map((c) => [c, "code"]),
+  ...["ssh", "scp", "sftp", "rsync", "nc", "ncat", "socat", "curl", "wget", "gh"].map((c) => [c, "network"]),
+  ...["open", "launchctl", "crontab", "defaults", "security", "kill", "killall", "pkill", "osascript"].map((c) => [c, "system"]),
+]);
 const SAFE_NPX = new Set(["tsc", "eslint", "prettier", "vitest", "jest", "tsx", "playwright", "next"]); // npx는 모르는 패키지를 받아 실행 → 이것만
 const SAFE_ENV = /^(CI|NODE_ENV|FORCE_COLOR|NO_COLOR|TZ|LANG|LC_\w+|DEBUG|PORT|TERM)$/; // 앞에 붙는 VAR=값 중 허용(GIT_*·PATH·NODE_OPTIONS 등은 코드 실행 통로)
 const WRITERS = new Set(["cp", "mv", "touch", "mkdir", "rm", "rmdir"]); // 경로 인자를 씀 → worktree 밖이면 hold
-type Inner = Decision | "hold";
+type Inner = Decision | "hold" | CrewPermCat[]; // 배열 = 그 항목들 때문에 묻기(#1279 — 전부 유저가 허용한 항목이면 자동)
 // 자동 허락하는 MCP 도구(서버 이름까지) — Mustard 코드 그래프·인앱 브라우저 읽기, Loom 기억 읽기. 그 밖은 사람(크루가 쓰면 그때 추가)
 const MCP_READ_NAMES = /^mcp__mustard__(katchup_(check_freshness|file_api|find_all|find_code|repo_map|search|trace_calls)|browser_(read|console|status|screenshot))$|^mcp__plugin_loom-memory_loom(-memory)?__memory_(search|read|status)$/;
 
@@ -224,7 +230,7 @@ function bashDecision(raw0: string, worktree: string): Inner {
   // 리다이렉트로 쓰기 — worktree 밖(~·$ 포함)이면 hold
   const outRedirect = [...c.matchAll(/(?:&?>{1,2}&?|>\|)\s*([^\s|&;]+)/g)].map((m) => m[1]); // >&파일 = 출력·에러를 파일로(리뷰)
   if (outRedirect.some((p) => p !== "/dev/null" && (p.includes("§") || unsafeWrite(worktree, p)))) return "hold"; // 따옴표 경로는 확인 불가
-  let res: Inner = "allow";
+  const cats: CrewPermCat[] = [];
   // 연결(&&, ||, ;, |, &, 줄바꿈) 단위로 나눠 각 부분 확인
   for (const part of c.split(/&&|\|\||[;|&\n]/)) {
     const all = part.trim().split(/\s+/).filter(Boolean);
@@ -235,6 +241,7 @@ function bashDecision(raw0: string, worktree: string): Inner {
     if (!/^[\w./-]+$/.test(w0)) return "hold"; // 따옴표·변수·백슬래시로 꾸민 명령 이름(su""do → su§do)
     const base = w0.split("/").pop()!;
     if (HOLD_CMD.has(base)) return "hold";
+    if (Object.hasOwn(CMD_CAT, base)) { cats.push(CMD_CAT[base]); continue; }
     const args = words.slice(1).filter((a) => !a.startsWith("-"));
     const writes = WRITERS.has(base), files = args;
     if (writes && files.some((a) => a.includes("§") || unsafeWrite(worktree, a))) return "hold"; // 따옴표 경로는 확인 불가 → 사람
@@ -245,12 +252,12 @@ function bashDecision(raw0: string, worktree: string): Inner {
     if (words.slice(1).some((a) => /^(-O|--open-files-in-pager|--pre(=|$)|--pre-glob|--compress-program|--exec|--command)/.test(a))) return "hold";
     // 인터프리터 — 인라인 코드(-e0·--eval=·--import·--require), 파이프·heredoc으로 받은 코드(스크립트 파일 없음)는 사람(리뷰)
     if (/^(node|bun|deno|python3?|tsx|ts-node)$/.test(base)) {
-      if (words.slice(1).some((a) => /^(-[epcr]|--eval|--print|--import|--require|--loader|--experimental-loader|eval$)/.test(a)) || /<</.test(part)) return "hold";
-      if (!args.length && !words.some((a) => /^(--test|--version|-v|-V|--help)$/.test(a))) return "hold";
+      if (words.slice(1).some((a) => /^(-[epcr]|--eval|--print|--import|--require|--loader|--experimental-loader|eval$)/.test(a)) || /<</.test(part)) { cats.push("code"); continue; }
+      if (!args.length && !words.some((a) => /^(--test|--version|-v|-V|--help)$/.test(a))) { cats.push("code"); continue; }
     }
-    if (base === "npx" && (!SAFE_NPX.has(words.find((a, k) => k > 0 && !a.startsWith("-")) ?? "") || words.some((a) => /^(-p|--package)/.test(a)))) return "hold";
-    if (/^(npm|pnpm|yarn|bun)$/.test(base) && /^(publish|exec|x|dlx|unpublish|login|adduser|token|owner|access|global)$/.test(words[1] ?? "")) return "hold";
-    if (/^(npm|pnpm|yarn|bun)$/.test(base) && words.some((a) => /^(-g|--global|--location=global)$/.test(a))) return "hold"; // 전역 설치 = 밖에 쓰기 + 설치 스크립트
+    if (base === "npx" && (!SAFE_NPX.has(words.find((a, k) => k > 0 && !a.startsWith("-")) ?? "") || words.some((a) => /^(-p|--package)/.test(a)))) { cats.push("code"); continue; }
+    if (/^(npm|pnpm|yarn|bun)$/.test(base) && /^(publish|exec|x|dlx|unpublish|login|adduser|token|owner|access|global)$/.test(words[1] ?? "")) { cats.push("publish"); continue; }
+    if (/^(npm|pnpm|yarn|bun)$/.test(base) && words.some((a) => /^(-g|--global|--location=global)$/.test(a))) { cats.push("publish"); continue; } // 전역 설치 = 밖에 쓰기 + 설치 스크립트
     // 결과를 파일로 쓰는 옵션(sort -o, git diff --output=, mv --target-directory= …) — 사람(리뷰)
     if (words.some((a) => /^(--output|--target-directory|--out-file)\b/.test(a)) || ((base === "sort" || base === "tree") && words.includes("-o")) || (base === "uniq" && args.length > 1)) return "hold";
     // sed 스크립트의 w(파일 쓰기)·e(실행) — 따옴표 안이라 원문에서 확인(리뷰)
@@ -263,17 +270,22 @@ function bashDecision(raw0: string, worktree: string): Inner {
       if (sub === "clean" && rest.some((a) => /^(-[a-zA-Z]*f|--force)$/.test(a))) return "deny";
       if ((sub === "checkout" || sub === "switch") && rest.some((a) => /^(main|master)$/.test(a))) return "deny";
       if (sub === "branch" && rest.some((a) => /^(-[a-zA-Z]*[dDfmMcC]|--(delete|force|move|copy))$/.test(a))) return "hold";
-      if (sub && !SAFE_GIT.has(sub)) res = "ask";
+      if (sub && !SAFE_GIT.has(sub)) cats.push("git");
       continue;
     }
-    if (!SAFE_CMD.has(base)) res = "ask";
+    if (!SAFE_CMD.has(base)) cats.push("unknownCmd");
   }
-  return res;
+  return cats.length ? cats : "allow";
 }
 
-export function decide(tool: string, input: Record<string, unknown>, worktree: string): Decision {
+// perms = 유저 설정(#1279, 항목마다 true = 알아서 허용). 기본 {} = 전부 묻기(예전과 같음).
+export function decide(tool: string, input: Record<string, unknown>, worktree: string, perms: CrewPerms = {}): Decision {
   const d = decideBase(tool, input, worktree);
-  return d === "hold" ? "ask" : d;
+  if (!Array.isArray(d)) return d === "hold" ? "ask" : d;
+  if (!d.every((c) => perms[c] === true)) return "ask"; // 한 명령이 여러 항목이면 전부 허용일 때만
+  // 코드 실행은 따옴표 안 명령을 못 봄(bash -c 'git push') — 따옴표 벗긴 원문에 금지 명령이 보이면 사람
+  if (d.includes("code") && DENY_RE.test(unquote(String(input.command ?? "")))) return "ask";
+  return "allow";
 }
 
 // #1137 Codex·OpenCode(SNA 승인 흐름) 요청 → 정책 입력. Codex는 shell 명령을 `/bin/zsh -lc '…'`로 감싸 보냄 → 벗겨서 Bash로 판정.
@@ -294,9 +306,9 @@ export function fromAgentRequest(req: Record<string, unknown>): { tool: string; 
 const patchPaths = (input: Record<string, unknown>) => [...String(input.patch ?? input.input ?? input.command ?? "").matchAll(/^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/gm)].map((m) => m[1].trim());
 
 function decideBase(tool: string, input: Record<string, unknown>, worktree: string): Inner {
-  if (tool === "WebFetch") return "hold"; // 밖으로 데이터를 실어 보낼 수 있음(?d=비밀) — 사람(리뷰)
+  if (tool === "WebFetch") return ["network"]; // 밖으로 데이터를 실어 보낼 수 있음(?d=비밀) — 인터넷 항목(#1279, 기본 묻기)
   // 사용자 MCP — 서버까지 맞춘 알려진 읽기 도구만 자동, 나머지는 사람. 이름 단어로 읽기·쓰기를 가르는 건 매번 빠짐(리뷰: query_sql·fetch_url·eval_code)
-  if (tool.startsWith("mcp__")) return MCP_READ_NAMES.test(tool) ? "allow" : "hold";
+  if (tool.startsWith("mcp__")) return MCP_READ_NAMES.test(tool) ? "allow" : ["mcp"]; // #1279 다른 MCP 항목(기본 묻기)
   if (toolSecret(tool, input, worktree)) return "hold"; // #1159 경로 있는 읽기 — 비밀·홈 통째면 사람(링크·상대 경로·대소문자도)
   if (READ_TOOLS.has(tool)) return "allow";
   if (EDIT_TOOLS.has(tool)) {
