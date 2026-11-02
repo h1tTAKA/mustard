@@ -237,7 +237,7 @@ function spaceOps(raw: string): string {
     if (q) { if (ch === q) q = ""; out += ch; continue; }
     if (ch === "$" && raw[i + 1] === "'") { q = "$"; out += "$'"; i++; continue; }
     if (ch === "'" || ch === '"') { q = ch; out += ch; continue; }
-    out += /[;|&()]/.test(ch) ? ` ${ch} ` : ch;
+    out += /[;|&()]/.test(ch) && !(ch === "&" && /[<>]/.test(`${raw[i - 1] ?? ""}${raw[i + 1] ?? ""}`)) ? ` ${ch} ` : ch; // 2>&1·&> 의 &는 리다이렉트(리뷰)
   }
   return out;
 }
