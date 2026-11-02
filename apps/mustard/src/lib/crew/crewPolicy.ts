@@ -316,7 +316,8 @@ function decideBase(tool: string, input: Record<string, unknown>, worktree: stri
 //  dev(next dev 따로 기동)는 값이 없어 헤더 검사만(훅 토큰과 같은 규칙).
 const fromAppWindow = (req: Request) => {
   const want = (globalThis as { __mustardUiToken?: string }).__mustardUiToken;
-  if (!want) return true;
+  if (want === undefined) return !process.env.MUSTARD_UI_TOKEN_FD; // dev(값 없음) 통과. 패키지 서버인데 아직 못 받았으면 막음(리뷰: 열린 채로 두지 않기)
+  if (!want) return false; // 받기 실패 — 막음
   const got = /(?:^|;\s*)mustard_ui=([^;]*)/.exec(req.headers.get("cookie") ?? "")?.[1] ?? "";
   return got.length === want.length && timingSafeEqual(Buffer.from(got), Buffer.from(want));
 };

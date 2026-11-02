@@ -2,8 +2,15 @@
 // 첫 분석 지연을 없앤다. 부팅 실패해도 앱은 정상 기동(런타임 사용 시점 에러는 별도 처리).
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return; // edge/브라우저 런타임 제외
-  // #1161 앱 화면 비밀값은 서버 메모리로 옮기고 env에서 지움 — 서버가 띄우는 자식 프로세스(git·에이전트 CLI 등)로 새지 않게
-  if (process.env.MUSTARD_UI_TOKEN) { (globalThis as { __mustardUiToken?: string }).__mustardUiToken = process.env.MUSTARD_UI_TOKEN; delete process.env.MUSTARD_UI_TOKEN; }
+  // #1161 앱 화면 비밀값 — main이 전용 파이프(fd)로 줌(env는 ps로 보일 수 있음, 리뷰). 서버 메모리에만 두고 파이프는 닫음.
+  //  못 읽으면 ""(crossSite가 Crew 변경을 전부 막음 — 비밀값 없이 열리지 않게).
+  const fdEnv = process.env.MUSTARD_UI_TOKEN_FD;
+  if (fdEnv) {
+    let t = "";
+    try { const fs = await import("node:fs"); const fd = Number(fdEnv); t = fs.readFileSync(fd, "utf8").trim(); fs.closeSync(fd); } catch (e) { console.error("[crew] app token read failed:", e); }
+    (globalThis as { __mustardUiToken?: string }).__mustardUiToken = t;
+    delete process.env.MUSTARD_UI_TOKEN_FD;
+  }
   // 외부 런타임 서버(일렉트론 main 소유)면 임베드 스킵 — SnaClient가 SNA_BASE_URL로 연결.
   if (process.env.SNA_BASE_URL) { console.log("[sna] external runtime — skip embed"); void killIdleDefault(); return; }
   try {
