@@ -2,6 +2,8 @@
 // 첫 분석 지연을 없앤다. 부팅 실패해도 앱은 정상 기동(런타임 사용 시점 에러는 별도 처리).
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return; // edge/브라우저 런타임 제외
+  // #1161 앱 화면 비밀값은 서버 메모리로 옮기고 env에서 지움 — 서버가 띄우는 자식 프로세스(git·에이전트 CLI 등)로 새지 않게
+  if (process.env.MUSTARD_UI_TOKEN) { (globalThis as { __mustardUiToken?: string }).__mustardUiToken = process.env.MUSTARD_UI_TOKEN; delete process.env.MUSTARD_UI_TOKEN; }
   // 외부 런타임 서버(일렉트론 main 소유)면 임베드 스킵 — SnaClient가 SNA_BASE_URL로 연결.
   if (process.env.SNA_BASE_URL) { console.log("[sna] external runtime — skip embed"); void killIdleDefault(); return; }
   try {
