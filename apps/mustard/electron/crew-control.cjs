@@ -48,7 +48,7 @@ function createCrewControl({ appBase, uiToken, fetch = globalThis.fetch }) {
     if (!root) return fail("Run this from inside a git repo opened in Mustard.");
     try {
       if (tool === "crew_board") {
-        const [{ board }, { runs }, { msgs }] = await Promise.all([api("GET", `/api/crew/board?${q(root)}`), api("GET", `/api/crew/run?${q(root)}`), api("GET", `/api/crew/chat?${q(root)}&peek=1`)]);
+        const [{ board }, { runs }, { msgs }] = await Promise.all([api("GET", `/api/crew/board?${q(root)}`), api("GET", `/api/crew/run?${q(root)}&peek=1`), api("GET", `/api/crew/chat?${q(root)}&peek=1`)]);
         const last = new Map(); for (const r of runs) last.set(r.taskId, r); // 카드마다 마지막 실행
         return text({
           repo: root,
@@ -61,7 +61,7 @@ function createCrewControl({ appBase, uiToken, fetch = globalThis.fetch }) {
         if (!title) return fail("title is required.");
         const before = new Set((await api("GET", `/api/crew/board?${q(root)}`)).board.tasks.map((t) => t.id)); // 새로 생긴 카드 = 전후 차이(같은 제목 오인 방지, 리뷰)
         const { board } = await api("POST", "/api/crew/board", { root, op: "create", title, ...(args.body ? { body: String(args.body) } : {}), ...(args.role ? { role: String(args.role) } : {}) });
-        const id = board.tasks.find((x) => !before.has(x.id))?.id;
+        const id = board.tasks.find((x) => !before.has(x.id) && x.title === title)?.id; // 그 사이 사람이 만든 카드 제외(재리뷰)
         if (!id) return fail("Card was not created.");
         // 시작 실패해도 만든 카드 id는 돌려줌 — 다시 부를 때 중복 카드 대신 crew_start로(리뷰)
         let started = false, startError;
@@ -71,6 +71,11 @@ function createCrewControl({ appBase, uiToken, fetch = globalThis.fetch }) {
       if (tool === "crew_start" || tool === "crew_stop") {
         const taskId = String(args.taskId || "");
         if (!taskId) return fail("taskId is required (see crew_board).");
+        // 관문에 걸린 카드는 시작 안 함 — 막힘(blocked) 다시 실행도 사람 몫(실패 반복 루프 방지, 재리뷰). 서버는 막힘 다시 실행을 허용함
+        if (tool === "crew_start") {
+          const t = (await api("GET", `/api/crew/board?${q(root)}`)).board.tasks.find((x) => x.id === taskId);
+          if (t?.gate) return fail(`This card is waiting for the user in Mustard (${t.gate.kind}). Ask the user to decide it there.`);
+        }
         await api("POST", "/api/crew/run", { root, taskId, action: tool === "crew_start" ? "start" : "stop" });
         return text(`${tool === "crew_start" ? "Started" : "Stopped"} ${taskId}.`);
       }

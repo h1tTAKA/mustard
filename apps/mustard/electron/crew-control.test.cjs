@@ -34,6 +34,7 @@ const { createCrewControl, repoOf } = require("./crew-control.cjs");
   assert.strictEqual(out.tasks[0].run.state, "running");
   assert.match(out.tasks[0].waitingForUser, /^spec/);
   assert.ok(calls.every((c) => c.cookie === "mustard_ui=SECRET" && c.url.includes(`root=${encodeURIComponent(repo)}`)));
+  assert.ok(calls.find((c) => c.url.includes("/api/crew/run")).url.endsWith("&peek=1")); // 읽기는 자동 실행 대상 등록 안 함
 
   // 카드 만들고 바로 시작
   calls.length = 0;
@@ -52,8 +53,12 @@ const { createCrewControl, repoOf } = require("./crew-control.cjs");
   // 승인·관문·삭제 같은 건 도구가 없음 — 어떤 호출도 permission/gate/pr/takeover/delete를 보내지 않음
   for (const t of ["crew_permission", "crew_gate", "crew_delete", "crew_approve"]) assert.ok((await cc.call(t, { taskId: "t1", approved: true }, repo)).isError);
   calls.length = 0;
-  await cc.call("crew_start", { taskId: "t1", action: "permission", approved: true }, repo); // 인자로 action을 넣어도 무시
-  assert.deepStrictEqual(calls[0].body, { root: repo, taskId: "t1", action: "start" });
+  await cc.call("crew_start", { taskId: "t2", action: "permission", approved: true }, repo); // 인자로 action을 넣어도 무시
+  assert.deepStrictEqual(calls.find((c) => c.method === "POST").body, { root: repo, taskId: "t2", action: "start" });
+  // 관문 걸린 카드(t1 spec)는 시작 안 함 — 막힘 다시 실행도 사람 몫
+  calls.length = 0;
+  assert.match((await cc.call("crew_start", { taskId: "t1" }, repo)).content[0].text, /waiting for the user/);
+  assert.ok(!calls.some((c) => c.method === "POST"));
 
   // 크루 작업 폴더에서는 거부, 레포 밖도 거부
   calls.length = 0;
