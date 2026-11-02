@@ -508,7 +508,10 @@ const browserControl = require("./browser-control.cjs").createBrowserControl({
   // 탭 고르기/닫기 — 그 탭(guest)을 품은 창의 렌더러에(그 BrowserPage가 처리).
   tabCommand: (guestId, action) => { const g = webContents.fromId(Number(guestId)); const host = g && !g.isDestroyed() ? g.hostWebContents : null; if (host && !host.isDestroyed()) host.send("browser:tab-command", { guestId: Number(guestId), action }); },
   computer: (tool, args, cwd) => computerUse.agentTool(tool, args, { cwd }), // 컴퓨터 사용(#1175)
+  // Crew 지시(#1277) — 허용 동작만 앱 창 비밀값 쿠키로 대신 부름(승인·관문·삭제는 없음). appBase는 부팅 뒤 정해짐
+  crew: (tool, args, cwd) => crewControl.call(tool, args, cwd),
 });
+const crewControl = require("./crew-control.cjs").createCrewControl({ appBase: () => appBase, uiToken: UI_TOKEN });
 // 컴퓨터 사용(#1175) — 켜져 있는 동안만 전역 비상 정지 단축키(다른 앱이 앞에 있어도). 누르면 끄고 알림.
 const computerUse = require("./computer-use.cjs");
 // #1189 내장 도우미 — 패키징 앱은 Resources, 개발 실행은 build-app.mjs 결과(없으면 외부 드라이버)

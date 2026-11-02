@@ -115,6 +115,7 @@ function createBrowserControl(deps) {
   async function call(tool, args, cwd) {
     args = args || {};
     if (tool.startsWith("computer_") && deps.computer) return deps.computer(tool, args, cwd); // 컴퓨터 사용(#1175) — 같은 토큰·서버를 씀
+    if (tool.startsWith("crew_") && deps.crew) return deps.crew(tool, args, cwd); // Crew 지시(#1277) — 브라우저 설정과 무관
     if (agentEnabled === null) return fail("Mustard is still starting up. Try again in a few seconds.");
     if (!agentEnabled) return fail("Agent control of the in-app browser is turned off in Mustard settings (Settings > Browser). Ask the user to turn it on."); // 끄면 browser_* 전부 거부
     if (tool === "browser_status") {
