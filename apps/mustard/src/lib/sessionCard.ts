@@ -18,7 +18,7 @@ const CREW_PROMPT = "앞부분 [Crew 대화]는 역할 에이전트(@역할)끼�
 export interface CrewTalk { from: string; kind: string; to: string[]; text: string }
 
 export function sessionDigest(msgs: SessionMsg[], crew: CrewTalk[] = [], runs: CrewRunInfo[] = []): string {
-  const talk = [...runs.map((r) => `[실행] ${crewRunLine(r)}`), ...crew.map((c) => `@${c.from}${c.to.length ? ` → ${c.to.map((x) => `@${x}`).join(" ")}` : ""} (${c.kind}): ${c.text}`)];
+  const talk = [...runs.map((r) => `[실행] ${crewRunLine(r).slice(0, 300)}`), ...crew.map((c) => `@${c.from}${c.to.length ? ` → ${c.to.map((x) => `@${x}`).join(" ")}` : ""} (${c.kind}): ${c.text}`)];
   const lines = msgs.map((m) => (m.role === "user" ? "[사용자] " : m.role === "assistant" ? "[AI] " : "[도구] ") + (m.role === "tool" ? m.text.slice(0, TOOL_CLIP) : m.text));
   // Crew 대화는 앞에 고정(상한 반), 에이전트 기록은 남은 만큼 최근 쪽. 구역 표지는 자르지 않음(리뷰)
   const head = talk.length ? `[Crew 대화]\n${talk.join("\n").slice(0, INPUT_MAX / 2)}\n[에이전트 기록]\n` : "";
