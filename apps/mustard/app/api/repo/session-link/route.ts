@@ -42,7 +42,7 @@ export async function POST(req: Request): Promise<Response> {
       if (pre.length === 1) {
         const t = pre[0];
         crewTask = { id: t.id, title: t.title, status: t.status, ...(t.pipeline?.length ? { pipeline: t.pipeline } : {}), ...(t.role ? { role: t.role } : {}) };
-        crewRuns = listRuns(root, undefined, true).filter((r) => r.taskId === t.id && r.startedAt <= (body.ts as number) + 60_000) // 이 커밋까지의 실행(뒤 단계는 다음 커밋 기록)
+        crewRuns = listRuns(root, undefined, true).filter((r) => r.taskId === t.id && r.startedAt <= (body.ts as number) * 1000 + 60_000) // 이 커밋까지의 실행(뒤 단계는 다음 커밋 기록). ts = 커밋 초(findCommitSession과 같음), 실행 시각 = ms
           .map((r) => ({ role: r.role, stage: r.stage, state: r.state, startedAt: r.startedAt, endedAt: r.endedAt, summary: r.summary?.slice(0, 600), error: r.error?.slice(0, 300), toolCount: r.toolCount, tokens: r.tokens }));
         // 사람이 처음 내린 지시 = 카드(제목·본문·맡긴 역할). 기록·대화·실행이 있을 때만(지시만으로 카드 만들지 않게, 리뷰)
         if (found || talk.length || crewRuns.length) talk.unshift({ from: "human", kind: "task", to: t.pipeline?.length ? t.pipeline : t.role ? [t.role] : [], text: [t.title, t.body].filter(Boolean).join("\n").slice(0, 800), ts: t.createdAt });
