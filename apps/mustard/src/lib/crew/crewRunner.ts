@@ -369,9 +369,8 @@ function buildPrompt(title: string, body: string, role: CrewRole, pipeline: stri
 }
 
 // ── 공개 API ─────────────────────────────────────────────────────────
-export function listRuns(root: string, origin?: string): CrewRun[] {
-  registerRoot(root, origin);
-  reconcile(root);
+export function listRuns(root: string, origin?: string, peek = false): CrewRun[] {
+  if (!peek) { registerRoot(root, origin); reconcile(root); } // peek = 쓰기 없음(정리는 다음 일반 조회 때)
   const disk = readRuns(root);
   const mem = [...g.runs.values()].filter((r) => r.root === root);
   const byId = new Map(disk.map((r) => [r.id, r]));

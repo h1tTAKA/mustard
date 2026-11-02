@@ -10,8 +10,8 @@ export async function GET(request: Request): Promise<Response> {
   if (crossSite(request)) return Response.json({ ok: false, error: "cross-site" }, { status: 403 }); // #1159 GET도 레포 등록·대기 카드 시작(부수 효과) — <img>로 몰래 부르기 막기
   const root = new URL(request.url).searchParams.get("root") ?? "";
   if (!isAbsolute(root)) return Response.json({ ok: false, error: "absolute root required" }, { status: 400 });
-  // 조회 = 이 레포를 오케스트레이터에 등록(Ready 카드 자동 시작 대상)
-  try { return Response.json({ ok: true, runs: listRuns(root, new URL(request.url).origin), maxConcurrent: MAX_CONCURRENT }); }
+  // 조회 = 이 레포를 오케스트레이터에 등록(Ready 카드 자동 시작 대상). peek = 읽기만(에이전트 crew_board, #1277 — 안 연 레포를 자동 실행 대상으로 올리지 않음)
+  try { return Response.json({ ok: true, runs: listRuns(root, new URL(request.url).origin, !!new URL(request.url).searchParams.get("peek")), maxConcurrent: MAX_CONCURRENT }); }
   catch (e) { return Response.json({ ok: false, error: String((e as Error)?.message ?? e) }, { status: 500 }); }
 }
 

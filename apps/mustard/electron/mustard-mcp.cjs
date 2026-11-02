@@ -25,6 +25,12 @@ const TOOLS = [
   { name: "computer_tools", description: "Desktop control of the user's real apps (outside Mustard). Lists the desktop driver's tools. Use only when the user asks you to operate a desktop app and no API/CLI/file route can do it. For the app you are building, use browser_* instead.", inputSchema: { type: "object", properties: {} } },
   { name: "computer_describe", description: "Show the argument schema of one desktop driver tool (from computer_tools).", inputSchema: { type: "object", properties: { tool: { type: "string" } }, required: ["tool"] } },
   { name: "computer_call", description: "Run one desktop driver tool. Loop: snapshot (window state) -> one action -> fresh snapshot to verify; never reuse element tokens/indexes after the screen changes. Prefer accessibility elements over pixel coordinates. Ask the user right before sending messages, submitting forms, publishing, buying, deleting, or changing accounts. Passwords, passkeys and MFA stay with the user. Leave windows, focus and clipboard as you found them. If Mustard says turned off, blocked or stopped, stop and tell the user.", inputSchema: { type: "object", properties: { tool: { type: "string", description: "Driver tool name from computer_tools" }, args: { type: "object", description: "Tool arguments (see computer_describe)" } }, required: ["tool"] } },
+  // Crew 지시(#1277) — 이 레포의 역할 에이전트 보드. main이 허용 동작만 대신 부름(권한 승인·관문·삭제는 사람이 앱에서만).
+  { name: "crew_board", description: "Read this repo's Mustard Crew board: cards (id, title, status, role, what is waiting for the user) with their latest run (state, last activity, summary) and recent Crew chat.", inputSchema: { type: "object", properties: {} } },
+  { name: "crew_add_task", description: "Add a card to this repo's Mustard Crew board for the role agents to work on. Leave role empty to let the scope planner assign it. start=true starts it right away. Permission requests and gates are approved by the user in Mustard, not by you.", inputSchema: { type: "object", properties: { title: { type: "string" }, body: { type: "string", description: "Details / acceptance criteria" }, role: { type: "string", description: "Optional role id, e.g. app-builder, test-engineer, bug-fixer, doc-writer" }, start: { type: "boolean" } }, required: ["title"] } },
+  { name: "crew_start", description: "Start a Crew card (taskId from crew_board).", inputSchema: { type: "object", properties: { taskId: { type: "string" } }, required: ["taskId"] } },
+  { name: "crew_stop", description: "Stop a running Crew card (taskId from crew_board).", inputSchema: { type: "object", properties: { taskId: { type: "string" } }, required: ["taskId"] } },
+  { name: "crew_chat", description: "Post a message to this repo's Crew chat as the user's lead agent. '@role-id text' creates a card for that role and starts it; a work request without @ may also make the crew open and start a card. Answers to questions and gate decisions are the user's, in Mustard. Read replies with crew_board.", inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } },
 ];
 
 // 레포 루트 = cwd에서 위로 처음 .git(폴더·파일 모두 — worktree는 파일)이 나오는 곳. 없으면 cwd.
@@ -74,7 +80,7 @@ async function callMustard(name, args) {
 async function handle(msg) {
   const { id, method, params } = msg;
   if (method === "initialize") return reply(id, { protocolVersion: params?.protocolVersion || "2025-06-18", capabilities: { tools: {} }, serverInfo: SERVER,
-    instructions: "Mustard tools. Code graph: before grepping files, use katchup_repo_map for structure, then katchup_find_code/trace_calls/find_all/file_api/search. In-app browser: browser_* to open, read, screenshot and click pages of the app you are building. Desktop apps (only when the user asks): computer_*." });
+    instructions: "Mustard tools. Code graph: before grepping files, use katchup_repo_map for structure, then katchup_find_code/trace_calls/find_all/file_api/search. In-app browser: browser_* to open, read, screenshot and click pages of the app you are building. Desktop apps (only when the user asks): computer_*. Crew (when the user asks to hand work to the role agents): crew_*." });
   if (method === "ping") return reply(id, {});
   if (method === "tools/list") return reply(id, { tools: [...await graphTools(), ...TOOLS] });
   if (method === "tools/call") {
