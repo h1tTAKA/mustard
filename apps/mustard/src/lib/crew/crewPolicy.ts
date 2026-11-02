@@ -242,7 +242,12 @@ function bashDecision(raw0: string, worktree: string): Inner {
     if (!/^[\w./-]+$/.test(w0)) return "hold"; // 따옴표·변수·백슬래시로 꾸민 명령 이름(su""do → su§do)
     const base = w0.split("/").pop()!;
     if (HOLD_CMD.has(base)) return "hold";
-    if ((base === "curl" || base === "wget") && words.some((a, k) => (/^--output(-document)?=/.test(a) && unsafeWrite(worktree, a.slice(a.indexOf("=") + 1))) || (/^(-o|-O|--output|--output-document)$/.test(a) && !(base === "curl" && a === "-O") && (!words[k + 1] || words[k + 1].includes("§") || unsafeWrite(worktree, words[k + 1]))))) return "hold"; // 다운로드 저장 경로(curl -O = 받은 이름으로 현재 폴더)
+    // 다운로드·쿠키·헤더·추적 파일 저장 경로, 업로드할 파일(@경로) — 붙여 쓴 꼴(-sSo~/x·-o/abs·--output=)까지 값만 떼서 밖·보호 경로면 hold.
+    //  설정 파일(-K·--config, wget -e)은 안에 무엇이든 적을 수 있어 hold(리뷰)
+    if (base === "curl" || base === "wget") {
+      if (words.slice(1).some((a) => /^(-[a-zA-Z]*K|--config|--execute)/.test(a) || (base === "wget" && /^-[a-zA-Z]*e/.test(a)))) return "hold";
+      if (words.slice(1).some((a) => { if (a.includes("://")) return false; const v = a.replace(/^-{1,2}[a-zA-Z-]*=?/, "").replace(/^@/, ""); return !!v && (v.includes("§") ? /^-/.test(a) : unsafeWrite(worktree, v)); })) return "hold";
+    }
     if (Object.hasOwn(CMD_CAT, base)) { cats.push(CMD_CAT[base]); continue; }
     const args = words.slice(1).filter((a) => !a.startsWith("-"));
     const writes = WRITERS.has(base), files = args;
@@ -309,7 +314,7 @@ export function fromAgentRequest(req: Record<string, unknown>): { tool: string; 
 const patchPaths = (input: Record<string, unknown>) => [...String(input.patch ?? input.input ?? input.command ?? "").matchAll(/^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/gm)].map((m) => m[1].trim());
 
 function decideBase(tool: string, input: Record<string, unknown>, worktree: string): Inner {
-  if (/\/api\/crew\b/.test(unquote(JSON.stringify(input ?? {})))) return "deny"; // Mustard Crew API는 어느 도구로도(WebFetch·MCP·Bash, 리뷰)
+  if ((tool === "WebFetch" || tool.startsWith("mcp__")) && /\/api\/crew\b/.test(unquote(JSON.stringify(input ?? {})))) return "deny"; // Crew API는 HTTP를 보낼 수 있는 도구로도 금지(Bash는 bashDecision). 파일 읽기·수정은 경로에 api/crew가 있어도 됨(리뷰)
   if (tool === "WebFetch") return ["network"]; // 밖으로 데이터를 실어 보낼 수 있음(?d=비밀) — 인터넷 항목(#1279, 기본 묻기)
   // 사용자 MCP — 서버까지 맞춘 알려진 읽기 도구만 자동, 나머지는 사람. 이름 단어로 읽기·쓰기를 가르는 건 매번 빠짐(리뷰: query_sql·fetch_url·eval_code)
   if (tool.startsWith("mcp__")) return MCP_READ_NAMES.test(tool) ? "allow" : ["mcp"]; // #1279 다른 MCP 항목(기본 묻기)
