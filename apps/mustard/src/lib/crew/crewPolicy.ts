@@ -6,6 +6,7 @@
 import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { lstatSync, readlinkSync } from "node:fs";
 import { homedir } from "node:os";
+import { timingSafeEqual } from "node:crypto";
 
 export type Decision = "allow" | "deny" | "ask";
 
@@ -310,8 +311,18 @@ function decideBase(tool: string, input: Record<string, unknown>, worktree: stri
 // #1137 Crew API는 같은 출처(앱 화면)에서만 — 다른 사이트가 폼 POST로 카드를 만들거나 권한을 허락하지 못하게(리뷰). 브라우저 밖 호출은 샌드박스 이슈에서
 // #1159 강화 — Sec-Fetch-Site가 없으면(옛 브라우저·일부 웹뷰) Origin이 이 서버와 같은지, 그리고 POST는 JSON만:
 // 폼·text/plain 같은 '단순 요청'은 사전 확인 없이 다른 사이트에서 보낼 수 있지만 application/json은 사전 확인(CORS)이 막음.
-// 브라우저 밖 호출(Origin·Sec-Fetch-Site 둘 다 없음, 예: 로컬 스크립트)은 통과 — 그건 이 검사의 대상이 아님.
+// #1161 브라우저 밖 호출(로컬 스크립트)은 헤더로 못 가림 → 앱 화면 비밀값: main이 앱 창 쿠키(mustard_ui)와 서버에만 주고
+//  instrumentation이 서버 메모리로 옮겨 둠. 값이 있으면 쿠키가 같아야 통과(에이전트가 스크립트로 자기 권한을 승인하지 못하게).
+//  dev(next dev 따로 기동)는 값이 없어 헤더 검사만(훅 토큰과 같은 규칙).
+const fromAppWindow = (req: Request) => {
+  const want = (globalThis as { __mustardUiToken?: string }).__mustardUiToken;
+  if (want === undefined) return !process.env.MUSTARD_UI_TOKEN_FD; // dev(값 없음) 통과. 패키지 서버인데 아직 못 받았으면 막음(리뷰: 열린 채로 두지 않기)
+  if (!want) return false; // 받기 실패 — 막음
+  const got = /(?:^|;\s*)mustard_ui=([^;]*)/.exec(req.headers.get("cookie") ?? "")?.[1] ?? "";
+  return got.length === want.length && timingSafeEqual(Buffer.from(got), Buffer.from(want));
+};
 export const crossSite = (req: Request) => {
+  if (!fromAppWindow(req)) return true;
   const s = req.headers.get("sec-fetch-site");
   if (s && s !== "same-origin" && s !== "none") return true;
   const o = req.headers.get("origin");

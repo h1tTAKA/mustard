@@ -207,7 +207,8 @@ async function startRuntimeServer() {
 }
 
 // standalone 서버 spawn(prod). extraEnv(런타임 커넥션)를 주입. 준비되면 baseUrl 반환.
-async function startStandaloneServer(extraEnv) {
+// #1161 secret = 앱 화면 비밀값 — env가 아니라 전용 파이프(fd 3)로(env는 같은 사용자의 ps로 보일 수 있음, 리뷰). 서버는 MUSTARD_UI_TOKEN_FD를 보고 읽음.
+async function startStandaloneServer(extraEnv, secret) {
   const port = await getStableAppPort();
   // 패키지: standalone은 extraResources로 process.resourcesPath/standalone.
   // 미패키지(electron electron/main.cjs): <appRoot>/.next/standalone.
@@ -223,9 +224,11 @@ async function startStandaloneServer(extraEnv) {
       PORT: String(port),
       HOSTNAME: "127.0.0.1",
       ELECTRON_RUN_AS_NODE: "1", // electron 바이너리를 순수 node로 실행
+      ...(secret ? { MUSTARD_UI_TOKEN_FD: "3" } : {}),
     },
-    stdio: "inherit",
+    stdio: secret ? ["inherit", "inherit", "inherit", "pipe"] : "inherit",
   });
+  if (secret) { serverProc.stdio[3].on("error", () => {}); serverProc.stdio[3].end(secret); } // 서버가 먼저 죽어도(EPIPE) main이 같이 죽지 않게(리뷰)
   serverProc.on("exit", (code) => { if (code) console.error("[electron] standalone server exited", code); });
 
   const base = `http://127.0.0.1:${port}`;
@@ -330,6 +333,9 @@ function clearModeTabClaims() {
 // #989 관리형 Claude 훅 설치(비동기, 실패해도 앱 정상) — appBase 확정 후. 화면 긁기는 안전망으로 유지.
 // 부팅 토큰 — standalone 서버 env(MUSTARD_HOOK_TOKEN)와 엔드포인트 파일에만. dev(next dev 별도 기동)는 env가 없어 검사 생략.
 const HOOK_TOKEN = require("node:crypto").randomBytes(16).toString("hex");
+// #1161 앱 화면 비밀값 — Crew 변경 API(권한 허락 등)는 이 값이 든 앱 창 쿠키가 있어야 통과(에이전트가 스크립트로 자기 권한을 승인하지 못하게).
+//  서버(전용 파이프)와 앱 창 쿠키에만 줌. main의 process.env엔 안 넣음 — SNA·터미널 데몬이 main env를 물려받아 에이전트에게 새므로.
+const UI_TOKEN = require("node:crypto").randomBytes(32).toString("hex");
 function setupClaudeHooks(base, token) {
   const saved = loadSavedRuntimePaths();
   const cliPath = saved.claudeCode || process.env.NUNOPI_CLAUDE_COMMAND?.trim() || safeResolve(resolveClaudeCli);
@@ -360,7 +366,11 @@ async function boot() {
     SNA_BASE_URL: snaHandle.connection.baseUrl,
     SNA_AUTH_TOKEN: snaHandle.connection.authToken,
     MUSTARD_HOOK_TOKEN: HOOK_TOKEN,
-  });
+  }, UI_TOKEN);
+  // #1161 창 띄우기 전에 심음(첫 요청부터 통과). httpOnly = 페이지 스크립트도 못 읽음, 만료 없음 = 디스크에 안 남는 세션 쿠키.
+  //  인앱 브라우저는 다른 저장소(persist:mustard-browser)라 이 쿠키가 없음. 쿠키는 포트를 안 가려 127.0.0.1의 다른 포트에도 붙음
+  //  → 기본 세션 창은 앱 주소만 열 것(외부·localhost 링크는 인앱 브라우저나 OS 브라우저로, 리뷰).
+  await require("electron").session.defaultSession.cookies.set({ url: base, name: "mustard_ui", value: UI_TOKEN, httpOnly: true, sameSite: "strict" });
   appBase = base; // #765 버퍼 드라이버 POST 대상
   writeMcpEndpoint(); // #1070 MCP가 코드그래프 도구를 앱에 물을 주소
   setupClaudeHooks(base, HOOK_TOKEN);

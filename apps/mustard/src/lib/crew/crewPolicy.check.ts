@@ -167,6 +167,25 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   assert.strictEqual(crossSite(R({ "sec-fetch-site": "same-origin" }, "GET")), false, "GET은 본문 형식 안 봄");
   assert.strictEqual(crossSite(R({ "content-type": "application/json; charset=utf-8", origin: "http://localhost:59720" })), false, "charset 붙은 JSON·같은 Origin");
 }
+// #1161 앱 화면 비밀값 — 있으면 앱 창 쿠키가 같아야(브라우저 밖 스크립트로 자기 권한 승인 막기)
+{
+  const g = globalThis as { __mustardUiToken?: string };
+  const R = (h: Record<string, string>) => new Request("http://127.0.0.1:59720/api/crew/run", { method: "POST", headers: { host: "127.0.0.1:59720", "content-type": "application/json", ...h } });
+  g.__mustardUiToken = "a".repeat(64);
+  try {
+    assert.strictEqual(crossSite(R({ "sec-fetch-site": "same-origin", cookie: `x=1; mustard_ui=${"a".repeat(64)}` })), false, "앱 창(쿠키 맞음)");
+    assert.strictEqual(crossSite(R({})), true, "로컬 스크립트(쿠키 없음)");
+    assert.strictEqual(crossSite(R({ cookie: `mustard_ui=${"b".repeat(64)}` })), true, "쿠키 틀림");
+    assert.strictEqual(crossSite(R({ cookie: "mustard_ui=aaa" })), true, "길이 다름");
+    assert.strictEqual(crossSite(R({ cookie: `xmustard_ui=${"a".repeat(64)}` })), true, "비슷한 이름 쿠키");
+    assert.strictEqual(crossSite(R({ "sec-fetch-site": "cross-site", cookie: `mustard_ui=${"a".repeat(64)}` })), true, "쿠키 맞아도 다른 사이트면 막음");
+    g.__mustardUiToken = "";
+    assert.strictEqual(crossSite(R({ cookie: "mustard_ui=" })), true, "받기 실패(빈 값) — 빈 쿠키로 통과 못 함");
+  } finally { delete g.__mustardUiToken; }
+  assert.strictEqual(crossSite(R({})), false, "dev(비밀값 없음) — 예전처럼 헤더 검사만");
+  process.env.MUSTARD_UI_TOKEN_FD = "3";
+  try { assert.strictEqual(crossSite(R({})), true, "패키지 서버인데 아직 못 받음 — 막음"); } finally { delete process.env.MUSTARD_UI_TOKEN_FD; }
+}
 // #1159 리뷰 우회 — 따옴표 상대 경로·옵션 값·cd·홈 통째·대소문자·끊긴 링크·링크로 보호 폴더·Glob 고정부·GET 출처
 {
   const fs = await import("node:fs"), os = await import("node:os"), path = await import("node:path");
