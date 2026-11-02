@@ -19,6 +19,7 @@ export const parseDiffItemKey = (key: string) => { const m = /^diff\|([0-9a-fA-F
 const POLL_MS = 30_000;
 // #1264 지금 요약 중인 세션(레포\0해시) — 효과가 다시 돌아 새 줄이 생겨도 같은 커밋을 동시에 두 번 요약하지 않게(리뷰). 모듈 전역.
 const flying = new Set<string>();
+const NONE_GRACE_MS = 5 * 60_000; // #1274 커밋 뒤 이 시간 안의 "세션 없음"은 다시 확인
 const RETRY_MS = [5_000, 20_000, -1]; // #1093 덩어리 재시도 간격(-1 = 마지막 시도)
 const EXPLAIN_CONCURRENCY = 4; // #1090 덩어리 설명 동시 호출 수(AI CLI 동시 실행 — 너무 많으면 레이트 리밋)
 // 설명 가치 없는 파일 — 문서·lockfile·이미지 등(삭제 파일은 상태 D로 따로 거름).
@@ -138,6 +139,9 @@ export function useAutoCommitExplain(root: string, providerId: AgentProviderKind
           keep.push({ ...pd, errAt: undefined }); continue; // 오류 창은 연속 오류만(옛 오류 시각이 남아 나중 한 번에 버려지지 않게, 리뷰)
         }
         if (r === "error") { const at = pd.errAt ?? Date.now(); if (Date.now() - at < 30 * 60_000) keep.push({ ...pd, errAt: at, retryAt: Date.now() + 2 * 60_000 }); else noSession.push(pd.hash); continue; } // #1262 30분(2분 간격) — 패키징(서버가 몇 분 없음)도 견디게, 그래도 안 되면 되살리기도 다시 안 봄 // 서버 오류 — 처음 실패부터 5분까지만 다시(리뷰)
+        // #1274 방금 생긴 커밋의 "없음"은 아직 확정 안 함 — 커밋 명령이 도는 중(커밋 뒤 push·훅)엔 기록 파일이 명령 시작 줄에서 멈춰
+        //  수정 시각이 커밋보다 앞서 서버가 그 세션을 안 봄. 명령이 끝나면 잡힘. 5분 지나도 없으면 사람 커밋으로 확정.
+        if (r === "none" && !pd.rv && Date.now() - (pd.ms ?? pd.ts * 1000) < NONE_GRACE_MS) { keep.push({ ...pd, retryAt: Date.now() + 30_000 }); continue; }
         if (r === "none") noSession.push(pd.hash); // #1262 세션 없는 커밋(사람 커밋) — 되살리기가 다시 안 봄
         if (r !== "none" && alive) {
           window.dispatchEvent(new CustomEvent(CATCHUP_ITEM_EVENT, { detail: { root, item: r } }));
