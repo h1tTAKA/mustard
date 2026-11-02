@@ -41,8 +41,8 @@ export default function SendToAgent({ root, item, size = 12, className = "", lab
     if (busy) return;
     setBusy(role);
     try {
-      const text = `@${role} ${formatGithubHandoff(item, note)}`; // 덧붙인 말·제목·본문을 각각 잘라 8000자 안쪽(펜스 안 잘림)
-      const j = await (await fetch("/api/crew/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, text }) })).json().catch(() => null);
+      const text = `@${role} ${formatGithubHandoff(item, note)}`; // handoff = 맡기기 버튼 — 의도 판단 없이 바로 카드(리뷰). 덧붙인 말·제목·본문을 각각 잘라 8000자 안쪽(펜스 안 잘림)
+      const j = await (await fetch("/api/crew/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, text, handoff: true }) })).json().catch(() => null);
       if (!j?.ok) { toast(t("crewchat.sendFailed"), "error"); return; }
       toast(j.created ? t("crewchat.created") : t("github.sentToCrew"), "success"); done();
     } catch { toast(t("crewchat.sendFailed"), "error"); } finally { setBusy(null); }

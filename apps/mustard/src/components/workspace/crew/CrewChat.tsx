@@ -99,7 +99,6 @@ export default function CrewChat({ root }: { root: string }) {
       const j = await (await fetch("/api/crew/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, text: body, replyTo: reply?.id }) })).json();
       if (!j?.ok) throw new Error(j?.error);
       setText(""); setReply(null); stick.current = true;
-      if (j.created) toast(t("crewchat.created"), "success");
       load();
     } catch { toast(t("crewchat.sendFailed"), "error"); } finally { setBusy(false); }
   };

@@ -545,7 +545,7 @@ export function decideCard(root: string, taskId: string, action: "approve" | "re
 // - 카드 메시지에 답글: 질문 중이면 답 / spec·schema·merge 관문이면 반려(코멘트로 다시) / 막힘이면 다시 / 그 밖은 다음 실행 메모
 // - 답글 아님 + @역할: 그 역할이 대화로 먼저 답하며 의도 판단 — 작업 요청일 때만 카드(Ready = 바로 시작), 지침·지적은 팀 지침으로, 질문은 답만
 //   (앱 확인: 지적·공지까지 전부 카드가 돼 일을 시작함)
-export function postHuman(root: string, text: string, replyTo?: string): { msg: CrewMsg; taskId?: string; created?: boolean } {
+export function postHuman(root: string, text: string, replyTo?: string, handoff = false): { msg: CrewMsg; taskId?: string; created?: boolean } {
   const body = text.trim().slice(0, 8000);
   if (!body) throw new Error("empty");
   registerRoot(root);
@@ -575,11 +575,15 @@ export function postHuman(root: string, text: string, replyTo?: string): { msg: 
     else patchTask(root, task.id, { note: [task.note, body].filter(Boolean).join("\n\n") });
     return { msg, taskId: task.id };
   }
+  if (mentions.length && handoff) { // 맡기기 버튼(GitHub 이슈·PR 등) — 의도 판단 없이 바로 카드(리뷰)
+    const created = createFor(root, body, mentions);
+    return { msg, taskId: created.id, created: true };
+  }
   if (mentions.length) {
-    // 불린 역할의 지금 카드(실행 중 → 아니면 끝나지 않은 최근 담당 카드) — 답의 재료, 실행 중이면 메모로도
-    const tasks = readBoard(root).tasks, role = mentions[0];
-    const card = tasks.find((t) => activeFor(root, t.id)?.role === role) ?? [...tasks].reverse().find((t) => t.status !== "done" && pipelineOf(t).includes(role));
-    if (card && activeFor(root, card.id)) patchTask(root, card.id, { note: [card.note, body].filter(Boolean).join("\n\n") });
+    // 불린 역할이 지금 실행 중인 카드만 — 답의 재료이자 메모(엉뚱한 옛 카드에 붙이지 않게, 리뷰)
+    const role = mentions[0];
+    const card = readBoard(root).tasks.find((t) => activeFor(root, t.id)?.role === role);
+    if (card) patchTask(root, card.id, { note: [card.note, body].filter(Boolean).join("\n\n") });
     void answerHuman(root, msg, role, card?.id, callsEveryone(body), mentions);
     return { msg, ...(card ? { taskId: card.id } : {}) };
   }
@@ -666,11 +670,21 @@ const speaking = (root: string, roleId?: string) => { // 지금 말하는 역할
 };
 
 // 레포마다 한 번에 하나(리뷰: 글을 연달아 보내면 AI 호출이 줄줄이 — 다른 해설과 슬롯을 나눠 씀). 쓰는 중에 온 글은 가장 최근 것만 이어서.
+// @역할 카드 — 첫 줄(멘션 뺀)이 제목, Ready = tick이 바로 시작
+function createFor(root: string, text: string, roles: string[]) {
+  const title = text.replace(/@[a-z0-9-]+/gi, "").split("\n").map((l) => l.trim()).find(Boolean)?.slice(0, 80) || text.slice(0, 80);
+  const b = applyOp(root, { op: "create", title, body: text, status: "ready", role: roles[0], pipeline: roles });
+  return b.tasks[b.tasks.length - 1];
+}
 // mentioned = @로 부른 역할들(답글 아님) — 그 역할들이 답하고, 작업 요청이면 회의 없이 그 역할들 카드.
 async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?: string, everyone = false, mentioned: string[] = []) {
   const queue = (g.answerNext ??= new Map());
-  // 쓰는 중에 온 글은 차례대로(최대 5개) — 예전엔 가장 최근 것만 남아 앞 글이 답 없이 사라짐(앱 확인)
-  if ([...(g.answering ?? [])].some((k) => k.startsWith(`${root}\n`))) { queue.set(root, [...(queue.get(root) ?? []), { human, roleId, taskId, everyone, mentioned }].slice(-5)); return; }
+  // 쓰는 중에 온 글은 차례대로(최대 10개) — 예전엔 가장 최근 것만 남아 앞 글이 답 없이 사라짐(앱 확인)
+  if ([...(g.answering ?? [])].some((k) => k.startsWith(`${root}\n`))) {
+    const list = [...(queue.get(root) ?? []), { human, roleId, taskId, everyone, mentioned }];
+    for (const d of list.splice(0, Math.max(0, list.length - 10))) say(root, { from: "board", kind: "blocked", replyTo: d.human.id, ...tx("crewchat.answerFailed", { role: roleLabel(d.roleId), why: tr("crewchat.why.other") }) }); // 넘친 글은 조용히 버리지 않고 알림(리뷰)
+    queue.set(root, list); return;
+  }
   const first = getRole(everyone ? MODERATOR : roleId) ?? getRole(MODERATOR);
   if (!first) { say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.answerFailed", { role: roleId, why: tr("crewchat.why.other") }) }); return; }
   let who = first, meeting = false;
@@ -701,8 +715,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     const transcript = [`${first.id}: ${clip(opener.reply, 600)}`];
     if (opener.intent === "instruction") addGuideline(root, human.text.replace(/@[a-z0-9-]+/gi, "").trim()); // 이후 모든 실행에 붙음
     if (opener.intent === "work" && mentioned.length && !everyone) { // @역할 작업 요청 — 회의 없이 그 역할(여럿이면 그 순서) 카드, Ready = 바로 시작
-      const title = human.text.replace(/@[a-z0-9-]+/gi, "").split("\n").map((l) => l.trim()).find(Boolean)?.slice(0, 80) || human.text.slice(0, 80);
-      applyOp(root, { op: "create", title, body: human.text, status: "ready", role: mentioned[0], pipeline: mentioned });
+      createFor(root, human.text, mentioned);
       return;
     }
     meeting = opener.intent === "work";
