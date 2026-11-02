@@ -57,7 +57,7 @@ function createCrewControl({ appBase, uiToken, fetch = globalThis.fetch }) {
         });
       }
       if (tool === "crew_add_task") {
-        const title = String(args.title || "").trim().slice(0, 200).trim(); // 저장소 TITLE_MAX와 같게 잘라야 아래 제목 비교가 맞음(재리뷰)
+        const title = String(args.title || "").trim().slice(0, 200).trim(); // 미리 잘라 보냄 → 저장소 create(trim 후 200자)가 받은 값을 더 안 바꾸게 끝 공백까지 지움 — 아래 제목 비교가 맞게(재리뷰)
         if (!title) return fail("title is required.");
         const before = new Set((await api("GET", `/api/crew/board?${q(root)}`)).board.tasks.map((t) => t.id)); // 새로 생긴 카드 = 전후 차이(같은 제목 오인 방지, 리뷰)
         const { board } = await api("POST", "/api/crew/board", { root, op: "create", title, ...(args.body ? { body: String(args.body) } : {}), ...(args.role ? { role: String(args.role) } : {}) });
