@@ -198,8 +198,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [stars, setStars] = useState<Record<string, number>>({});
   const hasAsk = Object.values(askCounts).some((n) => n > 0), hasStar = Object.keys(stars).length > 0;
   // #1135 Crew 작업(역할 보고·crew/* 브랜치 diff·세션)이 하나라도 있을 때만 Crew 칩
+  // #1281 Crew 탭 = 크루 작업 기록(세션 카드·역할 보고)만 — diff는 diff 탭에서 Crew 칩으로 구분(유저: 크루 탭은 그 커밋을 크루가 어떻게 만들었나 기록)
   // tool: diff = "브랜치 · 커밋 제목", 세션 = "에이전트 · 브랜치" — 브랜치 자리만 봄(커밋 제목에 "crew/"가 있어도 안 걸리게, 리뷰)
-  const hasCrew = concepts.some((c) => c.tool.startsWith("crew|") || (c.kind === "diff" && c.tool.startsWith("crew/")) || (c.kind === "session" && c.tool.split(" · ")[1]?.startsWith("crew/")));
+  const hasCrew = concepts.some((c) => c.tool.startsWith("crew|") || (c.kind === "session" && c.tool.split(" · ")[1]?.startsWith("crew/")));
   const filter = (filterSel === "explain" && !explainShow) || (filterSel === "commands" && !showCommands) || (filterSel === "diff" && !diffShow) || (filterSel === "session" && !sessionsShow) || (filterSel === "terms" && !showTerms) || (filterSel === "crew" && !hasCrew) || (filterSel === "ask" && !hasAsk) || (filterSel === "star" && !hasStar) ? "all" : filterSel;
   // #1238 질문·별표 칩 — 서버에서 전체 날짜로(별표·질문이 바뀌면 다시). 받는 사이엔 지금 목록에서 거른 것도 합쳐 바로 반영.
   const onlyKind = filter === "ask" || filter === "star" ? filter : null;
@@ -492,7 +493,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const chipOn = (t2: Tag) => (tag && tag.type === t2.type && tag.value === t2.value ? " ring-1 ring-mustard-500/70" : "");
   // #1238 날짜 보기 중 칩은 그날 안에서만(바 문구와 같게, 리뷰), 아니면 칩·질문·별표는 서버 전체 날짜 결과
   const shown = (query ? (found ?? []) : viewDay ? (dayItems ?? []) : tagSource ?? onlySource ?? concepts).filter((c) => (isCommand(c) ? showCommands : c.kind === "diff" ? diffShow : c.kind === "session" ? sessionsShow : explainShow) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)) // #1062 표시 끔 = 분석된 것도 숨김, 문서 편집 카드는 항상 숨김(#1049)
-    && (filter === "all" || (filter === "ask" || filter === "star" ? onlyPred(c) : filter === "crew" ? !!crewTask(c) : filter === "commands" ? isCommand(c) : filter === "diff" ? c.kind === "diff" : filter === "session" ? c.kind === "session" : filter === "explain" && !isCommand(c) && c.kind !== "diff" && c.kind !== "session"))).filter(tagMatch);
+    && (filter === "all" || (filter === "ask" || filter === "star" ? onlyPred(c) : filter === "crew" ? (c.kind === "session" || c.kind === "narration") && !!crewTask(c) : filter === "commands" ? isCommand(c) : filter === "diff" ? c.kind === "diff" : filter === "session" ? c.kind === "session" : filter === "explain" && !isCommand(c) && c.kind !== "diff" && c.kind !== "session"))).filter(tagMatch);
   // #1064 세션 → 에이전트로 넘기기(인앱 브라우저 피드백과 같은 경로). 카드 하나에 요청 입력창.
   const [handoffKey, setHandoffKey] = useState<string | null>(null);
   const [handoffText, setHandoffText] = useState("");
