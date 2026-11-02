@@ -209,9 +209,6 @@ function quoteStateAt(c: string, idx: number): boolean {
 const pctDecode = (t: string) => { let x = t; for (let i = 0; i < 3; i++) { try { const y = decodeURIComponent(x); if (y === x) break; x = y; } catch { break; } } return x; };
 const unquote = (raw: string) => raw.replace(/\$'/g, "'").replace(/\\(.)/g, "$1").replace(/["']/g, "");
 // 경로 인자가 worktree 밖(~·$·절대·..)인가
-// cd 허용 범위 — 같은 레포의 다른 크루 작업 폴더(<base>/<레포>/<id>)까지. 앞 카드 브랜치를 보러 자주 감(앱 확인)
-//  한계: cd 뒤 상대 경로 쓰기는 여전히 자기 폴더 기준으로 판정(이름 기반 보호 폴더·밖 경로는 그대로 걸림)
-const crewRoom = (wt: string) => (/[/\\]worktrees[/\\][^/\\]+[/\\][^/\\]+[/\\]?$/.test(wt) ? resolve(wt, "..") : wt);
 const outside = (worktree: string, p: string) => /^~|\$/.test(p) || !inside(worktree, p);
 // #1159 worktree 안이어도 쓰면 안 되는 것 — 다음 역할 시작·사람의 git·npm이 샌드박스 없이 읽고 실행(훅·MCP 서버·설정)
 const PROTECTED_DIRS = new Set([".git", ".claude", ".codex", ".cursor", ".vscode", ".husky", ".githooks"]);
@@ -306,7 +303,7 @@ function sedOk(words: string[], raw: string, worktree: string): boolean {
   const ok = (x: string) => SED_PRINT.test(x) || SED_SUB.test(x);
   let scriptOk = false;
   if (script === "§") {
-    const m = (raw.match(/(^|[^\w./-])sed\s/g) ?? []).length === 1 ? raw.match(/(?:^|[^\w./-])sed\s+(?:(?:-[niEr]|''|"")\s+)*(['"])((?:(?!\1)[^\n])*)\1(?=\s|$)/) : null;
+    const m = (raw.match(/(^|[^\w.-])sed\s/g) ?? []).length === 1 ? raw.match(/(?:^|[^\w.-])sed\s+(?:(?:-[niEr]|''|"")\s+)*(['"])((?:(?!\1)[^\n])*)\1(?=\s|$)/) : null;
     scriptOk = !!m && !(m[1] === '"' && /[$`]/.test(m[2])) && ok(m[2]); // "…" 안 $·` 는 펼쳐짐
   } else if (script) scriptOk = !/\$[\w{]/.test(script) && ok(script);
   if (!scriptOk || (inPlace && !files.length)) return false;
@@ -349,7 +346,7 @@ function bashDecision(raw0: string, worktree: string): Inner {
     const writes = WRITERS.has(base), files = args;
     if (writes && files.some((a) => a.includes("§") || unsafeWrite(worktree, a))) return "hold"; // 따옴표 경로는 확인 불가 → 사람
     const dest = base === "cd" ? words.slice(1).find((a) => a !== "--" && !/^-[LPe@]+$/.test(a)) : undefined; // cd -P·cd -- = 목적지 없음 = 홈(리뷰)
-    if (base === "cd" && (!dest || dest === "-" || dest.includes("§") || /\$/.test(dest) || !inside(crewRoom(worktree), expandHome(dest)) || !under(realish(resolve(worktree, expandHome(dest))), realish(crewRoom(worktree))))) return "hold"; // 링크 폴더로 cd(리뷰)
+    if (base === "cd" && (!dest || dest === "-" || dest.includes("§") || outside(worktree, dest) || !under(realish(resolve(worktree, dest)), realish(worktree)))) return "hold"; // 링크 폴더로 cd(리뷰). 다른 크루 폴더도 사람 — 뒤 상대 경로 쓰기·git이 남의 작업을 건드림(리뷰)
     if (base === "find" && words.some((a) => /^-(exec|execdir|ok|okdir|delete|fprint|fls)/.test(a))) return "hold"; // -fprint0·-fprintf·-fls = 파일로 씀
     // 다른 명령을 대신 실행하는 옵션 — 안전한 명령에 붙여 금지 명령을 돌림(git grep -O'sh -c "git push"', rg --pre, sort --compress-program, 리뷰)
     if (words.slice(1).some((a) => /^(-O|--open-files-in-pager|--pre(=|$)|--pre-glob|--compress-program|--exec|--command)/.test(a))) return "hold";

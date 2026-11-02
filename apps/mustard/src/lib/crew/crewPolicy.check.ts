@@ -348,12 +348,12 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   // 앱 확인 — 크루가 gh issue list로 멈춤 → gh 읽기는 인터넷 항목, 쓰기는 사람
   for (const c of ["gh issue list --state all --limit 15", "gh pr view 3", "gh pr diff 3", "gh run list", "gh repo view", "gh issue view 8 --comments", "gh pr list --json number --jq .number"]) assert.strictEqual(P(c, ALL), "allow", c);
   assert.strictEqual(P("gh issue list", DEF), "ask", "인터넷 꺼져 있으면 묻기");
-  // 앱 확인(크루 기록 재생 44→9건) — heredoc 본문 // 주석, sed 치환·범위, git merge-base·@{u}, grep 정규식 .*, 같은 레포 다른 크루 폴더 cd, Skill
+  // 앱 확인(크루 기록 재생 44→9건) — heredoc 본문 // 주석, sed 치환·범위, git merge-base·@{u}, grep 정규식 .*, Skill (다른 크루 폴더 cd는 사람 — 리뷰)
   { const CW = "/Users/u/.nunopi/worktrees/abc/1234";
     for (const c of ["cat > a.dart <<'EOF'\n// 주석\n/// x\nEOF", "sed -i '' 's/a/b/g' t.dart", "sed -i \"s/tap(find.text('x'));\\n//\" t.dart", "sed -n '/^dep/,/^dev/p' pubspec.yaml", "sed -n 's/a/b/p' t",
-      "git merge-base main x", "git merge-tree --write-tree HEAD x", "git rev-parse --abbrev-ref @{u}", "git log HEAD@{1} -1", "grep -rn x lib | grep -v \"^lib/.*//\"", "cd /Users/u/.nunopi/worktrees/abc/9999 && git status"]) assert.strictEqual(decide("Bash", { command: c }, CW, ALL), "allow", c);
+      "git merge-base main x", "git merge-tree --write-tree HEAD x", "git rev-parse --abbrev-ref @{u}", "git log HEAD@{1} -1", "grep -rn x lib | grep -v \"^lib/.*//\""]) assert.strictEqual(decide("Bash", { command: c }, CW, ALL), "allow", c);
     for (const c of ["cat > a.md <<'EOF'\nsee ~/.ssh/id_rsa\nEOF", "echo \"<<EOF\"\ncat //\nEOF", "sed -i 's/a/b/w x' t", "sed -i 's/a/b/e' t", "sed -i 's/a/b/' ~/.zshrc", "sed -i 's/a/b/' .git/hooks/x", "sed 's/a/b/;w x' t", "sed -i \"s/$x/b/\" t", "sed -i.bak s/a/b/ t", "sed -e 's/a/b/' -e 'w x' t", "sed -i 's/a/b/'", "sed -n 's/a/b/p' t; sed -i 's/a/b/;w x' t",
-      "git merge x", "cat .env*", "cat \".e\"nv*", "cd /Users/u/.nunopi/worktrees/other/9 && ls", "cd /Users/u/.nunopi/worktrees/abc/../x && ls", "cd ~ && ls"]) assert.notStrictEqual(decide("Bash", { command: c }, CW, ALL), "allow", c);
+      "git merge x", "cat .env*", "cat \".e\"nv*", "cd /Users/u/.nunopi/worktrees/other/9 && ls", "cd /Users/u/.nunopi/worktrees/abc/../x && ls", "cd ~ && ls", "cd /Users/u/.nunopi/worktrees/abc/5678 && touch x", "cd /Users/u/.nunopi/worktrees/abc/5678 && git stash", "cd /Users/u/.nunopi/worktrees/abc && touch x", "/usr/bin/sed -n 's/a/b/w /tmp/x' f ; sed -n '1p' g"]) assert.notStrictEqual(decide("Bash", { command: c }, CW, ALL), "allow", c);
     assert.strictEqual(decide("Skill", { skill: "x" }, CW, {}), "allow"); }
   // 앱 확인 — ( … ) 서브셸로 감싼 명령도 안의 명령으로 판정(<( … )는 여전히 묻기)
   for (const c of ["cat a.dart | head -80; (flutter pub add record 2>&1 | tail -8); git diff --stat", "(cd sub && npm test)", "grep -n \"Microphone\" -A1 ios/Runner/Info.plist; sed -n 125,135p README.md", "sed -n '10,$p' a.dart | head"]) assert.strictEqual(P(c, ALL), "allow", c);
