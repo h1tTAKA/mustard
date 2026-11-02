@@ -198,6 +198,8 @@ function quoteStateAt(c: string, idx: number): boolean {
   return false;
 }
 // 따옴표·백슬래시를 셸처럼 걷어낸 원문 — Crew API 주소 감추기 검사용. (`git "push"`·`su""do`·`pu\sh`·`$'push'`처럼 명령 이름을 꾸민 건 아래에서 hold)
+// %xx 풀기(여러 겹도) — 못 풀면 원문(그래도 원문 검사는 따로 함)
+const pctDecode = (t: string) => { let x = t; for (let i = 0; i < 3; i++) { try { const y = decodeURIComponent(x); if (y === x) break; x = y; } catch { break; } } return x; };
 const unquote = (raw: string) => raw.replace(/\$'/g, "'").replace(/\\(.)/g, "$1").replace(/["']/g, "");
 // 경로 인자가 worktree 밖(~·$·절대·..)인가
 const outside = (worktree: string, p: string) => /^~|\$/.test(p) || !inside(worktree, p);
@@ -217,10 +219,25 @@ function unsafeWrite(worktree: string, p: string): boolean {
   return false;
 }
 
+// 원문에 작업 폴더 밖·보호 경로가 보이나(인터넷 명령용, #1279) — URL(://)은 빼고, 토큰을 = : , @ ; 로 더 쪼개 앞 옵션 글자를 뗀 조각만.
+//  /dev/null은 괜찮음. 한계: -oout/x.json처럼 붙여 쓴 상대 경로는 /x.json으로 보여 사람에게 감(안전한 쪽).
+function outsidePath(text: string, worktree: string, remoteHost = false): boolean {
+  for (const tok of text.split(/\s+/)) {
+    if (!tok || tok.includes("://")) continue;
+    if (remoteHost && /^[^/\s-][^/\s]*:/.test(tok)) continue; // scp·rsync host:경로 = 원격 쪽
+    for (let piece of tok.split(/[=:,@;]/)) {
+      piece = piece.replace(/^-+[a-zA-Z-]*/, "").replace(/^["']+|["']+$/g, "");
+      if (!piece || piece === "/dev/null" || !/[/~$]|^\./.test(piece)) continue; // 경로처럼 생긴 것(밖 + 안의 .git/hooks·.npmrc 같은 보호 경로)
+      if (unsafeWrite(worktree, piece)) return true;
+    }
+  }
+  return false;
+}
+
 function bashDecision(raw0: string, worktree: string): Inner {
   const raw = raw0.replace(/\\\n/g, ""); // 줄 이어 쓰기(\ + 줄바꿈)는 bash가 지움 — 먼저 붙여서 판정(s\⏎ed → sed, 리뷰)
   // Mustard Crew API를 에이전트가 직접 부르기(권한 허락 등) = 차단 — 따옴표로 쪼개 감춰도(리뷰)
-  if (/\/api\/crew\b/.test(unquote(raw))) return "deny";
+  if (/\/api\/crew\b/.test(unquote(raw)) || /\/api\/crew\b/i.test(pctDecode(raw))) return "deny"; // %61pi·api%2Fcrew 같은 인코딩도(리뷰)
   if (/[^\S \t\n]|[\0-\x08\x0e-\x1f\x7f]/.test(raw)) return DENY_RE.test(raw) ? "deny" : "hold"; // CR·NBSP·전각 공백·NUL 등 제어 문자 — JS와 bash가 띄어쓰기로 보는 게 달라 판정이 어긋남(리뷰)
   const cmd = strip(raw);
   if (cmd === null) return DENY_RE.test(raw) ? "deny" : "hold"; // 명령 치환 등 — 실제로 실행되는 코드가 숨어 있음
@@ -242,11 +259,13 @@ function bashDecision(raw0: string, worktree: string): Inner {
     if (!/^[\w./-]+$/.test(w0)) return "hold"; // 따옴표·변수·백슬래시로 꾸민 명령 이름(su""do → su§do)
     const base = w0.split("/").pop()!;
     if (HOLD_CMD.has(base)) return "hold";
-    // 다운로드·쿠키·헤더·추적 파일 저장 경로, 업로드할 파일(@경로) — 붙여 쓴 꼴(-sSo~/x·-o/abs·--output=)까지 값만 떼서 밖·보호 경로면 hold.
-    //  설정 파일(-K·--config, wget -e)은 안에 무엇이든 적을 수 있어 hold(리뷰)
-    if (base === "curl" || base === "wget") {
-      if (words.slice(1).some((a) => /^(-[a-zA-Z]*K|--config|--execute)/.test(a) || (base === "wget" && /^-[a-zA-Z]*e/.test(a)))) return "hold";
-      if (words.slice(1).some((a) => { if (a.includes("://")) return false; const v = a.replace(/^-{1,2}[a-zA-Z-]*=?/, "").replace(/^@/, ""); return !!v && (v.includes("§") ? /^-/.test(a) : unsafeWrite(worktree, v)); })) return "hold";
+    // 인터넷 명령(#1279) — 옵션 이름을 하나하나 쫓지 않고(-o·-sSo~/x·-c·-D·-T·-F f=@x·scp/rsync 받는 곳·socat OPEN: …, 리뷰 3회),
+    //  따옴표 벗긴 원문의 경로처럼 생긴 조각이 하나라도 작업 폴더 밖·보호 경로면 사람. 받기·올리기 모두. 설정 파일·원격 셸 지정도 사람.
+    if (CMD_CAT[base] === "network") {
+      if (words.slice(1).some((a) => /^(-[a-zA-Z]*K|--config|--e)/.test(a) || (base === "wget" && /^-[a-zA-Z]*e/.test(a)) || (/^(rsync|scp)$/.test(base) && /^(-[a-zA-Z]*[eS]|--rsh)/.test(a)))) return "hold";
+      if (/ProxyCommand|LocalCommand/i.test(raw)) return "hold";
+      if (base === "socat" && /(OPEN|CREATE|GOPEN|EXEC|SYSTEM|PIPE|UNIX-\w+):/i.test(raw)) return "hold"; // 로컬 파일·명령 주소
+      if (outsidePath(unquote(raw), worktree, /^(scp|rsync|sftp)$/.test(base))) return "hold";
     }
     if (Object.hasOwn(CMD_CAT, base)) { cats.push(CMD_CAT[base]); continue; }
     const args = words.slice(1).filter((a) => !a.startsWith("-"));
@@ -314,7 +333,7 @@ export function fromAgentRequest(req: Record<string, unknown>): { tool: string; 
 const patchPaths = (input: Record<string, unknown>) => [...String(input.patch ?? input.input ?? input.command ?? "").matchAll(/^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/gm)].map((m) => m[1].trim());
 
 function decideBase(tool: string, input: Record<string, unknown>, worktree: string): Inner {
-  if ((tool === "WebFetch" || tool.startsWith("mcp__")) && /\/api\/crew\b/.test(unquote(JSON.stringify(input ?? {})))) return "deny"; // Crew API는 HTTP를 보낼 수 있는 도구로도 금지(Bash는 bashDecision). 파일 읽기·수정은 경로에 api/crew가 있어도 됨(리뷰)
+  if ((tool === "WebFetch" || tool.startsWith("mcp__")) && /\/api\/crew\b/i.test(pctDecode(unquote(JSON.stringify(input ?? {}))))) return "deny"; // Crew API는 HTTP를 보낼 수 있는 도구로도 금지(Bash는 bashDecision). 파일 읽기·수정은 경로에 api/crew가 있어도 됨(리뷰)
   if (tool === "WebFetch") return ["network"]; // 밖으로 데이터를 실어 보낼 수 있음(?d=비밀) — 인터넷 항목(#1279, 기본 묻기)
   // 사용자 MCP — 서버까지 맞춘 알려진 읽기 도구만 자동, 나머지는 사람. 이름 단어로 읽기·쓰기를 가르는 건 매번 빠짐(리뷰: query_sql·fetch_url·eval_code)
   if (tool.startsWith("mcp__")) return MCP_READ_NAMES.test(tool) ? "allow" : ["mcp"]; // #1279 다른 MCP 항목(기본 묻기)
