@@ -280,6 +280,9 @@ function bashDecision(raw0: string, worktree: string): Inner {
     const base = w0.split("/").pop()!;
     // gh 읽기(이슈·PR·실행 보기)는 인터넷 항목 — 앱 확인에서 크루가 gh issue list로 계속 멈춤. 쓰기(pr merge·create·api·auth token 등)는 그대로 사람
     if (base === "gh" && GH_READ.test(`${words[1] ?? ""} ${words[2] ?? ""}`) && !words.some((a) => /^(--web(=|$)|-w$|-O|--pre|--exec|--output|--out-file)|(^|=)@/.test(a)) && !/(^|[\s=])@/.test(unquote(raw))) { cats.push("network"); continue; }
+    // sed는 -i·w로 파일을 써서 고정 사람 — 줄 범위 출력(sed -n 125,135p 파일)만 읽기로 통과(앱 확인에서 계속 멈춤)
+    //  따옴표 스크립트('10,$p')는 원문에 sed가 하나일 때만 원문으로 확인("1p;w x" 같은 숨긴 쓰기 막기). 파일은 작업 폴더 안만
+    if (base === "sed" && words[1] === "-n" && (/^\d+(,\d+)?p$/.test(words[2] ?? "") || (words[2] === "§" && (raw.match(/(^|[^\w./-])sed\s/g) ?? []).length === 1 && /(^|[^\w./-])sed\s+-n\s+(['"])[\d$]+(,[\d$]+)?p\2(\s|$)/.test(raw))) && words.slice(3).every((f) => !/^-|§/.test(f) && !outside(worktree, f))) continue;
     if (HOLD_CMD.has(base)) return "hold";
     // #1279 인터넷 항목 = 아는 옵션만 쓴 curl·wget. 따옴표를 벗긴 원문 토큰으로 봄 — "-o"·"@file"처럼 따옴표로 감싼 옵션·값도(리뷰)
     if ((base === "curl" || base === "wget") && !plainFetch(base, rawArgs(raw, base), worktree)) return "hold";
