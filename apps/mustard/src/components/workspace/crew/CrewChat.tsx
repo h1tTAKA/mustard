@@ -3,12 +3,16 @@
 // 채팅앱(단톡방)형: 방 헤더 + 멤버 프로필 줄(상태 점·누르면 @), 남은 왼쪽 아바타·이름·말풍선, 나는 오른쪽 겨자 말풍선, 보드 안내는 가운데 알림, 날짜 알약.
 // 입력: @에이전트 = 그 역할에게 새 카드(그록봇식), 메시지에 답글 = 그 카드로 전달. 2초 폴링(since 이후만).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconArrowBackUp, IconArrowUp, IconAt, IconBell, IconBellOff, IconLayoutKanban, IconSettings, IconUser, IconUsers, IconX } from "@tabler/icons-react";
+import { IconArrowBackUp, IconArrowUp, IconAt, IconBell, IconBellOff, IconLayoutKanban, IconSettings, IconTerminal2, IconUser, IconUsers, IconX } from "@tabler/icons-react";
 import { Markdown, useT, useToast, relocalize, CREW_TEXT_KEYS, useSetting, setSetting, NKEYS, NOTIF_DEFAULTS } from "@mustard/core";
 import type { CrewMsg } from "@/lib/crew/crewChat";
 import type { CrewRun } from "@/lib/crew/crewRunner";
 import { PROVIDER_LABEL, RoleIcon, crewRoomOpen, isActiveRun, roleDesc, roleName, useCrewRoles, useCrewRuns } from "./crewUi";
 import RolesDialog from "./RolesDialog";
+import { GatePanel } from "./TaskDialog";
+import type { CrewTask } from "@/lib/crew/crewTypes";
+import { sendToAgent } from "@/lib/browser/sendToAgent";
+import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 
 export const CREW_OPEN_TASK_EVENT = "mustard:crew-open-task"; // detail = { root, taskId } — 보드 열고 그 카드 편집 창
 // 보드 패널이 닫혀 있으면 이벤트 때 보드가 아직 없음 → 열고 나서 읽을 수 있게 마지막 요청을 남김
@@ -88,6 +92,33 @@ export default function CrewChat({ root }: { root: string }) {
       if (!j?.ok) throw new Error(j?.error);
     } catch (e) { toast(`${t("crew.runFailed")}: ${String((e as Error)?.message ?? e)}`, "error"); }
     finally { setPermBusy(false); reloadRuns(); }
+  };
+  // 관문·질문·막힘 — 그 카드의 마지막 알림 아래에 보드와 같은 결정 패널(대화방에서 바로 승인·반려·답, 유저). 보드는 3초마다
+  const [tasks, setTasks] = useState<CrewTask[]>([]);
+  useEffect(() => {
+    const pull = () => fetch(`/api/crew/board?root=${encodeURIComponent(root)}`).then((r) => r.json()).then((j) => { if (j?.ok) setTasks(j.board.tasks); }).catch(() => {});
+    pull(); const id = setInterval(pull, 3000); return () => clearInterval(id);
+  }, [root]);
+  const lastGate = useMemo(() => { const m = new Map<string, string>(); for (const x of msgs) if (x.taskId && (x.kind === "gate" || x.kind === "question" || x.kind === "blocked")) m.set(x.taskId, x.id); return m; }, [msgs]);
+  const runPost = async (body: Record<string, unknown>) => {
+    const j = await (await fetch("/api/crew/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, ...body }) })).json();
+    if (!j?.ok) throw new Error(j?.error);
+    return j;
+  };
+  const decideGate = async (taskId: string, decision: "approve" | "reject" | "answer", text: string) => {
+    try { const j = await runPost({ taskId, action: "gate", decision, text }); if (j.board) setTasks(j.board.tasks); }
+    catch (e) { toast(`${t("crew.runFailed")}: ${String((e as Error)?.message ?? e)}`, "error"); }
+  };
+  // 에이전트에게 맡기기 — 서버에 이 관문 하나를 맡김(30분·한 번) → 열린 터미널 에이전트에게 판단 요청을 붙여넣음. 에이전트가 crew_decide로 결정
+  const delegate = async (task: CrewTask) => {
+    try {
+      await runPost({ taskId: task.id, action: "delegate" });
+      const g = task.gate!;
+      const r = await sendToAgent(root, t("crewchat.delegatePrompt", { title: task.title, taskId: task.id, kind: t(`crew.gate.${g.kind}`), gate: relocalize(g.text ?? "", CREW_TEXT_KEYS, t), branch: runs.get(task.id)?.branch ?? "crew/…" }));
+      if (!r.ok) { toast(r.reason === "no-agent" ? t("browser.pickNoAgent") : t("github.sendFailed"), "error"); return; }
+      requestTerminalFocus(root, r.id);
+      toast(t("crewchat.delegated"), "success");
+    } catch (e) { toast(`${t("crew.runFailed")}: ${String((e as Error)?.message ?? e)}`, "error"); }
   };
   const workingCount = roles.filter((r) => status(r.id).kind !== "idle").length;
 
@@ -266,6 +297,20 @@ export default function CrewChat({ root }: { root: string }) {
                         <button type="button" disabled={permBusy} onClick={() => void answerPerm(m.taskId!, true)} className="rounded-lg bg-amber-500 px-2.5 py-1 text-[12px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50">{t("crew.approve")}</button>
                       </div>
                     )}
+                    {(() => {
+                      const task = m.taskId && lastGate.get(m.taskId) === m.id ? tasks.find((x) => x.id === m.taskId) : undefined;
+                      if (!task?.gate || (runs.get(task.id) && isActiveRun(runs.get(task.id)!))) return null;
+                      return (
+                        <GatePanel task={task} roles={roles} branch={runs.get(task.id)?.branch} className="mt-1 w-full min-w-[280px]"
+                          onGate={(d, txt) => void decideGate(task.id, d, txt)}
+                          onPr={task.gate.kind === "merge" ? async () => { try { await runPost({ taskId: task.id, action: "pr" }); } catch (e) { toast(String((e as Error)?.message ?? e), "error"); } } : undefined}
+                          extra={task.gate.kind !== "setup" && (
+                            <button type="button" onClick={() => void delegate(task)} className="inline-flex items-center gap-1 rounded-lg px-3 py-1 text-[12px] font-medium text-zinc-600 transition hover:bg-amber-100 dark:text-zinc-300 dark:hover:bg-white/10">
+                              <IconTerminal2 size={13} aria-hidden />{t("crewchat.delegate")}
+                            </button>
+                          )} />
+                      );
+                    })()}
                     {cardChip}
                   </div>
                 </div>

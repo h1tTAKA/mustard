@@ -61,7 +61,12 @@ const { createCrewControl, repoOf } = require("./crew-control.cjs");
   assert.deepStrictEqual(calls.map((c) => [c.url.replace(base, ""), c.body.action ?? c.body.text]), [["/api/crew/run", "stop"], ["/api/crew/chat", "@test-engineer 테스트 보강"]]);
   assert.strictEqual(calls[1].body.replyTo, undefined);
 
-  // 승인·관문·삭제 같은 건 도구가 없음 — 어떤 호출도 permission/gate/pr/takeover/delete를 보내지 않음
+  // 권한 승인·삭제 같은 건 도구가 없음 — 어떤 호출도 permission/gate/pr/takeover/delete를 보내지 않음
+  // 관문 결정 — 서버가 맡김을 확인하는 agent-gate 한 가지로만(결정 값 확인)
+  calls.length = 0;
+  await cc.call("crew_decide", { taskId: "t1", decision: "approve", action: "gate" }, repo);
+  assert.deepStrictEqual(calls.find((c) => c.method === "POST").body, { root: repo, taskId: "t1", action: "agent-gate", decision: "approve", text: "" });
+  assert.ok((await cc.call("crew_decide", { taskId: "t1", decision: "merge" }, repo)).isError);
   for (const t of ["crew_permission", "crew_gate", "crew_delete", "crew_approve"]) assert.ok((await cc.call(t, { taskId: "t1", approved: true }, repo)).isError);
   calls.length = 0;
   await cc.call("crew_start", { taskId: "t2", action: "permission", approved: true }, repo); // 인자로 action을 넣어도 무시

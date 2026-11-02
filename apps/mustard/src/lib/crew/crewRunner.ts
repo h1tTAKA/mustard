@@ -68,7 +68,7 @@ function writeRuns(root: string, runs: CrewRun[]) {
 
 // ── 프로세스 싱글톤 상태 ──────────────────────────────────────────────
 type Pending = { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> };
-type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending>; answering: Set<string>; answerNext?: Map<string, { human: CrewMsg; roleId: string; taskId?: string; everyone?: boolean; mentioned?: string[]; routed?: boolean }[]> };
+type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending>; answering: Set<string>; delegated?: Map<string, { until: number; kind: string; stage: number }>; answerNext?: Map<string, { human: CrewMsg; roleId: string; taskId?: string; everyone?: boolean; mentioned?: string[]; routed?: boolean }[]> };
 const g = ((globalThis as unknown as { __mustardCrew?: G }).__mustardCrew ??= { roots: new Set(), origin: "", starting: new Set(), runs: new Map(), bySession: new Map(), wired: false, reconciled: new Set(), flush: new Map(), tokens: new Map(), pending: new Map(), answering: new Set() } as G);
 
 // ── Claude 권한 훅 ───────────────────────────────────────────────────
@@ -545,6 +545,22 @@ export function decideCard(root: string, taskId: string, action: "approve" | "re
   return board;
 }
 
+// 사람이 "에이전트에게 맡기기"를 누른 관문 — 그 카드의 지금 관문 하나만, 30분, 한 번. 터미널 에이전트(MCP crew_decide)는 이것만 결정 가능(#1161 비밀값 쿠키는 main만 — 크루·스크립트는 못 부름)
+//  setup(레포 스크립트 신뢰)은 맡길 수 없음 — 보드에서만
+export function delegateGate(root: string, taskId: string) {
+  const t = readBoard(root).tasks.find((x) => x.id === taskId);
+  if (!t?.gate || t.gate.kind === "setup") throw new Error("no gate to delegate");
+  (g.delegated ??= new Map()).set(`${root}\n${taskId}`, { until: Date.now() + 30 * 60_000, kind: t.gate.kind, stage: t.gate.stage });
+}
+export function decideDelegated(root: string, taskId: string, action: "approve" | "reject" | "answer", text = "") {
+  const k = `${root}\n${taskId}`, d = g.delegated?.get(k);
+  const t = readBoard(root).tasks.find((x) => x.id === taskId);
+  if (!d || d.until < Date.now() || !t?.gate || t.gate.kind !== d.kind || t.gate.stage !== d.stage) throw new Error("not delegated — ask the user to press \"Let the agent decide\" on this card in Mustard");
+  const board = decideCard(root, taskId, action, text);
+  g.delegated!.delete(k); // 한 번만(결정이 성공한 뒤 — 잘못된 값으로 실패하면 다시 시도 가능)
+  say(root, { from: "board", kind: "decision", taskId, taskTitle: t.title, ...tx("crewchat.delegatedDecision") });
+  return board;
+}
 // 대화방 짧은 답으로 승인할 수 있는 관문 — setup(스크립트 신뢰)은 보드에서만(리뷰). merge 승인 = 보드 버튼처럼 머지 없이 Done
 const CHAT_APPROVE = new Set(["spec", "schema", "merge"]);
 // #1104 사람이 팀 채팅에 쓴 말.
