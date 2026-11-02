@@ -43,6 +43,13 @@ const { createCrewControl, repoOf } = require("./crew-control.cjs");
   assert.ok(!r.isError);
   assert.deepStrictEqual(calls.filter((c) => c.method === "POST").map((c) => c.body), [{ root: repo, op: "create", title: "새 일", role: "app-builder" }, { root: repo, taskId: "t3", action: "start" }]);
 
+  // 200자 넘는 제목 — 저장소처럼 잘려도 새 카드를 찾음
+  calls.length = 0;
+  const long = "가".repeat(250);
+  const fakeTrunc = async (url, init) => { if (init.method === "POST") board.tasks.push({ id: "tLong", title: JSON.parse(init.body).title.slice(0, 200), status: "backlog", createdAt: 1 }); return { ok: true, status: 200, json: async () => ({ ok: true, board }) }; };
+  r = JSON.parse((await createCrewControl({ appBase: () => base, uiToken: "x", fetch: fakeTrunc }).call("crew_add_task", { title: long }, repo)).content[0].text);
+  assert.strictEqual(r.id, "tLong");
+
   // 멈춤·대화
   calls.length = 0;
   await cc.call("crew_stop", { taskId: "t2" }, repo);
