@@ -573,7 +573,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       const hash = c.key.slice("session|".length);
       const j = await fetch(`/api/repo/session-link?root=${encodeURIComponent(root)}&hash=${encodeURIComponent(hash)}`).then((r) => r.json()).catch(() => null);
       const cut = c.tool.indexOf(" · ");
-      md = sessionCardMarkdown({ subject: m ? m[1] : c.target, hash, agent: cut >= 0 ? c.tool.slice(0, cut) : c.tool, branch: cut >= 0 ? c.tool.slice(cut + 3) : "", ts: c.ts, summary: c.expl ?? "", messages: j?.session?.messages ?? [] });
+      md = sessionCardMarkdown({ subject: m ? m[1] : c.target, hash, agent: cut >= 0 ? c.tool.slice(0, cut) : c.tool, branch: cut >= 0 ? c.tool.slice(cut + 3) : "", ts: c.ts, summary: c.expl ?? "", messages: j?.session?.messages ?? [], crew: j?.session?.crew, crewTask: j?.session?.crewTask, crewRuns: j?.session?.crewRuns });
     } else return;
     try { await navigator.clipboard.writeText(md); toast(t("learn.copiedMd")); } catch { toast(t("learn.copyFailed")); }
   }, [root, t, toast]);
@@ -581,7 +581,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const copyRaw = useCallback(async (c: Concept) => {
     const hash = c.key.slice("session|".length);
     const j = await fetch(`/api/repo/session-link?root=${encodeURIComponent(root)}&hash=${encodeURIComponent(hash)}`).then((r) => r.json()).catch(() => null);
-    const text = sessionRawText(Array.isArray(j?.session?.messages) ? j.session.messages : [], Array.isArray(j?.session?.crew) ? j.session.crew : []);
+    const text = sessionRawText(Array.isArray(j?.session?.messages) ? j.session.messages : [], Array.isArray(j?.session?.crew) ? j.session.crew : [], j?.session?.crewTask, Array.isArray(j?.session?.crewRuns) ? j.session.crewRuns : []);
     if (!text) { toast(t(j?.ok ? "learn.copyRawEmpty" : "learn.copyFailed")); return; }
     try { await navigator.clipboard.writeText(text); toast(t("learn.copiedRaw")); } catch { toast(t("learn.copyFailed")); }
   }, [root, t, toast]);

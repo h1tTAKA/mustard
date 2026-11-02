@@ -3,6 +3,7 @@ import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { askAgent } from "@/lib/hunkNotes";
 import type { SessionMsg } from "@/lib/agentSessionParse";
 import { translate } from "@mustard/core/messages";
+import { crewRunLine, type CrewRunInfo, type CrewTaskInfo } from "@/lib/catchupMarkdown";
 
 export const sessionItemKey = (hash: string) => `session|${hash}`;
 export const AGENT_LABEL: Record<string, string> = { claude: "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity", crew: "Crew" };
@@ -15,12 +16,6 @@ const PROMPT = "아래는 AI 코딩 에이전트와 사용자의 대화 기록�
 // #1135 Crew 커밋 — 역할끼리 주고받은 대화방 글이 앞에. "누가 누구에게 무엇을 지시했나"부터 쓰게.
 const CREW_PROMPT = "앞부분 [Crew 대화]는 역할 에이전트(@역할)끼리 주고받은 지시·인계·질문이고, [실행] 줄은 역할별 실행(시각·결과·요약)입니다. 첫 줄 다음에 \"@역할이 @역할에게 무엇을 지시·질문했고 어떻게 이어졌는지\" 흐름을 1~3줄로 먼저 쓰세요.\n";
 export interface CrewTalk { from: string; kind: string; to: string[]; text: string }
-// #1281 크루 작업 기록 — 칸반 카드와 역할별 실행
-export interface CrewTaskInfo { id: string; title: string; status: string; pipeline?: string[]; role?: string }
-export interface CrewRunInfo { role: string; stage?: number; state: string; startedAt: number; endedAt?: number; summary?: string; error?: string; toolCount: number; tokens?: { input: number; output: number } }
-const hhmm = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
-export const crewRunLine = (r: CrewRunInfo) =>
-  `@${r.role} ${hhmm(r.startedAt)}${r.endedAt ? `–${hhmm(r.endedAt)}` : ""} ${r.state} · tools ${r.toolCount}${r.tokens ? ` · ${Math.round((r.tokens.input + r.tokens.output) / 1000)}k tok` : ""}${r.summary ? ` — ${r.summary}` : r.error ? ` — ${r.error}` : ""}`;
 
 export function sessionDigest(msgs: SessionMsg[], crew: CrewTalk[] = [], runs: CrewRunInfo[] = []): string {
   const talk = [...runs.map((r) => `[실행] ${crewRunLine(r)}`), ...crew.map((c) => `@${c.from}${c.to.length ? ` → ${c.to.map((x) => `@${x}`).join(" ")}` : ""} (${c.kind}): ${c.text}`)];

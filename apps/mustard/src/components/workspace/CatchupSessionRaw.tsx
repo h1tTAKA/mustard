@@ -5,12 +5,14 @@ import { IconChevronDown, IconCopy, IconLoader2 } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import type { SessionMsg } from "@/lib/agentSessionParse";
 import type { CrewTalk } from "@/lib/sessionCard";
+import { crewRunLine, type CrewRunInfo, type CrewTaskInfo } from "@/lib/catchupMarkdown";
 
 export default function CatchupSessionRaw({ root, hash, onCopy }: { root: string; hash: string; onCopy?: () => void }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [msgs, setMsgs] = useState<SessionMsg[] | null>(null);
   const [crew, setCrew] = useState<CrewTalk[]>([]); // #1135 Crew 커밋 — 역할끼리 주고받은 대화방 글(앞에)
+  const [work, setWork] = useState<{ task?: CrewTaskInfo; runs: CrewRunInfo[] }>({ runs: [] }); // #1281 칸반 카드·역할별 실행(맨 앞)
   const [failed, setFailed] = useState(false);
   const loadingRef = useRef(false);
   const [openTools, setOpenTools] = useState<Set<number>>(() => new Set()); // 펼친 도구 출력(기본은 몇 줄만)
@@ -20,7 +22,7 @@ export default function CatchupSessionRaw({ root, hash, onCopy }: { root: string
     if (!next || msgs || loadingRef.current) return;
     setFailed(false); loadingRef.current = true;
     fetch(`/api/repo/session-link?root=${encodeURIComponent(root)}&hash=${encodeURIComponent(hash)}`).then((r) => r.json())
-      .then((d) => { const m = d?.session?.messages; if (!Array.isArray(m)) throw new Error(); setMsgs(m as SessionMsg[]); if (Array.isArray(d.session.crew)) setCrew(d.session.crew as CrewTalk[]); })
+      .then((d) => { const m = d?.session?.messages; if (!Array.isArray(m)) throw new Error(); setMsgs(m as SessionMsg[]); if (Array.isArray(d.session.crew)) setCrew(d.session.crew as CrewTalk[]); setWork({ task: d.session.crewTask, runs: Array.isArray(d.session.crewRuns) ? d.session.crewRuns : [] }); })
       .catch(() => setFailed(true)).finally(() => { loadingRef.current = false; });
   };
 
@@ -41,6 +43,15 @@ export default function CatchupSessionRaw({ root, hash, onCopy }: { root: string
         : !msgs ? <div className="flex justify-center py-2"><IconLoader2 size={12} stroke={2} className="animate-spin text-zinc-400" aria-hidden /></div>
         : (
           <div className="nunopi-scroll mt-1 flex max-h-96 flex-col gap-1.5 overflow-y-auto rounded-md border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950">
+            {work.task && (
+              <div className="px-0.5 text-[11px] font-medium text-zinc-700 dark:text-zinc-200">
+                {work.task.title} <span className="font-normal text-zinc-400 dark:text-zinc-500">({work.task.status}{work.task.pipeline?.length ? ` · ${work.task.pipeline.join(" → ")}` : ""})</span>
+              </div>
+            )}
+            {work.runs.map((r, i) => (
+              <div key={`r${i}`} className="whitespace-pre-wrap break-words rounded-md border border-zinc-200 px-1.5 py-1 font-mono text-[10px] leading-snug text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">{crewRunLine(r)}</div>
+            ))}
+            {(work.task || work.runs.length > 0) && (crew.length > 0 || msgs.length > 0) && <hr className="border-zinc-200 dark:border-zinc-800" />}
             {crew.map((c, i) => (
               <div key={`c${i}`} className="whitespace-pre-wrap break-words px-0.5 text-[11px] leading-snug text-zinc-700 dark:text-zinc-200">
                 <span className="font-mono text-[10.5px] font-medium text-mustard-600 dark:text-mustard-400">@{c.from}{c.to.length ? ` → ${c.to.map((x) => `@${x}`).join(" ")}` : ""}</span> {c.text}
