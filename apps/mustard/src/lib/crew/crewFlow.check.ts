@@ -1,6 +1,6 @@
 // crewFlow 점검 — node --experimental-strip-types src/lib/crew/crewFlow.check.ts
 import assert from "node:assert";
-import { childProgress, decideGate, next, parseHandoff, pickListener, pipelineOf, waitingOn, MAX_CONSULTS, MAX_REVIEWS, MAX_TEST_LOOPS } from "./crewFlow.ts";
+import { childProgress, decideGate, next, parseHandoff, pickListener, pipelineOf, waitingOn, MAX_CONSULTS, MAX_REVIEWS, MAX_TEST_LOOPS, isApproval } from "./crewFlow.ts";
 import type { CrewTask } from "./crewTypes.ts";
 
 const known = new Set(["scope-planner", "screen-designer", "data-architect", "app-builder", "test-engineer", "bug-fixer", "release-checker", "doc-writer"]);
@@ -130,3 +130,6 @@ assert.ok(r.patch.gate?.text?.includes("에러 처리 빠짐"));
 }
 
 console.log("crewFlow.check ok");
+// 대화방 답글 승인 — 짧은 승인 말만, 긴 글·부정은 아님
+for (const t of ["ㅇㅇ", "ㄱㄱ", "승인할게요", "ok", "LGTM", "はい", "진행해 주세요", "ㅇㅋ ㄱㄱ"]) assert.ok(isApproval(t), t);
+for (const t of ["아니", "승인 말고 다시 해", "ok but fix the tests first", "", "no"]) assert.ok(!isApproval(t), t);

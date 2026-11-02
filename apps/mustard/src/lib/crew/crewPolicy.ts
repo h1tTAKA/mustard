@@ -290,9 +290,9 @@ function plainFetch(base: string, args: string[], worktree: string): boolean {
 }
 
 // sed 스크립트 하나 — 출력(N,Mp·/re/,/re/p) 또는 치환(s/…/…/ 플래그 g·I·p·숫자만: w·e 없음). 따옴표 스크립트는 원문에 sed가 하나일 때 원문으로 확인
-const SED_ADDR = String.raw`(\d+|\$|/(?:\\[^\n]|[^/\n\\])*/)`;
+const SED_ADDR = String.raw`(?:\d+|\$|/(?:\\[^\n]|[^/\n\\])*/)`;
 const SED_PRINT = new RegExp(`^${SED_ADDR}(,${SED_ADDR})?p$`);
-const SED_SUB = /^s([^\w\s\\])(?:\\[^\n]|(?!\1)[^\n\\])*\1(?:\\[^\n]|(?!\1)[^\n\\])*\1[gIp0-9]*$/;
+const SED_SUB = new RegExp(String.raw`^(?:${SED_ADDR}(?:,${SED_ADDR})?)?s([^\w\s\\])(?:\\[^\n]|(?!\1)[^\n\\])*\1(?:\\[^\n]|(?!\1)[^\n\\])*\1[gIp0-9]*$`); // 3s#a#b# 처럼 줄 지정도
 function sedOk(words: string[], raw: string, worktree: string): boolean {
   const opts = words.slice(1).filter((a) => a.startsWith("-"));
   if (opts.some((o) => !/^-[niEr]$/.test(o))) return false; // -i.bak·-f 파일·-e 여러 개 등은 사람
@@ -303,8 +303,10 @@ function sedOk(words: string[], raw: string, worktree: string): boolean {
   const ok = (x: string) => SED_PRINT.test(x) || SED_SUB.test(x);
   let scriptOk = false;
   if (script === "§") {
-    const m = (raw.match(/(^|[^\w.-])sed\s/g) ?? []).length === 1 ? raw.match(/(?:^|[^\w.-])sed\s+(?:(?:-[niEr]|''|"")\s+)*(['"])((?:(?!\1)[^\n])*)\1(?=\s|$)/) : null;
-    scriptOk = !!m && !(m[1] === '"' && /[$`]/.test(m[2])) && ok(m[2]); // "…" 안 $·` 는 펼쳐짐
+    // 원문의 sed 전부(경로 붙은 /usr/bin/sed 포함)를 하나씩 — 스크립트를 다 읽어 냈고 전부 안전할 때만(한 줄에 sed 여럿, 앱 확인)
+    const n = (raw.match(/(^|[^\w.-])sed\s/g) ?? []).length;
+    const ms = [...raw.matchAll(/(?:^|[^\w.-])sed\s+(?:(?:-[niEr]|''|"")\s+)*(?:(['"])((?:(?!\1)[^\n])*)\1|([^\s'"]+))(?=\s|$)/g)];
+    scriptOk = ms.length === n && ms.every((m) => (m[3] !== undefined ? !/\$[\w{]|`/.test(m[3]) && ok(m[3]) : !(m[1] === '"' && /[$`]/.test(m[2])) && ok(m[2]))); // "…" 안 $·` 는 펼쳐짐
   } else if (script) scriptOk = !/\$[\w{]/.test(script) && ok(script);
   if (!scriptOk || (inPlace && !files.length)) return false;
   return files.every((f) => !/^-|§/.test(f) && (inPlace ? !unsafeWrite(worktree, f) : !outside(worktree, f)));

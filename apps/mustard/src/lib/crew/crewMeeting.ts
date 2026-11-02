@@ -24,10 +24,11 @@ export function readJson(text: string): Record<string, unknown> | null {
 }
 
 // 받은 역할의 첫 답 → {intent, reply}. JSON이 아니면 글 전체가 답(질문으로).
-export function readAnswer(text: string): { intent: Intent; reply: string } {
+export function readAnswer(text: string): { intent: Intent; reply: string; audience?: string } {
   const j = readJson(text);
   const reply = typeof j?.reply === "string" && j.reply.trim() ? j.reply.trim() : text.trim();
-  return { intent: j?.intent === "work" || j?.intent === "instruction" ? j.intent : "question", reply };
+  const audience = typeof j?.audience === "string" ? j.audience.replace(/^@/, "").trim().toLowerCase() : undefined; // 받는 사람: me·all·역할 id
+  return { intent: j?.intent === "work" || j?.intent === "instruction" ? j.intent : "question", reply, ...(audience ? { audience } : {}) };
 }
 
 // 참여 역할 — 아는 역할만, 중복 없이, 진행자 빼고, 최대 max. 하나도 없으면 기본(앱 개발자·테스트 엔지니어).

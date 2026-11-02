@@ -35,4 +35,6 @@ await assert.rejects(withIdleTimeout(async () => { throw new Error("boom"); }, 5
 // 지침·지적 = instruction(카드 아님), 모르는 값은 질문
 assert.strictEqual(readAnswer('{"intent":"instruction","reply":"앞으로 커밋은 일본어로 쓸게요."}').intent, "instruction");
 assert.strictEqual(readAnswer('{"intent":"order","reply":"x"}').intent, "question");
+assert.strictEqual(readAnswer('{"intent":"question","audience":"@Test-Engineer","reply":"x"}').audience, "test-engineer", "받는 사람");
+assert.strictEqual(readAnswer('{"intent":"question","reply":"x"}').audience, undefined);
 console.log("crewMeeting.check ok");

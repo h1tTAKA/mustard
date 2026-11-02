@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { getSnaClient } from "@mustard/core/sna";
 import { applyOp, patchTask, readBoard } from "./crewStore";
-import { childProgress, decideGate, next, parseHandoff, pickListener, pipelineOf, waitingOn, type Handoff } from "./crewFlow";
+import { childProgress, decideGate, isApproval, next, parseHandoff, pickListener, pipelineOf, waitingOn, type Handoff } from "./crewFlow";
 import { getRole, listRoles } from "./crewRoleStore";
 import { crewProtocol, type CrewRole } from "./crewRoleDefaults";
 import { ensureWorktree, worktreeFor } from "./crewWorktree";
@@ -351,7 +351,10 @@ async function wire() {
   await sna.agent.subscribePermissions().catch(() => {});
 }
 
-function buildPrompt(title: string, body: string, role: CrewRole, pipeline: string[], stage: number, note?: string, consult?: { from: string; question: string }): string {
+// 실행 지침에 붙일 최근 팀 대화(사람·역할 말만) — 크루끼리 서로 한 말을 보고 일하게(유저)
+const recentChat = (root: string) => readMsgs(root, 0, 400).filter((m) => ["human", "answer", "meeting", "handoff", "question", "decision"].includes(m.kind)).slice(-12)
+  .map((m) => `- ${m.from}${m.taskTitle ? ` [${clip(m.taskTitle, 40)}]` : ""}: ${clip(m.text, 300)}`);
+function buildPrompt(title: string, body: string, role: CrewRole, pipeline: string[], stage: number, note?: string, consult?: { from: string; question: string }, chat: string[] = []): string {
   // #1108 답하기 모드 — 동료 질문에 답만(코드 수정 금지), 답은 봉투 message에
   if (consult) return [
     `# Board card: ${title}`,
@@ -366,6 +369,7 @@ function buildPrompt(title: string, body: string, role: CrewRole, pipeline: stri
     `\nPipeline: ${pipeline.map((r, i) => (i === stage ? `**${r}**` : r)).join(" → ")} (step ${stage + 1}/${pipeline.length}).`,
     `You are acting as role "${role.id}". Read earlier roles' files in .crew/ first, then do your role's part for this card now.`,
     note ? `\n## Message for you (from the human or a teammate — follow this)\n${note}` : "",
+    chat.length ? `\n## Recent team chat (context — what the human and teammates said; @-mention a teammate in your handoff message to reply)\n${chat.join("\n")}` : "",
   ].join("\n");
 }
 
@@ -457,7 +461,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     await sna.agent.start(sessionId, {
       provider: role.provider, model: modelFor(role), cwd: wt.dir,
       appendSystemPrompt: `${role.instructions}\n\n${crewProtocol(LANG[narrationLocale()] ?? "Korean", readGuidelines(root))}`, // 팀 지침(대화방에서 사람이 준 것)
-      prompt: buildPrompt(task.title, task.body, role, pipeline, stage, note, task.consult?.stage === stage ? task.consult : undefined),
+      prompt: buildPrompt(task.title, task.body, role, pipeline, stage, note, task.consult?.stage === stage ? task.consult : undefined, recentChat(root)),
       // Claude: SNA 훅 대신 Mustard 훅(정책 자동 허락·차단, 나머지만 사람에게). Codex·OpenCode: SNA 기본 승인 흐름(onPermissionRequest).
       permissionMode: isClaude ? "bypassPermissions" : "acceptEdits",
       // Codex: SNA 기본은 작업 폴더마다 .sna/codex-home에 로그인 정보를 복사 → 리프레시 토큰은 한 번 쓰면 무효라 복사본끼리 서로 깨뜨림
@@ -553,8 +557,15 @@ export function postHuman(root: string, text: string, replyTo?: string, handoff 
   const mentions = parseMentions(body, known);
   const parent = replyTo ? findMsg(root, replyTo) : undefined;
   const task = parent?.taskId ? readBoard(root).tasks.find((t) => t.id === parent.taskId) : undefined;
-  if (!task && !mentions.length) { // #1139 @ 없는 글 — 가장 최근 카드의 담당 역할(없으면 범위 기획자)이 답함
+  if (!task && !mentions.length) { // #1139 @ 없는 글 — 가장 최근 카드의 담당 역할(없으면 범위 기획자)이 받고, 누구에게 한 말인지 판단해 답함
     const tasks = readBoard(root).tasks;
+    const waiting = tasks.filter((t) => t.gate && t.gate.kind !== "question");
+    if (waiting.length === 1 && isApproval(body)) { // 사람을 기다리는 카드가 하나뿐 + 짧은 승인 말 = 그 카드 승인(답글 안 달아도, 유저)
+      const w = waiting[0], r = decideGate(w, "approve");
+      const m = appendMsg(root, { from: "human", kind: "decision", text: body, taskId: w.id, taskTitle: w.title });
+      patchTask(root, w.id, { ...r.patch, status: r.status });
+      return { msg: m, taskId: w.id };
+    }
     const who = pickListener(tasks, (id) => activeFor(root, id)?.role);
     const card = who.taskId ? tasks.find((t) => t.id === who.taskId) : undefined;
     const m = appendMsg(root, { from: "human", kind: "human", text: body, ...(replyTo ? { replyTo } : {}), ...(card ? { taskId: card.id, taskTitle: card.title } : {}) });
@@ -569,6 +580,7 @@ export function postHuman(root: string, text: string, replyTo?: string, handoff 
     const retry = g0?.kind === "blocked" ? decideGate(task, "approve") : null; // 막힘 = 그 단계부터 다시(답글을 메모로)
     const r = g0?.kind === "question" ? decideGate(task, "answer", body)
       : retry ? { ...retry, patch: { ...retry.patch, note: body } }
+      : g0 && isApproval(body) ? decideGate(task, "approve") // ㅇㅇ·ㄱㄱ·승인 같은 짧은 답 = 승인(대화방에서 결정, 유저)
       : g0 ? decideGate(task, "reject", body) // spec·schema·merge 관문에 답글 = 반려 코멘트
       : null;
     if (r) patchTask(root, task.id, { ...r.patch, status: r.status });
@@ -688,6 +700,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
   const first = getRole(everyone ? MODERATOR : roleId) ?? getRole(MODERATOR);
   if (!first) { say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.answerFailed", { role: roleId, why: tr("crewchat.why.other") }) }); return; }
   let who = first, meeting = false;
+  const routing = !everyone && !mentioned.length; // 받는 사람 판단은 @ 없는 글만
   speaking(root, first.id);
   const failed = new Set<string>();
   const askR = (r: CrewRole, prompt: string) => askOrFallback(root, r, prompt, human.id, failed);
@@ -707,10 +720,18 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       `- "question": status, explanation, opinion.`,
       `For "instruction", say concretely what you will do differently from now on — no long apology, no question back.`,
       `Reply as ${first.id} in 1-4 short sentences, in ${lang}. You cannot run tools here.${everyone ? " Other teammates will add their view after you." : ""}`,
-      `If a card waits for the human (spec/schema/merge approval, a question), say what they need to decide on the board card.`,
+      `If a card waits for the human (spec/schema/merge approval, a question), say what they need to decide — they can reply to that card's message in this chat (a short "ok" approves).`,
       mentioned.length ? `If intent is "work", a card for ${mentioned.join(" → ")} starts right after your reply (say so briefly).` : `If intent is "work", your reply opens a short team meeting about it (say so briefly).`,
-      `Answer ONLY with JSON: {"intent":"question"|"work"|"instruction","reply":"..."}`].join("\n"));
+      ...(routing ? ["", `Team:`, teamList(), "", `Who is the message for? "me" if it is about your card or role, a teammate's role id if it is clearly meant for that role, "all" if it is for the whole team.`] : []),
+      `Answer ONLY with JSON: {"intent":"question"|"work"|"instruction",${routing ? `"audience":"me"|"all"|"<role-id>",` : ""}"reply":"..."}`].join("\n"));
     const opener = readAnswer(op.text);
+    // @ 없는 글 — 다른 역할에게 한 말이면 내 답은 버리고 그 역할이 답하게(대기열 맨 앞), 모두에게면 나머지도 이어서(유저: 회사처럼)
+    if (routing && opener.audience && opener.audience !== "me" && opener.audience !== "all" && opener.audience !== first.id && getRole(opener.audience)) {
+      const to = opener.audience, active = readBoard(root).tasks.find((x) => activeFor(root, x.id)?.role === to);
+      queue.set(root, [{ human, roleId: to, taskId: active?.id, mentioned: [to] }, ...(queue.get(root) ?? [])]);
+      return;
+    }
+    if (routing && opener.audience === "all") everyone = true;
     say(root, { from: first.id, provider: op.provider, kind: opener.intent === "work" ? "meeting" : "answer", text: opener.reply.slice(0, 2000), replyTo: human.id, ...card });
     const transcript = [`${first.id}: ${clip(opener.reply, 600)}`];
     if (opener.intent === "instruction") addGuideline(root, human.text.replace(/@[a-z0-9-]+/gi, "").trim()); // 이후 모든 실행에 붙음

@@ -64,6 +64,7 @@ export function crewProtocol(language: string, guidelines: string[] = []): strin
     "- You are one role in a team working on a single board card, inside an isolated git worktree. Stay inside it.",
     "- Hand-off artifacts live in the .crew/ folder at the worktree root (not committed). Read earlier roles' files there; write yours there.",
     "- NEVER run git push, merge to the base branch, delete branches, or touch other worktrees. A human approves those.",
+    "- To look at another card's branch, stay in your worktree and use git (git log/show/diff <branch>) — never cd into other worktrees or the main repo checkout.",
     "- If something essential is missing or ambiguous, stop and ask one clear question instead of guessing.",
     "- Before you start, read the repo's CLAUDE.md / AGENTS.md (if present) and follow them.",
     `- Text that goes into the repo (commit messages, code comments, docs, PR text, UI strings) follows the repo's own conventions — use the language and format of CLAUDE.md/AGENTS.md and the existing commit history, NOT the chat language. Only your team-chat message, question and final summary are in ${language}.`,
