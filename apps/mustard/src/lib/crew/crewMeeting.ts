@@ -1,7 +1,7 @@
 // Crew 대화방 팀 회의(#1139) — AI 답(JSON) 읽기·참여 역할 고르기·회의 결과 → 카드 값 다듬기. 순수 모듈(점검 가능).
 // 흐름: @ 없는 글 → 받은 역할이 {intent, reply} → work면 진행자(범위 기획자)가 참여 역할을 고르고, 차례로 발언, 마무리로 카드.
 
-export type Intent = "question" | "work";
+export type Intent = "question" | "work" | "instruction"; // instruction = 지침·지적·공지(카드 아님, 팀 지침으로 저장)
 export interface MeetingPlan { title: string; body: string; pipeline: string[] }
 
 // AI 답에서 첫 JSON 객체 꺼내기 — 앞뒤 설명·```json 울타리가 붙어도. { 마다 짝 맞는 } 까지(문자열 안 괄호 무시) 잘라 읽어 봄(리뷰: 앞뒤 글의 {} ). 못 읽으면 null.
@@ -27,7 +27,7 @@ export function readJson(text: string): Record<string, unknown> | null {
 export function readAnswer(text: string): { intent: Intent; reply: string } {
   const j = readJson(text);
   const reply = typeof j?.reply === "string" && j.reply.trim() ? j.reply.trim() : text.trim();
-  return { intent: j?.intent === "work" ? "work" : "question", reply };
+  return { intent: j?.intent === "work" || j?.intent === "instruction" ? j.intent : "question", reply };
 }
 
 // 참여 역할 — 아는 역할만, 중복 없이, 진행자 빼고, 최대 max. 하나도 없으면 기본(앱 개발자·테스트 엔지니어).

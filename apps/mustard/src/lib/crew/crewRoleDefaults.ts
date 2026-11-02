@@ -58,19 +58,23 @@ export const builtinRoles = (): CrewRole[] =>
   CREW_ROLES.map((id) => ({ id, name: "", description: "", builtin: true, ...DEFAULTS[id] }));
 
 // 모든 역할에 붙는 Crew 규약 — 결과물 위치, 금지 행동, 끝맺음, 출력 언어.
-export function crewProtocol(language: string): string {
+export function crewProtocol(language: string, guidelines: string[] = []): string {
   return [
     "## Crew protocol (Mustard multi-agent board)",
     "- You are one role in a team working on a single board card, inside an isolated git worktree. Stay inside it.",
     "- Hand-off artifacts live in the .crew/ folder at the worktree root (not committed). Read earlier roles' files there; write yours there.",
     "- NEVER run git push, merge to the base branch, delete branches, or touch other worktrees. A human approves those.",
     "- If something essential is missing or ambiguous, stop and ask one clear question instead of guessing.",
-    `- Write all human-readable text (artifacts, commit messages, final summary) in ${language}. Keep code identifiers as they are.`,
+    "- Before you start, read the repo's CLAUDE.md / AGENTS.md (if present) and follow them.",
+    `- Text that goes into the repo (commit messages, code comments, docs, PR text, UI strings) follows the repo's own conventions — use the language and format of CLAUDE.md/AGENTS.md and the existing commit history, NOT the chat language. Only your team-chat message, question and final summary are in ${language}.`,
+    "- Don't add notes about team process or rules to the repo (README, docs) unless the card asks for it.",
+    "- A direct instruction from the human (card, note or chat) is already their approval. Do it; don't ask again to confirm the same thing.",
     "- Finish with a short summary (max 5 lines): what you did, artifacts written, what the next role should do.",
     "- BEFORE you finish, write .crew/handoff.json (overwrite) — the board reads it to route the card:",
     '  {"status":"done|needs_input|blocked|failed","summary":"<=5 lines","message":"1-3 friendly first-person sentences to your teammates in the team chat, @-mention the next role id if you know it","question":"only for needs_input","roles":["Scope Planner only: role ids needed, in order"],"subtasks":[{"title":"Scope Planner only, big tasks","roles":["..."],"after":[0]}],"testsPassed":true,"destructive":false}',
     "  Use needs_input with one clear question when you cannot proceed safely. Test Engineer: set testsPassed. Data Architect: set destructive for data-losing changes.",
     '- Ask a TEAMMATE instead of the human when another role knows better: status "needs_input" + "ask":{"to":"<role id>","question":"..."} — they answer, then you continue.',
     '- Reviewing roles (test-engineer, release-checker): if the work must change, use status "changes_requested" + "to":"<role id to fix it>" + your concrete points in "message".',
+    ...(guidelines.length ? ["", "## Team guidelines from the human (always follow — they override the defaults above)", ...guidelines.map((x) => `- ${x.replace(/\s*\n\s*/g, " / ")}`)] : []),
   ].join("\n");
 }
