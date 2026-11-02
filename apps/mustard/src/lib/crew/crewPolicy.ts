@@ -225,6 +225,16 @@ const CURL_FLAGS = /^-[sSLfiIkv]+$/;
 const CURL_VAL = new Set(["-X", "--request", "-H", "--header", "-d", "--data", "--data-raw", "--data-binary", "--json", "-w", "--write-out", "-o", "--output", "-m", "--max-time", "--connect-timeout", "--retry", "-u", "--user", "-A", "--user-agent", "--compressed"]);
 const WGET_FLAGS = new Set(["-q", "--quiet", "-nv", "--no-verbose", "-c", "--continue"]);
 const WGET_VAL = new Set(["-O", "--output-document", "-T", "--timeout", "-t", "--tries"]);
+// 따옴표 벗긴 원문에서 그 명령 뒤 인자들(다음 연결 기호 전까지). 한 줄에 같은 명령이 여러 번이면 전부 합쳐 봄(안전한 쪽)
+function rawArgs(raw: string, base: string): string[] {
+  const out: string[] = []; let on = false;
+  for (const t of unquote(raw).split(/\s+/)) {
+    if (/^(\||&&|\|\||;|&)$/.test(t)) { on = false; continue; }
+    if (on) out.push(t);
+    else if (t.split("/").pop() === base) on = true;
+  }
+  return out;
+}
 function plainFetch(base: string, args: string[], worktree: string): boolean {
   for (let i = 0; i < args.length; i++) {
     let a = args[i], v: string | undefined;
@@ -237,7 +247,7 @@ function plainFetch(base: string, args: string[], worktree: string): boolean {
     if (!(base === "curl" ? CURL_VAL : WGET_VAL).has(a)) return false;
     if (v === undefined) v = args[++i];
     if (v === undefined) return false;
-    if (/^(-d|--data|--data-raw|--data-binary|--json)$/.test(a) && v.startsWith("@")) return false; // 파일 올리기
+    if (/^(-d|--data|--data-raw|--data-binary|--json|-H|--header|-w|--write-out)$/.test(a) && v.startsWith("@")) return false; // 파일 읽어 올리기·헤더·출력(리뷰)
     if (/^(-o|--output|-O|--output-document)$/.test(a)) { if (v !== "/dev/null" && v !== "-" && (v.includes("§") || unsafeWrite(worktree, v))) return false; }
   }
   return true;
@@ -268,8 +278,9 @@ function bashDecision(raw0: string, worktree: string): Inner {
     if (!/^[\w./-]+$/.test(w0)) return "hold"; // 따옴표·변수·백슬래시로 꾸민 명령 이름(su""do → su§do)
     const base = w0.split("/").pop()!;
     if (HOLD_CMD.has(base)) return "hold";
-    if ((base === "curl" || base === "wget") && !plainFetch(base, words.slice(1), worktree)) return "hold"; // #1279 인터넷 항목 = 아는 옵션만 쓴 curl·wget
-    if (base === "env" && words.some((a) => /^(-[a-zA-Z]*C|--chdir)/.test(a))) return "hold"; // 다른 폴더에서 실행(리뷰)
+    // #1279 인터넷 항목 = 아는 옵션만 쓴 curl·wget. 따옴표를 벗긴 원문 토큰으로 봄 — "-o"·"@file"처럼 따옴표로 감싼 옵션·값도(리뷰)
+    if ((base === "curl" || base === "wget") && !plainFetch(base, rawArgs(raw, base), worktree)) return "hold";
+    if (base === "env" && /(^|\s)(-[a-zA-Z]*C|--chdir)/.test(unquote(raw))) return "hold"; // 다른 폴더에서 실행(리뷰)
     if (Object.hasOwn(CMD_CAT, base)) { cats.push(CMD_CAT[base]); continue; }
     const args = words.slice(1).filter((a) => !a.startsWith("-"));
     const writes = WRITERS.has(base), files = args;
