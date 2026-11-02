@@ -20,6 +20,7 @@ const { createCrewControl, repoOf } = require("./crew-control.cjs");
   const board = { tasks: [{ id: "t1", title: "로그인", status: "backlog", createdAt: 1, gate: { kind: "spec", text: "확인", stage: 0 } }] };
   const fakeFetch = async (url, init) => {
     calls.push({ url, method: init.method, cookie: init.headers.Cookie, body: init.body && JSON.parse(init.body) });
+    if (init.method === "POST" && url.includes("/board")) board.tasks.push({ id: `t${board.tasks.length + 1}`, title: JSON.parse(init.body).title, status: "backlog", createdAt: 1 }); // 같은 시각·같은 제목도 새 id로 구분
     const body = url.includes("/board") ? { ok: true, board } : url.includes("/run") ? { ok: true, runs: [{ taskId: "t1", state: "running", role: "app-builder" }] } : { ok: true, msgs: [] };
     return { ok: true, status: 200, json: async () => body };
   };
@@ -36,16 +37,17 @@ const { createCrewControl, repoOf } = require("./crew-control.cjs");
 
   // 카드 만들고 바로 시작
   calls.length = 0;
-  board.tasks.push({ id: "t2", title: "새 일", status: "backlog", createdAt: 2 });
+  board.tasks.push({ id: "t2", title: "새 일", status: "backlog", createdAt: 9 }); // 같은 제목 옛 카드 — 이걸 시작하면 안 됨
   r = await cc.call("crew_add_task", { title: "새 일", role: "app-builder", start: true }, repo);
   assert.ok(!r.isError);
-  assert.deepStrictEqual(calls.map((c) => c.body), [{ root: repo, op: "create", title: "새 일", role: "app-builder" }, { root: repo, taskId: "t2", action: "start" }]);
+  assert.deepStrictEqual(calls.filter((c) => c.method === "POST").map((c) => c.body), [{ root: repo, op: "create", title: "새 일", role: "app-builder" }, { root: repo, taskId: "t3", action: "start" }]);
 
   // 멈춤·대화
   calls.length = 0;
   await cc.call("crew_stop", { taskId: "t2" }, repo);
-  await cc.call("crew_chat", { text: "@test-engineer 테스트 보강" }, repo);
+  await cc.call("crew_chat", { text: "@test-engineer 테스트 보강", replyTo: "m1" }, repo); // 답글(관문 결정이 됨)은 안 보냄
   assert.deepStrictEqual(calls.map((c) => [c.url.replace(base, ""), c.body.action ?? c.body.text]), [["/api/crew/run", "stop"], ["/api/crew/chat", "@test-engineer 테스트 보강"]]);
+  assert.strictEqual(calls[1].body.replyTo, undefined);
 
   // 승인·관문·삭제 같은 건 도구가 없음 — 어떤 호출도 permission/gate/pr/takeover/delete를 보내지 않음
   for (const t of ["crew_permission", "crew_gate", "crew_delete", "crew_approve"]) assert.ok((await cc.call(t, { taskId: "t1", approved: true }, repo)).isError);
@@ -65,6 +67,14 @@ const { createCrewControl, repoOf } = require("./crew-control.cjs");
   base = "http://127.0.0.1:1";
   const bad = createCrewControl({ appBase: () => base, uiToken: "x", fetch: async () => ({ ok: false, status: 400, json: async () => ({ ok: false, error: "gate pending" }) }) });
   assert.match((await bad.call("crew_start", { taskId: "t1" }, repo)).content[0].text, /gate pending/);
+  // 시작만 실패 — 만든 카드 id는 돌려줌(다시 부를 때 중복 카드 방지)
+  const half = createCrewControl({ appBase: () => base, uiToken: "x", fetch: async (url, init) => {
+    if (url.includes("/run")) return { ok: false, status: 400, json: async () => ({ ok: false, error: "concurrency limit (3)" }) };
+    if (init.method === "POST") board.tasks.push({ id: "tNew", title: "x", status: "backlog", createdAt: 1 });
+    return { ok: true, status: 200, json: async () => ({ ok: true, board }) };
+  } });
+  r = JSON.parse((await half.call("crew_add_task", { title: "x", start: true }, repo)).content[0].text);
+  assert.deepStrictEqual([r.id, r.started, r.startError], ["tNew", false, "concurrency limit (3)"]);
 
   console.log("crew-control ok");
 })().catch((e) => { console.error(e); process.exit(1); });

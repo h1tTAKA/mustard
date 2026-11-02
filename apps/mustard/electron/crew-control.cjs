@@ -2,6 +2,8 @@
 // 일반 프록시 아님: 도구 하나 = 정해진 API 호출 하나. 권한 승인·관문·PR·넘겨받기·삭제·역할/트리거 변경은 일부러 없음(사람이 앱 화면에서만, #1161).
 // 크루 작업 폴더(cwd)에서 부르면 거부 — 크루가 크루를 부르는 연쇄 방지.
 //  한계: cwd는 요청이 보내는 값이라 속일 수 있음 — 그래도 열린 건 아래 허용 동작뿐.
+//  한계: 레포 = cwd 실경로. 앱이 심볼릭 링크 경로로 연 레포면 보드 키가 달라 다른(빈) 보드를 봄.
+// 대화방 답글(replyTo)은 안 엶 — 서버가 답글을 관문 결정(질문 답·막힘 재시작·반려)으로 처리해서(리뷰).
 const { existsSync, realpathSync } = require("node:fs");
 const { dirname, join } = require("node:path");
 const { homedir } = require("node:os");
@@ -57,10 +59,14 @@ function createCrewControl({ appBase, uiToken, fetch = globalThis.fetch }) {
       if (tool === "crew_add_task") {
         const title = String(args.title || "").trim();
         if (!title) return fail("title is required.");
+        const before = new Set((await api("GET", `/api/crew/board?${q(root)}`)).board.tasks.map((t) => t.id)); // 새로 생긴 카드 = 전후 차이(같은 제목 오인 방지, 리뷰)
         const { board } = await api("POST", "/api/crew/board", { root, op: "create", title, ...(args.body ? { body: String(args.body) } : {}), ...(args.role ? { role: String(args.role) } : {}) });
-        const t = board.tasks.filter((x) => x.title === title).sort((a, b) => b.createdAt - a.createdAt)[0];
-        if (args.start && t) await api("POST", "/api/crew/run", { root, taskId: t.id, action: "start" });
-        return text({ id: t?.id, title, started: !!(args.start && t), note: "Permission requests and gates are approved by the user in the Mustard app." });
+        const id = board.tasks.find((x) => !before.has(x.id))?.id;
+        if (!id) return fail("Card was not created.");
+        // 시작 실패해도 만든 카드 id는 돌려줌 — 다시 부를 때 중복 카드 대신 crew_start로(리뷰)
+        let started = false, startError;
+        if (args.start) { try { await api("POST", "/api/crew/run", { root, taskId: id, action: "start" }); started = true; } catch (e) { startError = String(e?.message || e); } }
+        return text({ id, title, started, ...(startError ? { startError, hint: "Card exists; retry with crew_start instead of adding it again." } : {}), note: "Permission requests and gates are approved by the user in the Mustard app." });
       }
       if (tool === "crew_start" || tool === "crew_stop") {
         const taskId = String(args.taskId || "");
@@ -71,7 +77,7 @@ function createCrewControl({ appBase, uiToken, fetch = globalThis.fetch }) {
       if (tool === "crew_chat") {
         const t = String(args.text || "").trim();
         if (!t) return fail("text is required.");
-        await api("POST", "/api/crew/chat", { root, text: t, ...(args.replyTo ? { replyTo: String(args.replyTo) } : {}) });
+        await api("POST", "/api/crew/chat", { root, text: t }); // replyTo 없음 — 위 주석
         return text("Posted to the Crew chat. Read replies with crew_board.");
       }
       return fail(`Unknown tool: ${tool}`);
