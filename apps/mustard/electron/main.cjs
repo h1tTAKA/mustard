@@ -228,7 +228,7 @@ async function startStandaloneServer(extraEnv, secret) {
     },
     stdio: secret ? ["inherit", "inherit", "inherit", "pipe"] : "inherit",
   });
-  if (secret) serverProc.stdio[3].end(secret);
+  if (secret) { serverProc.stdio[3].on("error", () => {}); serverProc.stdio[3].end(secret); } // 서버가 먼저 죽어도(EPIPE) main이 같이 죽지 않게(리뷰)
   serverProc.on("exit", (code) => { if (code) console.error("[electron] standalone server exited", code); });
 
   const base = `http://127.0.0.1:${port}`;
