@@ -229,8 +229,8 @@ const WGET_VAL = new Set(["-O", "--output-document", "-T", "--timeout", "-t", "-
 // 따옴표 벗긴 원문에서 그 명령 뒤 인자들(다음 연결 기호 전까지). 한 줄에 같은 명령이 여러 번이면 전부 합쳐 봄(안전한 쪽)
 function rawArgs(raw: string, base: string): string[] {
   const out: string[] = []; let on = false;
-  for (const t of unquote(raw).split(/\s+/)) {
-    if (/^(\||&&|\|\||;|&)$/.test(t)) { on = false; continue; }
+  for (const t of unquote(raw).replace(/(&&|\|\||[;|&()])/g, " $1 ").split(/\s+/)) { // ls;curl·(curl 처럼 붙여 쓴 구분자도 끊음
+    if (/^(\||&&|\|\||;|&|\(|\))$/.test(t)) { on = false; continue; }
     if (on) out.push(t);
     else if (t.split("/").pop() === base) on = true;
   }
@@ -264,13 +264,13 @@ function bashDecision(raw0: string, worktree: string): Inner {
   if (DENY_RE.test(cmd)) return "deny";
   if (shellSecret(raw, worktree)) return "hold"; // #1159 비밀 경로 읽기·복사·홈 통째 훑기(따옴표·옵션 값·상대 경로도) — 금지 판정 다음
   const c = cmd.replace(/\d*>&\d+/g, " "); // 2>&1 같은 연결은 나누기 전에 걷어냄
-  if (/[(){}]/.test(c)) return "hold"; // 서브셸·그룹·함수
+  if (/[{}]/.test(c)) return "hold"; // 그룹·함수 — {a,b} 펼치기가 인자 경로 검사를 비켜 감
   // 리다이렉트로 쓰기 — worktree 밖(~·$ 포함)이면 hold
   const outRedirect = [...c.matchAll(/(?:&?>{1,2}&?|>\|)\s*([^\s|&;]+)/g)].map((m) => m[1]); // >&파일 = 출력·에러를 파일로(리뷰)
   if (outRedirect.some((p) => p !== "/dev/null" && (p.includes("§") || unsafeWrite(worktree, p)))) return "hold"; // 따옴표 경로는 확인 불가
   const cats: CrewPermCat[] = [];
-  // 연결(&&, ||, ;, |, &, 줄바꿈) 단위로 나눠 각 부분 확인
-  for (const part of c.split(/&&|\|\||[;|&\n]/)) {
+  // 연결(&&, ||, ;, |, &, 줄바꿈) 단위로 나눠 각 부분 확인. ( … ) 서브셸 괄호도 경계로 — 안의 명령을 하나씩 똑같이 봄(앱 확인: (flutter pub add … | tail)로 계속 멈춤)
+  for (const part of c.split(/&&|\|\||[;|&\n()]/)) {
     const all = part.trim().split(/\s+/).filter(Boolean);
     let i = 0;
     for (; i < all.length && /^\w+=/.test(all[i]); i++) if (!SAFE_ENV.test(all[i].slice(0, all[i].indexOf("=")))) return "hold";

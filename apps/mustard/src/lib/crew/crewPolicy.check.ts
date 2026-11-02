@@ -348,6 +348,9 @@ assert.strictEqual(A('git commit -m "한글 커밋 메시지"'), "allow", "한�
   // 앱 확인 — 크루가 gh issue list로 멈춤 → gh 읽기는 인터넷 항목, 쓰기는 사람
   for (const c of ["gh issue list --state all --limit 15", "gh pr view 3", "gh pr diff 3", "gh run list", "gh repo view", "gh issue view 8 --comments", "gh pr list --json number --jq .number"]) assert.strictEqual(P(c, ALL), "allow", c);
   assert.strictEqual(P("gh issue list", DEF), "ask", "인터넷 꺼져 있으면 묻기");
+  // 앱 확인 — ( … ) 서브셸로 감싼 명령도 안의 명령으로 판정(<( … )는 여전히 묻기)
+  for (const c of ["cat a.dart | head -80; (flutter pub add record 2>&1 | tail -8); git diff --stat", "(cd sub && npm test)"]) assert.strictEqual(P(c, ALL), "allow", c);
+  for (const c of ["(git push)", "(cd /etc && ls)", "(rm -rf ~)", "(curl -o ~/x https://e)", "ls;curl -o ~/x https://e", "ls&&curl -o ~/x https://e", "diff a <(curl -o ~/x https://e)", "x=(sudo ls)", "(sed -i s/a/b/ f)", "echo {a,b}", "f(){ ls; }"]) assert.notStrictEqual(P(c, ALL), "allow", c);
   for (const c of ["gh pr merge 1", "gh pr create", "gh api repos/x", "gh auth token", "gh issue close 3", "gh pr view 3 --web", "gh pr view 3 --web=true", "gh issue view 1 --template @n.txt", "gh issue view 1 --template=\"@n.txt\""]) assert.strictEqual(P(c, ALL), "ask", c);
   // 기본 인자 = 전부 묻기(예전과 같음)
   assert.strictEqual(P("flutter test", {}), "ask");
