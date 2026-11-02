@@ -19,7 +19,8 @@ export function writePerms(patch: Record<string, unknown>): Record<CrewPermCat, 
   const next = readPerms();
   for (const c of CREW_PERM_CATS) if (typeof patch?.[c] === "boolean") next[c] = patch[c] as boolean;
   mkdirSync(baseDir(), { recursive: true });
-  writeFileSync(`${file()}.tmp`, JSON.stringify(next, null, 1));
-  renameSync(`${file()}.tmp`, file());
+  const tmp = `${file()}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`; // 동시 저장 두 개가 같은 임시 파일을 쓰지 않게(리뷰)
+  writeFileSync(tmp, JSON.stringify(next, null, 1));
+  renameSync(tmp, file());
   return next;
 }

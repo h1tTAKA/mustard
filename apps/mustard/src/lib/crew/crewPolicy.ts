@@ -2,6 +2,7 @@
 // 원칙(에픽 자율 4단계): worktree 안 읽기·수정·테스트·커밋 = 자동 허락 / push·머지·파괴적 git = 차단 / 그 밖 = 사람에게 묻기(카드 '나 필요').
 // 경계(#1159 리뷰): 글자 규칙이라 '명령 글자'만 봄. worktree 파일을 실행하는 것(npm test의 package.json 스크립트·make·node x.js)은
 // 그 안에 숨긴 git push·API 호출을 못 봄 — 진짜 막는 건 OS 샌드박스·서버 쪽 인증(#1157 보류, Crew API 토큰은 #1161).
+// #1279 유저가 켠 항목(처음 보는 명령·코드 실행 등)은 경로 인자를 모름 — tar -C ~/x·unzip -d ~·node -e 조립 경로처럼 밖에 쓰는 것도 통과(한계, 설정 화면 문구에 명시).
 // 비밀 파일은 '이름·경로'로만 잡음 — 이름을 안 대는 내용 검색(grep -r PRIVATE . 이 id_rsa·credentials.json 안까지)은 못 막음.
 import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { lstatSync, readlinkSync } from "node:fs";
@@ -14,7 +15,7 @@ export type Decision = "allow" | "deny" | "ask";
 const READ_TOOLS = new Set(["Read", "Glob", "Grep", "LS", "TodoWrite", "TodoRead", "ToolSearch", "WebSearch", "WebFetch", "Task", "Agent", "BashOutput", "KillShell", "ExitPlanMode"]);
 const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
 // 항상 막는 git·파괴 명령(규약·disallowedTools와 같은 목록 + 위험 rm)
-const DENY_RE = /\bgit\b(?:\s+-{1,2}[\w.-]+(?:[ =]\S+)?)*\s+(push|merge|rebase|reset\s+--hard|branch\s+-[dD]|worktree\s+(remove|prune)|clean\s+-[a-z]*f|checkout\s+(main|master)\b|switch\s+(main|master)\b)|\brm\s+-[a-z]*r[a-z]*f?\s+(\/|~|\$HOME)(\s|$)|\bsudo\b/;
+const DENY_RE = /\bgit\b(?:\s+-{1,2}[\w.-]+(?:[ =]\S+)?)*\s+(push|merge|rebase|reset\s+--hard|branch\s+-[dD]|worktree\s+(remove|prune)|clean\s+-[a-z]*f|checkout\s+(main|master)\b|switch\s+(main|master)\b)|\brm\s+-[a-z]*r[a-z]*f?\s+(\/|~|\$HOME)\/?(\s|$)|\bsudo\b/;
 // sed는 뺌(#1159) — w·e·r 명령, $'…'·변수·heredoc으로 쓰기·셸 실행을 숨기는 길이 끝없어 글자로 못 막음(리뷰 5번) → 항상 사람. 파일 수정은 Edit·apply_patch로.
 // 자동 허락하는 명령의 첫 단어(파이프·연결 각 부분이 전부 이 목록이어야 함)
 const SAFE_CMD = new Set(["git", "npm", "pnpm", "yarn", "bun", "npx", "node", "tsc", "eslint", "prettier", "vitest", "jest", "pytest", "python", "python3", "go", "cargo", "make",
@@ -33,7 +34,7 @@ const SECRET_REL = [".ssh", ".aws", ".gnupg", ".config/gh", ".config/gcloud", ".
 // 이름만 봐도 비밀 — 경로를 해석하지 않고 글자 어디서든(따옴표·옵션 값·cd 뒤 상대 경로도, 리뷰)
 const SECRET_NAMES = /(^|[^\w.-])(\.ssh|\.aws|\.gnupg|\.netrc|\.git-credentials|\.pypirc|\.password-store|\.kube|\.azure|gcloud|keychains|\.bash_history|\.zsh_history|\.credentials\.json)(?=$|[^\w-])/i;
 // 레포(worktree) 안 비밀 파일 — 이름으로(유저 결정 10-23: 읽기도 묻기). .env.example·.sample·.template은 예시라 괜찮음.
-const PROJECT_SECRET = /(^|[\s/"'=:(])(\.env(?!\.(example|sample|template|dist)\b)(\.[\w.-]+)?|[\w.-]+\.(pem|key|p12|pfx|keystore|jks)|id_(rsa|ed25519|ecdsa|dsa)(\.pub)?|\.netrc|\.npmrc|\.pypirc|credentials\.json|service-account[\w.-]*\.json)(?=$|[\s"';|&)<>*?])/i; // 끝에 와일드카드(.env*)도
+const PROJECT_SECRET = /(^|[\s/"'=:(@])(\.env(?!\.(example|sample|template|dist)\b)(\.[\w.-]+)?|[\w.-]+\.(pem|key|p12|pfx|keystore|jks)|id_(rsa|ed25519|ecdsa|dsa)(\.pub)?|\.netrc|\.npmrc|\.pypirc|credentials\.json|service-account[\w.-]*\.json)(?=$|[\s"';|&)<>*?])/i; // 끝에 와일드카드(.env*)도
 const SECRET_EXCEPT = [join(HOME, ".nunopi", "worktrees")];
 const under = (p: string, d: string) => { const a = fold(p), b = fold(d); return a === b || a.startsWith(b.endsWith(sep) ? b : b + sep); };
 // 실제 경로 — 맨 위부터 한 조각씩, 링크(끊긴 것·/var 같은 시스템 링크 포함)를 만나면 대상으로 갈아탐. 없는 조각은 그대로 붙임.
@@ -121,11 +122,11 @@ const inside = (dir: string, p: string) => { const r = relative(dir, resolve(dir
 
 // #1137 사람에게(hold) — 셸·코드 실행·네트워크·권한·지속성. 'ask'와 같지만 이유를 구분해 둠(샌드박스 위 '전부 알아서'가 생겨도 이건 묻기).
 // #1279 유저 설정 항목으로 옮긴 것(code·network·system) — 설정에서 '알아서 허용'이면 자동. 남은 HOLD_CMD = 권한 올리기·밖에 쓰기라 항상 사람.
-const HOLD_CMD = new Set(["su", "doas", "chmod", "chown", "ln", "dd", "tee", "install"]);
+const HOLD_CMD = new Set(["su", "doas", "chmod", "chown", "ln", "dd", "tee", "install", "sed", "gh", "security", "osascript", "defaults", "crontab", "launchctl"]); // gh = pr merge·토큰 출력, security = 키체인, osascript·defaults·crontab·launchctl = 임의 실행·지속(리뷰)
 const CMD_CAT: Record<string, CrewPermCat> = Object.fromEntries([
   ...["sh", "bash", "zsh", "fish", "dash", "ksh", "eval", "exec", "env", "xargs", "source", ".", "perl", "ruby", "php", "awk", "gawk"].map((c) => [c, "code"]),
-  ...["ssh", "scp", "sftp", "rsync", "nc", "ncat", "socat", "curl", "wget", "gh"].map((c) => [c, "network"]),
-  ...["open", "launchctl", "crontab", "defaults", "security", "kill", "killall", "pkill", "osascript"].map((c) => [c, "system"]),
+  ...["ssh", "scp", "sftp", "rsync", "nc", "ncat", "socat", "curl", "wget"].map((c) => [c, "network"]),
+  ...["open", "kill", "killall", "pkill"].map((c) => [c, "system"]),
 ]);
 const SAFE_NPX = new Set(["tsc", "eslint", "prettier", "vitest", "jest", "tsx", "playwright", "next"]); // npx는 모르는 패키지를 받아 실행 → 이것만
 const SAFE_ENV = /^(CI|NODE_ENV|FORCE_COLOR|NO_COLOR|TZ|LANG|LC_\w+|DEBUG|PORT|TERM)$/; // 앞에 붙는 VAR=값 중 허용(GIT_*·PATH·NODE_OPTIONS 등은 코드 실행 통로)
@@ -241,6 +242,7 @@ function bashDecision(raw0: string, worktree: string): Inner {
     if (!/^[\w./-]+$/.test(w0)) return "hold"; // 따옴표·변수·백슬래시로 꾸민 명령 이름(su""do → su§do)
     const base = w0.split("/").pop()!;
     if (HOLD_CMD.has(base)) return "hold";
+    if ((base === "curl" || base === "wget") && words.some((a, k) => (/^--output(-document)?=/.test(a) && unsafeWrite(worktree, a.slice(a.indexOf("=") + 1))) || (/^(-o|-O|--output|--output-document)$/.test(a) && !(base === "curl" && a === "-O") && (!words[k + 1] || words[k + 1].includes("§") || unsafeWrite(worktree, words[k + 1]))))) return "hold"; // 다운로드 저장 경로(curl -O = 받은 이름으로 현재 폴더)
     if (Object.hasOwn(CMD_CAT, base)) { cats.push(CMD_CAT[base]); continue; }
     const args = words.slice(1).filter((a) => !a.startsWith("-"));
     const writes = WRITERS.has(base), files = args;
@@ -283,8 +285,9 @@ export function decide(tool: string, input: Record<string, unknown>, worktree: s
   const d = decideBase(tool, input, worktree);
   if (!Array.isArray(d)) return d === "hold" ? "ask" : d;
   if (!d.every((c) => perms[c] === true)) return "ask"; // 한 명령이 여러 항목이면 전부 허용일 때만
-  // 코드 실행은 따옴표 안 명령을 못 봄(bash -c 'git push') — 따옴표 벗긴 원문에 금지 명령이 보이면 사람
-  if (d.includes("code") && DENY_RE.test(unquote(String(input.command ?? "")))) return "ask";
+  // 항목 명령은 따옴표 안 명령을 못 봄(bash -c 'git push', npm exec -- sh -c …, ssh host "…") — 따옴표 벗긴 원문에 금지 명령이 보이면 사람(리뷰)
+  // 한계: 코드 실행(node -e 'gi'+'t push', 스크립트 파일)은 글자로 못 막음 — 진짜 막는 건 OS 샌드박스(#1157). 켜기 전부터 node x.js로 같은 일이 됐음.
+  if (DENY_RE.test(unquote(String(input.command ?? "")))) return "ask";
   return "allow";
 }
 
@@ -306,6 +309,7 @@ export function fromAgentRequest(req: Record<string, unknown>): { tool: string; 
 const patchPaths = (input: Record<string, unknown>) => [...String(input.patch ?? input.input ?? input.command ?? "").matchAll(/^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/gm)].map((m) => m[1].trim());
 
 function decideBase(tool: string, input: Record<string, unknown>, worktree: string): Inner {
+  if (/\/api\/crew\b/.test(unquote(JSON.stringify(input ?? {})))) return "deny"; // Mustard Crew API는 어느 도구로도(WebFetch·MCP·Bash, 리뷰)
   if (tool === "WebFetch") return ["network"]; // 밖으로 데이터를 실어 보낼 수 있음(?d=비밀) — 인터넷 항목(#1279, 기본 묻기)
   // 사용자 MCP — 서버까지 맞춘 알려진 읽기 도구만 자동, 나머지는 사람. 이름 단어로 읽기·쓰기를 가르는 건 매번 빠짐(리뷰: query_sql·fetch_url·eval_code)
   if (tool.startsWith("mcp__")) return MCP_READ_NAMES.test(tool) ? "allow" : ["mcp"]; // #1279 다른 MCP 항목(기본 묻기)
