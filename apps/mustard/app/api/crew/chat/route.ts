@@ -19,11 +19,11 @@ export async function GET(request: Request): Promise<Response> {
 
 export async function POST(request: Request): Promise<Response> {
   if (crossSite(request)) return Response.json({ ok: false, error: "cross-site" }, { status: 403 }); // #1137 다른 사이트의 폼 POST로 Crew 조작 금지
-  let b: { root?: unknown; text?: unknown; replyTo?: unknown };
+  let b: { root?: unknown; text?: unknown; replyTo?: unknown; handoff?: unknown };
   try { b = await request.json(); } catch { return Response.json({ ok: false, error: "bad json" }, { status: 400 }); }
   const root = typeof b.root === "string" ? b.root : "";
   if (!isAbsolute(root) || typeof b.text !== "string") return Response.json({ ok: false, error: "root/text required" }, { status: 400 });
   registerRoot(root, new URL(request.url).origin);
-  try { return Response.json({ ok: true, ...postHuman(root, b.text, typeof b.replyTo === "string" ? b.replyTo : undefined) }); }
+  try { return Response.json({ ok: true, ...postHuman(root, b.text, typeof b.replyTo === "string" ? b.replyTo : undefined, b.handoff === true) }); }
   catch (e) { return Response.json({ ok: false, error: String((e as Error)?.message ?? e) }, { status: 400 }); }
 }

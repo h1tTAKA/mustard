@@ -124,6 +124,8 @@ export function next(task: CrewTask, h: Handoff, knownRoles: Set<string>): FlowR
 }
 
 // 사람 결정(보드 클릭) — approve: 관문 통과 / reject: 코멘트와 함께 그 역할 재실행 / answer: 질문 답과 함께 재실행.
+// 대화방 답글로 관문 승인 — 짧은 승인 말만(긴 글은 반려 코멘트). ㅇㅇ·ㄱㄱ·승인·ok·はい 등
+export const isApproval = (text: string) => /^\s*(ㅇㅇ|ㅇㅋ|ㄱㄱ|오케이|오키|좋아요?|승인(할게요|합니다)?|네|응|진행(해|해요|해 주세요|하세요)?|ok(ay)?|yes|lgtm|go|approved?|はい|承認(します)?|進めて(ください)?|いいよ|大丈夫(です)?)(\s*(ㄱㄱ|ㅇㅇ|go))?\s*[.!~ㅎ]*\s*$/i.test(text);
 export function decideGate(task: CrewTask, action: "approve" | "reject" | "answer", text = ""): FlowResult {
   const g = task.gate;
   if (!g) throw new Error("no gate");

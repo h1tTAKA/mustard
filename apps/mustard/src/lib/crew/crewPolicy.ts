@@ -2,18 +2,20 @@
 // 원칙(에픽 자율 4단계): worktree 안 읽기·수정·테스트·커밋 = 자동 허락 / push·머지·파괴적 git = 차단 / 그 밖 = 사람에게 묻기(카드 '나 필요').
 // 경계(#1159 리뷰): 글자 규칙이라 '명령 글자'만 봄. worktree 파일을 실행하는 것(npm test의 package.json 스크립트·make·node x.js)은
 // 그 안에 숨긴 git push·API 호출을 못 봄 — 진짜 막는 건 OS 샌드박스·서버 쪽 인증(#1157 보류, Crew API 토큰은 #1161).
+// #1279 유저가 켠 항목(처음 보는 명령·코드 실행 등)은 경로 인자를 모름 — tar -C ~/x·unzip -d ~·node -e 조립 경로처럼 밖에 쓰는 것도 통과(한계, 설정 화면 문구에 명시).
 // 비밀 파일은 '이름·경로'로만 잡음 — 이름을 안 대는 내용 검색(grep -r PRIVATE . 이 id_rsa·credentials.json 안까지)은 못 막음.
 import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { lstatSync, readlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { timingSafeEqual } from "node:crypto";
+import type { CrewPermCat, CrewPerms } from "./crewTypes.ts";
 
 export type Decision = "allow" | "deny" | "ask";
 
-const READ_TOOLS = new Set(["Read", "Glob", "Grep", "LS", "TodoWrite", "TodoRead", "ToolSearch", "WebSearch", "WebFetch", "Task", "Agent", "BashOutput", "KillShell", "ExitPlanMode"]);
+const READ_TOOLS = new Set(["Read", "Glob", "Grep", "LS", "TodoWrite", "TodoRead", "ToolSearch", "WebSearch", "WebFetch", "Task", "Agent", "BashOutput", "KillShell", "ExitPlanMode", "Skill"]); // Skill = 지침 불러오기(실행은 그 뒤 도구가 따로 판정)
 const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
 // 항상 막는 git·파괴 명령(규약·disallowedTools와 같은 목록 + 위험 rm)
-const DENY_RE = /\bgit\b(?:\s+-{1,2}[\w.-]+(?:[ =]\S+)?)*\s+(push|merge|rebase|reset\s+--hard|branch\s+-[dD]|worktree\s+(remove|prune)|clean\s+-[a-z]*f|checkout\s+(main|master)\b|switch\s+(main|master)\b)|\brm\s+-[a-z]*r[a-z]*f?\s+(\/|~|\$HOME)(\s|$)|\bsudo\b/;
+const DENY_RE = /\bgit\b(?:\s+-{1,2}[\w.-]+(?:[ =]\S+)?)*\s+(push|merge|rebase|reset\s+--hard|branch\s+-[dD]|worktree\s+(remove|prune)|clean\s+-[a-z]*f|checkout\s+(main|master)\b|switch\s+(main|master)\b)(?![\w-])|\brm\s+-[a-z]*r[a-z]*f?\s+(\/|~|\$HOME)\/?(\s|$)|\bsudo\b/;
 // sed는 뺌(#1159) — w·e·r 명령, $'…'·변수·heredoc으로 쓰기·셸 실행을 숨기는 길이 끝없어 글자로 못 막음(리뷰 5번) → 항상 사람. 파일 수정은 Edit·apply_patch로.
 // 자동 허락하는 명령의 첫 단어(파이프·연결 각 부분이 전부 이 목록이어야 함)
 const SAFE_CMD = new Set(["git", "npm", "pnpm", "yarn", "bun", "npx", "node", "tsc", "eslint", "prettier", "vitest", "jest", "pytest", "python", "python3", "go", "cargo", "make",
@@ -32,7 +34,7 @@ const SECRET_REL = [".ssh", ".aws", ".gnupg", ".config/gh", ".config/gcloud", ".
 // 이름만 봐도 비밀 — 경로를 해석하지 않고 글자 어디서든(따옴표·옵션 값·cd 뒤 상대 경로도, 리뷰)
 const SECRET_NAMES = /(^|[^\w.-])(\.ssh|\.aws|\.gnupg|\.netrc|\.git-credentials|\.pypirc|\.password-store|\.kube|\.azure|gcloud|keychains|\.bash_history|\.zsh_history|\.credentials\.json)(?=$|[^\w-])/i;
 // 레포(worktree) 안 비밀 파일 — 이름으로(유저 결정 10-23: 읽기도 묻기). .env.example·.sample·.template은 예시라 괜찮음.
-const PROJECT_SECRET = /(^|[\s/"'=:(])(\.env(?!\.(example|sample|template|dist)\b)(\.[\w.-]+)?|[\w.-]+\.(pem|key|p12|pfx|keystore|jks)|id_(rsa|ed25519|ecdsa|dsa)(\.pub)?|\.netrc|\.npmrc|\.pypirc|credentials\.json|service-account[\w.-]*\.json)(?=$|[\s"';|&)<>*?])/i; // 끝에 와일드카드(.env*)도
+const PROJECT_SECRET = /(^|[\s/"'=:(@])(\.env(?!\.(example|sample|template|dist)\b)(\.[\w.-]+)?|[\w.-]+\.(pem|key|p12|pfx|keystore|jks)|id_(rsa|ed25519|ecdsa|dsa)(\.pub)?|\.netrc|\.npmrc|\.pypirc|credentials\.json|service-account[\w.-]*\.json)(?=$|[\s"';|&)<>*?])/i; // 끝에 와일드카드(.env*)도
 const SECRET_EXCEPT = [join(HOME, ".nunopi", "worktrees")];
 const under = (p: string, d: string) => { const a = fold(p), b = fold(d); return a === b || a.startsWith(b.endsWith(sep) ? b : b + sep); };
 // 실제 경로 — 맨 위부터 한 조각씩, 링크(끊긴 것·/var 같은 시스템 링크 포함)를 만나면 대상으로 갈아탐. 없는 조각은 그대로 붙임.
@@ -68,9 +70,10 @@ const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const SECRET_TEXT = new RegExp(`(?:~|\\$\\{?HOME\\}?|${esc(HOME)})/(?:${SECRET_REL.map((d) => esc(d) + (d === ".nunopi" ? "(?!/worktrees(?:/|$))" : "")).join("|")})(?=$|[/\\s"'])`, FOLD ? "i" : "");
 // 셸 명령 — 따옴표 걷은 글자를 빈칸·=·: 로 자른 조각 전부를 경로로 확인(따옴표 안·--opt=값·-f값도). cd 뒤 상대 경로(..)는 위치를 못 따라가 사람에게.
 function shellSecret(raw: string, worktree: string): boolean {
+  if (SECRET_TEXT.test(unquote(raw)) || SECRET_NAMES.test(unquote(raw)) || PROJECT_SECRET.test(unquote(raw))) return true; // 비밀 이름은 heredoc 본문까지
+  raw = dropHeredocs(raw).c; // 경로 조각 검사는 본문 빼고 — cat > f <<'EOF' 로 쓰는 코드의 // 주석이 "/"(홈 통째)로 걸림(앱 확인)
   const text = unquote(raw);
-  if (SECRET_TEXT.test(text) || SECRET_NAMES.test(text) || PROJECT_SECRET.test(text)) return true;
-  if (/(^|[\s/])\.[^\s/]*[*?[{]/.test(text) || /\$'[^']*\\(x|u|U|[0-7])/.test(raw)) return true; // .en?·.[e]nv·~/.a?s — 점 이름 와일드카드, $'\x65' 숨긴 글자(리뷰)
+  if (/(^|[\s/])\.[^\s/]*[*?[{]/.test(unquote(globOff(raw))) || /\$'[^']*\\(x|u|U|[0-7])/.test(raw)) return true; // .en?·.[e]nv·~/.a?s — 점 이름 와일드카드, $'\x65' 숨긴 글자(리뷰)
   if (/(^|[\s;&|(])cd(\s|$)/.test(text) && /(^|[\s/=])\.\.(\/|\s|$)/.test(text)) return true;
   for (let tok of text.split(/[\s=:,]+/)) {
     tok = tok.replace(/^-[A-Za-z]+(?=[./~$])/, ""); // -f../x 처럼 붙은 짧은 옵션 값
@@ -119,24 +122,35 @@ function toolSecret(tool: string, input: Record<string, unknown>, worktree: stri
 const inside = (dir: string, p: string) => { const r = relative(dir, resolve(dir, p)); return !!dir && !r.startsWith("..") && !isAbsolute(r); };
 
 // #1137 사람에게(hold) — 셸·코드 실행·네트워크·권한·지속성. 'ask'와 같지만 이유를 구분해 둠(샌드박스 위 '전부 알아서'가 생겨도 이건 묻기).
-const HOLD_CMD = new Set(["sh", "bash", "zsh", "fish", "dash", "ksh", "eval", "exec", "env", "xargs", "source", ".", "su", "doas", "perl", "ruby", "php", "osascript", "awk", "gawk",
-  "ssh", "scp", "sftp", "rsync", "nc", "ncat", "socat", "curl", "wget", "open", "launchctl", "crontab", "defaults", "security", "chmod", "chown", "ln", "dd", "kill", "killall", "pkill", "gh", "tee", "install"]);
+// #1279 유저 설정 항목으로 옮긴 것(code·network·system) — 설정에서 '알아서 허용'이면 자동. 남은 HOLD_CMD = 권한 올리기·밖에 쓰기라 항상 사람.
+const GH_READ = /^(issue|pr|run|release|repo|workflow|label) (list|view|status|diff|checks)$|^(status|search \w+)/;
+const HOLD_CMD = new Set(["su", "doas", "chmod", "chown", "ln", "dd", "tee", "install", "sed", "gh", "security", "osascript", "defaults", "crontab", "launchctl", "ssh", "scp", "sftp", "rsync", "nc", "ncat", "socat"]); // gh = pr merge·토큰 출력, security = 키체인, osascript·defaults·crontab·launchctl = 임의 실행·지속(리뷰)
+const CMD_CAT: Record<string, CrewPermCat> = Object.fromEntries([
+  ...["sh", "bash", "zsh", "fish", "dash", "ksh", "eval", "exec", "env", "xargs", "source", ".", "perl", "ruby", "php", "awk", "gawk"].map((c) => [c, "code"]),
+  ...["curl", "wget"].map((c) => [c, "network"]), // ssh·scp·rsync·nc·socat은 설정·원격 셸·로컬 실행 옵션이 끝없어 항상 사람(리뷰 4회)
+  ...["open", "kill", "killall", "pkill"].map((c) => [c, "system"]),
+]);
 const SAFE_NPX = new Set(["tsc", "eslint", "prettier", "vitest", "jest", "tsx", "playwright", "next"]); // npx는 모르는 패키지를 받아 실행 → 이것만
 const SAFE_ENV = /^(CI|NODE_ENV|FORCE_COLOR|NO_COLOR|TZ|LANG|LC_\w+|DEBUG|PORT|TERM)$/; // 앞에 붙는 VAR=값 중 허용(GIT_*·PATH·NODE_OPTIONS 등은 코드 실행 통로)
 const WRITERS = new Set(["cp", "mv", "touch", "mkdir", "rm", "rmdir"]); // 경로 인자를 씀 → worktree 밖이면 hold
-type Inner = Decision | "hold";
+type Inner = Decision | "hold" | CrewPermCat[]; // 배열 = 그 항목들 때문에 묻기(#1279 — 전부 유저가 허용한 항목이면 자동)
 // 자동 허락하는 MCP 도구(서버 이름까지) — Mustard 코드 그래프·인앱 브라우저 읽기, Loom 기억 읽기. 그 밖은 사람(크루가 쓰면 그때 추가)
 const MCP_READ_NAMES = /^mcp__mustard__(katchup_(check_freshness|file_api|find_all|find_code|repo_map|search|trace_calls)|browser_(read|console|status|screenshot))$|^mcp__plugin_loom-memory_loom(-memory)?__memory_(search|read|status)$/;
 
 // 판단 전에 걷어내기(실사용 오탐 — node -e "…", git commit -m "$(cat <<'EOF' …)", cat >> f <<'EOF' …):
 // ① heredoc 본문 → <<H  ② 명령 치환은 `cat <<H`만 허용(그 밖은 실제 실행되는 코드라 null = 묻기)  ③ 따옴표 안 글자 → §
-function strip(cmd: string): string | null {
+// heredoc 본문 → <<H. bad = 따옴표 없는 본문에 $(…)(실행됨)
+function dropHeredocs(cmd: string): { c: string; bad: boolean } {
   let bad = false;
   const c = cmd.replace(/<<-?\s*(['"]?)(\w+)\1[^\n]*\n([\s\S]*?)\n\s*\2\s*(?=\n|$)/g, (m, q, _w, body, at: number) => {
     if (quoteStateAt(cmd, at)) return m; // 따옴표·주석 안의 "<<X"는 heredoc 아님 — 지우면 다음 줄 명령이 감춰짐(리뷰)
     if (!q && /\$\(|`/.test(body)) bad = true; // 따옴표 없는 heredoc은 본문의 $(…)도 실행됨(리뷰)
     return m.slice(0, m.indexOf("\n")).replace(/<<-?\s*(['"]?)\w+\1/, "<<H");
   });
+  return { c, bad };
+}
+function strip(cmd: string): string | null {
+  const { c, bad } = dropHeredocs(cmd);
   if (bad) return null;
   const subs = [...c.matchAll(/\$\(([^()]*)\)|`([^`]*)`/g)];
   if (subs.some((m) => !/^\s*cat\s+<<H\s*$/.test((m[1] ?? m[2] ?? "").trim() ? (m[1] ?? m[2] ?? "") : "x"))) return null;
@@ -191,6 +205,8 @@ function quoteStateAt(c: string, idx: number): boolean {
   return false;
 }
 // 따옴표·백슬래시를 셸처럼 걷어낸 원문 — Crew API 주소 감추기 검사용. (`git "push"`·`su""do`·`pu\sh`·`$'push'`처럼 명령 이름을 꾸민 건 아래에서 hold)
+// %xx 풀기(여러 겹도) — 못 풀면 원문(그래도 원문 검사는 따로 함)
+const pctDecode = (t: string) => { let x = t; for (let i = 0; i < 3; i++) { try { const y = decodeURIComponent(x); if (y === x) break; x = y; } catch { break; } } return x; };
 const unquote = (raw: string) => raw.replace(/\$'/g, "'").replace(/\\(.)/g, "$1").replace(/["']/g, "");
 // 경로 인자가 worktree 밖(~·$·절대·..)인가
 const outside = (worktree: string, p: string) => /^~|\$/.test(p) || !inside(worktree, p);
@@ -210,23 +226,108 @@ function unsafeWrite(worktree: string, p: string): boolean {
   return false;
 }
 
+// #1279 인터넷 항목으로 자동 허락하는 curl·wget — 아는 옵션만(허용 목록). 모르는 옵션·따옴표로 꾸민 옵션(-"K")·파일 올리기(@)·
+//  밖·보호 경로 저장·받은 이름 그대로 저장(-O, 보호 파일 .mcp.json 등)이면 사람. 옵션을 쫓아 막는 방식은 리뷰마다 새 우회가 나와서 뒤집음.
+const CURL_FLAGS = /^-[sSLfiIkv]+$/;
+const CURL_VAL = new Set(["-X", "--request", "-H", "--header", "-d", "--data", "--data-raw", "--data-binary", "--json", "-w", "--write-out", "-o", "--output", "-m", "--max-time", "--connect-timeout", "--retry", "-u", "--user", "-A", "--user-agent", "--compressed"]);
+const WGET_FLAGS = new Set(["-q", "--quiet", "-nv", "--no-verbose", "-c", "--continue"]);
+const WGET_VAL = new Set(["-O", "--output-document", "-T", "--timeout", "-t", "--tries"]);
+// 따옴표 벗긴 원문에서 그 명령 뒤 인자들(다음 연결 기호 전까지). 한 줄에 같은 명령이 여러 번이면 전부 합쳐 봄(안전한 쪽)
+// 따옴표 밖의 ;|&() 앞뒤에 공백 — "a;b" 안은 그대로(안을 자르면 뒤 옵션이 검사에서 빠짐, 리뷰)
+function spaceOps(raw: string): string {
+  let out = "", q = "";
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (q === "$") { if (ch === "\\") { out += ch + (raw[i + 1] ?? ""); i++; continue; } if (ch === "'") q = ""; out += ch; continue; } // $'…' 안은 \'가 글자(리뷰)
+    if (ch === "\\" && q !== "'") { const n = raw[i + 1] ?? ""; out += !q && /[;|&()]/.test(n) ? "§" : ch + n; i++; continue; } // 따옴표 밖 \; = 글자 — unquote가 맨 ;로 바꾸지 않게(리뷰)
+    if (q) { if (ch === q) q = ""; out += ch; continue; }
+    if (ch === "$" && raw[i + 1] === "'") { q = "$"; out += "$'"; i++; continue; }
+    if (ch === "'" || ch === '"') { q = ch; out += ch; continue; }
+    out += /[;|&()]/.test(ch) && !(ch === "&" && /[<>]/.test(`${raw[i - 1] ?? ""}${raw[i + 1] ?? ""}`)) ? ` ${ch} ` : ch; // 2>&1·&> 의 &는 리다이렉트(리뷰)
+  }
+  return out;
+}
+// 따옴표 안·\ 뒤의 *?[{ → _ — 셸이 펼치지 않는 글자(grep "^lib/.*//" 정규식이 .* 점 이름 와일드카드로 걸림, 앱 확인)
+function globOff(raw: string): string {
+  let out = "", q = "";
+  const g = (ch: string) => (/[*?[{]/.test(ch) ? "_" : ch);
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (q === "$") { if (ch === "\\") { out += ch + g(raw[i + 1] ?? ""); i++; continue; } if (ch === "'") q = ""; out += g(ch); continue; }
+    if (ch === "\\" && q !== "'") { out += ch + g(raw[i + 1] ?? ""); i++; continue; }
+    if (q) { if (ch === q) q = ""; out += g(ch); continue; }
+    if (ch === "$" && raw[i + 1] === "'") { q = "$"; out += "$'"; i++; continue; }
+    if (ch === "'" || ch === '"') q = ch;
+    out += ch;
+  }
+  return out;
+}
+function rawArgs(raw: string, base: string): string[] {
+  const out: string[] = []; let on = false;
+  for (const t of unquote(spaceOps(raw)).split(/\s+/)) { // ls;curl·(curl 처럼 붙여 쓴 구분자도 끊음
+    if (/^(\||&&|\|\||;|&|\(|\))$/.test(t)) { on = false; continue; }
+    if (on) out.push(t);
+    else if (t.split("/").pop() === base) on = true;
+  }
+  return out;
+}
+function plainFetch(base: string, args: string[], worktree: string): boolean {
+  for (let i = 0; i < args.length; i++) {
+    let a = args[i], v: string | undefined;
+    if (!a.startsWith("-")) { if (base === "wget" && /\/\.[^/§]*$/.test(a)) return false; continue; } // 주소(따옴표 § 포함 가능). wget이 점 이름(.mcp.json)으로 저장하면 사람
+    if (a === "--compressed" || (base === "curl" ? CURL_FLAGS.test(a) : WGET_FLAGS.has(a))) continue;
+    const eq = a.indexOf("=");
+    if (a.startsWith("--") && eq > 0) { v = a.slice(eq + 1); a = a.slice(0, eq); }
+    const cl = base === "curl" ? /^-[sSLfiIkv]*([oXHdwmuA])(.*)$/.exec(a) : null; // 묶음·붙여 쓰기: -sSo out.json, -fsSLo x, -oout.json
+    if (cl) { a = `-${cl[1]}`; v = cl[2] || undefined; }
+    if (!(base === "curl" ? CURL_VAL : WGET_VAL).has(a)) return false;
+    if (v === undefined) v = args[++i];
+    if (v === undefined) return false;
+    if (/^(-d|--data|--data-raw|--data-binary|--json|-H|--header|-w|--write-out)$/.test(a) && v.startsWith("@")) return false; // 파일 읽어 올리기·헤더·출력(리뷰)
+    if (/^(-o|--output|-O|--output-document)$/.test(a)) { if (v !== "/dev/null" && v !== "-" && (v.includes("§") || unsafeWrite(worktree, v))) return false; }
+  }
+  return true;
+}
+
+// sed 스크립트 하나 — 출력(N,Mp·/re/,/re/p) 또는 치환(s/…/…/ 플래그 g·I·p·숫자만: w·e 없음). 따옴표 스크립트는 원문에 sed가 하나일 때 원문으로 확인
+const SED_ADDR = String.raw`(?:\d+|\$|/(?:\\[^\n]|[^/\n\\])*/)`;
+const SED_PRINT = new RegExp(`^${SED_ADDR}(,${SED_ADDR})?p$`);
+const SED_SUB = new RegExp(String.raw`^(?:${SED_ADDR}(?:,${SED_ADDR})?)?s([^\w\s\\])(?:\\[^\n]|(?!\1)[^\n\\])*\1(?:\\[^\n]|(?!\1)[^\n\\])*\1[gIp0-9]*$`); // 3s#a#b# 처럼 줄 지정도
+function sedOk(words: string[], raw: string, worktree: string): boolean {
+  const opts = words.slice(1).filter((a) => a.startsWith("-"));
+  if (opts.some((o) => !/^-[niEr]$/.test(o))) return false; // -i.bak·-f 파일·-e 여러 개 등은 사람
+  const inPlace = opts.includes("-i");
+  let rest = words.slice(1).filter((a) => !a.startsWith("-"));
+  if (inPlace && rest[0] === "§" && /\s-i\s+(''|"")(\s|$)/.test(raw)) rest = rest.slice(1); // BSD sed -i '' = 백업 없음
+  const [script, ...files] = rest;
+  const ok = (x: string) => SED_PRINT.test(x) || SED_SUB.test(x);
+  let scriptOk = false;
+  if (script === "§") {
+    // 원문의 sed 전부(경로 붙은 /usr/bin/sed 포함)를 하나씩 — 스크립트를 다 읽어 냈고 전부 안전할 때만(한 줄에 sed 여럿, 앱 확인)
+    const n = (raw.match(/(^|[^\w.-])sed\s/g) ?? []).length;
+    const ms = [...raw.matchAll(/(?:^|[^\w.-])sed\s+(?:(?:-[niEr]|''|"")\s+)*(?:(['"])((?:(?!\1)[^\n])*)\1|([^\s'"]+))(?=\s|$)/g)];
+    scriptOk = ms.length === n && ms.every((m) => (m[3] !== undefined ? !/\$[\w{]|`/.test(m[3]) && ok(m[3]) : !(m[1] === '"' && /[$`]/.test(m[2])) && ok(m[2]))); // "…" 안 $·` 는 펼쳐짐
+  } else if (script) scriptOk = !/\$[\w{]/.test(script) && ok(script);
+  if (!scriptOk || (inPlace && !files.length)) return false;
+  return files.every((f) => !/^-|§/.test(f) && (inPlace ? !unsafeWrite(worktree, f) : !outside(worktree, f)));
+}
 function bashDecision(raw0: string, worktree: string): Inner {
   const raw = raw0.replace(/\\\n/g, ""); // 줄 이어 쓰기(\ + 줄바꿈)는 bash가 지움 — 먼저 붙여서 판정(s\⏎ed → sed, 리뷰)
   // Mustard Crew API를 에이전트가 직접 부르기(권한 허락 등) = 차단 — 따옴표로 쪼개 감춰도(리뷰)
-  if (/\/api\/crew\b/.test(unquote(raw))) return "deny";
+  if (/\/api\/crew\b/.test(unquote(raw)) || /\/api\/crew\b/i.test(pctDecode(raw))) return "deny"; // %61pi·api%2Fcrew 같은 인코딩도(리뷰)
   if (/[^\S \t\n]|[\0-\x08\x0e-\x1f\x7f]/.test(raw)) return DENY_RE.test(raw) ? "deny" : "hold"; // CR·NBSP·전각 공백·NUL 등 제어 문자 — JS와 bash가 띄어쓰기로 보는 게 달라 판정이 어긋남(리뷰)
   const cmd = strip(raw);
   if (cmd === null) return DENY_RE.test(raw) ? "deny" : "hold"; // 명령 치환 등 — 실제로 실행되는 코드가 숨어 있음
   if (DENY_RE.test(cmd)) return "deny";
   if (shellSecret(raw, worktree)) return "hold"; // #1159 비밀 경로 읽기·복사·홈 통째 훑기(따옴표·옵션 값·상대 경로도) — 금지 판정 다음
-  const c = cmd.replace(/\d*>&\d+/g, " "); // 2>&1 같은 연결은 나누기 전에 걷어냄
-  if (/[(){}]/.test(c)) return "hold"; // 서브셸·그룹·함수
+  const c = cmd.replace(/\d*>&\d+/g, " ").replace(/@\{[\w.-]*\}/g, "@u"); // 2>&1 같은 연결은 나누기 전에 걷어냄. @{u}·HEAD@{1} = git 이름(그룹 아님)
+  if (/[{}]/.test(c)) return "hold"; // 그룹·함수 — {a,b} 펼치기가 인자 경로 검사를 비켜 감
   // 리다이렉트로 쓰기 — worktree 밖(~·$ 포함)이면 hold
   const outRedirect = [...c.matchAll(/(?:&?>{1,2}&?|>\|)\s*([^\s|&;]+)/g)].map((m) => m[1]); // >&파일 = 출력·에러를 파일로(리뷰)
   if (outRedirect.some((p) => p !== "/dev/null" && (p.includes("§") || unsafeWrite(worktree, p)))) return "hold"; // 따옴표 경로는 확인 불가
-  let res: Inner = "allow";
-  // 연결(&&, ||, ;, |, &, 줄바꿈) 단위로 나눠 각 부분 확인
-  for (const part of c.split(/&&|\|\||[;|&\n]/)) {
+  const cats: CrewPermCat[] = [];
+  // 연결(&&, ||, ;, |, &, 줄바꿈) 단위로 나눠 각 부분 확인. ( … ) 서브셸 괄호도 경계로 — 안의 명령을 하나씩 똑같이 봄(앱 확인: (flutter pub add … | tail)로 계속 멈춤)
+  for (const part of c.split(/&&|\|\||[;|&\n()]/)) {
     const all = part.trim().split(/\s+/).filter(Boolean);
     let i = 0;
     for (; i < all.length && /^\w+=/.test(all[i]); i++) if (!SAFE_ENV.test(all[i].slice(0, all[i].indexOf("=")))) return "hold";
@@ -234,23 +335,31 @@ function bashDecision(raw0: string, worktree: string): Inner {
     if (!w0) continue;
     if (!/^[\w./-]+$/.test(w0)) return "hold"; // 따옴표·변수·백슬래시로 꾸민 명령 이름(su""do → su§do)
     const base = w0.split("/").pop()!;
+    // gh 읽기(이슈·PR·실행 보기)는 인터넷 항목 — 앱 확인에서 크루가 gh issue list로 계속 멈춤. 쓰기(pr merge·create·api·auth token 등)는 그대로 사람
+    if (base === "gh" && GH_READ.test(`${words[1] ?? ""} ${words[2] ?? ""}`) && !words.some((a) => /^(--web(=|$)|-w$|-O|--pre|--exec|--output|--out-file)|(^|=)@/.test(a)) && !/(^|[\s=])@/.test(unquote(raw))) { cats.push("network"); continue; }
+    // sed는 -i·w·e로 파일을 쓰거나 실행해서 고정 사람 — 줄 범위 출력(-n 125,135p)·치환(s/a/b/g, -i 포함)만 통과(앱 확인에서 계속 멈춤)
+    if (base === "sed" && sedOk(words, raw, worktree)) continue;
     if (HOLD_CMD.has(base)) return "hold";
+    // #1279 인터넷 항목 = 아는 옵션만 쓴 curl·wget. 따옴표를 벗긴 원문 토큰으로 봄 — "-o"·"@file"처럼 따옴표로 감싼 옵션·값도(리뷰)
+    if ((base === "curl" || base === "wget") && !plainFetch(base, rawArgs(raw, base), worktree)) return "hold";
+    if (base === "env" && /(^|\s)(-[a-zA-Z]*C|--chdir)/.test(unquote(raw))) return "hold"; // 다른 폴더에서 실행(리뷰)
+    if (Object.hasOwn(CMD_CAT, base)) { cats.push(CMD_CAT[base]); continue; }
     const args = words.slice(1).filter((a) => !a.startsWith("-"));
     const writes = WRITERS.has(base), files = args;
     if (writes && files.some((a) => a.includes("§") || unsafeWrite(worktree, a))) return "hold"; // 따옴표 경로는 확인 불가 → 사람
     const dest = base === "cd" ? words.slice(1).find((a) => a !== "--" && !/^-[LPe@]+$/.test(a)) : undefined; // cd -P·cd -- = 목적지 없음 = 홈(리뷰)
-    if (base === "cd" && (!dest || dest === "-" || dest.includes("§") || outside(worktree, dest) || !under(realish(resolve(worktree, dest)), realish(worktree)))) return "hold"; // 링크 폴더로 cd(리뷰)
+    if (base === "cd" && (!dest || dest === "-" || dest.includes("§") || outside(worktree, dest) || !under(realish(resolve(worktree, dest)), realish(worktree)))) return "hold"; // 링크 폴더로 cd(리뷰). 다른 크루 폴더도 사람 — 뒤 상대 경로 쓰기·git이 남의 작업을 건드림(리뷰)
     if (base === "find" && words.some((a) => /^-(exec|execdir|ok|okdir|delete|fprint|fls)/.test(a))) return "hold"; // -fprint0·-fprintf·-fls = 파일로 씀
     // 다른 명령을 대신 실행하는 옵션 — 안전한 명령에 붙여 금지 명령을 돌림(git grep -O'sh -c "git push"', rg --pre, sort --compress-program, 리뷰)
     if (words.slice(1).some((a) => /^(-O|--open-files-in-pager|--pre(=|$)|--pre-glob|--compress-program|--exec|--command)/.test(a))) return "hold";
     // 인터프리터 — 인라인 코드(-e0·--eval=·--import·--require), 파이프·heredoc으로 받은 코드(스크립트 파일 없음)는 사람(리뷰)
     if (/^(node|bun|deno|python3?|tsx|ts-node)$/.test(base)) {
-      if (words.slice(1).some((a) => /^(-[epcr]|--eval|--print|--import|--require|--loader|--experimental-loader|eval$)/.test(a)) || /<</.test(part)) return "hold";
-      if (!args.length && !words.some((a) => /^(--test|--version|-v|-V|--help)$/.test(a))) return "hold";
+      if (words.slice(1).some((a) => /^(-[epcr]|--eval|--print|--import|--require|--loader|--experimental-loader|eval$)/.test(a)) || /<</.test(part)) { cats.push("code"); continue; }
+      if (!args.length && !words.some((a) => /^(--test|--version|-v|-V|--help)$/.test(a))) { cats.push("code"); continue; }
     }
-    if (base === "npx" && (!SAFE_NPX.has(words.find((a, k) => k > 0 && !a.startsWith("-")) ?? "") || words.some((a) => /^(-p|--package)/.test(a)))) return "hold";
-    if (/^(npm|pnpm|yarn|bun)$/.test(base) && /^(publish|exec|x|dlx|unpublish|login|adduser|token|owner|access|global)$/.test(words[1] ?? "")) return "hold";
-    if (/^(npm|pnpm|yarn|bun)$/.test(base) && words.some((a) => /^(-g|--global|--location=global)$/.test(a))) return "hold"; // 전역 설치 = 밖에 쓰기 + 설치 스크립트
+    if (base === "npx" && (!SAFE_NPX.has(words.find((a, k) => k > 0 && !a.startsWith("-")) ?? "") || words.some((a) => /^(-p|--package)/.test(a)))) { cats.push("code"); continue; }
+    if (/^(npm|pnpm|yarn|bun)$/.test(base) && /^(publish|exec|x|dlx|unpublish|login|adduser|token|owner|access|global)$/.test(words[1] ?? "")) { cats.push("publish"); continue; }
+    if (/^(npm|pnpm|yarn|bun)$/.test(base) && words.some((a) => /^(-g|--global|--location=global)$/.test(a))) { cats.push("publish"); continue; } // 전역 설치 = 밖에 쓰기 + 설치 스크립트
     // 결과를 파일로 쓰는 옵션(sort -o, git diff --output=, mv --target-directory= …) — 사람(리뷰)
     if (words.some((a) => /^(--output|--target-directory|--out-file)\b/.test(a)) || ((base === "sort" || base === "tree") && words.includes("-o")) || (base === "uniq" && args.length > 1)) return "hold";
     // sed 스크립트의 w(파일 쓰기)·e(실행) — 따옴표 안이라 원문에서 확인(리뷰)
@@ -263,17 +372,23 @@ function bashDecision(raw0: string, worktree: string): Inner {
       if (sub === "clean" && rest.some((a) => /^(-[a-zA-Z]*f|--force)$/.test(a))) return "deny";
       if ((sub === "checkout" || sub === "switch") && rest.some((a) => /^(main|master)$/.test(a))) return "deny";
       if (sub === "branch" && rest.some((a) => /^(-[a-zA-Z]*[dDfmMcC]|--(delete|force|move|copy))$/.test(a))) return "hold";
-      if (sub && !SAFE_GIT.has(sub)) res = "ask";
+      if (sub && !SAFE_GIT.has(sub)) cats.push("git");
       continue;
     }
-    if (!SAFE_CMD.has(base)) res = "ask";
+    if (!SAFE_CMD.has(base)) cats.push("unknownCmd");
   }
-  return res;
+  return cats.length ? cats : "allow";
 }
 
-export function decide(tool: string, input: Record<string, unknown>, worktree: string): Decision {
+// perms = 유저 설정(#1279, 항목마다 true = 알아서 허용). 기본 {} = 전부 묻기(예전과 같음).
+export function decide(tool: string, input: Record<string, unknown>, worktree: string, perms: CrewPerms = {}): Decision {
   const d = decideBase(tool, input, worktree);
-  return d === "hold" ? "ask" : d;
+  if (!Array.isArray(d)) return d === "hold" ? "ask" : d;
+  if (!d.every((c) => perms[c] === true)) return "ask"; // 한 명령이 여러 항목이면 전부 허용일 때만
+  // 항목 명령은 따옴표 안 명령을 못 봄(bash -c 'git push', npm exec -- sh -c …, ssh host "…") — 따옴표 벗긴 원문에 금지 명령이 보이면 사람(리뷰)
+  // 한계: 코드 실행(node -e 'gi'+'t push', 스크립트 파일)은 글자로 못 막음 — 진짜 막는 건 OS 샌드박스(#1157). 켜기 전부터 node x.js로 같은 일이 됐음.
+  if (DENY_RE.test(unquote(String(input.command ?? "")))) return "ask";
+  return "allow";
 }
 
 // #1137 Codex·OpenCode(SNA 승인 흐름) 요청 → 정책 입력. Codex는 shell 명령을 `/bin/zsh -lc '…'`로 감싸 보냄 → 벗겨서 Bash로 판정.
@@ -294,9 +409,10 @@ export function fromAgentRequest(req: Record<string, unknown>): { tool: string; 
 const patchPaths = (input: Record<string, unknown>) => [...String(input.patch ?? input.input ?? input.command ?? "").matchAll(/^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/gm)].map((m) => m[1].trim());
 
 function decideBase(tool: string, input: Record<string, unknown>, worktree: string): Inner {
-  if (tool === "WebFetch") return "hold"; // 밖으로 데이터를 실어 보낼 수 있음(?d=비밀) — 사람(리뷰)
+  if ((tool === "WebFetch" || tool.startsWith("mcp__")) && /\/api\/crew\b/i.test(pctDecode(unquote(JSON.stringify(input ?? {}))))) return "deny"; // Crew API는 HTTP를 보낼 수 있는 도구로도 금지(Bash는 bashDecision). 파일 읽기·수정은 경로에 api/crew가 있어도 됨(리뷰)
+  if (tool === "WebFetch") return ["network"]; // 밖으로 데이터를 실어 보낼 수 있음(?d=비밀) — 인터넷 항목(#1279, 기본 묻기)
   // 사용자 MCP — 서버까지 맞춘 알려진 읽기 도구만 자동, 나머지는 사람. 이름 단어로 읽기·쓰기를 가르는 건 매번 빠짐(리뷰: query_sql·fetch_url·eval_code)
-  if (tool.startsWith("mcp__")) return MCP_READ_NAMES.test(tool) ? "allow" : "hold";
+  if (tool.startsWith("mcp__")) return MCP_READ_NAMES.test(tool) ? "allow" : ["mcp"]; // #1279 다른 MCP 항목(기본 묻기)
   if (toolSecret(tool, input, worktree)) return "hold"; // #1159 경로 있는 읽기 — 비밀·홈 통째면 사람(링크·상대 경로·대소문자도)
   if (READ_TOOLS.has(tool)) return "allow";
   if (EDIT_TOOLS.has(tool)) {

@@ -20,6 +20,7 @@ export const SETTINGS_SEARCH: Record<string, SearchItem[]> = {
   "set-catchup": [["settings.catchupEnabled", "settings.catchupEnabledDesc"], ["settings.catchupExplain", "settings.catchupExplainDesc"], ["settings.catchupCommands", "settings.catchupCommandsDesc"], ["settings.catchupDiff", "settings.catchupDiffDesc"],
     ["settings.catchupSessions", "settings.catchupSessionsDesc"], ["settings.catchupTerms", "settings.catchupTermsDesc"], ["settings.catchupChat", "settings.catchupChatDesc"], "settings.catchupChatCards"],
   "set-integrations": [{ text: "GitHub" }, ["settings.ghPat", "settings.ghPatHint"], ["settings.prReviewAi", "settings.prReviewAiDesc"], { text: "Linear" }, { text: "Jira" }, ["trackers.syncTitle", "trackers.syncHint"]],
+  "set-crew": [["crewPerm.section", "crewPerm.desc"], ["crewPerm.unknownCmd", "crewPerm.unknownCmdDesc"], ["crewPerm.git", "crewPerm.gitDesc"], ["crewPerm.code", "crewPerm.codeDesc"], ["crewPerm.network", "crewPerm.networkDesc"], ["crewPerm.system", "crewPerm.systemDesc"], ["crewPerm.publish", "crewPerm.publishDesc"], ["crewPerm.mcp", "crewPerm.mcpDesc"]], // #1279
   "set-computer": [["computer.enable", "computer.enableHint"], ["computer.stopKey", "computer.stopKeyHint"], "computer.perm.accessibility", "computer.perm.screen", ["computer.blocked", "computer.blockedHint"], "computer.log"],
   "set-nunopi": ["settings.nunopiModule", ["settings.learnProviders", "settings.learnProvidersHint"], ["settings.cardFlyAnimation", "settings.cardFlyAnimationDesc"], ["settings.exclude", "settings.excludeHint"]],
 };

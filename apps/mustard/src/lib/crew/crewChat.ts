@@ -1,7 +1,7 @@
 // Crew 팀 채팅(#1104, 에픽 #1097) — 레포별 채널. 역할 에이전트·보드·사람의 메시지를 시간순으로. 서버 전용.
 // 저장 = ~/.nunopi/crew/<sha(root)>/chat.jsonl (한 줄 = 메시지, append). 동기 함수(같은 프로세스 안 경합 없음).
 import { createHash, randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
@@ -23,6 +23,20 @@ const normPath = (p: string) => p.replace(/\/+$/, "");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 32);
 const baseDir = () => process.env.MUSTARD_CREW_DIR || join(homedir(), ".nunopi", "crew");
 export const chatFile = (root: string) => join(baseDir(), sha(normPath(root)), "chat.jsonl");
+// 팀 지침 — 사람이 대화방에서 준 지침·지적(카드 아님). 이후 모든 실행 프롬프트에 붙음. 최근 30개만.
+//  한계: 화면에서 보거나 지우는 곳은 아직 없음 — 파일(guidelines.json)을 지우면 초기화.
+const guideFile = (root: string) => join(baseDir(), sha(normPath(root)), "guidelines.json");
+export function readGuidelines(root: string): string[] {
+  try { const v = JSON.parse(readFileSync(guideFile(root), "utf8")); return Array.isArray(v) ? v.filter((x) => typeof x === "string") : []; } catch { return []; }
+}
+export function addGuideline(root: string, text: string): string[] {
+  const t = text.trim().slice(0, 1500);
+  const list = t ? [...readGuidelines(root).filter((x) => x !== t), t].slice(-30) : readGuidelines(root);
+  const f = guideFile(root);
+  mkdirSync(dirname(f), { recursive: true });
+  writeFileSync(f, JSON.stringify(list, null, 1));
+  return list;
+}
 const KINDS = new Set<ChatKind>(["start", "handoff", "question", "permission", "gate", "blocked", "human", "decision", "answer", "meeting"]);
 
 export function appendMsg(root: string, m: Omit<CrewMsg, "id" | "ts"> & { ts?: number }): CrewMsg {

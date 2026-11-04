@@ -1,7 +1,7 @@
 // crewChat 점검 — MUSTARD_CREW_DIR=<임시> node --experimental-strip-types src/lib/crew/crewChat.check.ts
 import assert from "node:assert";
 import { appendFileSync } from "node:fs";
-import { appendMsg, chatFile, findMsg, parseMentions, readMsgs } from "./crewChat.ts";
+import { addGuideline, appendMsg, chatFile, findMsg, parseMentions, readGuidelines, readMsgs } from "./crewChat.ts";
 
 assert.ok(process.env.MUSTARD_CREW_DIR, "임시 디렉터리 필수");
 const root = "/tmp/repo-chat";
@@ -20,4 +20,11 @@ assert.strictEqual(appendMsg(root, { from: "board", kind: "gate", text: "x".repe
 const known = new Set(["app-builder", "test-engineer", "bug-fixer"]);
 assert.deepStrictEqual(parseMentions("@app-builder 하고 @Test-Engineer, @nobody @app-builder", known), ["app-builder", "test-engineer"]);
 assert.deepStrictEqual(parseMentions("메일 a@b.com", known), []);
+// 팀 지침 — 같은 글은 한 번, 최근 30개, 빈 글 무시
+assert.deepStrictEqual(readGuidelines("/g"), []);
+addGuideline("/g", "커밋은 일본어"); addGuideline("/g", "  "); addGuideline("/g", "커밋은 일본어");
+assert.deepStrictEqual(readGuidelines("/g"), ["커밋은 일본어"]);
+for (let i = 0; i < 35; i++) addGuideline("/g", `g${i}`);
+assert.strictEqual(readGuidelines("/g").length, 30);
+assert.strictEqual(readGuidelines("/g").at(-1), "g34");
 console.log("crewChat.check ok");
