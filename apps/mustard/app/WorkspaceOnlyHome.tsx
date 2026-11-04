@@ -13,7 +13,7 @@ import GlobalCommandPalette from "@/components/ui/GlobalCommandPalette";
 import { isNunopiEnabled, setNunopiEnabled } from "@/lib/product";
 import WorkspaceTabs, { type WorkspaceTabsHandle } from "@/components/workspace/WorkspaceTabs";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
-import { type ThemeId, applyTheme, getStoredTheme, setStoredTheme } from "@mustard/core";
+import { type ThemeId, DEFAULT_THEME, applyTheme, getStoredTheme, setStoredTheme } from "@mustard/core";
 import { applyStoredAppearance } from "@mustard/core";
 
 const SETTINGS_STORAGE_KEY = "nunopi:provider-settings";
@@ -26,7 +26,7 @@ export default function WorkspaceOnlyHome() {
   const wsRef = useRef<WorkspaceTabsHandle>(null);
 
   // 테마(#914 멀티) — 학습 홈과 동일 키·동작.
-  const [theme, setTheme] = useState<ThemeId>("dark");
+  const [theme, setTheme] = useState<ThemeId>(DEFAULT_THEME);
   useEffect(() => {
     const t = getStoredTheme();
     // eslint-disable-next-line react-hooks/set-state-in-effect
