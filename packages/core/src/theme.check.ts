@@ -2,7 +2,7 @@
 // 테마 하나 추가할 때 빠뜨리기 쉬운 곳(CSS 블록·견본·이름·깜빡임 방지 목록)과 글자 대비를 본다.
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
-import { THEMES, DARK_THEME_IDS } from "./theme.ts";
+import { THEMES, DARK_THEME_IDS, DEFAULT_THEME } from "./theme.ts";
 
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 const css = read("./styles/themes.css");
@@ -19,7 +19,10 @@ const contrast = (a: string, b: string) => {
   return (x + 0.05) / (y + 0.05);
 };
 
+// 테마 이름은 고유명사라 모든 언어에서 영어 그대로(#1283 유저 결정).
+const label = (k: string) => [...msgs.matchAll(new RegExp(`"${k.replace(".", "\\.")}": "([^"]*)"`, "g"))].map((m) => m[1]);
 for (const t of THEMES) {
+  assert.ok(label(t.labelKey).every((x) => /^[\x20-\x7eé]+$/.test(x)), `${t.id}: 이름은 영어로`);
   assert.strictEqual(msgs.split(`"${t.labelKey}":`).length - 1, 3, `${t.id}: 이름이 3개 언어에 다 있어야`);
   assert.ok(new RegExp(`^\\s+"?${t.id}"?: \\{ bg: "#`, "m").test(drawer), `${t.id}: 견본 색`);
   if (t.id === "dark" || t.id === "light") continue; // 기본 두 팔레트는 globals.css 기본값
@@ -47,6 +50,7 @@ for (const t of THEMES) {
 for (const p of ["../../../apps/mustard/app/layout.tsx", "../../../apps/nunopi/app/layout.tsx"]) {
   const list = read(p).match(/var dark=\[([^\]]*)\]/)?.[1];
   assert.ok(list, `${p}: 다크 목록`);
+  assert.ok(read(p).includes(`if(!t)t='${DEFAULT_THEME}'`), `${p}: 기본 테마가 DEFAULT_THEME와 달라`);
   assert.deepStrictEqual(list.split(",").map((s) => s.replace(/'/g, "").trim()).sort(), [...DARK_THEME_IDS].sort(), `${p}: 다크 목록이 THEMES와 달라`);
 }
 console.log(`theme ok (${THEMES.length})`);

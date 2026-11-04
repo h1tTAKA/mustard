@@ -4,6 +4,8 @@
 // Dark/Light는 기존 두 팔레트라 CSS 블록 없이 .dark 유무로만 갈린다.
 
 export type ThemeId =
+  | "mustard"
+  | "mustard-light"
   | "dark"
   | "light"
   | "sepia"
@@ -34,6 +36,9 @@ export interface ThemeMeta {
 
 // 피커·검증에 쓰는 순서 있는 목록.
 export const THEMES: ThemeMeta[] = [
+  // #1283 Mustard 고유 테마(기본) — 로고 먹색·골드 기반.
+  { id: "mustard", labelKey: "theme.mustard", base: "dark" },
+  { id: "mustard-light", labelKey: "theme.mustardLight", base: "light" },
   { id: "dark", labelKey: "theme.dark", base: "dark" },
   { id: "light", labelKey: "theme.light", base: "light" },
   { id: "sepia", labelKey: "theme.sepia", base: "light" },
@@ -59,6 +64,9 @@ export const THEMES: ThemeMeta[] = [
 // 깜빡임 방지 스크립트용 다크 테마 id(#1283 — 손으로 적던 목록이 THEMES와 어긋나지 않게).
 export const DARK_THEME_IDS: ThemeId[] = THEMES.filter((t) => t.base === "dark").map((t) => t.id);
 
+// 저장된 테마가 없을 때(#1283 — dark → mustard).
+export const DEFAULT_THEME: ThemeId = "mustard";
+
 export function isThemeId(v: string | null | undefined): v is ThemeId {
   return !!v && THEMES.some((t) => t.id === v);
 }
@@ -82,7 +90,7 @@ export function getStoredTheme(): ThemeId {
   } catch {
     /* ignore */
   }
-  return "dark";
+  return DEFAULT_THEME;
 }
 
 export function setStoredTheme(id: ThemeId): void {
@@ -127,4 +135,4 @@ export function isTerminalDark(pref: TerminalThemePref): boolean {
 // 하이드레이션 전에 저장된 테마를 <html>에 반영 — 깜빡임 없음.
 export const THEME_BOOT_SCRIPT = `(function(){try{var t=localStorage.getItem(${JSON.stringify(
   THEME_KEY,
-)});var dark=${JSON.stringify(DARK_THEME_IDS)};var e=document.documentElement;if(t){e.setAttribute("data-theme",t);e.classList.toggle("dark",dark.indexOf(t)>=0);}else{e.setAttribute("data-theme","dark");e.classList.add("dark");}}catch(_){}})();`;
+)});var dark=${JSON.stringify(DARK_THEME_IDS)};var e=document.documentElement;if(t){e.setAttribute("data-theme",t);e.classList.toggle("dark",dark.indexOf(t)>=0);}else{e.setAttribute("data-theme",${JSON.stringify(DEFAULT_THEME)});e.classList.add("dark");}}catch(_){}})();`;

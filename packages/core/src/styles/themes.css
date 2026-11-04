@@ -340,3 +340,39 @@
   --color-zinc-800: #32383f;
   --color-zinc-900: #1f2328;
 }
+
+/* ── Mustard (base dark, 기본) — 로고 먹색(#0b0b0d·#1c1c22) 바탕 + 무채색 단계, 층 사이는 부드럽게.
+   강조는 머스타드 골드(브랜드 토큰) 그대로. ── */
+:root[data-theme="mustard"] {
+  --background: #0b0b0d;
+  --foreground: #ededea;
+  --ink: #141417;
+  --ink2: #111113;
+  --s-pane: #0e0e10; --s-bar: #1c1c22; --s-raise: #17171b; --s-menu: #1c1c22;
+  --color-zinc-950: #0b0b0d;   /* 로고 먹색 */
+  --color-zinc-900: #141417;
+  --color-zinc-800: #1c1c22;   /* 로고 먹색 2 */
+  --color-zinc-700: #2a2a31;
+  --color-zinc-600: #3c3c44;
+  --color-zinc-500: #7a7a84;
+  --color-zinc-400: #a9a9b0;
+  --color-zinc-300: #d4d4d8;
+  --color-zinc-200: #ededea;
+}
+
+/* ── Mustard Light (base light) — 따뜻한 흰 종이 + 로고 먹색 글자. ── */
+:root[data-theme="mustard-light"] {
+  --background: #faf9f6;
+  --foreground: #1c1c22;
+  --color-white: #ffffff;
+  --color-zinc-50: #f6f5f1;
+  --color-zinc-100: #efede7;
+  --color-zinc-200: #e3e0d8;
+  --color-zinc-300: #ccc8bd;
+  --color-zinc-400: #8e8a80;
+  --color-zinc-500: #6c6960;
+  --color-zinc-600: #4f4c46;
+  --color-zinc-700: #34333a;
+  --color-zinc-800: #24242a;
+  --color-zinc-900: #1c1c22;   /* 로고 먹색 */
+}

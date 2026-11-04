@@ -24,7 +24,7 @@ import { HistoryView } from "@mustard/nunopi";
 import WorkspaceTabs, { type WorkspaceTabsHandle } from "@/components/workspace/WorkspaceTabs";
 import type { HistoryNav } from "@mustard/nunopi";
 import { type ViewMode, VIEW_MODE_KEY } from "@mustard/core";
-import { type ThemeId, applyTheme, getStoredTheme, setStoredTheme } from "@mustard/core";
+import { type ThemeId, DEFAULT_THEME, applyTheme, getStoredTheme, setStoredTheme } from "@mustard/core";
 import { applyStoredAppearance } from "@mustard/core";
 import { deckStats } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
@@ -45,7 +45,7 @@ export default function LearningHome() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // 테마(#914 멀티) — data-theme + .dark(base)로 팔레트 재색조. Monaco/Shiki는 .dark MutationObserver로 반응.
-  const [theme, setTheme] = useState<ThemeId>("dark");
+  const [theme, setTheme] = useState<ThemeId>(DEFAULT_THEME);
   useEffect(() => {
     const t = getStoredTheme();
     // eslint-disable-next-line react-hooks/set-state-in-effect
