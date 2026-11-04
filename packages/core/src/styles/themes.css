@@ -159,7 +159,7 @@
   --color-zinc-800: #24283b;
   --color-zinc-700: #2f3549;
   --color-zinc-600: #414868;
-  --color-zinc-500: #565f89;   /* comment */
+  --color-zinc-500: #737aa2;   /* dark5 */
   --color-zinc-400: #9aa5ce;
   --color-zinc-300: #a9b1d6;
   --color-zinc-200: #c0caf5;
@@ -264,7 +264,7 @@
   --color-zinc-800: #2c313a;
   --color-zinc-700: #3e4451;
   --color-zinc-600: #4b5263;
-  --color-zinc-500: #5c6370;   /* comment */
+  --color-zinc-500: #7f848e;   /* muted text */
   --color-zinc-400: #9da5b4;
   --color-zinc-300: #abb2bf;   /* fg */
   --color-zinc-200: #d7dae0;

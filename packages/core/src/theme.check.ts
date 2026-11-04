@@ -34,6 +34,10 @@ for (const t of THEMES) {
   const [panel, body, faint] = t.base === "light" ? [v("color-white"), v("color-zinc-700"), v("color-zinc-500")] : [v("color-zinc-900"), v("color-zinc-300"), v("color-zinc-400")];
   assert.ok(contrast(panel, body) >= 4.5, `${t.id}: 본문 대비 ${contrast(panel, body).toFixed(2)}`);
   assert.ok(contrast(panel, faint) >= 3, `${t.id}: 흐린 글자 대비 ${contrast(panel, faint).toFixed(2)}`);
+  // 더 흐린 글자(라이트 zinc-400·다크 zinc-500)도 글자로 많이 씀 → ≥ 3.
+  // 한계: solarized 두 테마는 원래 값(라이트 base1 2.58·다크 2.99)이라 예외(#914 그대로).
+  const fainter = t.base === "light" ? v("color-zinc-400") : v("color-zinc-500");
+  if (!t.id.startsWith("solarized-")) assert.ok(contrast(panel, fainter) >= 3, `${t.id}: 더 흐린 글자 대비 ${contrast(panel, fainter).toFixed(2)}`);
   assert.ok(contrast(v("background"), v("foreground")) >= 4.5, `${t.id}: 배경·글자 대비`);
 }
 
