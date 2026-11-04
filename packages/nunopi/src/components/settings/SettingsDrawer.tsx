@@ -33,6 +33,18 @@ const THEME_SWATCH: Record<ThemeId, { bg: string; dot: string }> = {
   nord: { bg: "#2e3440", dot: "#88c0d0" },
   "solarized-light": { bg: "#fdf6e3", dot: "#b58900" },
   "solarized-dark": { bg: "#002b36", dot: "#2aa198" },
+  dracula: { bg: "#282a36", dot: "#bd93f9" },
+  "tokyo-night": { bg: "#1a1b26", dot: "#7aa2f7" },
+  "tokyo-night-light": { bg: "#d5d6db", dot: "#34548a" },
+  "catppuccin-mocha": { bg: "#1e1e2e", dot: "#cba6f7" },
+  "catppuccin-latte": { bg: "#eff1f5", dot: "#8839ef" },
+  "gruvbox-dark": { bg: "#282828", dot: "#fabd2f" },
+  "gruvbox-light": { bg: "#fbf1c7", dot: "#b57614" },
+  "one-dark": { bg: "#282c34", dot: "#61afef" },
+  monokai: { bg: "#272822", dot: "#a6e22e" },
+  "rose-pine": { bg: "#191724", dot: "#ebbcba" },
+  "github-dark": { bg: "#0d1117", dot: "#2f81f7" },
+  "github-light": { bg: "#ffffff", dot: "#0969da" },
 };
 interface SettingsDrawerProps {
   isOpen: boolean;

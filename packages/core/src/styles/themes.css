@@ -126,3 +126,217 @@
   --color-zinc-300: #a8b3b3;
   --color-zinc-200: #c3cbcb;
 }
+
+/* ── #1283 공개 팔레트 인기 테마 — 위와 같은 방식(회색 단계·배경·글자만 재색조). ── */
+
+/* Dracula (base dark) — 공식 Background #282a36 / Current Line #44475a / Comment #6272a4. */
+:root[data-theme="dracula"] {
+  --background: #21222c;
+  --foreground: #f8f8f2;
+  --ink: #282a36;
+  --ink2: #252631;
+  --s-pane: #22232d; --s-bar: #343746; --s-raise: #2b2d3a; --s-menu: #343746;
+  --color-zinc-950: #1b1c24;
+  --color-zinc-900: #282a36;   /* background */
+  --color-zinc-800: #343746;
+  --color-zinc-700: #44475a;   /* current line */
+  --color-zinc-600: #565a73;
+  --color-zinc-500: #6272a4;   /* comment */
+  --color-zinc-400: #a9aecb;
+  --color-zinc-300: #d6d8e6;
+  --color-zinc-200: #f8f8f2;   /* foreground */
+}
+
+/* Tokyo Night (base dark) — bg #1a1b26 / storm #24283b / fg #c0caf5. */
+:root[data-theme="tokyo-night"] {
+  --background: #16161e;
+  --foreground: #c0caf5;
+  --ink: #1a1b26;
+  --ink2: #181922;
+  --s-pane: #16161e; --s-bar: #24283b; --s-raise: #1f2335; --s-menu: #24283b;
+  --color-zinc-950: #101014;
+  --color-zinc-900: #1a1b26;
+  --color-zinc-800: #24283b;
+  --color-zinc-700: #2f3549;
+  --color-zinc-600: #414868;
+  --color-zinc-500: #565f89;   /* comment */
+  --color-zinc-400: #9aa5ce;
+  --color-zinc-300: #a9b1d6;
+  --color-zinc-200: #c0caf5;
+}
+
+/* Tokyo Night Light (base light) — bg #d5d6db / fg #343b58. */
+:root[data-theme="tokyo-night-light"] {
+  --background: #d5d6db;
+  --foreground: #343b58;
+  --color-white: #e6e7ed;
+  --color-zinc-50: #dcdde3;
+  --color-zinc-100: #cbccd3;
+  --color-zinc-200: #b8bac4;
+  --color-zinc-300: #a1a4b2;
+  --color-zinc-400: #7e8296;
+  --color-zinc-500: #646882;
+  --color-zinc-600: #4c5170;
+  --color-zinc-700: #343b58;
+  --color-zinc-800: #2a2f47;
+  --color-zinc-900: #1f2335;
+}
+
+/* Catppuccin Mocha (base dark) — crust/mantle/base/surface/overlay/subtext/text. */
+:root[data-theme="catppuccin-mocha"] {
+  --background: #181825;
+  --foreground: #cdd6f4;
+  --ink: #1e1e2e;
+  --ink2: #1b1b29;
+  --s-pane: #181825; --s-bar: #2a2b3c; --s-raise: #232334; --s-menu: #2a2b3c;
+  --color-zinc-950: #11111b;   /* crust */
+  --color-zinc-900: #1e1e2e;   /* base */
+  --color-zinc-800: #313244;   /* surface0 */
+  --color-zinc-700: #45475a;   /* surface1 */
+  --color-zinc-600: #585b70;   /* surface2 */
+  --color-zinc-500: #7f849c;   /* overlay1 */
+  --color-zinc-400: #a6adc8;   /* subtext0 */
+  --color-zinc-300: #bac2de;   /* subtext1 */
+  --color-zinc-200: #cdd6f4;   /* text */
+}
+
+/* Catppuccin Latte (base light) — base #eff1f5 / text #4c4f69. */
+:root[data-theme="catppuccin-latte"] {
+  --background: #eff1f5;
+  --foreground: #4c4f69;
+  --color-white: #f7f8fb;
+  --color-zinc-50: #e6e9ef;    /* mantle */
+  --color-zinc-100: #dce0e8;   /* crust */
+  --color-zinc-200: #ccd0da;   /* surface0 */
+  --color-zinc-300: #bcc0cc;   /* surface1 */
+  --color-zinc-400: #8c8fa1;   /* overlay1 */
+  --color-zinc-500: #6c6f85;   /* subtext0 */
+  --color-zinc-600: #5c5f77;   /* subtext1 */
+  --color-zinc-700: #4c4f69;   /* text */
+  --color-zinc-800: #3c3f55;
+  --color-zinc-900: #2c2e40;
+}
+
+/* Gruvbox Dark (base dark) — bg0_h #1d2021 / bg0 #282828 / fg1 #ebdbb2. */
+:root[data-theme="gruvbox-dark"] {
+  --background: #1d2021;
+  --foreground: #ebdbb2;
+  --ink: #282828;
+  --ink2: #252525;
+  --s-pane: #1d2021; --s-bar: #32302f; --s-raise: #2a2827; --s-menu: #32302f;
+  --color-zinc-950: #141617;
+  --color-zinc-900: #282828;   /* bg0 */
+  --color-zinc-800: #3c3836;   /* bg1 */
+  --color-zinc-700: #504945;   /* bg2 */
+  --color-zinc-600: #665c54;   /* bg3 */
+  --color-zinc-500: #928374;   /* gray */
+  --color-zinc-400: #bdae93;   /* fg3 */
+  --color-zinc-300: #d5c4a1;   /* fg2 */
+  --color-zinc-200: #ebdbb2;   /* fg1 */
+}
+
+/* Gruvbox Light (base light) — bg0 #fbf1c7 / fg1 #3c3836. */
+:root[data-theme="gruvbox-light"] {
+  --background: #fbf1c7;
+  --foreground: #3c3836;
+  --color-white: #f9f5d7;      /* bg0_h */
+  --color-zinc-50: #f2e5bc;    /* bg0_s */
+  --color-zinc-100: #ebdbb2;   /* bg1 */
+  --color-zinc-200: #d5c4a1;   /* bg2 */
+  --color-zinc-300: #bdae93;   /* bg3 */
+  --color-zinc-400: #928374;   /* gray */
+  --color-zinc-500: #7c6f64;   /* fg4 */
+  --color-zinc-600: #665c54;   /* fg3 */
+  --color-zinc-700: #3c3836;   /* fg1 */
+  --color-zinc-800: #32302f;
+  --color-zinc-900: #282828;   /* fg0 */
+}
+
+/* One Dark (base dark) — bg #282c34 / fg #abb2bf. */
+:root[data-theme="one-dark"] {
+  --background: #21252b;
+  --foreground: #d7dae0;
+  --ink: #282c34;
+  --ink2: #252930;
+  --s-pane: #21252b; --s-bar: #2c313a; --s-raise: #262a31; --s-menu: #2c313a;
+  --color-zinc-950: #1b1e23;
+  --color-zinc-900: #282c34;
+  --color-zinc-800: #2c313a;
+  --color-zinc-700: #3e4451;
+  --color-zinc-600: #4b5263;
+  --color-zinc-500: #5c6370;   /* comment */
+  --color-zinc-400: #9da5b4;
+  --color-zinc-300: #abb2bf;   /* fg */
+  --color-zinc-200: #d7dae0;
+}
+
+/* Monokai (base dark) — bg #272822 / fg #f8f8f2 / comment #75715e. */
+:root[data-theme="monokai"] {
+  --background: #1e1f1c;
+  --foreground: #f8f8f2;
+  --ink: #272822;
+  --ink2: #23241f;
+  --s-pane: #1e1f1c; --s-bar: #34352d; --s-raise: #2d2e27; --s-menu: #34352d;
+  --color-zinc-950: #181915;
+  --color-zinc-900: #272822;
+  --color-zinc-800: #3e3d32;
+  --color-zinc-700: #49483e;
+  --color-zinc-600: #5b5a4e;
+  --color-zinc-500: #75715e;   /* comment */
+  --color-zinc-400: #b0ad9a;
+  --color-zinc-300: #cfcfc2;
+  --color-zinc-200: #f8f8f2;
+}
+
+/* Rosé Pine (base dark) — base #191724 / surface #1f1d2e / text #e0def4. */
+:root[data-theme="rose-pine"] {
+  --background: #191724;
+  --foreground: #e0def4;
+  --ink: #1f1d2e;
+  --ink2: #1c1a29;
+  --s-pane: #191724; --s-bar: #26233a; --s-raise: #21202e; --s-menu: #26233a;
+  --color-zinc-950: #12101b;
+  --color-zinc-900: #1f1d2e;   /* surface */
+  --color-zinc-800: #26233a;   /* overlay */
+  --color-zinc-700: #403d52;   /* highlight med */
+  --color-zinc-600: #524f67;   /* highlight high */
+  --color-zinc-500: #6e6a86;   /* muted */
+  --color-zinc-400: #908caa;   /* subtle */
+  --color-zinc-300: #c7c4dd;
+  --color-zinc-200: #e0def4;   /* text */
+}
+
+/* GitHub Dark (base dark) — canvas #0d1117 / subtle #161b22 / border #30363d. */
+:root[data-theme="github-dark"] {
+  --background: #0d1117;
+  --foreground: #e6edf3;
+  --ink: #161b22;
+  --ink2: #12171e;
+  --s-pane: #0d1117; --s-bar: #1c2128; --s-raise: #161b22; --s-menu: #1c2128;
+  --color-zinc-950: #010409;
+  --color-zinc-900: #161b22;
+  --color-zinc-800: #21262d;
+  --color-zinc-700: #30363d;   /* border */
+  --color-zinc-600: #484f58;
+  --color-zinc-500: #6e7681;
+  --color-zinc-400: #8b949e;   /* muted fg */
+  --color-zinc-300: #c9d1d9;
+  --color-zinc-200: #e6edf3;
+}
+
+/* GitHub Light (base light) — canvas #ffffff / subtle #f6f8fa / fg #1f2328. */
+:root[data-theme="github-light"] {
+  --background: #ffffff;
+  --foreground: #1f2328;
+  --color-white: #ffffff;
+  --color-zinc-50: #f6f8fa;
+  --color-zinc-100: #eaeef2;
+  --color-zinc-200: #d0d7de;   /* border */
+  --color-zinc-300: #afb8c1;
+  --color-zinc-400: #8c959f;
+  --color-zinc-500: #6e7781;
+  --color-zinc-600: #57606a;
+  --color-zinc-700: #424a53;
+  --color-zinc-800: #32383f;
+  --color-zinc-900: #1f2328;
+}

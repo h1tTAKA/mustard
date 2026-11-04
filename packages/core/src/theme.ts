@@ -10,7 +10,19 @@ export type ThemeId =
   | "midnight"
   | "nord"
   | "solarized-light"
-  | "solarized-dark";
+  | "solarized-dark"
+  | "dracula"
+  | "tokyo-night"
+  | "tokyo-night-light"
+  | "catppuccin-mocha"
+  | "catppuccin-latte"
+  | "gruvbox-dark"
+  | "gruvbox-light"
+  | "one-dark"
+  | "monokai"
+  | "rose-pine"
+  | "github-dark"
+  | "github-light";
 
 export const THEME_KEY = "nunopi:theme";
 
@@ -29,7 +41,23 @@ export const THEMES: ThemeMeta[] = [
   { id: "nord", labelKey: "theme.nord", base: "dark" },
   { id: "solarized-light", labelKey: "theme.solarizedLight", base: "light" },
   { id: "solarized-dark", labelKey: "theme.solarizedDark", base: "dark" },
+  // #1283 공개 팔레트 인기 테마 — 회색 단계만 재색조, 브랜드 액센트(머스타드)는 그대로.
+  { id: "dracula", labelKey: "theme.dracula", base: "dark" },
+  { id: "tokyo-night", labelKey: "theme.tokyoNight", base: "dark" },
+  { id: "tokyo-night-light", labelKey: "theme.tokyoNightLight", base: "light" },
+  { id: "catppuccin-mocha", labelKey: "theme.catppuccinMocha", base: "dark" },
+  { id: "catppuccin-latte", labelKey: "theme.catppuccinLatte", base: "light" },
+  { id: "gruvbox-dark", labelKey: "theme.gruvboxDark", base: "dark" },
+  { id: "gruvbox-light", labelKey: "theme.gruvboxLight", base: "light" },
+  { id: "one-dark", labelKey: "theme.oneDark", base: "dark" },
+  { id: "monokai", labelKey: "theme.monokai", base: "dark" },
+  { id: "rose-pine", labelKey: "theme.rosePine", base: "dark" },
+  { id: "github-dark", labelKey: "theme.githubDark", base: "dark" },
+  { id: "github-light", labelKey: "theme.githubLight", base: "light" },
 ];
+
+// 깜빡임 방지 스크립트용 다크 테마 id(#1283 — 손으로 적던 목록이 THEMES와 어긋나지 않게).
+export const DARK_THEME_IDS: ThemeId[] = THEMES.filter((t) => t.base === "dark").map((t) => t.id);
 
 export function isThemeId(v: string | null | undefined): v is ThemeId {
   return !!v && THEMES.some((t) => t.id === v);
@@ -99,4 +127,4 @@ export function isTerminalDark(pref: TerminalThemePref): boolean {
 // 하이드레이션 전에 저장된 테마를 <html>에 반영 — 깜빡임 없음.
 export const THEME_BOOT_SCRIPT = `(function(){try{var t=localStorage.getItem(${JSON.stringify(
   THEME_KEY,
-)});var dark=["dark","midnight","nord","solarized-dark"];var e=document.documentElement;if(t){e.setAttribute("data-theme",t);e.classList.toggle("dark",dark.indexOf(t)>=0);}else{e.setAttribute("data-theme","dark");e.classList.add("dark");}}catch(_){}})();`;
+)});var dark=${JSON.stringify(DARK_THEME_IDS)};var e=document.documentElement;if(t){e.setAttribute("data-theme",t);e.classList.toggle("dark",dark.indexOf(t)>=0);}else{e.setAttribute("data-theme","dark");e.classList.add("dark");}}catch(_){}})();`;
