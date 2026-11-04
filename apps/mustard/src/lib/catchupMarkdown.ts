@@ -18,13 +18,23 @@ export function diffCardMarkdown(o: { path: string; hash: string; branch: string
 
 // 세션 카드 — 요약 + 원본 대화 전체(복사는 상한 없음, 에이전트 공유와 다름).
 // #1238 원본 대화만(요약·머리말 없이) — 다른 에이전트·문서에 그대로 붙이기용. Crew 대화방 글이 있으면 앞에.
-export function sessionRawText(messages: SessionMsg[], crew: { from: string; to: string[]; text: string }[] = []): string {
+// #1281 크루 작업 기록 — 칸반 카드와 역할별 실행(세션 카드·원본 보기·복사가 같이 씀)
+export interface CrewTaskInfo { id: string; title: string; status: string; pipeline?: string[]; role?: string }
+export interface CrewRunInfo { role: string; stage?: number; state: string; startedAt: number; endedAt?: number; summary?: string; error?: string; toolCount: number; tokens?: { input: number; output: number } }
+const hhmm = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
+export const crewRunLine = (r: CrewRunInfo) =>
+  `@${r.role} ${hhmm(r.startedAt)}${r.endedAt ? `–${hhmm(r.endedAt)}` : ""} ${r.state} · tools ${r.toolCount}${r.tokens ? ` · ${Math.round((r.tokens.input + r.tokens.output) / 1000)}k tok` : ""}${r.summary ? ` — ${r.summary}` : r.error ? ` — ${r.error}` : ""}`;
+// #1281 크루 작업 기록(칸반 카드·역할별 실행)도 맨 앞에
+export function crewWorkLines(task?: CrewTaskInfo, runs: CrewRunInfo[] = []): string[] {
+  return [...(task ? [`[Crew card] ${task.title} (${task.status}${task.pipeline?.length ? ` · ${task.pipeline.join(" → ")}` : ""})`] : []), ...runs.map((r) => `[run] ${crewRunLine(r)}`)];
+}
+export function sessionRawText(messages: SessionMsg[], crew: { from: string; to: string[]; text: string }[] = [], task?: CrewTaskInfo, runs: CrewRunInfo[] = []): string {
   const talk = crew.map((c) => `[@${c.from}${c.to.length ? ` → ${c.to.map((x) => `@${x}`).join(" ")}` : ""}] ${c.text}`);
-  return [...talk, ...messages.map((m) => `[${m.role === "user" ? "User" : m.role === "assistant" ? "Agent" : "Tool"}] ${m.text}`)].join("\n\n");
+  return [...crewWorkLines(task, runs), ...talk, ...messages.map((m) => `[${m.role === "user" ? "User" : m.role === "assistant" ? "Agent" : "Tool"}] ${m.text}`)].join("\n\n");
 }
 
-export function sessionCardMarkdown(o: { subject: string; hash: string; branch: string; agent: string; ts: number; summary: string; messages: SessionMsg[] }): string {
-  const raw = sessionRawText(o.messages);
+export function sessionCardMarkdown(o: { subject: string; hash: string; branch: string; agent: string; ts: number; summary: string; messages: SessionMsg[]; crew?: { from: string; to: string[]; text: string }[]; crewTask?: CrewTaskInfo; crewRuns?: CrewRunInfo[] }): string {
+  const raw = sessionRawText(o.messages, o.crew, o.crewTask, o.crewRuns);
   return tidy([`## ${o.subject} @${o.hash.slice(0, 7)}`, "",
     [o.agent && `- Agent: ${o.agent}`, o.branch && `- Branch: ${o.branch}`, `- Time: ${stamp(o.ts)}`].filter(Boolean).join("\n"), "",
     "### Summary", "", o.summary.trim(), "",
