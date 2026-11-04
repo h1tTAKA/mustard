@@ -492,7 +492,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggleTag(t2); } } });
   const chipOn = (t2: Tag) => (tag && tag.type === t2.type && tag.value === t2.value ? " ring-1 ring-mustard-500/70" : "");
   // #1238 날짜 보기 중 칩은 그날 안에서만(바 문구와 같게, 리뷰), 아니면 칩·질문·별표는 서버 전체 날짜 결과
-  const shown = (query ? (found ?? []) : viewDay ? (dayItems ?? []) : tagSource ?? onlySource ?? concepts).filter((c) => (onlyKind || (isCommand(c) ? showCommands : c.kind === "diff" ? diffShow : c.kind === "session" ? sessionsShow : explainShow)) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)) // #1062 표시 끔 = 분석된 것도 숨김, 문서 편집 카드는 항상 숨김(#1049). #1285 질문·핀 칩은 직접 고른 카드라 표시 끔과 무관
+  const shown = (query ? (found ?? []) : viewDay ? (dayItems ?? []) : tagSource ?? onlySource ?? concepts).filter((c) => (onlyKind || ((isCommand(c) ? showCommands : c.kind === "diff" ? diffShow : c.kind === "session" ? sessionsShow : explainShow) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)))) // #1062 표시 끔 = 분석된 것도 숨김, 문서 편집 카드는 항상 숨김(#1049)
+    // #1285 질문·핀 칩은 직접 고른 카드라 표시 끔·문서 편집 숨김과 무관 — 검색·날짜·칩 필터와 겹쳐도 같은 규칙(칩 개수 hasAsk·hasStar도 종류를 안 봄)
     && (filter === "all" || (filter === "ask" || filter === "star" ? onlyPred(c) : filter === "crew" ? (c.kind === "session" || c.kind === "narration") && !!crewTask(c) : filter === "commands" ? isCommand(c) : filter === "diff" ? c.kind === "diff" : filter === "session" ? c.kind === "session" : filter === "explain" && !isCommand(c) && c.kind !== "diff" && c.kind !== "session"))).filter(tagMatch);
   // #1064 세션 → 에이전트로 넘기기(인앱 브라우저 피드백과 같은 경로). 카드 하나에 요청 입력창.
   const [handoffKey, setHandoffKey] = useState<string | null>(null);
