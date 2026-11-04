@@ -344,16 +344,16 @@
 /* ── Mustard (base dark, 기본) — 로고 먹색(#0b0b0d·#1c1c22) 바탕 + 무채색 단계, 층 사이는 부드럽게.
    강조는 머스타드 골드(브랜드 토큰) 그대로. ── */
 :root[data-theme="mustard"] {
-  --background: #0b0b0d;
+  --background: #141418;
   --foreground: #ededea;
-  --ink: #141417;
-  --ink2: #111113;
-  --s-pane: #0e0e10; --s-bar: #1c1c22; --s-raise: #17171b; --s-menu: #1c1c22;
-  --color-zinc-950: #0b0b0d;   /* 로고 먹색 */
-  --color-zinc-900: #141417;
-  --color-zinc-800: #1c1c22;   /* 로고 먹색 2 */
-  --color-zinc-700: #2a2a31;
-  --color-zinc-600: #3c3c44;
+  --ink: #1c1c21;
+  --ink2: #18181c;
+  --s-pane: #16161a; --s-bar: #25252c; --s-raise: #202026; --s-menu: #25252c;
+  --color-zinc-950: #141418;   /* 로고 먹색(#0b0b0d)보다 한 단계 밝게 */
+  --color-zinc-900: #1c1c21;
+  --color-zinc-800: #25252c;   /* 로고 먹색 2(#1c1c22)보다 한 단계 밝게 */
+  --color-zinc-700: #33333b;
+  --color-zinc-600: #45454e;
   --color-zinc-500: #7a7a84;
   --color-zinc-400: #a9a9b0;
   --color-zinc-300: #d4d4d8;

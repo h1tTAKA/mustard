@@ -27,7 +27,7 @@ import { LOCALES, type Locale } from "@mustard/core";
 import { THEMES, type ThemeId } from "@mustard/core";
 // 테마 미리보기 스와치(배경/도트) — 피커 버튼용. 실제 색은 globals.css [data-theme] 블록서 온다.
 const THEME_SWATCH: Record<ThemeId, { bg: string; dot: string }> = {
-  mustard: { bg: "#141417", dot: "#f0c445" },
+  mustard: { bg: "#1c1c21", dot: "#f0c445" },
   "mustard-light": { bg: "#faf9f6", dot: "#d4a017" },
   dark: { bg: "#111219", dot: "#d4a017" },
   light: { bg: "#ffffff", dot: "#d4a017" },
