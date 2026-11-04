@@ -1,7 +1,7 @@
 "use client";
 // Crew 작업 만들기·편집 창(#1098) — 앱 확인 창(ConfirmDialog)과 같은 결: 큰 제목 입력 + 설명 + 속성 칩(담당 역할·칸).
 // ⌘/Ctrl+Enter 저장, Esc 닫기(열린 선택 메뉴가 있으면 메뉴부터).
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { IconArrowLeft, IconArrowRight, IconCheck, IconChevronDown, IconGitBranch, IconPlayerPlayFilled, IconPlayerStopFilled, IconPlus, IconShieldQuestion, IconTerminal2, IconTrash, IconX, IconExternalLink, IconGitPullRequest, IconLoader2 } from "@tabler/icons-react";
 import { useT, relocalize, CREW_TEXT_KEYS } from "@mustard/core";
@@ -230,7 +230,8 @@ function RunPanel({ run, onRun, onStop, onPermission, onTakeover, dirty }: { run
 }
 
 // 관문·질문·막힘(#1102) — 사람 결정. spec·schema·merge: 승인/반려(코멘트), question: 답하기, blocked: 이 단계부터 다시.
-function GatePanel({ task, roles, branch, onGate, onPr }: { task: CrewTask; roles: CrewRole[]; branch?: string; onGate?: (decision: "approve" | "reject" | "answer", text: string) => void; onPr?: () => Promise<void> }) {
+// 대화방(CrewChat)에서도 같은 패널 — className = 바깥 여백, extra = 버튼 줄 앞(에이전트에게 맡기기)
+export function GatePanel({ task, roles, branch, onGate, onPr, className = "mx-5 mb-4", extra }: { task: CrewTask; roles: CrewRole[]; branch?: string; onGate?: (decision: "approve" | "reject" | "answer", text: string) => void; onPr?: () => Promise<void>; className?: string; extra?: ReactNode }) {
   const t = useT();
   const [prBusy, setPrBusy] = useState(false);
   const g = task.gate!;
@@ -238,7 +239,7 @@ function GatePanel({ task, roles, branch, onGate, onPr }: { task: CrewTask; role
   const isQ = g.kind === "question", isBlocked = g.kind === "blocked", isSetup = g.kind === "setup"; // #1176 setup = 레포 스크립트 첫 실행 승인
   const tone = isBlocked ? "border-rose-300/60 bg-rose-50 dark:border-rose-500/30 dark:bg-rose-500/[0.07]" : "border-amber-300/60 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/[0.07]";
   return (
-    <div className={`mx-5 mb-4 rounded-xl border p-3 ${tone}`}>
+    <div className={`${className} rounded-xl border p-3 ${tone}`}>
       <div className={`text-[12.5px] font-semibold ${isBlocked ? "text-rose-700 dark:text-rose-300" : "text-amber-800 dark:text-amber-300"}`}>{t(`crew.gate.${g.kind}`)}</div>
       {g.text && <p className="nunopi-scroll mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-300">{relocalize(g.text, CREW_TEXT_KEYS, t)}</p>}
       {g.kind === "spec" && task.split?.length ? (
@@ -267,7 +268,8 @@ function GatePanel({ task, roles, branch, onGate, onPr }: { task: CrewTask; role
         <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder={isQ ? t("crew.gate.answerPlaceholder") : t("crew.gate.commentPlaceholder")}
           className="nunopi-scroll mt-2 w-full resize-y rounded-lg border border-zinc-200 bg-white/80 px-2.5 py-1.5 text-[12px] text-zinc-800 outline-none focus:border-zinc-400 dark:border-white/10 dark:bg-black/20 dark:text-zinc-100" />
       )}
-      <div className="mt-2 flex justify-end gap-1.5">
+      <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+        {extra}
         {isQ ? (
           <button type="button" disabled={!text.trim()} onClick={() => onGate?.("answer", text)} className="rounded-lg bg-amber-500 px-3 py-1 text-[12px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-40">{t("crew.gate.answer")}</button>
         ) : isBlocked ? (

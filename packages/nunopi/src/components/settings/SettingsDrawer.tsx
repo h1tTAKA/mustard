@@ -7,6 +7,7 @@ import ShortcutsSection from "./ShortcutsSection";
 import UpdateSection from "./UpdateSection";
 import BrowserSection from "./BrowserSection";
 import CodeDiffSection from "./CodeDiffSection";
+import CrewPermSection from "./CrewPermSection";
 import TerminalSessionsSection from "./TerminalSessionsSection";
 import TerminalKeyboardSection from "./TerminalKeyboardSection";
 import { listMonospaceFonts } from "./localFonts";
@@ -14,7 +15,7 @@ import GhosttyImportRow from "./GhosttyImportRow";
 import NotifySoundRow from "./NotifySoundRow";
 import TerminalRenderSection from "./TerminalRenderSection";
 import TerminalThemeSection from "./TerminalThemeSection";
-import { IconKeyboard, IconCode, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus } from "@tabler/icons-react";
+import { IconLayoutKanban, IconKeyboard, IconCode, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus } from "@tabler/icons-react";
 import { useSetting, setSetting, notifSound, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
 import ComputerUseSection from "./ComputerUseSection";
@@ -481,6 +482,7 @@ export default function SettingsDrawer({
     { id: "set-agents", label: t("settings.provider"), Icon: IconRobot, show: true, group: t("settings.groupAgents") },
     { id: "set-catchup", label: t("settings.catchupSection"), Icon: IconActivity, show: workspaceSettings, group: t("settings.groupAgents") }, // #1049
     { id: "set-integrations", label: t("settings.integrations"), Icon: IconPlug, show: workspaceSettings, group: t("settings.groupAgents") },
+    { id: "set-crew", label: t("crewPerm.section"), Icon: IconLayoutKanban, show: workspaceSettings, group: t("settings.groupAgents") }, // #1279
     { id: "set-computer", label: t("settings.computer"), Icon: IconDeviceDesktop, show: workspaceSettings && typeof window !== "undefined" && !!window.nunopiDesktop?.computer, group: t("settings.groupAgents") }, // #1175
     { id: "set-nunopi", label: t("settings.nunopiModule"), Icon: IconSparkles, show: !!onNunopiEnabledChange, group: t("settings.groupAgents") },
   ];
@@ -1280,6 +1282,9 @@ export default function SettingsDrawer({
             <QuickCommandsSection />
           </section>
           )}
+
+          {/* Crew 권한(#1279) — 항목별 알아서 허용/물어보기 */}
+          {activeSection === "set-crew" && <CrewPermSection />}
 
           {/* 컴퓨터 사용(#1175) — 에이전트의 데스크톱 앱 조작 */}
           {activeSection === "set-computer" && (

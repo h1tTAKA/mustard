@@ -1,5 +1,6 @@
 // 터미널 에이전트용 Crew 지시(#1277) — mustard-mcp.cjs의 crew_* → main /call → 여기서 Next Crew API를 앱 창 비밀값 쿠키로 대신 부름.
-// 일반 프록시 아님: 도구 하나 = 정해진 API 호출 하나. 권한 승인·관문·PR·넘겨받기·삭제·역할/트리거 변경은 일부러 없음(사람이 앱 화면에서만, #1161).
+// 일반 프록시 아님: 도구 하나 = 정해진 API 호출 하나. 권한 승인·PR·넘겨받기·삭제·역할/트리거 변경은 일부러 없음(사람이 앱 화면에서만, #1161).
+// 관문 결정(crew_decide)은 사람이 앱에서 그 카드를 "에이전트에게 맡기기"한 것만 — 서버가 맡김 기록(30분·한 번)을 확인.
 // 크루 작업 폴더(cwd)에서 부르면 거부 — 크루가 크루를 부르는 연쇄 방지.
 //  한계: cwd는 요청이 보내는 값이라 속일 수 있음 — 그래도 열린 건 아래 허용 동작뿐.
 //  한계: 레포 = cwd 실경로. 앱이 심볼릭 링크 경로로 연 레포면 보드 키가 달라 다른(빈) 보드를 봄.
@@ -78,6 +79,12 @@ function createCrewControl({ appBase, uiToken, fetch = globalThis.fetch }) {
         }
         await api("POST", "/api/crew/run", { root, taskId, action: tool === "crew_start" ? "start" : "stop" });
         return text(`${tool === "crew_start" ? "Started" : "Stopped"} ${taskId}.`);
+      }
+      if (tool === "crew_decide") { // 사람이 앱에서 "에이전트에게 맡기기"를 누른 관문만 — 서버가 확인(아니면 거절)
+        const taskId = String(args.taskId || ""), decision = String(args.decision || "");
+        if (!taskId || !["approve", "reject", "answer"].includes(decision)) return fail("taskId and decision (approve|reject|answer) are required.");
+        await api("POST", "/api/crew/run", { root, taskId, action: "agent-gate", decision, text: String(args.text || "") });
+        return text(`Decided ${taskId}: ${decision}.`);
       }
       if (tool === "crew_chat") {
         const t = String(args.text || "").trim();

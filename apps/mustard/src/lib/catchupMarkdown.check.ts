@@ -19,4 +19,11 @@ assert.strictEqual(withRelatedCards("답", [], "관련 카드"), "답");
 assert.strictEqual(sessionRawText([{ role: "user", text: "고쳐줘" }, { role: "assistant", text: "고침" }, { role: "tool", text: "ok" }]), "[User] 고쳐줘\n\n[Agent] 고침\n\n[Tool] ok");
 assert.strictEqual(sessionRawText([{ role: "user", text: "u" }], [{ from: "pm", to: ["dev"], text: "해" }]), "[@pm → @dev] 해\n\n[User] u", "Crew 글이 앞에");
 assert.strictEqual(sessionRawText([]), "");
+// #1281 크루 작업 기록 — 칸반 카드·역할별 실행이 맨 앞, 끝난 시각·토큰·요약
+{
+  const t0 = new Date(2026, 10, 2, 21, 13).getTime(), t1 = new Date(2026, 10, 2, 21, 20).getTime();
+  const raw = sessionRawText([], [{ from: "pm", to: ["dev"], text: "해" }], { id: "x", title: "로그인", status: "review", pipeline: ["scope-planner", "app-builder"] },
+    [{ role: "app-builder", state: "done", startedAt: t0, endedAt: t1, toolCount: 34, tokens: { input: 50_000, output: 2_000 }, summary: "로그인 화면 추가" }]);
+  assert.strictEqual(raw, "[Crew card] 로그인 (review · scope-planner → app-builder)\n\n[run] @app-builder 21:13–21:20 done · tools 34 · 52k tok — 로그인 화면 추가\n\n[@pm → @dev] 해");
+}
 console.log("catchupMarkdown ok");
