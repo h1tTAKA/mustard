@@ -20,10 +20,16 @@ const contrast = (a: string, b: string) => {
 };
 
 // 라이트 강조 글자(#1289) — :root:not(.dark)의 mustard-600을 모든 라이트 테마에 공통으로 씀.
-const accent = css.match(/:root:not\(\.dark\) \{[^}]*--color-mustard-600:\s*(#[0-9a-f]{6})/i)?.[1];
-assert.ok(accent, "라이트 강조색 블록");
-// 기본 Light 팔레트 = globals.css(흰 면·zinc-50·100) + Tailwind 기본 zinc(500~700) — 블록에 없는 값만.
-const LIGHT_BASE: Record<string, string> = { background: "#ffffff", foreground: "#171717", "color-white": "#ffffff", "color-zinc-50": "#fafafa", "color-zinc-100": "#f4f4f5", "color-zinc-500": "#71717b", "color-zinc-600": "#52525c", "color-zinc-700": "#3f3f46" };
+const lightAccent = css.match(/:root:not\(\.dark\) \{([^}]*)\}/)?.[1] ?? "";
+const [accent, accent700] = ["600", "700"].map((n) => lightAccent.match(new RegExp(`--color-mustard-${n}:\\s*(#[0-9a-f]{6})`, "i"))?.[1]);
+assert.ok(accent && accent700, "라이트 강조색 블록(600·700)");
+// 600을 진하게 하며 700과 거의 같아지면 "한 단계 진한 강조"가 사라짐 → 700이 더 진하고 1.4 이상 차이.
+assert.ok(lum(accent700) < lum(accent) && contrast(accent, accent700) >= 1.4, `라이트 강조 600·700 구분 ${contrast(accent, accent700).toFixed(2)}`);
+// 기본 Light 팔레트 = globals.css 값(배경·글자·흰 면·zinc-50·100) + Tailwind v4 기본 zinc(500~700, oklch를 hex로) — 블록에 없는 값만.
+// 한계: Tailwind 기본 zinc는 CSS에 안 적혀 있어 여기 손으로 둠 — Tailwind 판 올리며 바뀌면 같이 고칠 것.
+const globals = read("../../../apps/mustard/app/globals.css");
+const gv = (k: string) => globals.match(new RegExp(`--${k}:\\s*(#[0-9a-f]{6})`, "i"))?.[1];
+const LIGHT_BASE: Record<string, string | undefined> = { background: gv("background"), foreground: gv("foreground"), "color-white": gv("color-white"), "color-zinc-50": gv("color-zinc-50"), "color-zinc-100": gv("color-zinc-100"), "color-zinc-500": "#71717b", "color-zinc-600": "#52525c", "color-zinc-700": "#3f3f46" };
 
 // 테마 이름은 고유명사라 모든 언어에서 영어 그대로(#1283 유저 결정).
 const label = (k: string) => [...msgs.matchAll(new RegExp(`"${k.replace(".", "\\.")}": "([^"]*)"`, "g"))].map((m) => m[1]);
