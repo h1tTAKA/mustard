@@ -239,7 +239,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
                 ? `${t("browser.pickArea")} ${picked.el.rect.w}×${picked.el.rect.h}${picked.el.items.length ? ` · ${picked.el.items.length}` : ""}`
                 : picked.el.sources[0]
                   ? `${picked.el.sources[0].file.split("/").pop()}:${picked.el.sources[0].line} · ${picked.el.tag}`
-                  : `${picked.el.react[0] ? `${picked.el.react[0]} · ` : ""}${picked.el.tag}${picked.el.text ? ` "${picked.el.text.slice(0, 40)}"` : ""}`}</div>
+                  : `${picked.el.components[0] ? `${picked.el.components[0]} · ` : ""}${picked.el.tag}${picked.el.text ? ` "${picked.el.text.slice(0, 40)}"` : ""}`}</div>
               <textarea autoFocus value={comment} onChange={(e) => { setComment(e.target.value); if (sendState === "no-agent" || sendState === "error") setSendState("idle"); }}
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); } else if (e.key === "Escape") setPicked(null); }}
                 placeholder={t("browser.pickPlaceholder")} rows={3}
