@@ -58,11 +58,11 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
   const isSem = (el) => el.tagName.startsWith("FLT-SEMANTICS") && el.tagName !== "FLT-SEMANTICS-PLACEHOLDER" && el.tagName !== "FLT-SEMANTICS-HOST";
   // canvas로 그린 자리 — canvas 자체이거나 Flutter 껍데기. 여기선 elementFromPoint가 큰 껍데기만 줌.
   const isPainted = (el) => el.tagName === "CANVAS" || (isFlt(el) && !isSem(el));
-  // 접근성 요소 목록 — 움직일 때마다 문서 전체를 훑지 않게 잠깐(300ms) 재사용(스크롤로 트리가 바뀌니 오래는 안 둠).
+  // 접근성 요소 + 사각형 — 움직일 때마다 문서 전체를 훑고 크기를 재지 않게 잠깐(300ms) 재사용(스크롤로 바뀌니 오래는 안 둠).
   let semCache = null;
-  const semEls = () => {
-    if (!semCache || performance.now() - semCache.t > 300) semCache = { t: performance.now(), els: allEls().filter(isSem) };
-    return semCache.els;
+  const semRects = () => {
+    if (!semCache || performance.now() - semCache.t > 300) semCache = { t: performance.now(), list: allEls().filter(isSem).map((el) => ({ el, b: el.getBoundingClientRect() })) };
+    return semCache.list;
   };
   // 마우스 아래 요소 — shadow host에서 멈추지 않게 안으로 내려가고, Flutter 화면이면 그 점을 덮는 가장 작은 접근성 요소를 사각형으로 찾음
   // (접근성 요소는 pointer-events:none이라 elementFromPoint에 안 잡힘). 못 찾으면 껍데기 그대로. 일반 canvas(차트·지도)는 그대로 canvas.
@@ -73,8 +73,8 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
     if (!el || !isFlt(el) || isSem(el)) return el;
     const hb = el.getBoundingClientRect();
     let best = null, bestArea = hb.width * hb.height; // 껍데기보다 작은 것만 — 빈 자리는 껍데기(body 같은 조상 말고)
-    for (const c of semEls()) {
-      const b = c.getBoundingClientRect(), a = b.width * b.height;
+    for (const { el: c, b } of semRects()) {
+      const a = b.width * b.height;
       if (a > 0 && a < bestArea && x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) { best = c; bestArea = a; }
     }
     return best || el;
