@@ -38,7 +38,38 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
   root.append(box, tip);
   document.documentElement.appendChild(host);
   let cur = null;
-  const label = (el) => el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + (typeof el.className === "string" && el.className.trim() ? "." + el.className.trim().split(/\\s+/).slice(0, 2).join(".") : "");
+  // #1287 스택 무관 — 열린 shadow root 안 요소까지 전부(Web Components·Flutter 일부 버전은 shadow 안에 그림).
+  const allEls = () => {
+    const out = [];
+    const walk = (root) => { for (const el of root.querySelectorAll("*")) { if (el === host) continue; out.push(el); if (el.shadowRoot) walk(el.shadowRoot); } };
+    walk(document);
+    return out;
+  };
+  // Flutter 웹은 화면을 canvas 하나에 그려서 위젯마다 HTML 요소가 없음 → 화면 읽기용 접근성 트리(flt-semantics)를 켜면
+  // 위젯마다 위치·라벨 가진 투명 요소가 생김. 스위치는 "Enable accessibility" placeholder 클릭(아래 click 리스너 걸기 전에).
+  // 한계: 접근성 모드는 새로고침 전까지 켜진 채(끄는 공식 방법 없음), 라벨 = 화면 글자라 위젯 이름·Dart 소스 줄은 없음.
+  const flutterA11y = allEls().find((el) => el.tagName === "FLT-SEMANTICS-PLACEHOLDER");
+  if (flutterA11y) try { flutterA11y.click(); } catch {}
+  const isFlt = (el) => el.tagName.startsWith("FLT-") || el.tagName === "FLUTTER-VIEW";
+  // canvas로 그린 자리 — canvas 자체이거나 Flutter 껍데기. 여기선 elementFromPoint가 큰 껍데기만 줌.
+  const isPainted = (el) => el.tagName === "CANVAS" || (isFlt(el) && el.tagName !== "FLT-SEMANTICS");
+  // 마우스 아래 요소 — shadow host에서 멈추지 않게 안으로 내려가고, 그린 화면이면 그 점을 덮는 가장 작은 요소를 사각형으로 찾음
+  // (접근성 요소는 pointer-events:none이라 elementFromPoint에 안 잡힘). 못 찾으면 껍데기 그대로.
+  const pickAt = (x, y) => {
+    let el = document.elementFromPoint(x, y);
+    while (el && el.shadowRoot) { const inner = el.shadowRoot.elementFromPoint(x, y); if (!inner || inner === el) break; el = inner; }
+    if (!el || !isPainted(el)) return el;
+    const hb = el.getBoundingClientRect();
+    let best = null, bestArea = hb.width * hb.height; // 껍데기보다 작은 것만 — 빈 자리는 껍데기(body 같은 조상 말고)
+    for (const c of allEls()) {
+      if (isPainted(c)) continue;
+      const b = c.getBoundingClientRect(), a = b.width * b.height;
+      if (a > 0 && a < bestArea && x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) { best = c; bestArea = a; }
+    }
+    return best || el;
+  };
+  const role = (el) => el.getAttribute("role") || "";
+  const label = (el) => el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + (typeof el.className === "string" && el.className.trim() ? "." + el.className.trim().split(/\\s+/).slice(0, 2).join(".") : "") + (role(el) ? "[" + role(el) + "]" : "") + (isFlt(el) && textOf(el) ? ' "' + textOf(el).slice(0, 30) + '"' : "");
   const move = (e) => {
     if (down && e.buttons === 0) { down = null; dragging = false; } // 놓는 걸 놓쳤으면(창 밖) 드래그 해제
     if (down && (dragging || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6)) {
@@ -49,7 +80,7 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
       Object.assign(tip.style, { display: "block", left: r.x + "px", top: (r.y > 22 ? r.y - 20 : r.y + r.h + 4) + "px" });
       return;
     }
-    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const el = pickAt(e.clientX, e.clientY);
     if (!el || el === host) return;
     cur = el;
     const r = el.getBoundingClientRect();
@@ -113,14 +144,15 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
     return out;
   };
   const base = () => ({ url: location.href, viewport: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio } });
-  const textOf = (el) => (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim();
+  const textOf = (el) => (el.innerText || el.textContent || el.getAttribute("aria-label") || "").replace(/\\s+/g, " ").trim(); // aria-label = Flutter 접근성 요소의 글자
   // 영역 안에 완전히 들어간 요소 중 바깥쪽(부모는 영역에 안 들어감)만, 보이는 것, 최대 8개.
   const regionResult = (r) => {
     const inside = (b) => b.width > 0 && b.height > 0 && b.left >= r.x - 1 && b.top >= r.y - 1 && b.right <= r.x + r.w + 1 && b.bottom <= r.y + r.h + 1;
     const items = [];
-    for (const el of document.body ? document.body.querySelectorAll("*") : []) {
+    for (const el of allEls()) {
       if (items.length >= 8) break;
-      if (el === host || ["SCRIPT", "STYLE", "NOSCRIPT"].includes(el.tagName)) continue;
+      if (["HTML", "HEAD", "BODY", "SCRIPT", "STYLE", "NOSCRIPT"].includes(el.tagName) || isPainted(el)) continue;
+      if (el.tagName === "FLT-SEMANTICS" && !textOf(el) && !role(el)) continue; // 라벨 없는 접근성 묶음 = 위치 단서 아님
       if (!inside(el.getBoundingClientRect())) continue;
       const p = el.parentElement;
       if (p && p !== document.body && inside(p.getBoundingClientRect())) continue;
