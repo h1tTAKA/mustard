@@ -67,7 +67,7 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
   // 마우스 아래 요소 — shadow host에서 멈추지 않게 안으로 내려가고, Flutter 화면이면 그 점을 덮는 가장 작은 접근성 요소를 사각형으로 찾음
   // (접근성 요소는 pointer-events:none이라 elementFromPoint에 안 잡힘). 못 찾으면 껍데기 그대로. 일반 canvas(차트·지도)는 그대로 canvas.
   // 한계: 사각형만 봐서 겹친 순서·잘림(모달 뒤, 스크롤 밖으로 잘린 목록 항목)은 모름 — 접근성 트리는 보통 보이는 것만 두지만 예외 가능.
-  const pickAt = (x, y) => {
+  const pickAt = (x, y, fresh) => {
     let el = document.elementFromPoint(x, y);
     while (el && el.shadowRoot) { const inner = el.shadowRoot.elementFromPoint(x, y); if (!inner || inner === el) break; el = inner; }
     if (!el || !isFlt(el) || isSem(el)) return el;
@@ -77,7 +77,12 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
       const a = b.width * b.height;
       if (a > 0 && a < bestArea && x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) { best = c; bestArea = a; }
     }
-    return best || el;
+    if (!best) return el;
+    // 재사용한 사각형이 낡았을 수 있음(Flutter 스크롤은 DOM scroll 이벤트가 없어 지울 때를 모름) → 고른 것만 지금 크기로 확인, 어긋나면 새로 재고 한 번 더.
+    const lb = best.getBoundingClientRect();
+    if (fresh || (x >= lb.left && x <= lb.right && y >= lb.top && y <= lb.bottom)) return best;
+    semCache = null;
+    return pickAt(x, y, true);
   };
   const role = (el) => el.getAttribute("role") || "";
   const label = (el) => el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + (typeof el.className === "string" && el.className.trim() ? "." + el.className.trim().split(/\\s+/).slice(0, 2).join(".") : "") + (role(el) ? "[" + role(el) + "]" : "") + (isFlt(el) && textOf(el) ? ' "' + textOf(el).slice(0, 30) + '"' : "");
