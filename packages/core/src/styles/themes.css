@@ -39,6 +39,18 @@
 :root:not(.dark) .nunopi-md .hljs-tag,
 :root:not(.dark) .nunopi-md .hljs-name { color: #116329; }
 
+
+/* ── 라이트 글자 대비(#1289) — 흐린 글자(zinc-400)·보조 글자(zinc-500)가 흰 면뿐 아니라 hover·칩 면(zinc-100)에서도 보이게.
+   각 테마 값은 같은 계열 진한 색 쪽으로 목표(400 ≥3, 500 ≥4.0, 600·700 ≥4.5 — zinc-100 면 기준)를 처음 넘을 만큼만 섞음.
+   기본 Light는 globals.css 기본값을 쓰므로 여기서 zinc-400만 덮음. ── */
+:root[data-theme="light"] {
+  --color-zinc-400: #8c8c96;   /* #9f9fa9 → zinc-100 면 3.0 */
+}
+/* 강조 글자(text-mustard-600) — 라이트에서만 흰 면 4.8. 다크는 mustard-400 쪽을 써서 그대로. 바탕(bg-mustard-600)도 조금 진해져 흰 글자·손잡이 대비는 오히려 좋아짐. */
+:root:not(.dark) {
+  --color-mustard-600: #916c0e; /* #a67c11 */
+}
+
 /* ── Sepia (base light) — 따뜻한 종이. 머스타드 골드가 가장 살아나는 톤. ── */
 :root[data-theme="sepia"] {
   --background: #f4ecd8;
@@ -48,8 +60,8 @@
   --color-zinc-100: #ece0c4;   /* 토글 트랙/hover */
   --color-zinc-200: #ddceac;   /* 보더 */
   --color-zinc-300: #cbb98f;
-  --color-zinc-400: #9a875f;   /* 흐린 텍스트 */
-  --color-zinc-500: #7a6a4a;
+  --color-zinc-400: #907e59;   /* 흐린 텍스트 */
+  --color-zinc-500: #786849;
   --color-zinc-600: #5c4f3a;
   --color-zinc-700: #4a3f2f;   /* 본문 텍스트 */
   --color-zinc-800: #3a3122;
@@ -65,10 +77,10 @@
   --color-zinc-100: #eee8d5;   /* base2 */
   --color-zinc-200: #ddd6c1;
   --color-zinc-300: #cbc4ad;
-  --color-zinc-400: #93a1a1;   /* base1 */
-  --color-zinc-500: #839496;   /* base0 */
-  --color-zinc-600: #657b83;   /* base00 */
-  --color-zinc-700: #586e75;   /* base01 */
+  --color-zinc-400: #75888c;   /* base1 → 진하게(#1289) */
+  --color-zinc-500: #597078;   /* base0 → 진하게(#1289) */
+  --color-zinc-600: #546c74;   /* base00 → 진하게(#1289) */
+  --color-zinc-700: #4b656d;   /* base01 → 진하게(#1289) */
   --color-zinc-800: #073642;   /* base02 */
   --color-zinc-900: #002b36;   /* base03 */
 }
@@ -174,8 +186,8 @@
   --color-zinc-100: #cbccd3;
   --color-zinc-200: #b8bac4;
   --color-zinc-300: #a1a4b2;
-  --color-zinc-400: #7e8296;
-  --color-zinc-500: #646882;
+  --color-zinc-400: #6c7089;
+  --color-zinc-500: #595d7a;
   --color-zinc-600: #4c5170;
   --color-zinc-700: #343b58;
   --color-zinc-800: #2a2f47;
@@ -209,8 +221,8 @@
   --color-zinc-100: #dce0e8;   /* crust */
   --color-zinc-200: #ccd0da;   /* surface0 */
   --color-zinc-300: #bcc0cc;   /* surface1 */
-  --color-zinc-400: #8c8fa1;   /* overlay1 */
-  --color-zinc-500: #6c6f85;   /* subtext0 */
+  --color-zinc-400: #7b7e92;   /* overlay1 */
+  --color-zinc-500: #64677e;   /* subtext0 */
   --color-zinc-600: #5c5f77;   /* subtext1 */
   --color-zinc-700: #4c4f69;   /* text */
   --color-zinc-800: #3c3f55;
@@ -244,8 +256,8 @@
   --color-zinc-100: #ebdbb2;   /* bg1 */
   --color-zinc-200: #d5c4a1;   /* bg2 */
   --color-zinc-300: #bdae93;   /* bg3 */
-  --color-zinc-400: #928374;   /* gray */
-  --color-zinc-500: #7c6f64;   /* fg4 */
+  --color-zinc-400: #887b6d;   /* gray */
+  --color-zinc-500: #70655c;   /* fg4 */
   --color-zinc-600: #665c54;   /* fg3 */
   --color-zinc-700: #3c3836;   /* fg1 */
   --color-zinc-800: #32302f;
@@ -333,8 +345,8 @@
   --color-zinc-100: #eaeef2;
   --color-zinc-200: #d0d7de;   /* border */
   --color-zinc-300: #afb8c1;
-  --color-zinc-400: #8c959f;
-  --color-zinc-500: #6e7781;
+  --color-zinc-400: #818a94;
+  --color-zinc-500: #6a737d;
   --color-zinc-600: #57606a;
   --color-zinc-700: #424a53;
   --color-zinc-800: #32383f;
