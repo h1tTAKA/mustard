@@ -54,18 +54,26 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
   const flutterA11y = allEls().find((el) => el.tagName === "FLT-SEMANTICS-PLACEHOLDER");
   if (flutterA11y) try { flutterA11y.click(); } catch {}
   const isFlt = (el) => el.tagName.startsWith("FLT-") || el.tagName === "FLUTTER-VIEW";
+  // 접근성 요소(flt-semantics·-container·-img…) — 스위치(placeholder)·담는 틀(host)은 빼고.
+  const isSem = (el) => el.tagName.startsWith("FLT-SEMANTICS") && el.tagName !== "FLT-SEMANTICS-PLACEHOLDER" && el.tagName !== "FLT-SEMANTICS-HOST";
   // canvas로 그린 자리 — canvas 자체이거나 Flutter 껍데기. 여기선 elementFromPoint가 큰 껍데기만 줌.
-  const isPainted = (el) => el.tagName === "CANVAS" || (isFlt(el) && el.tagName !== "FLT-SEMANTICS");
-  // 마우스 아래 요소 — shadow host에서 멈추지 않게 안으로 내려가고, 그린 화면이면 그 점을 덮는 가장 작은 요소를 사각형으로 찾음
-  // (접근성 요소는 pointer-events:none이라 elementFromPoint에 안 잡힘). 못 찾으면 껍데기 그대로.
+  const isPainted = (el) => el.tagName === "CANVAS" || (isFlt(el) && !isSem(el));
+  // 접근성 요소 목록 — 움직일 때마다 문서 전체를 훑지 않게 잠깐(300ms) 재사용(스크롤로 트리가 바뀌니 오래는 안 둠).
+  let semCache = null;
+  const semEls = () => {
+    if (!semCache || performance.now() - semCache.t > 300) semCache = { t: performance.now(), els: allEls().filter(isSem) };
+    return semCache.els;
+  };
+  // 마우스 아래 요소 — shadow host에서 멈추지 않게 안으로 내려가고, Flutter 화면이면 그 점을 덮는 가장 작은 접근성 요소를 사각형으로 찾음
+  // (접근성 요소는 pointer-events:none이라 elementFromPoint에 안 잡힘). 못 찾으면 껍데기 그대로. 일반 canvas(차트·지도)는 그대로 canvas.
+  // 한계: 사각형만 봐서 겹친 순서·잘림(모달 뒤, 스크롤 밖으로 잘린 목록 항목)은 모름 — 접근성 트리는 보통 보이는 것만 두지만 예외 가능.
   const pickAt = (x, y) => {
     let el = document.elementFromPoint(x, y);
     while (el && el.shadowRoot) { const inner = el.shadowRoot.elementFromPoint(x, y); if (!inner || inner === el) break; el = inner; }
-    if (!el || !isPainted(el)) return el;
+    if (!el || !isFlt(el) || isSem(el)) return el;
     const hb = el.getBoundingClientRect();
     let best = null, bestArea = hb.width * hb.height; // 껍데기보다 작은 것만 — 빈 자리는 껍데기(body 같은 조상 말고)
-    for (const c of allEls()) {
-      if (isPainted(c)) continue;
+    for (const c of semEls()) {
       const b = c.getBoundingClientRect(), a = b.width * b.height;
       if (a > 0 && a < bestArea && x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) { best = c; bestArea = a; }
     }
@@ -125,16 +133,21 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
     delete window.__mustardPickCancel;
   };
   const selectorOf = (el) => {
-    if (el.id && document.querySelectorAll("#" + CSS.escape(el.id)).length === 1) return "#" + CSS.escape(el.id);
+    // shadow root 안이면 그 안에서 고유한지 보고, 앞에 host 선택자 + " >>> "(경계 표시 — document.querySelector로는 바로 못 찾음).
+    const root = el.getRootNode();
+    const pre = root !== document && root.host ? selectorOf(root.host) + " >>> " : "";
+    const scope = pre ? root : document;
+    const uniq = (id) => scope.querySelectorAll("#" + CSS.escape(id)).length === 1;
+    if (el.id && uniq(el.id)) return pre + "#" + CSS.escape(el.id);
     const parts = [];
     for (let n = el; n && n.nodeType === 1 && n !== document.documentElement && parts.length < 6; n = n.parentElement) {
-      if (n.id && document.querySelectorAll("#" + CSS.escape(n.id)).length === 1) { parts.unshift("#" + CSS.escape(n.id)); break; }
+      if (n.id && uniq(n.id)) { parts.unshift("#" + CSS.escape(n.id)); break; }
       let p = n.tagName.toLowerCase();
       const sib = n.parentElement ? [...n.parentElement.children].filter((c) => c.tagName === n.tagName) : [];
       if (sib.length > 1) p += ":nth-of-type(" + (sib.indexOf(n) + 1) + ")";
       parts.unshift(p);
     }
-    return parts.join(" > ");
+    return pre + parts.join(" > ");
   };
   // 컴포넌트 이름(안쪽 → 바깥, 최대 6) — 틀마다 요소에 남기는 내부 값이 다름. Vue·Svelte·Angular는 개발 모드에서만 남김.
   // 한계: Svelte는 컴포넌트 = 파일이라 파일 이름만(줄 번호는 버전마다 0/1 기준이 달라 안 씀), 그 밖의 틀(Solid·Lit 등)은 이름 없음.
@@ -167,11 +180,11 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
     const ng = window.ng;
     if (ng && ng.getOwningComponent) { // Angular
       try {
-        for (let c = ng.getComponent(el) || ng.getOwningComponent(el); c; c = ng.getOwningComponent(ng.getHostElement(c))) add(c.constructor && c.constructor.name.replace(/^_/, ""));
+        for (let c = ng.getComponent(el) || ng.getOwningComponent(el), i = 0; c && i < 20 && out.length < 6; c = ng.getOwningComponent(ng.getHostElement(c)), i++) add(c.constructor && c.constructor.name.replace(/^_/, ""));
       } catch {}
       if (out.length) return { framework: "angular", names: out };
     }
-    return { framework: el.tagName === "FLT-SEMANTICS" ? "flutter" : isPainted(el) ? "canvas" : "", names: out }; // 접근성 요소 못 찾은 빈 자리(flutter-view) = 그냥 그린 화면
+    return { framework: isFlt(el) ? "flutter" : el.tagName === "CANVAS" ? "canvas" : "", names: out }; // Flutter 빈 자리(flutter-view)도 flutter — 글에서 태그로 나눔
   };
   const base = () => ({ url: location.href, viewport: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio } });
   const textOf = (el) => (el.innerText || el.textContent || el.getAttribute("aria-label") || "").replace(/\\s+/g, " ").trim(); // aria-label = Flutter 접근성 요소의 글자
@@ -182,9 +195,9 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
     for (const el of allEls()) {
       if (items.length >= 8) break;
       if (["HTML", "HEAD", "BODY", "SCRIPT", "STYLE", "NOSCRIPT"].includes(el.tagName) || isPainted(el)) continue;
-      if (el.tagName === "FLT-SEMANTICS" && !textOf(el) && !role(el)) continue; // 라벨 없는 접근성 묶음 = 위치 단서 아님
+      if (isSem(el) && !textOf(el) && !role(el)) continue; // 라벨 없는 접근성 묶음 = 위치 단서 아님
       if (!inside(el.getBoundingClientRect())) continue;
-      const p = el.parentElement;
+      const p = el.parentElement || (el.getRootNode().host ?? null); // shadow 맨 위 요소의 부모 = host
       if (p && p !== document.body && inside(p.getBoundingClientRect())) continue;
       items.push({ tag: el.tagName.toLowerCase(), selector: selectorOf(el), text: textOf(el).slice(0, 120), components: compOf(el).names.slice(0, 3) });
     }

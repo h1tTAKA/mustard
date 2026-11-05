@@ -35,6 +35,7 @@ assert.ok(formatPickFeedback({ ...p, framework: "", components: ["X"] }, "x").in
 const fl = formatPickFeedback({ ...p, framework: "flutter", components: [], tag: "flt-semantics", attrs: { role: "button" }, text: "Increment" }, "x");
 assert.ok(fl.includes("- Note: Flutter app") && fl.includes("Increment"));
 assert.ok(formatPickFeedback({ ...p, framework: "canvas", components: [] }, "x").includes("- Note: Drawn on a <canvas>"));
+assert.ok(formatPickFeedback({ ...p, framework: "flutter", components: [], tag: "flutter-view" }, "x").includes("no accessibility node at this spot"), "Flutter 빈 자리");
 assert.ok(!md.includes("Note:"), "보통 화면엔 안내 없음");
 assert.strictEqual(sanitizePaste("a\x1b[201~b\tc\nd\x07"), "a[201~b\tc\nd", "ESC·BEL 제거, 탭·줄바꿈 유지");
 assert.ok(!md.includes("\x1b"));
