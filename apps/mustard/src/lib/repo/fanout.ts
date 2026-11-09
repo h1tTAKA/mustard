@@ -87,12 +87,12 @@ export interface CandidateDiff { files: FileStat[]; added: number; removed: numb
 export async function candidateDiff(c: Candidate): Promise<CandidateDiff> {
   if (!existsSync(c.dir)) throw new Error("candidate folder gone");
   const mb = (await gitOut(c.dir, ["merge-base", c.base, "HEAD"]).catch(() => "")).trim() || c.base;
-  const tracked = await gitOut(c.dir, ["diff", "--no-color", "--no-ext-diff", "-M", mb]);
+  const tracked = await gitOut(c.dir, ["-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "-M", mb]); // 한글 등 경로를 따옴표로 감싸지 않게 — 비밀 파일 판별·파일 목록이 경로를 읽어야 함(리뷰)
   const untracked = (await gitOut(c.dir, ["ls-files", "--others", "--exclude-standard", "-z"])).split("\0").filter(Boolean);
   const all = splitDiff(tracked);
   const parts = all.filter((p) => !SECRET.test(pathOf(p))); // 에이전트가 커밋한 비밀 파일도 내용은 안 보냄(리뷰)
   const unread: string[] = [...all.map(pathOf).filter((p) => SECRET.test(p)), ...untracked.slice(MAX_UNTRACKED), ...untracked.slice(0, MAX_UNTRACKED).filter((p) => SECRET.test(p))]; // 넘는 것 + 비밀일 수 있는 것 + 못 읽은 것
-  for (const p of untracked.slice(0, MAX_UNTRACKED).filter((p) => !SECRET.test(p))) { const x = await gitOut(c.dir, ["diff", "--no-color", "--no-index", "--", "/dev/null", p]).catch(() => ""); if (x) parts.push(x); else unread.push(p); }
+  for (const p of untracked.slice(0, MAX_UNTRACKED).filter((p) => !SECRET.test(p))) { const x = await gitOut(c.dir, ["-c", "core.quotePath=false", "diff", "--no-color", "--no-index", "--", "/dev/null", p]).catch(() => ""); if (x) parts.push(x); else unread.push(p); }
   const d = capDiff(parts);
   // 이름만(줄 수 0) + 잘림 표시 — 채택하면 git add -A로 같이 들어가니 목록에서 빠지면 안 됨(리뷰)
   for (const p of unread) d.files.push({ path: p, added: 0, removed: 0, big: true });
@@ -165,8 +165,8 @@ export const adoptFanout = (root: string, id: string, winner: number) => once(id
   const title = (f.prompt.split("\n").map((l) => l.trim()).find(Boolean) ?? "Compete result").slice(0, 72);
   if (await gitIn(w.dir, ["status", "--porcelain"])) {
     await gitIn(w.dir, ["add", "-A"]);
-    const secret = (await gitIn(w.dir, ["diff", "--cached", "--name-only", "--diff-filter=A", "-z"]).catch(() => "")).split("\0").filter((p) => p && SECRET.test(p));
-    if (secret.length) await gitIn(w.dir, ["reset", "-q", "--", ...secret]); // 새로 생긴 비밀일 수 있는 파일은 커밋에서 뺌(폴더엔 남음)
+    const secret = (await gitIn(w.dir, ["diff", "--cached", "--name-only", "--diff-filter=d", "-z"]).catch(() => "")).split("\0").filter((p) => p && SECRET.test(p));
+    if (secret.length) await gitIn(w.dir, ["reset", "-q", "--", ...secret]); // 새로 생기거나 바뀐 비밀일 수 있는 파일은 커밋에서 뺌(폴더엔 남음, 지운 건 그대로)
     if (await gitIn(w.dir, ["diff", "--cached", "--name-only"])) await gitIn(w.dir, ["commit", "-q", "-m", title]);
   }
   const mb = (await gitIn(w.dir, ["merge-base", w.base, "HEAD"]).catch(() => "")) || w.base;

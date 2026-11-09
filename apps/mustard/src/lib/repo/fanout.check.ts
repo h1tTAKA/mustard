@@ -99,6 +99,12 @@ g(sec.dir, "add", "."); g(sec.dir, "commit", "-qm", "oops");
 const cd = await candidateDiff(sec);
 assert.ok(!cd.diff.includes("PRIVATE") && cd.files.some((x) => x.path === "id_rsa" && x.big) && cd.diff.includes("+++ b/ok.txt"));
 await assert.rejects(adoptFanout(root, f3.id, 1), /secret files: id_rsa/);
+// 한글 폴더 안 비밀 파일(git이 경로를 따옴표로 감싸던 경우)도 이름만 + 경로가 제대로 읽힘
+mkdirSync(join(sec.dir, "설정"));
+writeFileSync(join(sec.dir, "설정", ".env"), "K=LIVE\n"); writeFileSync(join(sec.dir, "설정", "메모.txt"), "hi\n");
+g(sec.dir, "add", "."); g(sec.dir, "commit", "-qm", "ko");
+const kd = await candidateDiff(sec);
+assert.ok(!kd.diff.includes("K=LIVE") && kd.files.some((x) => x.path === "설정/.env" && x.big) && kd.files.some((x) => x.path === "설정/메모.txt"));
 await discardFanout(root, f3.id);
 
 // 폴더는 이미 없고 브랜치만 남은 후보도 버리기가 끝까지 감(지난 시도가 중간에 멈춘 경우)
