@@ -135,7 +135,16 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const [fanoutOpen, setFanoutOpen] = useState(false); // 겨루기 패널(#1174) — 팀 보드와 같은 열기/닫기·레포별 기억
   const fanoutPrevRef = useRef(false);
   useEffect(() => { // 이 레포에서 겨루기를 시작하면 패널을 엶
-    const on = (e: Event) => { if ((e as CustomEvent<{ root: string }>).detail?.root === path) setFanoutOpen(true); };
+    const on = (e: Event) => {
+      if ((e as CustomEvent<{ root: string }>).detail?.root !== path) return;
+      setFanoutOpen(true);
+      setCollapsed((prev) => { // 터미널이 접혀 있으면 펼침 — 후보 탭이 거기 열림(TerminalPane이 붙으며 맡겨 둔 겨루기를 띄움)
+        if (!prev.has("terminal")) return prev;
+        const n = new Set(prev); n.delete("terminal");
+        try { localStorage.setItem("nunopi:ws-collapsed", JSON.stringify([...n])); } catch { /* ignore */ }
+        return n;
+      });
+    };
     window.addEventListener(FANOUT_LAUNCH_EVENT, on); return () => window.removeEventListener(FANOUT_LAUNCH_EVENT, on);
   }, [path]);
   const [browserOpen, setBrowserOpen] = useState(false);

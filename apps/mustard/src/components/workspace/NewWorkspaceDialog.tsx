@@ -119,13 +119,9 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
     if (!r.ok) { toast(t("newWs.failed", { error: String(r.error ?? "") }), "error"); return; }
     const cands = (r.fanout.candidates as { agent: string; dir: string }[]);
     const text = prompt.trim();
-    afterSetup.current = () => {
-      const tabIds = launchFanout({ root, prompt: text, candidates: cands });
-      if (!tabIds.length) { toast(t("fanout.noTerminal"), "error"); return; }
+    afterSetup.current = () => { // 터미널이 접혀 있으면 펼친 뒤 띄움(workspaceEvents), 탭 id 저장은 TerminalPane이
+      launchFanout({ root, id: r.fanout.id, prompt: text, candidates: cands });
       toast(t("fanout.started", { n: cands.length }));
-      // 탭 id 저장 — 채택·버리기가 진 후보 터미널을 끄는 데 씀(못 끄면 돌던 에이전트가 지우는 폴더에 씀) → 한 번 더 시도, 그래도 실패면 알림(리뷰)
-      const save = () => fetch("/api/repo/fanout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "tabs", path: root, id: r.fanout.id, tabIds }) }).then((x) => x.json()).then((j) => !!j.ok, () => false);
-      void save().then((ok) => ok || save()).then((ok) => { if (!ok) toast(t("fanout.tabsNotSaved"), "error"); });
     };
     setupQueue.current = cands.slice(1).map((c) => c.dir);
     setChain(true);

@@ -14,10 +14,13 @@ export const closeWorkspace = (dir: string) => window.dispatchEvent(new CustomEv
 // #1216 작업공간 설정 창(이 레포의 setup·archive·공유 폴더) 열기
 export const WORKSPACE_SETTINGS_EVENT = "mustard:workspace-settings";
 export const openWorkspaceSettings = (root: string) => window.dispatchEvent(new CustomEvent(WORKSPACE_SETTINGS_EVENT, { detail: root }));
-// #1174 겨루기 — 후보마다 이 레포 터미널에 새 탭을 열고 그 작업 폴더에서 에이전트를 띄워 같은 프롬프트를 보냄. TerminalPane이 받아 탭 id를 채움(못 받으면 빈 목록).
+// #1174 겨루기 — 후보마다 이 레포 터미널에 새 탭을 열고 그 작업 폴더에서 에이전트를 띄워 같은 프롬프트를 보냄. TerminalPane이 받음(taken).
+// 터미널 패널이 접혀 있어 아직 없으면 맡겨 두고(WorkspaceView가 터미널을 펼침), TerminalPane이 붙을 때 가져감(리뷰).
 export const FANOUT_LAUNCH_EVENT = "mustard:fanout-launch";
-export type FanoutLaunch = { root: string; prompt: string; candidates: { agent: string; dir: string }[]; tabIds?: string[] };
-export const launchFanout = (d: FanoutLaunch): string[] => { const detail: FanoutLaunch = { ...d, tabIds: [] }; window.dispatchEvent(new CustomEvent(FANOUT_LAUNCH_EVENT, { detail })); return detail.tabIds ?? []; };
+export type FanoutLaunch = { root: string; id: string; prompt: string; candidates: { agent: string; dir: string }[]; taken?: boolean };
+const pendingLaunch = new Map<string, FanoutLaunch>(); // 레포 탭 경로 → 아직 못 띄운 겨루기
+export const launchFanout = (d: FanoutLaunch) => { const detail: FanoutLaunch = { ...d, taken: false }; window.dispatchEvent(new CustomEvent(FANOUT_LAUNCH_EVENT, { detail })); if (!detail.taken) pendingLaunch.set(d.root, detail); };
+export const takePendingFanout = (root: string) => { const d = pendingLaunch.get(root); pendingLaunch.delete(root); return d; };
 // #1174 채택·버리기 — 지울 후보들의 터미널 탭을 확인 없이 닫음(사람이 이미 확인 창에서 고름). TerminalPane이 받음.
 export const FANOUT_CLOSE_TABS_EVENT = "mustard:fanout-close-tabs";
 export const closeFanoutTabs = (root: string, ids: string[]) => window.dispatchEvent(new CustomEvent(FANOUT_CLOSE_TABS_EVENT, { detail: { root, ids } }));
