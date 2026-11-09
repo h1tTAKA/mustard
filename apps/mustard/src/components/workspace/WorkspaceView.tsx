@@ -2,7 +2,7 @@
 // 워크스페이스 모드(#647) — 누노피 안에서 화면전환 없이 에이전트 코딩+즉시 학습.
 // 골격(커밋1): 4존 셸 [파일트리 | 터미널 | 코드 | 챗]. 각 존은 후속 커밋서 채움(트리·코드·챗·pty터미널).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { IconRefresh, IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld, IconLayoutKanban, IconSwords, IconMessageChatbot } from "@tabler/icons-react";
+import { IconRefresh, IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld, IconLayoutKanban, IconMessageChatbot } from "@tabler/icons-react";
 import { isNunopiEnabled } from "@/lib/product";
 import { NunopiGlyph } from "@/components/brand/ModeSwapToggle";
 import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, GKEYS, withModel, BROWSER_KEYS, BROWSER_DEFAULTS, EKEYS, EDITOR_DEFAULTS } from "@mustard/core";
@@ -23,7 +23,6 @@ import DiffPane from "@/components/workspace/DiffPane";
 import DocViewer from "@/components/workspace/DocViewer";
 import RepoFlowPane from "@/components/workspace/RepoFlowPane";
 import CrewBoard from "@/components/workspace/crew/CrewBoard";
-import FanoutPanel from "@/components/workspace/fanout/FanoutPanel";
 import { FANOUT_LAUNCH_EVENT } from "@/lib/repo/workspaceEvents";
 import CrewChat, { CREW_OPEN_TASK_EVENT } from "@/components/workspace/crew/CrewChat";
 import BrowserPane, { type BrowserState } from "@/components/workspace/BrowserPane";
@@ -132,13 +131,19 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const [flowFeature, setFlowFeature] = useState<string | null>(null); // 열린 플로우 패널의 기능(null=닫힘). dock에 flow 패널 존재 여부와 동기(#743)
   const [crewOpen, setCrewOpen] = useState(false); // 에이전트 팀 보드(#1098) — 레포별 열림 기억(브라우저와 같은 열기/닫기)
   const crewPrevRef = useRef(false); // 증분 이펙트가 본 마지막 crewOpen(브라우저와 같은 이유 — 복원 커밋에 저장 배치 유지)
-  const [fanoutOpen, setFanoutOpen] = useState(false); // 겨루기 패널(#1174) — 팀 보드와 같은 열기/닫기·레포별 기억
-  const fanoutPrevRef = useRef(false);
-  useEffect(() => { // 이 레포에서 겨루기를 시작하면 패널을 엶
+  const [browserOpen, setBrowserOpen] = useState(false);
+  // #1104 팀 채팅 카드 칩 → 이 레포 보드 열기(카드 편집 창은 보드가 같은 이벤트로 엶)
+  useEffect(() => {
+    const on = (e: Event) => { const d = (e as CustomEvent<{ root: string }>).detail; if (d?.root === path) setCrewOpen(true); };
+    window.addEventListener(CREW_OPEN_TASK_EVENT, on); return () => window.removeEventListener(CREW_OPEN_TASK_EVENT, on);
+  }, [path]); // 인앱 브라우저 패널(#1034) — 레포별 저장
+  // #1174 겨루기 시작 → 오른쪽 패널을 Crew 대화방으로 열고(그 안에서 겨루기를 봄, 유저 결정: 새 패널·탭 안 만듦), 터미널이 접혀 있으면 펼침(후보 탭이 거기 열림)
+  useEffect(() => {
     const on = (e: Event) => {
       if ((e as CustomEvent<{ root: string }>).detail?.root !== path) return;
-      setFanoutOpen(true);
-      setCollapsed((prev) => { // 터미널이 접혀 있으면 펼침 — 후보 탭이 거기 열림(TerminalPane이 붙으며 맡겨 둔 겨루기를 띄움)
+      setChatOpen(true);
+      setRightMode(() => { try { localStorage.setItem("nunopi:ws-right-mode", "crew"); } catch { /* ignore */ } return "crew"; });
+      setCollapsed((prev) => {
         if (!prev.has("terminal")) return prev;
         const n = new Set(prev); n.delete("terminal");
         try { localStorage.setItem("nunopi:ws-collapsed", JSON.stringify([...n])); } catch { /* ignore */ }
@@ -147,12 +152,6 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     };
     window.addEventListener(FANOUT_LAUNCH_EVENT, on); return () => window.removeEventListener(FANOUT_LAUNCH_EVENT, on);
   }, [path]);
-  const [browserOpen, setBrowserOpen] = useState(false);
-  // #1104 팀 채팅 카드 칩 → 이 레포 보드 열기(카드 편집 창은 보드가 같은 이벤트로 엶)
-  useEffect(() => {
-    const on = (e: Event) => { const d = (e as CustomEvent<{ root: string }>).detail; if (d?.root === path) setCrewOpen(true); };
-    window.addEventListener(CREW_OPEN_TASK_EVENT, on); return () => window.removeEventListener(CREW_OPEN_TASK_EVENT, on);
-  }, [path]); // 인앱 브라우저 패널(#1034) — 레포별 저장
   const [browserTabs, setBrowserTabs] = useState<{ urls: string[]; active: number }>({ urls: [], active: 0 }); // 탭 주소들(레포별)
   const [browserIncoming, setBrowserIncoming] = useState<{ url: string; n: number; devtools?: boolean; urls?: string[]; active?: number; background?: boolean } | null>(null); // 에이전트 열기 요청·분리 창에서 돌아온 탭들
   const [browserRect, setBrowserRect] = useState<SlotRect | null>(null); // dock 속 브라우저 자리(고정 레이어 위치)
@@ -219,7 +218,6 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       setDocsOpen(localStorage.getItem(K("docs-open")) === "1");
       setBrowserOpen(localStorage.getItem(K("browser-open")) === "1");
       setCrewOpen(localStorage.getItem(K("crew-open")) === "1");
-      setFanoutOpen(localStorage.getItem(K("fanout-open")) === "1");
       // 탭 복원 — 옛 단일 주소(browser-url)는 탭 하나로 이전.
       try {
         const bt = JSON.parse(localStorage.getItem(K("browser-tabs")) || "null");
@@ -237,7 +235,6 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; const k = `nunopi:ws:${path}:active-doc`; try { if (activeDoc) localStorage.setItem(k, activeDoc); else localStorage.removeItem(k); } catch { /* ignore */ } }, [activeDoc]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; const k = `nunopi:ws:${path}:docs-open`; try { localStorage.setItem(k, docsOpen ? "1" : "0"); } catch { /* ignore */ } }, [docsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; try { localStorage.setItem(`nunopi:ws:${path}:crew-open`, crewOpen ? "1" : "0"); } catch { /* ignore */ } }, [crewOpen]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!path || repoLoadedRef.current !== path) return; try { localStorage.setItem(`nunopi:ws:${path}:fanout-open`, fanoutOpen ? "1" : "0"); } catch { /* ignore */ } }, [fanoutOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; const k = `nunopi:ws:${path}:browser-open`; try { localStorage.setItem(k, browserOpen ? "1" : "0"); } catch { /* ignore */ } }, [browserOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!path || repoLoadedRef.current !== path) return; try { localStorage.setItem(`nunopi:ws:${path}:browser-tabs`, JSON.stringify(browserTabs)); localStorage.removeItem(`nunopi:ws:${path}:browser-url`); } catch { /* ignore */ } }, [browserTabs]); // eslint-disable-line react-hooks/exhaustive-deps
   // 에이전트가 이 레포 브라우저를 열어달라고 함(#1041 browser_navigate, 안 열려 있을 때) — cwd가 이 레포 안이면 새 탭으로.
@@ -341,7 +338,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   // 레포 전환 시 그 레포의 저장 트리를 base로 로드(레포별 영속), 아니면 이전 트리 유지. 리프 집합 같으면 배치·비율 보존, 다르면 prune 후 필요 시 기본.
   const hasCode = codeTabs.length > 0;
   const hasDoc = !!(docsRoot && activeDoc && docTabs.length);
-  const panelExists = (p: PanelId) => p === "terminal" || (p === "code" && hasCode) || (p === "doc" && hasDoc) || (p === "flow" && flowFeature !== null) || (p === "browser" && browserOpen) || (p === "crew" && crewOpen) || (p === "fanout" && fanoutOpen);
+  const panelExists = (p: PanelId) => p === "terminal" || (p === "code" && hasCode) || (p === "doc" && hasDoc) || (p === "flow" && flowFeature !== null) || (p === "browser" && browserOpen) || (p === "crew" && crewOpen);
   const panelVisible = (p: PanelId) => panelExists(p) && !collapsed.has(p);
   const dockRepoRef = useRef<string | null>(null); // 현재 dockTree가 로드된 레포 — 전환 감지·저장 게이트
   const flowRepoRef = useRef<string | null>(null); // flowFeature가 복원된 레포 — 전환 시 그 레포 저장값으로 복원(#743)
@@ -351,16 +348,16 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     const switched = dockRepoRef.current !== path;
     // 브라우저 열림은 같은 커밋의 복원 이펙트가 아직 state에 반영 전 → 전환 시엔 저장값을 직접 읽어야 저장 배치가 안 지워짐(#1034 리뷰).
     let browserHas = browserOpen;
-    let crewHas = crewOpen, fanoutHas = fanoutOpen;
-    if (switched) { try { browserHas = localStorage.getItem(`nunopi:ws:${path}:browser-open`) === "1"; crewHas = localStorage.getItem(`nunopi:ws:${path}:crew-open`) === "1"; fanoutHas = localStorage.getItem(`nunopi:ws:${path}:fanout-open`) === "1"; } catch { /* ignore */ } }
-    const has: Record<PanelId, boolean> = { terminal: !collapsed.has("terminal"), code: hasCode && !collapsed.has("code"), doc: hasDoc && !collapsed.has("doc"), flow: flowFeature !== null && !collapsed.has("flow"), browser: browserHas, crew: crewHas, fanout: fanoutHas };
+    let crewHas = crewOpen;
+    if (switched) { try { browserHas = localStorage.getItem(`nunopi:ws:${path}:browser-open`) === "1"; crewHas = localStorage.getItem(`nunopi:ws:${path}:crew-open`) === "1"; } catch { /* ignore */ } }
+    const has: Record<PanelId, boolean> = { terminal: !collapsed.has("terminal"), code: hasCode && !collapsed.has("code"), doc: hasDoc && !collapsed.has("doc"), flow: flowFeature !== null && !collapsed.has("flow"), browser: browserHas, crew: crewHas };
     let stored: DockNode | null = null;
     if (switched) { try { const j = JSON.parse(localStorage.getItem(`nunopi:ws:${path}:dock-tree`) || "null"); if (isDockNode(j)) stored = j; } catch { /* ignore */ } dockRepoRef.current = path; }
     setDockTree((prev) => {
       const base = switched ? stored : prev;
       const pruned = base ? pruneTree(base, has) : null;
       const cur = pruned ? leavesOf(pruned) : new Set<PanelId>();
-      const need = (["terminal", "code", "doc", "flow", "browser", "crew", "fanout"] as PanelId[]).filter((p) => has[p]);
+      const need = (["terminal", "code", "doc", "flow", "browser", "crew"] as PanelId[]).filter((p) => has[p]);
       const same = pruned && need.length === cur.size && need.every((p) => cur.has(p));
       return same ? pruned : defaultTree(has);
     });
@@ -376,24 +373,21 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     browserPrevRef.current = browserOpen;
     const crewChanged = crewPrevRef.current !== crewOpen;
     crewPrevRef.current = crewOpen;
-    const fanoutChanged = fanoutPrevRef.current !== fanoutOpen;
-    fanoutPrevRef.current = fanoutOpen;
     setDockTree((prev) => {
       if (!prev) return prev;
       let tree = prev;
-      for (const p of ["terminal", "code", "doc", "flow", "browser", "crew", "fanout"] as PanelId[]) {
+      for (const p of ["terminal", "code", "doc", "flow", "browser", "crew"] as PanelId[]) {
         if (p === "browser" && !browserChanged) continue;
         if (p === "crew" && !crewChanged) continue;
-        if (p === "fanout" && !fanoutChanged) continue;
         const want = panelVisible(p);
         const inTree = leavesOf(tree).has(p);
-        if (want && !inTree) tree = appendPanel(tree, p, p === "browser" || p === "crew" ? 0.5 : p === "fanout" ? 0.6 : undefined); // 브라우저는 오른쪽 절반(defaultTree와 같게)
+        if (want && !inTree) tree = appendPanel(tree, p, p === "browser" || p === "crew" ? 0.5 : undefined); // 브라우저는 오른쪽 절반(defaultTree와 같게)
         else if (!want && inTree) tree = removePanel(tree, p) ?? tree;
       }
       return tree;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- collapsed·flowFeature 토글만 감시(존재 변화는 메인 이펙트가 재빌드)
-  }, [collapsed, flowFeature, browserOpen, crewOpen, fanoutOpen, mounted]);
+  }, [collapsed, flowFeature, browserOpen, crewOpen, mounted]);
   // 도킹 트리 저장(#716) — 로드된 레포와 현재 path 일치할 때만(전환 오염 방지).
   useEffect(() => { if (!path || dockRepoRef.current !== path || !dockTree) return; try { localStorage.setItem(`nunopi:ws:${path}:dock-tree`, JSON.stringify(dockTree)); } catch { /* ignore */ } }, [dockTree]); // eslint-disable-line react-hooks/exhaustive-deps -- path 제외: 전환 커밋에 옛 트리를 새 레포 키에 쓰는 오염 방지(dockTree 변할 때만 저장)
 
@@ -719,7 +713,6 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     // <webview>는 DOM에서 빠지면 페이지가 죽어서(새로고침·기록 유실) 위치만 따라가게 한다.
     browser: browserOpen ? <BrowserSlot anchor={dockRef} onRect={setBrowserRect} /> : null,
     crew: crewOpen ? <CrewBoard root={path} onClose={() => setCrewOpen(false)} /> : null, // 에이전트 팀 보드(#1098)
-    fanout: fanoutOpen ? <FanoutPanel key={path} root={path} onClose={() => setFanoutOpen(false)} /> : null, // 겨루기(#1174)
     flow: <RepoFlowPane feature={flowFeature} root={path} providerId={providerId} providerSettings={providerSettings} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onAskArch={askArch} onQuoteNode={quoteNode} onClose={() => setFlowFeature(null)} />,
   };
 
@@ -743,17 +736,16 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
           {([
             { p: "terminal" as PanelId, Icon: IconTerminal2, key: "workspace.panelTerminal" },
             { p: "crew" as PanelId, Icon: IconLayoutKanban, key: "workspace.panelCrew" }, // #1098 에이전트 팀 보드 — 터미널 바로 오른쪽(유저 지정)
-            { p: "fanout" as PanelId, Icon: IconSwords, key: "workspace.panelFanout" }, // #1174 겨루기 — 팀 보드 옆(유저 지정: 도크 패널)
             { p: "code" as PanelId, Icon: IconFileCode, key: "workspace.panelCode" },
             { p: "doc" as PanelId, Icon: IconFileText, key: "workspace.panelDoc" },
             { p: "flow" as PanelId, Icon: IconSitemap, key: "workspace.panelArch" },
             { p: "browser" as PanelId, Icon: IconWorld, key: "workspace.panelBrowser" },
           ]).map(({ p, Icon, key }) => {
             // 브라우저·팀 보드는 접기 대신 열기/닫기 — 안 열려 있어도 눌러서 연다(#1034·#1098).
-            const isBrowser = p === "browser", isCrew = p === "crew", isFanout = p === "fanout";
-            const exists = isBrowser || isCrew || isFanout || panelExists(p), vis = isBrowser ? browserOpen : isCrew ? crewOpen : isFanout ? fanoutOpen : panelVisible(p);
+            const isBrowser = p === "browser", isCrew = p === "crew";
+            const exists = isBrowser || isCrew || panelExists(p), vis = isBrowser ? browserOpen : isCrew ? crewOpen : panelVisible(p);
             return (
-              <button key={p} type="button" disabled={!exists} onClick={() => (isBrowser ? toggleBrowser() : isCrew ? setCrewOpen((o) => !o) : isFanout ? setFanoutOpen((o) => !o) : toggleCollapse(p))} aria-pressed={vis}
+              <button key={p} type="button" disabled={!exists} onClick={() => (isBrowser ? toggleBrowser() : isCrew ? setCrewOpen((o) => !o) : toggleCollapse(p))} aria-pressed={vis}
                 title={t(key)} aria-label={t(key)}
                 className={`shrink-0 rounded-lg p-1.5 transition disabled:cursor-not-allowed disabled:opacity-30 ${vis ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
                 <Icon size={16} stroke={2} aria-hidden />

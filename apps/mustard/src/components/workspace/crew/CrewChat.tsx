@@ -3,7 +3,7 @@
 // 채팅앱(단톡방)형: 방 헤더 + 멤버 프로필 줄(상태 점·누르면 @), 남은 왼쪽 아바타·이름·말풍선, 나는 오른쪽 겨자 말풍선, 보드 안내는 가운데 알림, 날짜 알약.
 // 입력: @에이전트 = 그 역할에게 새 카드(그록봇식), 메시지에 답글 = 그 카드로 전달. 2초 폴링(since 이후만).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconArrowBackUp, IconArrowUp, IconAt, IconBell, IconBellOff, IconLayoutKanban, IconSettings, IconTerminal2, IconUser, IconUsers, IconX } from "@tabler/icons-react";
+import { IconArrowBackUp, IconArrowUp, IconAt, IconBell, IconBellOff, IconLayoutKanban, IconSettings, IconSwords, IconTerminal2, IconUser, IconUsers, IconX } from "@tabler/icons-react";
 import { Markdown, useT, useToast, relocalize, CREW_TEXT_KEYS, useSetting, setSetting, NKEYS, NOTIF_DEFAULTS } from "@mustard/core";
 import type { CrewMsg } from "@/lib/crew/crewChat";
 import type { CrewRun } from "@/lib/crew/crewRunner";
@@ -13,6 +13,8 @@ import { GatePanel } from "./TaskDialog";
 import type { CrewTask } from "@/lib/crew/crewTypes";
 import { sendToAgent } from "@/lib/browser/sendToAgent";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
+import FanoutPanel from "@/components/workspace/fanout/FanoutPanel";
+import { FANOUT_LAUNCH_EVENT, takeFanoutView } from "@/lib/repo/workspaceEvents";
 
 export const CREW_OPEN_TASK_EVENT = "mustard:crew-open-task"; // detail = { root, taskId } — 보드 열고 그 카드 편집 창
 // 보드 패널이 닫혀 있으면 이벤트 때 보드가 아직 없음 → 열고 나서 읽을 수 있게 마지막 요청을 남김
@@ -54,6 +56,12 @@ export default function CrewChat({ root }: { root: string }) {
   const [busy, setBusy] = useState(false);
   const [mention, setMention] = useState<{ q: string; at: number } | null>(null); // @ 자동완성
   const [rolesOpen, setRolesOpen] = useState(false);
+  // #1174 겨루기 — 이 대화방 안에서 봄(새 패널·탭 안 만듦, 유저 결정). 겨루기를 시작하면 열림
+  const [fanoutOpen, setFanoutOpen] = useState(() => takeFanoutView(root));
+  useEffect(() => {
+    const on = (e: Event) => { if ((e as CustomEvent<{ root: string }>).detail?.root === root) { takeFanoutView(root); setFanoutOpen(true); } };
+    window.addEventListener(FANOUT_LAUNCH_EVENT, on); return () => window.removeEventListener(FANOUT_LAUNCH_EVENT, on);
+  }, [root]);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastTs = useRef(0);
@@ -199,12 +207,18 @@ export default function CrewChat({ root }: { root: string }) {
           className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200">
           {crewNotify ? <IconBell size={14} aria-hidden /> : <IconBellOff size={14} aria-hidden />}
         </button>
+        <button type="button" onClick={() => setFanoutOpen((o) => !o)} aria-pressed={fanoutOpen} title={t("fanout.title")} aria-label={t("fanout.title")}
+          className={`shrink-0 rounded-md p-1 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200 ${fanoutOpen ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400"}`}>
+          <IconSwords size={14} aria-hidden />
+        </button>
         <button type="button" onClick={() => setRolesOpen(true)} title={t("crewchat.manageRoles")} aria-label={t("crewchat.manageRoles")}
           className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200">
           <IconSettings size={14} aria-hidden />
         </button>
       </div>
 
+      {/* #1174 겨루기 — 방 헤더 아래를 덮음(닫으면 대화로) */}
+      {fanoutOpen && <div className="absolute inset-x-0 bottom-0 top-11 z-20"><FanoutPanel root={root} onClose={() => setFanoutOpen(false)} /></div>}
       {/* 멤버 프로필 줄 — 누르면 @부르기, 상태 점(작업 중·내 확인 필요·대기) */}
       <div className="nunopi-scroll flex shrink-0 gap-1 overflow-x-auto border-b border-zinc-200 bg-white px-2 py-2 dark:border-zinc-800 dark:bg-[var(--s-pane)]">
         {roles.map((r) => {

@@ -12,7 +12,7 @@ import type { CandidateDiff, Fanout } from "@/lib/repo/fanout";
 import type { Trial, Verdict } from "@/lib/repo/fanoutJudgeRun";
 import { LETTERS } from "@/lib/repo/fanoutJudge";
 
-// 겨루기 패널(#1174) — 터미널 오른쪽 도크(Crew 보드와 같은 자리 규칙). 고른 겨루기의 후보마다 한 줄:
+// 겨루기 화면(#1174) — 오른쪽 Crew 대화방 안에 겹쳐 보임(새 패널·탭 안 만듦, 유저 결정). 고른 겨루기의 후보마다 한 줄:
 // 상태(그 터미널 탭 세션 상태) · 바뀐 파일·줄 수 · diff 펼치기 · 그 탭으로 가기. 판정·재판·채택은 뒤 커밋에서 이 패널 아래에 붙음.
 const post = async (body: Record<string, unknown>) => (await fetch("/api/repo/fanout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
 const folder = (dir: string) => dir.split("/").pop() ?? dir;
