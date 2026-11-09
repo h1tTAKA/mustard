@@ -1878,10 +1878,11 @@ ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, ids, text } 
   if (!target) return { ok: false, reason: "no-agent" };
   return pasteToAgent(target.id, text, async () => (await live()).some((s) => s.id === target.id) || ((await sessionKind(target.id)) === "shell" ? "shell" : false));
 });
-// 세션 맨 앞 프로그램 — 없음·모름(process 미상)·셸·그 밖(에이전트 쪽)
+// 세션 맨 앞 프로그램 — 없음·모름(이름 못 읽음)·셸·그 밖(셸 아님). 셸 아님 = 에이전트라는 뜻은 아님(dev 서버도) → Enter 판단은 호출부의 사전 확인과 함께
+// 인앱 브라우저 보내기는 Enter를 화면 판정(live)이 에이전트라고 할 때만 침 — 셸이 아닌 아무 프로그램(dev 서버 등)에 Enter가 가지 않게(리뷰 제안 안 받음)
 async function sessionKind(id) {
   const s = (await termClient.list()).find((x) => x.id === id);
-  return !s ? "gone" : s.process === undefined ? "unknown" : isShellProc(s.process) ? "shell" : "agent";
+  return !s ? "gone" : !s.process ? "unknown" : isShellProc(s.process) ? "shell" : "agent"; // 데몬은 이름을 못 읽으면 ""를 줌 → 모름(리뷰)
 }
 // 붙여넣기 + Enter. stillAgent() = Enter 직전 확인: true(에이전트) → Enter, "shell"(셸로 바뀐 게 확실) → Ctrl-U로 입력 줄을 비움
 // (안 비우면 붙인 글이 셸 입력 줄에 남아 다음 Enter에 명령으로 실행됨), 그 밖(없음·모름·확인 실패) → 키를 안 보냄(쓰던 글을 지우지 않게, #1174 리뷰).
@@ -1903,7 +1904,7 @@ ipcMain.handle("terminal:send-prompt", async (_e, { id, text, enter } = {}) => {
   if (typeof id !== "string" || !id || typeof text !== "string" || !text.trim()) return { ok: false, reason: "bad-args" };
   const ready = async () => {
     const s = (await termClient.list()).find((x) => x.id === id);
-    return !!s && s.process !== undefined && !isShellProc(s.process) && !!parseAgentScreen(liveBuffers.get(id) ?? s.screen, lastTitleRawById.get(id))?.agent;
+    return !!s && !!s.process && !isShellProc(s.process) && !!parseAgentScreen(liveBuffers.get(id) ?? s.screen, lastTitleRawById.get(id))?.agent;
   };
   for (let i = 0; i < 120; i++) {
     if (await ready().catch(() => false)) {
