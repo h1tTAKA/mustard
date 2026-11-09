@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { IconSwords, IconX, IconRefresh, IconChevronRight, IconTerminal2, IconLoader2 } from "@tabler/icons-react";
-import { useT } from "@mustard/core";
+import { IconSwords, IconX, IconRefresh, IconChevronRight, IconTerminal2, IconLoader2, IconGavel, IconStarFilled } from "@tabler/icons-react";
+import { useT, useToast } from "@mustard/core";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
 import { sessionState, useAgentSessionStates } from "@/lib/agentSessionStates";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import type { CandidateDiff, Fanout } from "@/lib/repo/fanout";
+import type { Verdict } from "@/lib/repo/fanoutJudgeRun";
+import { LETTERS } from "@/lib/repo/fanoutJudge";
 
 // 겨루기 패널(#1174) — 터미널 오른쪽 도크(Crew 보드와 같은 자리 규칙). 고른 겨루기의 후보마다 한 줄:
 // 상태(그 터미널 탭 세션 상태) · 바뀐 파일·줄 수 · diff 펼치기 · 그 탭으로 가기. 판정·재판·채택은 뒤 커밋에서 이 패널 아래에 붙음.
@@ -16,6 +18,7 @@ const folder = (dir: string) => dir.split("/").pop() ?? dir;
 
 export default function FanoutPanel({ root, onClose }: { root: string; onClose: () => void }) {
   const t = useT();
+  const toast = useToast();
   useAgentSessionStates(); // 세션 상태가 바뀌면 다시 그림
   const [list, setList] = useState<Fanout[] | null>(null);
   const [sel, setSel] = useState<string | null>(null);
@@ -33,6 +36,18 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
   useEffect(() => { const on = () => { setSel(null); setTimeout(() => void load(), 500); }; window.addEventListener("mustard:fanout-launch", on); return () => window.removeEventListener("mustard:fanout-launch", on); }, [load]);
 
   const cur = list?.find((f) => f.id === sel) ?? list?.find((f) => f.status === "running") ?? list?.[0] ?? null;
+  const verdict = cur?.verdict as Verdict | undefined;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const h = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(h); }, []);
+  const judging = verdict?.state === "running" && now - verdict.at < 20 * 60_000; // 20분 넘게 "판정 중" = 서버가 중간에 꺼짐 → 다시 할 수 있게
+  useEffect(() => { if (!judging) return; const h = setInterval(() => void load(), 3000); return () => clearInterval(h); }, [judging, load]); // 판정이 뒤에서 도는 동안 다시 읽기
+  const judge = async () => {
+    if (!cur) return;
+    setNow(Date.now());
+    const r = await post({ action: "judge", path: root, id: cur.id }).catch(() => null);
+    if (!r?.ok) toast(t("fanout.judgeFailed", { error: String(r?.error ?? "") }), "error");
+    void load();
+  };
   const refresh = useCallback(async () => {
     if (!cur) return;
     setLoading(true);
@@ -84,6 +99,7 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
                   <AgentLogo agent={c.agent as AgentId} size={14} />
                   <span className="min-w-0 truncate text-[12.5px] font-medium text-zinc-800 dark:text-zinc-100" title={c.branch}>{folder(c.dir)}</span>
                   {st && <AgentStateIcon state={st} />}
+                  {verdict?.state === "done" && verdict.chair?.winner === i && <IconStarFilled size={12} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-label={t("fanout.recommended")} />}
                   <span className="ml-auto shrink-0 font-mono text-[11.5px] text-zinc-500 dark:text-zinc-400">
                     {!d ? "…" : "error" in d ? <span className="text-rose-500">{t("fanout.diffFailed")}</span>
                       : <>{t("fanout.files", { n: d.files.length })} <span className="text-emerald-600 dark:text-emerald-400">+{d.added}</span> <span className="text-rose-600 dark:text-rose-400">−{d.removed}</span></>}
@@ -99,6 +115,7 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
               </div>
             );
           })}
+          <VerdictBox f={cur} verdict={verdict} judging={judging} onJudge={() => void judge()} />
         </div>
       )}
     </div>
@@ -131,6 +148,69 @@ function DiffView({ d, label }: { d: CandidateDiff; label: string }) {
             <div key={i} className={l.startsWith("+") && !l.startsWith("+++") ? "text-emerald-700 dark:text-emerald-400" : l.startsWith("-") && !l.startsWith("---") ? "text-rose-700 dark:text-rose-400" : l.startsWith("@@") ? "text-sky-700 dark:text-sky-400" : "text-zinc-600 dark:text-zinc-400"}>{l || " "}</div>
           ))}
         </pre>
+      )}
+    </div>
+  );
+}
+
+// 판정 칸(#1174) — 판정 버튼 · 판정 중 · 결과(추천 승자·이유·점수·심사별 순위·가져올 좋은 점). 가린 이름은 order로 풀어 폴더 이름으로 보여 줌.
+const PROVIDER_LABEL: Record<string, string> = { "claude-code": "Claude", codex: "Codex", opencode: "OpenCode" };
+function VerdictBox({ f, verdict, judging, onJudge }: { f: Fanout; verdict?: Verdict; judging: boolean; onJudge: () => void }) {
+  const t = useT();
+  const name = (ci: number) => folder(f.candidates[ci]?.dir ?? "?");
+  const byLabel = (l: string) => (verdict?.order ? name(verdict.order[LETTERS.indexOf(l)]) : l);
+  const btn = "flex shrink-0 items-center gap-1 rounded-md border border-zinc-200 px-2 py-0.5 text-[11.5px] font-medium text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"; // 팀 보드 "새 카드" 버튼과 같은 모양
+  const done = verdict?.state === "done" ? verdict : null;
+  return (
+    <div className="rounded-lg border border-zinc-200 p-2.5 dark:border-zinc-800">
+      <div className="flex items-center gap-2">
+        <IconGavel size={14} stroke={2} className="shrink-0 text-zinc-500 dark:text-zinc-400" aria-hidden />
+        <span className="mr-auto text-[12.5px] font-semibold text-zinc-700 dark:text-zinc-200">{t("fanout.verdict")}</span>
+        {judging ? <span className="flex items-center gap-1 text-[11.5px] text-zinc-500 dark:text-zinc-400"><IconLoader2 size={12} className="animate-spin" aria-hidden />{t("fanout.judging")}</span>
+          : <button type="button" onClick={onJudge} className={btn}>{done ? t("fanout.judgeAgain") : t("fanout.judge")}</button>}
+      </div>
+      {!verdict && !judging && <p className="mt-1.5 text-[11.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">{t("fanout.judgeHint")}</p>}
+      {verdict?.state === "failed" && <p className="mt-1.5 text-[11.5px] text-rose-500">{t("fanout.judgeFailed", { error: verdict.error ?? "" })}</p>}
+      {done?.chair && (
+        <div className="mt-2 space-y-2 text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-300">
+          <div className="flex items-center gap-1.5">
+            <IconStarFilled size={12} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
+            <span className="font-semibold text-zinc-800 dark:text-zinc-100">{t("fanout.winner", { name: name(done.chair.winner) })}</span>
+          </div>
+          {done.chair.why && <p>{done.chair.why}</p>}
+          <table className="w-full font-mono text-[11.5px]">
+            <tbody>
+              {done.scores?.map((s, k) => (
+                <tr key={s.label} className="text-zinc-600 dark:text-zinc-400">
+                  <td className="w-5">{k + 1}</td>
+                  <td className="truncate text-zinc-800 dark:text-zinc-200">{name(s.candidate)}</td>
+                  <td className="text-right">{t("fanout.score", { n: s.score, firsts: s.firsts })}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {done.close && <p className="text-[11.5px] text-amber-700 dark:text-amber-400">{t("fanout.closeRace")}</p>}
+          {Object.keys(done.chair.grafts).length > 0 && (
+            <div>
+              <div className="text-[11.5px] font-medium text-zinc-500 dark:text-zinc-400">{t("fanout.grafts")}</div>
+              <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
+                {Object.entries(done.chair.grafts).flatMap(([ci, xs]) => xs.map((x, j) => <li key={`${ci}-${j}`}><span className="font-mono text-[11px] text-zinc-500 dark:text-zinc-400">{name(Number(ci))}</span> {x}</li>))}
+              </ul>
+            </div>
+          )}
+          <details>
+            <summary className="cursor-pointer text-[11.5px] font-medium text-zinc-500 dark:text-zinc-400">{t("fanout.judges", { n: done.judges?.filter((j) => j.ranking).length ?? 0 })}</summary>
+            <ul className="mt-1 space-y-1.5">
+              {done.judges?.map((j) => (
+                <li key={j.provider}>
+                  <div className="font-medium text-zinc-800 dark:text-zinc-200">{PROVIDER_LABEL[j.provider] ?? j.provider}{j.ranking ? `: ${j.ranking.map(byLabel).join(" > ")}` : ""}</div>
+                  {j.error ? <div className="text-[11.5px] text-rose-500">{t("fanout.judgeSkipped")}</div>
+                    : Object.entries(j.reasons ?? {}).map(([l, r]) => <div key={l} className="text-[11.5px] text-zinc-600 dark:text-zinc-400"><span className="font-mono">{byLabel(l)}</span> {r}</div>)}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
       )}
     </div>
   );
