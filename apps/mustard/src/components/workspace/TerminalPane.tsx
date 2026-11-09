@@ -4,7 +4,8 @@
 import { launchOpts, liftStoredArgs } from "@/lib/agentLaunch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
-import { useShortcut, useT, isCurrentTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
+import { useShortcut, useT, useToast, isCurrentTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
+import { FANOUT_LAUNCH_EVENT, type FanoutLaunch } from "@/lib/repo/workspaceEvents";
 import Terminal from "@/components/workspace/Terminal";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
@@ -208,6 +209,29 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
     window.addEventListener("mustard:crew-takeover", on);
     return () => window.removeEventListener("mustard:crew-takeover", on);
   }, [cwd, t]);
+  // #1174 겨루기 — 후보마다 새 탭(이름 = 작업 폴더 이름)에서 그 폴더로 가 에이전트를 띄우고, 화면이 뜨면 같은 프롬프트를 보냄
+  const toast = useToast();
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<FanoutLaunch>).detail;
+      if (!d || d.root !== cwd) return;
+      d.handled = true;
+      const ids = d.candidates.map(() => genId());
+      setTabs((prev) => d.candidates.reduce((acc, c, i) => [...acc, { id: ids[i], title: t("workspace.terminalTab", { n: nextNum(acc) }), customTitle: c.dir.split("/").pop() }], prev));
+      setActiveId(ids[0]);
+      d.candidates.forEach((c, i) => {
+        markAgentUsed(c.agent);
+        void (async () => {
+          const term = window.nunopiDesktop?.terminal;
+          const r = await term?.launchAgent?.({ id: ids[i], agent: c.agent, dark: isCurrentTerminalDark(), ...launchOpts(c.agent), cwd: c.dir });
+          const sent = r?.ok ? await term?.sendPrompt?.({ id: ids[i], text: d.prompt }) : null;
+          if (!sent?.ok) { void navigator.clipboard?.writeText(d.prompt).catch(() => {}); toast(t("fanout.pasteYourself", { name: c.dir.split("/").pop() ?? c.agent }), "error"); }
+        })();
+      });
+    };
+    window.addEventListener(FANOUT_LAUNCH_EVENT, on);
+    return () => window.removeEventListener(FANOUT_LAUNCH_EVENT, on);
+  }, [cwd, t, toast]);
   const launchInNewTab = (agent: string) => {
     setMenuOpen(false);
     markAgentUsed(agent);

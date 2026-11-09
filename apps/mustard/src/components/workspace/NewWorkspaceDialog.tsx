@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconGitBranch, IconGitCommit, IconCircleDot, IconGitPullRequest, IconLoader2, IconFolder } from "@tabler/icons-react";
-import { useT, useToast, getSetting, GKEYS, GIT_DEFAULTS } from "@mustard/core";
+import { useT, useToast, getSetting, GKEYS, GIT_DEFAULTS, agentEnabled, sortAgents } from "@mustard/core";
+import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { branchFor, issueName, slugName } from "@/lib/repo/workspaceName";
-import { openRepoTab, openWorkspaceSettings, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
+import { launchFanout, openRepoTab, openWorkspaceSettings, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
 
 // "새 작업공간"(#1170) — 메인 폴더는 그대로, 옆에 git worktree를 만들어 레포 탭으로 엶. 흐름:
 // 시작점(브랜치·커밋·이슈·PR) → 이름(이슈면 제목 slug, PR이면 pr-N) → 만들기 → 탭 열기 → setup(승인 안 된 스크립트면 내용 보여 주고 묻기).
@@ -29,6 +30,17 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
   const [busy, setBusy] = useState(false);
   const [setup, setSetup] = useState<{ dir: string; script: string } | null>(null); // 승인 기다리는 setup
   const prefix = getSetting<string>(GKEYS.branchPrefix, GIT_DEFAULTS.branchPrefix);
+  // #1174 여러 에이전트로(겨루기) — 고른 순서대로 후보(같은 에이전트 여러 번 가능, 2~4개), 같은 프롬프트를 각자 터미널 탭에서
+  const [multi, setMulti] = useState(false);
+  const [picks, setPicks] = useState<string[]>([]);
+  const [prompt, setPrompt] = useState("");
+  const [agents, setAgents] = useState<string[]>([]); // 감지되고(ok) 켜진 에이전트(＋ 메뉴와 같은 목록)
+  useEffect(() => {
+    if (!multi) return;
+    void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) setAgents(sortAgents(r.list.filter((a) => a.status === "ok" && agentEnabled(a.id))).map((a) => a.id)); }).catch(() => {});
+  }, [multi]);
+  const setupQueue = useRef<string[]>([]); // 겨루기 후보들의 setup을 하나씩(승인은 첫 번째에서 — 같은 스크립트면 뒤는 이미 승인됨)
+  const finish = () => { const next = setupQueue.current.shift(); if (next) void runSetup(next); else onClose(); };
 
   // 시작점 후보(로컬·원격 브랜치) — 입력칸 자동완성
   useEffect(() => {
@@ -65,30 +77,48 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
   const suggested = from === "issue" && ref ? issueName(Number(num), ref.title) : from === "pr" && num ? `pr-${Number(num)}` : "";
   const finalName = nameTouched ? slugName(name) : suggested;
   const branch = from === "pr" ? ref?.headRefName ?? "" : branchFor(prefix, finalName || "workspace");
-  const ready = !busy && (from === "pr" ? !!ref?.headRefName : from === "issue" ? !!ref : from === "commit" ? !!base.trim() : true);
+  const fanout = multi && from !== "pr"; // PR 시작은 PR 브랜치 이름을 그대로 써서 후보 여러 개와 안 맞음
+  const ready = !busy && (from === "pr" ? !!ref?.headRefName : from === "issue" ? !!ref : from === "commit" ? !!base.trim() : true) && (!fanout || (picks.length >= 2 && !!prompt.trim()));
 
   const runSetup = async (dir: string) => {
     const s = await post({ action: "setup", path: root, dir }).catch(() => null);
-    if (!s?.ok) { toast(t("newWs.setupFailed"), "error"); onClose(); return; }
+    if (!s?.ok) { toast(t("newWs.setupFailed"), "error"); finish(); return; }
     if (s.status === "untrusted") { setSetup({ dir, script: s.script }); return; }
     if (s.status === "too-long") toast(t("newWs.setupTooLong"), "error");
     else if (s.status === "failed") toast(t("newWs.setupFailed"), "error");
     else if (s.status === "ok") toast(t("newWs.setupOk"));
-    onClose();
+    finish();
   };
   const decide = async (trust: boolean) => {
     if (!setup) return;
     setBusy(true);
     const r = await post({ action: "trust", kind: "setup", path: root, dir: setup.dir, script: setup.script, skip: !trust }).catch(() => null);
     setBusy(false);
-    if (!r?.ok) { toast(t("newWs.setupChanged"), "error"); setSetup(null); onClose(); return; }
+    if (!r?.ok) { toast(t("newWs.setupChanged"), "error"); setSetup(null); finish(); return; }
     const dir = setup.dir;
     setSetup(null);
-    if (trust) { toast(t("newWs.setupRunning")); void runSetup(dir); } else onClose();
+    if (trust) { toast(t("newWs.setupRunning")); void runSetup(dir); } else finish();
+  };
+
+  // #1174 후보 N개 만들기 → 이 레포 터미널에 후보마다 탭 + 에이전트 + 프롬프트 → setup 하나씩
+  const createFanout = async () => {
+    setBusy(true);
+    const r = await fetch("/api/repo/fanout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create", path: root, name: finalName, prompt: prompt.trim(), agents: picks, base: from === "issue" ? "" : base.trim(), prefix }) })
+      .then((x) => x.json()).catch((e) => ({ ok: false, error: String(e) }));
+    setBusy(false);
+    if (!r.ok) { toast(t("newWs.failed", { error: String(r.error ?? "") }), "error"); return; }
+    const cands = (r.fanout.candidates as { agent: string; dir: string }[]);
+    if (!launchFanout({ root, prompt: prompt.trim(), candidates: cands })) toast(t("fanout.noTerminal"), "error");
+    else toast(t("fanout.started", { n: cands.length }));
+    setupQueue.current = cands.slice(1).map((c) => c.dir);
+    setBusy(true);
+    await runSetup(cands[0].dir);
+    setBusy(false);
   };
 
   const create = async () => {
     if (!ready) return;
+    if (fanout) { await createFanout(); return; }
     setBusy(true);
     const body: Record<string, unknown> = { action: "create", path: root, name: finalName, prefix };
     if (from === "branch" || from === "commit") body.base = base.trim();
@@ -175,6 +205,41 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
                 <label className={label} htmlFor="new-ws-name">{t("newWs.name")}</label>
                 <input id="new-ws-name" value={nameTouched ? name : suggested} onChange={(e) => { setName(e.target.value); setNameTouched(true); }}
                   placeholder={t("newWs.namePlaceholder")} className={input} />
+              </div>
+            )}
+            {from !== "pr" && (
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="min-w-0 text-[12px] text-zinc-700 dark:text-zinc-300">{t("fanout.toggle")}</span>
+                  {/* 작업공간 설정 창 스위치와 같은 모양 */}
+                  <button type="button" role="switch" aria-checked={multi} aria-label={t("fanout.toggle")} onClick={() => setMulti((m) => !m)}
+                    className={`relative h-6 w-11 shrink-0 rounded-full transition ${multi ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${multi ? "left-[22px]" : "left-0.5"}`} />
+                  </button>
+                </div>
+                {multi && (
+                  <div className="mt-2 space-y-2">
+                    <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">{t("fanout.desc")}</p>
+                    <div className="flex flex-wrap gap-1">
+                      {agents.map((a) => (
+                        <button key={a} type="button" disabled={picks.length >= 4} onClick={() => setPicks((p) => [...p, a])}
+                          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[12px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10">
+                          <AgentLogo agent={a as AgentId} size={13} />{AGENT_META[a as AgentId]?.label ?? a}
+                        </button>
+                      ))}
+                      {!agents.length && <span className="text-[11.5px] text-zinc-500 dark:text-zinc-400">{t("fanout.noAgents")}</span>}
+                    </div>
+                    <div className="flex min-h-[30px] flex-wrap items-center gap-1 rounded-lg bg-zinc-50 px-2 py-1 dark:bg-white/[0.03]">
+                      {picks.length ? picks.map((a, i) => (
+                        <button key={i} type="button" onClick={() => setPicks((p) => p.filter((_, j) => j !== i))} title={t("fanout.removePick")}
+                          className="inline-flex items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1 text-[12px] font-medium text-white transition dark:bg-zinc-100 dark:text-zinc-900">
+                          <AgentLogo agent={a as AgentId} size={13} />{AGENT_META[a as AgentId]?.label ?? a}<span aria-hidden>×</span>
+                        </button>
+                      )) : <span className="text-[11.5px] text-zinc-500 dark:text-zinc-400">{t("fanout.pickHint")}</span>}
+                    </div>
+                    <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4} placeholder={t("fanout.promptPlaceholder")} className={`${input} resize-y`} />
+                  </div>
+                )}
               </div>
             )}
             <div className="space-y-0.5 rounded-lg bg-zinc-50 px-2.5 py-2 text-[11.5px] text-zinc-500 dark:bg-white/[0.03] dark:text-zinc-400">
