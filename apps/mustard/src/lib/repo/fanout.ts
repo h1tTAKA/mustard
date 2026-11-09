@@ -14,7 +14,7 @@ const gitOut = (cwd: string, args: string[]) => pexec("git", args, { cwd, timeou
 
 export const MIN_CANDIDATES = 2, MAX_CANDIDATES = 4;
 export const MAX_DIFF = 60_000, MAX_FILE_DIFF = 20_000; // 판정 모델 입력 상한(PR 리뷰와 같은 크기) — 넘는 파일은 이름·줄 수만
-export interface Candidate { agent: string; dir: string; branch: string; base: string }
+export interface Candidate { agent: string; dir: string; branch: string; base: string; tab?: string } // tab = 그 후보 터미널 탭 id(= 에이전트 세션 id)
 export interface Fanout {
   id: string; name: string; prompt: string; createdAt: number;
   status: "running" | "adopted" | "discarded";
@@ -40,6 +40,14 @@ function writeAll(root: string, all: Fanout[]) {
 export const getFanout = (root: string, id: string) => listFanouts(root).find((f) => f.id === id) ?? null;
 export function saveFanout(root: string, f: Fanout) {
   writeAll(root, [f, ...listFanouts(root).filter((x) => x.id !== f.id)]);
+}
+
+// 화면이 연 터미널 탭 id를 후보 순서대로 붙임
+export function setTabs(root: string, id: string, tabIds: string[]) {
+  const f = getFanout(root, id);
+  if (!f) throw new Error("not found");
+  f.candidates.forEach((c, i) => { const t = tabIds[i]; if (typeof t === "string" && /^[\w-]{1,64}$/.test(t)) c.tab = t; });
+  saveFanout(root, f);
 }
 
 const AGENT = /^[a-z0-9][a-z0-9-]{0,31}$/;

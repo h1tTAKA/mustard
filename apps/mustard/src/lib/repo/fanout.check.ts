@@ -9,7 +9,7 @@ const tmp = realpathSync(mkdtempSync(join(tmpdir(), "fo-")));
 process.env.MUSTARD_WORKSPACES_DIR = join(tmp, "workspaces");
 process.env.MUSTARD_FANOUT_DIR = join(tmp, "fanout");
 process.env.MUSTARD_CREW_DIR = join(tmp, "crew");
-const { candidateDiff, capDiff, createFanout, getFanout, listFanouts, MAX_DIFF } = await import("./fanout.ts");
+const { candidateDiff, capDiff, createFanout, getFanout, listFanouts, setTabs, MAX_DIFF } = await import("./fanout.ts");
 
 const root = join(tmp, "repo");
 mkdirSync(root);
@@ -30,6 +30,9 @@ assert.deepStrictEqual(f.candidates.map((c) => c.dir.split("/").pop()), ["fix-cl
 assert.ok(f.candidates.every((c) => existsSync(c.dir)));
 assert.strictEqual(getFanout(root, f.id)?.prompt, "fix it");
 assert.strictEqual(listFanouts(root).length, 1);
+// 탭 id는 후보 순서대로, 이상한 값은 버림
+setTabs(root, f.id, ["t-1", "bad id!", "t-3"]);
+assert.deepStrictEqual(getFanout(root, f.id)?.candidates.map((c) => c.tab), ["t-1", undefined, "t-3"]);
 
 // 후보 0: 커밋 + 미커밋, 후보 1: 새 파일만, 후보 2: 그대로
 const [c0, c1, c2] = f.candidates;

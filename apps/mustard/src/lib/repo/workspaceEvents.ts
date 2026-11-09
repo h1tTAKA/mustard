@@ -14,7 +14,7 @@ export const closeWorkspace = (dir: string) => window.dispatchEvent(new CustomEv
 // #1216 작업공간 설정 창(이 레포의 setup·archive·공유 폴더) 열기
 export const WORKSPACE_SETTINGS_EVENT = "mustard:workspace-settings";
 export const openWorkspaceSettings = (root: string) => window.dispatchEvent(new CustomEvent(WORKSPACE_SETTINGS_EVENT, { detail: root }));
-// #1174 겨루기 — 후보마다 이 레포 터미널에 새 탭을 열고 그 작업 폴더에서 에이전트를 띄워 같은 프롬프트를 보냄. TerminalPane이 받음(받으면 handled = true).
+// #1174 겨루기 — 후보마다 이 레포 터미널에 새 탭을 열고 그 작업 폴더에서 에이전트를 띄워 같은 프롬프트를 보냄. TerminalPane이 받아 탭 id를 채움(못 받으면 빈 목록).
 export const FANOUT_LAUNCH_EVENT = "mustard:fanout-launch";
-export type FanoutLaunch = { root: string; prompt: string; candidates: { agent: string; dir: string }[]; handled?: boolean };
-export const launchFanout = (d: FanoutLaunch) => { const detail = { ...d, handled: false }; window.dispatchEvent(new CustomEvent(FANOUT_LAUNCH_EVENT, { detail })); return detail.handled; };
+export type FanoutLaunch = { root: string; prompt: string; candidates: { agent: string; dir: string }[]; tabIds?: string[] };
+export const launchFanout = (d: FanoutLaunch): string[] => { const detail: FanoutLaunch = { ...d, tabIds: [] }; window.dispatchEvent(new CustomEvent(FANOUT_LAUNCH_EVENT, { detail })); return detail.tabIds ?? []; };

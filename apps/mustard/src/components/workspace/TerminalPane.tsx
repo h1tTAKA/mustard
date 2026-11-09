@@ -215,8 +215,8 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
     const on = (e: Event) => {
       const d = (e as CustomEvent<FanoutLaunch>).detail;
       if (!d || d.root !== cwd) return;
-      d.handled = true;
       const ids = d.candidates.map(() => genId());
+      d.tabIds = ids; // 겨루기 기록에 저장 — 패널이 후보 상태(세션 id = 탭 id)·탭으로 가기에 씀
       setTabs((prev) => d.candidates.reduce((acc, c, i) => [...acc, { id: ids[i], title: t("workspace.terminalTab", { n: nextNum(acc) }), customTitle: c.dir.split("/").pop() }], prev));
       setActiveId(ids[0]);
       d.candidates.forEach((c, i) => {

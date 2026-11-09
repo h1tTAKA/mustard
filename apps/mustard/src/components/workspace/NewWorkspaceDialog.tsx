@@ -108,8 +108,12 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
     setBusy(false);
     if (!r.ok) { toast(t("newWs.failed", { error: String(r.error ?? "") }), "error"); return; }
     const cands = (r.fanout.candidates as { agent: string; dir: string }[]);
-    if (!launchFanout({ root, prompt: prompt.trim(), candidates: cands })) toast(t("fanout.noTerminal"), "error");
-    else toast(t("fanout.started", { n: cands.length }));
+    const tabIds = launchFanout({ root, prompt: prompt.trim(), candidates: cands });
+    if (!tabIds.length) toast(t("fanout.noTerminal"), "error");
+    else {
+      toast(t("fanout.started", { n: cands.length }));
+      void fetch("/api/repo/fanout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "tabs", path: root, id: r.fanout.id, tabIds }) }).catch(() => {});
+    }
     setupQueue.current = cands.slice(1).map((c) => c.dir);
     setBusy(true);
     await runSetup(cands[0].dir);
