@@ -31,7 +31,7 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
 
   const load = useCallback(async () => {
     const r = await post({ action: "list", path: root }).catch(() => null);
-    setList(r?.ok ? r.fanouts : []);
+    setList((prev) => (r?.ok ? r.fanouts : prev ?? [])); // 한 번 못 읽었다고 진행 중 겨루기 버튼을 지우지 않음(리뷰)
   }, [root]);
   useEffect(() => { void load(); }, [load]); // eslint-disable-line react-hooks/set-state-in-effect -- 열 때 목록 한 번 읽기(서버 기록)
   useEffect(() => { window.addEventListener("focus", load); return () => window.removeEventListener("focus", load); }, [load]);

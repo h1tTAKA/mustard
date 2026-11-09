@@ -80,6 +80,20 @@ assert.strictEqual(many.files.length, 205);
 assert.ok(many.truncated && many.files.filter((x) => x.big).length >= 5);
 await discardFanout(root, f2.id);
 
+// 비밀일 수 있는 새 파일: 판정 입력엔 이름만, 채택 커밋엔 안 들어감
+const { SECRET } = await import("./fanout.ts");
+for (const x of [".env", "app/.env.local", "keys/server.pem", "id_rsa", "config/credentials.json", ".npmrc"]) assert.ok(SECRET.test(x), x);
+for (const x of ["env.ts", "src/key.ts", "README.md", "environment.md"]) assert.ok(!SECRET.test(x), x);
+const f3 = await createFanout(root, { name: "sec", prompt: "add it", agents: ["claude", "codex"] });
+writeFileSync(join(f3.candidates[0].dir, ".env"), "TOKEN=abc\n");
+writeFileSync(join(f3.candidates[0].dir, "feature.txt"), "ok\n");
+const sd = await candidateDiff(f3.candidates[0]);
+assert.ok(!sd.diff.includes("TOKEN=abc") && sd.files.some((x) => x.path === ".env" && x.big));
+await assert.rejects(adoptFanout(root, f3.id, 0), /origin/); // 원격이 없어 PR에서 멈춤 — 커밋은 됨
+assert.strictEqual(g(f3.candidates[0].dir, "show", "--name-only", "--format=", "HEAD"), "feature.txt");
+assert.strictEqual(g(f3.candidates[0].dir, "status", "--porcelain"), "?? .env");
+await discardFanout(root, f3.id);
+
 // PR 기준 브랜치: 브랜치만, HEAD·SHA·PR 전용 ref는 빈 값(gh 기본)
 assert.strictEqual(baseBranch("refs/heads/main"), "main");
 assert.strictEqual(baseBranch("refs/remotes/origin/release/1.0"), "release/1.0");

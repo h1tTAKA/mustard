@@ -14,7 +14,9 @@ const pexec = promisify(execFile);
 const gitOut = (cwd: string, args: string[]) => pexec("git", args, { cwd, timeout: 60_000, maxBuffer: 50_000_000 }).then((r) => r.stdout, (e: { stdout?: string; code?: number }) => { if (e.code === 1 && typeof e.stdout === "string") return e.stdout; throw e; });
 
 export const MIN_CANDIDATES = 2, MAX_CANDIDATES = 4;
-export const MAX_DIFF = 60_000, MAX_FILE_DIFF = 20_000, MAX_UNTRACKED = 200; // 판정 모델 입력 상한(PR 리뷰와 같은 크기) — 넘는 파일은 이름·줄 수만
+export const MAX_DIFF = 60_000, MAX_FILE_DIFF = 20_000, MAX_UNTRACKED = 200;
+// 비밀일 수 있는 새 파일 — 판정 모델엔 내용 대신 이름만, 채택 커밋엔 안 넣음(에이전트가 만든 .env·키가 push·PR로 나가지 않게, 리뷰)
+export const SECRET = /(^|\/)(\.env(\..*)?|.*\.(pem|key|p12|pfx)|id_(rsa|ed25519|ecdsa)(\.pub)?|credentials(\.json)?|\.npmrc|\.netrc)$/i; // 판정 모델 입력 상한(PR 리뷰와 같은 크기) — 넘는 파일은 이름·줄 수만
 export interface Candidate { agent: string; dir: string; branch: string; base: string; tab?: string } // tab = 그 후보 터미널 탭 id(= 에이전트 세션 id)
 export interface Fanout {
   id: string; name: string; prompt: string; createdAt: number;
@@ -35,7 +37,8 @@ export function listFanouts(root: string): Fanout[] {
 function writeAll(root: string, all: Fanout[]) {
   const f = file(root);
   mkdirSync(dirname(f), { recursive: true });
-  writeFileSync(`${f}.tmp`, JSON.stringify(all.slice(0, 50), null, 1)); // 최근 50개
+  let n = 0;
+  writeFileSync(`${f}.tmp`, JSON.stringify(all.filter((x) => x.status === "running" || n++ < 50), null, 1)); // 끝난 건 최근 50개, 진행 중은 전부(폴더·브랜치가 남아 있어서, 리뷰)
   renameSync(`${f}.tmp`, f);
 }
 export const getFanout = (root: string, id: string) => listFanouts(root).find((f) => f.id === id) ?? null;
@@ -62,7 +65,9 @@ export async function createFanout(root: string, o: CreateFanoutOpts): Promise<F
   try {
     for (const agent of o.agents) {
       const w = await createWorkspace(root, { name: `${o.name || "fanout"}-${agent}`, base: o.base, prefix: o.prefix });
-      made.push({ agent, dir: w.dir, branch: w.branch, base: w.base });
+      // 시작점이 "HEAD"면 후보 폴더 안에선 그 후보 자신의 HEAD를 가리켜 diff·채택이 "바뀐 것 없음"이 됨 → 만든 직후의 커밋(= 시작점)으로 고정
+      const base = w.base === "HEAD" ? (await pexec("git", ["rev-parse", "HEAD"], { cwd: w.dir })).stdout.trim() : w.base;
+      made.push({ agent, dir: w.dir, branch: w.branch, base });
     }
   } catch (e) {
     for (const c of made) await dropCandidate(root, c, true).catch(() => {}); // 복사해 온 무시된 파일이 있어도 지워지게(본 개수 제한 없음), 방금 만든 폴더라 정리 스크립트는 안 돌림(리뷰)
@@ -84,8 +89,8 @@ export async function candidateDiff(c: Candidate): Promise<CandidateDiff> {
   const tracked = await gitOut(c.dir, ["diff", "--no-color", "--no-ext-diff", "-M", mb]);
   const untracked = (await gitOut(c.dir, ["ls-files", "--others", "--exclude-standard", "-z"])).split("\0").filter(Boolean);
   const parts = splitDiff(tracked);
-  const unread: string[] = untracked.slice(MAX_UNTRACKED); // 넘는 것 + 못 읽은 것(시간 초과·너무 큼)
-  for (const p of untracked.slice(0, MAX_UNTRACKED)) { const x = await gitOut(c.dir, ["diff", "--no-color", "--no-index", "--", "/dev/null", p]).catch(() => ""); if (x) parts.push(x); else unread.push(p); }
+  const unread: string[] = [...untracked.slice(MAX_UNTRACKED), ...untracked.slice(0, MAX_UNTRACKED).filter((p) => SECRET.test(p))]; // 넘는 것 + 비밀일 수 있는 것 + 못 읽은 것
+  for (const p of untracked.slice(0, MAX_UNTRACKED).filter((p) => !SECRET.test(p))) { const x = await gitOut(c.dir, ["diff", "--no-color", "--no-index", "--", "/dev/null", p]).catch(() => ""); if (x) parts.push(x); else unread.push(p); }
   const d = capDiff(parts);
   // 이름만(줄 수 0) + 잘림 표시 — 채택하면 git add -A로 같이 들어가니 목록에서 빠지면 안 됨(리뷰)
   for (const p of unread) d.files.push({ path: p, added: 0, removed: 0, big: true });
@@ -153,7 +158,9 @@ export const adoptFanout = (root: string, id: string, winner: number) => once(id
   const title = (f.prompt.split("\n").map((l) => l.trim()).find(Boolean) ?? "Compete result").slice(0, 72);
   if (await gitIn(w.dir, ["status", "--porcelain"])) {
     await gitIn(w.dir, ["add", "-A"]);
-    await gitIn(w.dir, ["commit", "-q", "-m", title]);
+    const secret = (await gitIn(w.dir, ["diff", "--cached", "--name-only", "--diff-filter=A", "-z"]).catch(() => "")).split("\0").filter((p) => p && SECRET.test(p));
+    if (secret.length) await gitIn(w.dir, ["reset", "-q", "--", ...secret]); // 새로 생긴 비밀일 수 있는 파일은 커밋에서 뺌(폴더엔 남음)
+    if (await gitIn(w.dir, ["diff", "--cached", "--name-only"])) await gitIn(w.dir, ["commit", "-q", "-m", title]);
   }
   const mb = (await gitIn(w.dir, ["merge-base", w.base, "HEAD"]).catch(() => "")) || w.base;
   if (Number(await gitIn(w.dir, ["rev-list", "--count", `${mb}..HEAD`]).catch(() => "0")) === 0) throw new Error("no changes");
@@ -181,6 +188,6 @@ export const discardFanout = (root: string, id: string) => once(id, async () => 
   const f = getFanout(root, id);
   if (!f || f.status !== "running") throw new Error("not running");
   const left = await dropAll(root, f.candidates);
-  saveFanout(root, { ...(getFanout(root, id) ?? f), status: "discarded" });
+  if (!left.length) saveFanout(root, { ...(getFanout(root, id) ?? f), status: "discarded" }); // 남은 게 있으면 진행 중으로 둠 — 다시 버리기 할 수 있게(리뷰)
   return { left };
 });
