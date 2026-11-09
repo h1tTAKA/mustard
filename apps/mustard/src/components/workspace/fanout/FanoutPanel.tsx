@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { IconSwords, IconX, IconRefresh, IconChevronRight, IconTerminal2, IconLoader2, IconGavel, IconStarFilled } from "@tabler/icons-react";
+import { IconSwords, IconX, IconRefresh, IconChevronRight, IconTerminal2, IconLoader2, IconGavel, IconStarFilled, IconScale } from "@tabler/icons-react";
 import { useT, useToast } from "@mustard/core";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
 import { sessionState, useAgentSessionStates } from "@/lib/agentSessionStates";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import type { CandidateDiff, Fanout } from "@/lib/repo/fanout";
-import type { Verdict } from "@/lib/repo/fanoutJudgeRun";
+import type { Trial, Verdict } from "@/lib/repo/fanoutJudgeRun";
 import { LETTERS } from "@/lib/repo/fanoutJudge";
 
 // 겨루기 패널(#1174) — 터미널 오른쪽 도크(Crew 보드와 같은 자리 규칙). 고른 겨루기의 후보마다 한 줄:
@@ -40,12 +40,14 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const h = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(h); }, []);
   const judging = verdict?.state === "running" && now - verdict.at < 20 * 60_000; // 20분 넘게 "판정 중" = 서버가 중간에 꺼짐 → 다시 할 수 있게
-  useEffect(() => { if (!judging) return; const h = setInterval(() => void load(), 3000); return () => clearInterval(h); }, [judging, load]); // 판정이 뒤에서 도는 동안 다시 읽기
-  const judge = async () => {
+  const trialRec = cur?.trial as Trial | undefined;
+  const trying = trialRec?.state === "running" && now - trialRec.at < 20 * 60_000;
+  useEffect(() => { if (!judging && !trying) return; const h = setInterval(() => void load(), 3000); return () => clearInterval(h); }, [judging, trying, load]); // 판정·재판이 뒤에서 도는 동안 다시 읽기
+  const start = async (action: "judge" | "trial") => {
     if (!cur) return;
     setNow(Date.now());
-    const r = await post({ action: "judge", path: root, id: cur.id }).catch(() => null);
-    if (!r?.ok) toast(t("fanout.judgeFailed", { error: String(r?.error ?? "") }), "error");
+    const r = await post({ action, path: root, id: cur.id }).catch(() => null);
+    if (!r?.ok) toast(t(action === "judge" ? "fanout.judgeFailed" : "fanout.trialFailed", { error: String(r?.error ?? "") }), "error");
     void load();
   };
   const refresh = useCallback(async () => {
@@ -115,7 +117,8 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
               </div>
             );
           })}
-          <VerdictBox f={cur} verdict={verdict} judging={judging} onJudge={() => void judge()} />
+          <VerdictBox f={cur} verdict={verdict} judging={judging} onJudge={() => void start("judge")} />
+          {verdict?.state === "done" && (verdict.scores?.length ?? 0) >= 2 && <TrialBox f={cur} verdict={verdict} trial={trialRec} trying={trying} onStart={() => void start("trial")} />}
         </div>
       )}
     </div>
@@ -209,6 +212,52 @@ function VerdictBox({ f, verdict, judging, onJudge }: { f: Fanout; verdict?: Ver
                 </li>
               ))}
             </ul>
+          </details>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 재판 칸(#1174) — 판정 1·2위 두 후보만. 접전이면 버튼을 강조. 결과: 판결·뒤집힐 조건·배심 표, 변론은 접어 둠.
+function TrialBox({ f, verdict, trial, trying, onStart }: { f: Fanout; verdict: Verdict; trial?: Trial; trying: boolean; onStart: () => void }) {
+  const t = useT();
+  const name = (ci: number) => folder(f.candidates[ci]?.dir ?? "?");
+  const done = trial?.state === "done" ? trial : null;
+  const side = (v?: "A" | "B") => (v && done?.pair ? name(done.pair[v === "A" ? 0 : 1]) : "?");
+  const btn = `flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[11.5px] font-medium transition disabled:opacity-40 ${verdict.close && !done ? "border-amber-300 text-amber-800 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10" : "border-zinc-200 text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"}`;
+  const a = verdict.scores![0].candidate, b = verdict.scores![1].candidate;
+  return (
+    <div className="rounded-lg border border-zinc-200 p-2.5 dark:border-zinc-800">
+      <div className="flex items-center gap-2">
+        <IconScale size={14} stroke={2} className="shrink-0 text-zinc-500 dark:text-zinc-400" aria-hidden />
+        <span className="mr-auto truncate text-[12.5px] font-semibold text-zinc-700 dark:text-zinc-200">{t("fanout.trial", { a: name(a), b: name(b) })}</span>
+        {trying ? <span className="flex items-center gap-1 text-[11.5px] text-zinc-500 dark:text-zinc-400"><IconLoader2 size={12} className="animate-spin" aria-hidden />{t("fanout.trialRunning")}</span>
+          : <button type="button" onClick={onStart} className={btn}>{done ? t("fanout.trialAgain") : t("fanout.trialStart")}</button>}
+      </div>
+      {!trial && !trying && <p className="mt-1.5 text-[11.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">{t("fanout.trialHint")}</p>}
+      {trial?.state === "failed" && <p className="mt-1.5 text-[11.5px] text-rose-500">{t("fanout.trialFailed", { error: trial.error ?? "" })}</p>}
+      {done?.judgment && (
+        <div className="mt-2 space-y-2 text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-300">
+          <div className="flex items-center gap-1.5">
+            <IconGavel size={12} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
+            <span className="font-semibold text-zinc-800 dark:text-zinc-100">{t("fanout.trialWinner", { name: name(done.judgment.winner) })}</span>
+            <span className="ml-auto font-mono text-[11.5px] text-zinc-500 dark:text-zinc-400">{t("fanout.jury", { a: done.votes?.filter((v) => v.vote === "A").length ?? 0, b: done.votes?.filter((v) => v.vote === "B").length ?? 0, na: side("A"), nb: side("B") })}</span>
+          </div>
+          {done.judgment.verdict && <p>{done.judgment.verdict}</p>}
+          {done.judgment.flip && <p className="text-[11.5px] text-zinc-600 dark:text-zinc-400"><span className="font-medium">{t("fanout.flip")}</span> {done.judgment.flip}</p>}
+          <details>
+            <summary className="cursor-pointer text-[11.5px] font-medium text-zinc-500 dark:text-zinc-400">{t("fanout.trialRecord")}</summary>
+            <div className="mt-1 space-y-1.5 text-[11.5px] text-zinc-600 dark:text-zinc-400">
+              <p className="text-zinc-500 dark:text-zinc-500">{t("fanout.claim", { a: side("A"), b: side("B") })}</p>
+              {([["fanout.prosecution", done.args?.prosecution], ["fanout.defense", done.args?.defense], ["fanout.rebutProsecution", done.args?.rebutProsecution], ["fanout.rebutDefense", done.args?.rebutDefense]] as const).map(([k, v]) => v && (
+                <div key={k}><div className="font-medium text-zinc-700 dark:text-zinc-300">{t(k)}</div><p className="whitespace-pre-wrap">{v}</p></div>
+              ))}
+              <div>
+                <div className="font-medium text-zinc-700 dark:text-zinc-300">{t("fanout.jurors")}</div>
+                {done.votes?.map((v) => <div key={v.lens}>{t(`fanout.lens.${v.lens}`)}: {v.vote ? `${side(v.vote)} — ${v.why ?? ""}` : t("fanout.judgeSkipped")}</div>)}
+              </div>
+            </div>
           </details>
         </div>
       )}

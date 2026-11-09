@@ -7,6 +7,7 @@ import { readJson, withIdleTimeout } from "@/lib/crew/crewMeeting";
 import { isFailedNote } from "@/lib/failText";
 import { narrationLocale } from "@/lib/narrationConfig";
 import { candidateDiff, getFanout, saveFanout } from "./fanout";
+import { LENSES, clipArg, defensePrompt, judgeCourtPrompt, jury, jurorPrompt, parseJudgment, parseVote, prosecutionPrompt, rebuttalPrompt, type Arguments, type Vote } from "./fanoutCourt";
 import { LETTERS, chairPrompt, isClose, judgePrompt, parseChair, parseRanking, shuffleOrder, tally, type Blinded, type JudgeResult, type Score } from "./fanoutJudge";
 
 const MODELS = [
@@ -39,21 +40,25 @@ export const claudeModel = MODELS[0];
 export const judgeModels = (): Model[] => MODELS.filter((m) => m.provider === "claude-code" || checkAgent(m.provider)?.kind === "ok").slice(0, 3);
 export const language = () => LANG[narrationLocale()] ?? "English";
 
-const running = new Set<string>(); // 같은 겨루기를 두 번 동시에 판정하지 않게(서버 메모리)
+const running = new Set<string>(); // 같은 겨루기를 두 번 동시에 판정·재판하지 않게(서버 메모리)
 
-export function startJudge(root: string, id: string): Verdict {
+// 뒤에서 돌리기 — 기록의 field(verdict·trial)에 running → 끝나면 run이 저장, 실패면 failed + 이유
+function background(root: string, id: string, field: "verdict" | "trial", run: () => Promise<void>): { state: string; at: number } {
   const f = getFanout(root, id);
   if (!f) throw new Error("not found");
-  if (running.has(id)) return f.verdict as Verdict;
-  const v: Verdict = { state: "running", at: Date.now() };
-  saveFanout(root, { ...f, verdict: v });
-  running.add(id);
-  void judge(root, id).catch((e) => {
+  const key = `${id}:${field}`;
+  if (running.has(key)) return f[field] as { state: string; at: number };
+  const v = { state: "running", at: Date.now() };
+  saveFanout(root, { ...f, [field]: v });
+  running.add(key);
+  void run().catch((e) => {
     const cur = getFanout(root, id);
-    if (cur) saveFanout(root, { ...cur, verdict: { state: "failed", at: Date.now(), error: String((e as Error)?.message ?? e).slice(0, 300) } satisfies Verdict });
-  }).finally(() => running.delete(id));
+    if (cur) saveFanout(root, { ...cur, [field]: { state: "failed", at: Date.now(), error: String((e as Error)?.message ?? e).slice(0, 300) } });
+  }).finally(() => running.delete(key));
   return v;
 }
+export const startJudge = (root: string, id: string) => background(root, id, "verdict", () => judge(root, id));
+export const startTrial = (root: string, id: string) => background(root, id, "trial", () => trial(root, id));
 
 async function judge(root: string, id: string) {
   const f = getFanout(root, id);
@@ -84,5 +89,43 @@ async function judge(root: string, id: string) {
     close: isClose(scores),
   };
   const cur = getFanout(root, id);
-  if (cur) saveFanout(root, { ...cur, verdict: v });
+  if (cur) saveFanout(root, { ...cur, verdict: v, trial: undefined }); // 옛 재판은 옛 1·2위 것 — 지움
+}
+
+export interface Trial {
+  state: "running" | "done" | "failed"; at: number; error?: string;
+  pair?: [number, number];                        // [A가 가리키는 후보, B가 가리키는 후보]
+  args?: Arguments; votes?: Vote[];
+  judgment?: { winner: number; verdict: string; flip: string }; // 후보 번호 기준(이름 풂)
+}
+
+// 재판 — 판정 점수 1·2위 두 후보. 호출 7번(검사·변호 → 반박 2 → 배심 3 → 판사). 변론·판사는 Claude, 배심은 심사 모델을 돌아가며(관점·모델 둘 다 다르게).
+async function trial(root: string, id: string) {
+  const f = getFanout(root, id);
+  const v = f?.verdict as Verdict | undefined;
+  if (!f || v?.state !== "done" || !v.scores || v.scores.length < 2) throw new Error("judge first");
+  const top = [v.scores[0].candidate, v.scores[1].candidate];
+  const pair: [number, number] = Math.random() < 0.5 ? [top[0], top[1]] : [top[1], top[0]]; // 1위가 늘 A면 "A가 낫다" 쪽으로 기울 수 있어 무작위
+  const [da, db] = await Promise.all(pair.map((ci) => candidateDiff(f.candidates[ci])));
+  const a = { label: "A", ...da }, b = { label: "B", ...db };
+  const lang = language();
+  const [prosecution, defense] = (await Promise.all([askModel(claudeModel, prosecutionPrompt(f.prompt, a, b, lang)), askModel(claudeModel, defensePrompt(f.prompt, a, b, lang))])).map(clipArg);
+  const [rebutProsecution, rebutDefense] = (await Promise.all([
+    askModel(claudeModel, rebuttalPrompt("prosecution", f.prompt, a, b, defense, lang)),
+    askModel(claudeModel, rebuttalPrompt("defense", f.prompt, a, b, prosecution, lang)),
+  ])).map(clipArg);
+  const args: Arguments = { prosecution, defense, rebutProsecution, rebutDefense };
+  const models = judgeModels();
+  const votes: Vote[] = await Promise.all(LENSES.map(async (lens, i): Promise<Vote> => {
+    const m = models[i % models.length];
+    try {
+      const r = parseVote(readJson(await askModel(m, jurorPrompt(lens, f.prompt, a, b, args, lang))));
+      return r ? { lens, provider: m.provider, ...r } : { lens, provider: m.provider, error: "unreadable" };
+    } catch (e) { return { lens, provider: m.provider, error: String((e as Error)?.message ?? e).slice(0, 200) }; }
+  }));
+  const j = jury(votes);
+  const judged = await askModel(claudeModel, judgeCourtPrompt(f.prompt, a, b, args, votes, lang)).then((t) => parseJudgment(readJson(t), j.majority), () => parseJudgment(null, j.majority));
+  const t: Trial = { state: "done", at: Date.now(), pair, args, votes, judgment: { winner: judged.winner === "A" ? pair[0] : pair[1], verdict: judged.verdict, flip: judged.flip } };
+  const cur = getFanout(root, id);
+  if (cur) saveFanout(root, { ...cur, trial: t });
 }

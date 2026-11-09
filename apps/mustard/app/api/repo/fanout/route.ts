@@ -2,7 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { mainRoot } from "@/lib/repo/workspaces";
 import { candidateDiff, createFanout, getFanout, listFanouts, setTabs } from "@/lib/repo/fanout";
 import { crossSite } from "@/lib/crew/crewPolicy";
-import { startJudge } from "@/lib/repo/fanoutJudgeRun";
+import { startJudge, startTrial } from "@/lib/repo/fanoutJudgeRun";
 
 // 겨루기(#1174) — 후보 만들기·기록 보기·후보 diff. path = 레포 탭 경로 → 메인 worktree 기준으로 저장(작업공간 API와 같음). 서버 전용.
 export const runtime = "nodejs";
@@ -24,6 +24,7 @@ export async function POST(request: Request): Promise<Response> {
       }
       case "list": return Response.json({ ok: true, fanouts: listFanouts(root) });
       case "judge": return Response.json({ ok: true, verdict: startJudge(root, str(b.id)) }); // 뒤에서 돎 — 결과는 list로 다시 읽음
+      case "trial": return Response.json({ ok: true, trial: startTrial(root, str(b.id)) }); // 판정 1·2위 재판(뒤에서 돎)
       case "tabs": setTabs(root, str(b.id), Array.isArray(b.tabIds) ? b.tabIds : []); return Response.json({ ok: true });
       case "diff": { // 후보 하나의 diff·파일별 줄 수
         const f = getFanout(root, str(b.id));
