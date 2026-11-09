@@ -1878,19 +1878,22 @@ ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, ids, text } 
   if (!target) return { ok: false, reason: "no-agent" };
   return pasteToAgent(target.id, text, async () => (await live()).some((s) => s.id === target.id));
 });
-// 붙여넣기 + Enter. stillAgent = Enter 직전에 아직 에이전트인지(그 사이 셸로 바뀌었으면 Enter 안 침)
-async function pasteToAgent(id, text, stillAgent) {
+// 붙여넣기 + Enter. stillAgent = Enter 직전에 아직 에이전트인지 — 그 사이 셸로 바뀌었으면 Enter 대신 Ctrl-U로 입력 줄을 비움
+// (안 비우면 붙인 글이 셸 입력 줄에 남아 다음 Enter에 명령으로 실행됨, #1174 리뷰). enter=false = 붙이기만(사람이 보고 Enter).
+async function pasteToAgent(id, text, stillAgent, enter = true) {
   const body = text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, ""); // ESC·C1(U+0080~009F, CSI 등) 제거(#1169 리뷰)(붙여넣기 조기 종료 방지) — 렌더러도 하지만 신뢰 경계라 한 번 더
   termClient.input({ id, data: `\x1b[200~${body}\x1b[201~` });
   await new Promise((r) => setTimeout(r, 150)); // TUI가 붙여넣기를 다 받은 뒤 Enter
-  try { if (!(await stillAgent())) return { ok: false, reason: "no-agent" }; } catch { return { ok: false, reason: "error" }; }
-  termClient.input({ id, data: "\r" });
+  let still = false;
+  try { still = await stillAgent(); } catch { /* 모르면 셸로 침 */ }
+  if (!still) { termClient.input({ id, data: "\x15" }); return { ok: false, reason: "no-agent" }; }
+  if (enter) termClient.input({ id, data: "\r" });
   return { ok: true, id };
 }
 // #1174 겨루기 — 방금 에이전트를 띄운 그 탭(id)에 첫 프롬프트. 실행 기록 신원은 부팅 중에도 에이전트라고 답해서(agentForId),
 // 화면에 에이전트가 실제로 그려질 때까지(parseAgentScreen) 기다림 — 부팅 중에 붙이면 글이 사라짐. 맨 앞이 셸이면 안 보냄.
 // 한계: 화면으로 못 알아보는 에이전트면 60초 뒤 실패 → 화면이 프롬프트를 복사해 두고 직접 붙여 넣게 안내.
-ipcMain.handle("terminal:send-prompt", async (_e, { id, text } = {}) => {
+ipcMain.handle("terminal:send-prompt", async (_e, { id, text, enter } = {}) => {
   if (typeof id !== "string" || !id || typeof text !== "string" || !text.trim()) return { ok: false, reason: "bad-args" };
   const ready = async () => {
     const s = (await termClient.list()).find((x) => x.id === id);
@@ -1899,7 +1902,7 @@ ipcMain.handle("terminal:send-prompt", async (_e, { id, text } = {}) => {
   for (let i = 0; i < 120; i++) {
     if (await ready().catch(() => false)) {
       await new Promise((r) => setTimeout(r, 800)); // 첫 화면이 그려진 직후엔 입력칸이 아직 안 받는 CLI가 있음
-      return pasteToAgent(id, text, async () => { const s = (await termClient.list()).find((x) => x.id === id); return !!s && s.process !== undefined && !isShellProc(s.process); });
+      return pasteToAgent(id, text, async () => { const s = (await termClient.list()).find((x) => x.id === id); return !!s && s.process !== undefined && !isShellProc(s.process); }, enter !== false);
     }
     await new Promise((r) => setTimeout(r, 500));
   }

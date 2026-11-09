@@ -71,6 +71,14 @@ assert.strictEqual(g(root, "branch", "--list", "fix-*"), "");
 assert.strictEqual(getFanout(root, f.id)?.status, "discarded");
 await assert.rejects(discardFanout(root, f.id), /not running/);
 
+// 새 파일이 200개를 넘으면 넘는 건 이름만 + 잘림 표시(채택 때 같이 커밋되니 목록에서 빠지면 안 됨)
+const f2 = await createFanout(root, { name: "many", prompt: "p", agents: ["claude", "codex"] });
+for (let i = 0; i < 205; i++) writeFileSync(join(f2.candidates[0].dir, `n${String(i).padStart(3, "0")}.txt`), "x\n");
+const many = await candidateDiff(f2.candidates[0]);
+assert.strictEqual(many.files.length, 205);
+assert.ok(many.truncated && many.files.filter((x) => x.big).length >= 5);
+await discardFanout(root, f2.id);
+
 // PR 기준 브랜치: 브랜치만, HEAD·SHA·PR 전용 ref는 빈 값(gh 기본)
 assert.strictEqual(baseBranch("refs/heads/main"), "main");
 assert.strictEqual(baseBranch("refs/remotes/origin/release/1.0"), "release/1.0");

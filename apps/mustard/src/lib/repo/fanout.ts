@@ -14,7 +14,7 @@ const pexec = promisify(execFile);
 const gitOut = (cwd: string, args: string[]) => pexec("git", args, { cwd, timeout: 60_000, maxBuffer: 50_000_000 }).then((r) => r.stdout, (e: { stdout?: string; code?: number }) => { if (e.code === 1 && typeof e.stdout === "string") return e.stdout; throw e; });
 
 export const MIN_CANDIDATES = 2, MAX_CANDIDATES = 4;
-export const MAX_DIFF = 60_000, MAX_FILE_DIFF = 20_000; // 판정 모델 입력 상한(PR 리뷰와 같은 크기) — 넘는 파일은 이름·줄 수만
+export const MAX_DIFF = 60_000, MAX_FILE_DIFF = 20_000, MAX_UNTRACKED = 200; // 판정 모델 입력 상한(PR 리뷰와 같은 크기) — 넘는 파일은 이름·줄 수만
 export interface Candidate { agent: string; dir: string; branch: string; base: string; tab?: string } // tab = 그 후보 터미널 탭 id(= 에이전트 세션 id)
 export interface Fanout {
   id: string; name: string; prompt: string; createdAt: number;
@@ -65,7 +65,7 @@ export async function createFanout(root: string, o: CreateFanoutOpts): Promise<F
       made.push({ agent, dir: w.dir, branch: w.branch, base: w.base });
     }
   } catch (e) {
-    for (const c of made) await removeWorkspace(root, c.dir, { force: true, deleteBranch: true, skipArchive: true }).catch(() => {});
+    for (const c of made) await dropCandidate(root, c).catch(() => {}); // 복사해 온 무시된 파일이 있어도 지워지게(본 개수 제한 없음, 리뷰)
     throw e;
   }
   const f: Fanout = { id: randomUUID(), name: o.name, prompt, createdAt: Date.now(), status: "running", candidates: made };
@@ -84,8 +84,12 @@ export async function candidateDiff(c: Candidate): Promise<CandidateDiff> {
   const tracked = await gitOut(c.dir, ["diff", "--no-color", "--no-ext-diff", "-M", mb]);
   const untracked = (await gitOut(c.dir, ["ls-files", "--others", "--exclude-standard", "-z"])).split("\0").filter(Boolean);
   const parts = splitDiff(tracked);
-  for (const p of untracked.slice(0, 200)) parts.push(await gitOut(c.dir, ["diff", "--no-color", "--no-index", "--", "/dev/null", p]).catch(() => ""));
-  return capDiff(parts.filter(Boolean));
+  for (const p of untracked.slice(0, MAX_UNTRACKED)) parts.push(await gitOut(c.dir, ["diff", "--no-color", "--no-index", "--", "/dev/null", p]).catch(() => ""));
+  const d = capDiff(parts.filter(Boolean));
+  // 넘는 새 파일은 이름만(줄 수 0) + 잘림 표시 — 채택하면 git add -A로 같이 들어가니 목록에서 빠지면 안 됨(리뷰)
+  for (const p of untracked.slice(MAX_UNTRACKED)) d.files.push({ path: p, added: 0, removed: 0, big: true });
+  if (untracked.length > MAX_UNTRACKED) d.truncated = true;
+  return d;
 }
 
 // "diff --git"마다 한 파일
@@ -160,7 +164,7 @@ export const adoptFanout = (root: string, id: string, winner: number) => once(id
     "🤖 Opened from Mustard (compete)",
   ].join("\n");
   const { url } = await openDraftPr({ dir: w.dir, branch: w.branch, base: w.base, title, body });
-  saveFanout(root, { ...f, status: "adopted", winner, prUrl: url });
+  saveFanout(root, { ...(getFanout(root, id) ?? f), status: "adopted", winner, prUrl: url }); // push 동안 끝난 판정·재판을 덮어쓰지 않게 지금 기록에(리뷰)
   return { url, left: await dropAll(root, f.candidates.filter((_, i) => i !== winner)) };
 });
 
@@ -169,6 +173,6 @@ export const discardFanout = (root: string, id: string) => once(id, async () => 
   const f = getFanout(root, id);
   if (!f || f.status !== "running") throw new Error("not running");
   const left = await dropAll(root, f.candidates);
-  saveFanout(root, { ...f, status: "discarded" });
+  saveFanout(root, { ...(getFanout(root, id) ?? f), status: "discarded" });
   return { left };
 });

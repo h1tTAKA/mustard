@@ -53,20 +53,21 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
       ? { title: t("fanout.discardTitle"), message: t("fanout.discardMsg", { n: cur.candidates.length }), confirmText: t("fanout.discard"), tone: "danger" }
       : { title: t("fanout.adoptTitle", { name: folder(cur.candidates[winner].dir) }), message: t("fanout.adoptMsg", { n: cur.candidates.length - 1 }), confirmText: t("fanout.adopt"), tone: "warn" });
     if (!ok) return;
+    // 지울 후보의 터미널부터 끔 — 돌던 에이전트가 지우는 중인 폴더에 쓰지 않게(리뷰). PR이 실패하면 탭만 닫힌 채 폴더는 남음.
+    closeFanoutTabs(root, cur.candidates.filter((_, i) => i !== winner).map((c) => c.tab).filter((x): x is string => !!x));
     setActing(true);
     const r = await post(winner === null ? { action: "discard", path: root, id: cur.id } : { action: "adopt", path: root, id: cur.id, winner }).catch((e) => ({ ok: false, error: String(e) }));
     setActing(false);
     if (!r.ok) { toast(t(r.error === "no changes" ? "fanout.noChanges" : "fanout.finishFailed", { error: String(r.error ?? "") }), "error"); return; }
-    closeFanoutTabs(root, cur.candidates.filter((_, i) => i !== winner).map((c) => c.tab).filter((x): x is string => !!x));
     if (r.left?.length) toast(t("fanout.left", { n: r.left.length }), "error");
     else toast(winner === null ? t("fanout.discarded") : t("fanout.adopted"));
     void load();
   };
-  // 의장이 고른 "가져올 좋은 점"을 승자 터미널 에이전트에게(에이전트 화면일 때만 — 셸이면 안 보냄)
+  // 의장이 고른 "가져올 좋은 점"을 승자 터미널 에이전트에게 — 붙이기만, Enter는 사람이(AI가 쓴 글이라 보고 보내게, 리뷰). 셸이면 안 보냄
   const sendGrafts = async (winner: number, lines: string[]) => {
     const tab = cur?.candidates[winner]?.tab;
     if (!tab || !lines.length) return;
-    const r = await window.nunopiDesktop?.terminal?.sendPrompt?.({ id: tab, text: `${t("fanout.graftMsg")}\n${lines.map((x) => `- ${x}`).join("\n")}` });
+    const r = await window.nunopiDesktop?.terminal?.sendPrompt?.({ id: tab, text: `${t("fanout.graftMsg")}\n${lines.map((x) => `- ${x}`).join("\n")}`, enter: false });
     if (r?.ok) { toast(t("fanout.graftSent")); requestTerminalFocus(root, tab); } else toast(t("fanout.graftFailed"), "error");
   };
   const start = async (action: "judge" | "trial") => {
