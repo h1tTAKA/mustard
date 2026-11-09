@@ -710,7 +710,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     // <webview>는 DOM에서 빠지면 페이지가 죽어서(새로고침·기록 유실) 위치만 따라가게 한다.
     browser: browserOpen ? <BrowserSlot anchor={dockRef} onRect={setBrowserRect} /> : null,
     crew: crewOpen ? <CrewBoard root={path} onClose={() => setCrewOpen(false)} /> : null, // 에이전트 팀 보드(#1098)
-    fanout: fanoutOpen ? <FanoutPanel root={path} onClose={() => setFanoutOpen(false)} /> : null, // 겨루기(#1174)
+    fanout: fanoutOpen ? <FanoutPanel key={path} root={path} onClose={() => setFanoutOpen(false)} /> : null, // 겨루기(#1174)
     flow: <RepoFlowPane feature={flowFeature} root={path} providerId={providerId} providerSettings={providerSettings} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onAskArch={askArch} onQuoteNode={quoteNode} onClose={() => setFlowFeature(null)} />,
   };
 

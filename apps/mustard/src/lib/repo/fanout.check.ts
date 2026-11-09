@@ -92,7 +92,20 @@ assert.ok(!sd.diff.includes("TOKEN=abc") && sd.files.some((x) => x.path === ".en
 await assert.rejects(adoptFanout(root, f3.id, 0), /origin/); // 원격이 없어 PR에서 멈춤 — 커밋은 됨
 assert.strictEqual(g(f3.candidates[0].dir, "show", "--name-only", "--format=", "HEAD"), "feature.txt");
 assert.strictEqual(g(f3.candidates[0].dir, "status", "--porcelain"), "?? .env");
+// 에이전트가 직접 커밋한 비밀 파일: 판정 입력엔 이름만, 채택은 막음
+const sec = f3.candidates[1];
+writeFileSync(join(sec.dir, "id_rsa"), "PRIVATE\n"); writeFileSync(join(sec.dir, "ok.txt"), "ok\n");
+g(sec.dir, "add", "."); g(sec.dir, "commit", "-qm", "oops");
+const cd = await candidateDiff(sec);
+assert.ok(!cd.diff.includes("PRIVATE") && cd.files.some((x) => x.path === "id_rsa" && x.big) && cd.diff.includes("+++ b/ok.txt"));
+await assert.rejects(adoptFanout(root, f3.id, 1), /secret files: id_rsa/);
 await discardFanout(root, f3.id);
+
+// 폴더는 이미 없고 브랜치만 남은 후보도 버리기가 끝까지 감(지난 시도가 중간에 멈춘 경우)
+const f4 = await createFanout(root, { name: "half", prompt: "p", agents: ["claude", "codex"] });
+g(root, "worktree", "remove", "--force", f4.candidates[0].dir);
+assert.deepStrictEqual(await discardFanout(root, f4.id), { left: [] });
+assert.strictEqual(g(root, "branch", "--list", "half-*"), "");
 
 // PR 기준 브랜치: 브랜치만, HEAD·SHA·PR 전용 ref는 빈 값(gh 기본)
 assert.strictEqual(baseBranch("refs/heads/main"), "main");

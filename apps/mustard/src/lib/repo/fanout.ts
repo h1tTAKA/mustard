@@ -38,7 +38,8 @@ function writeAll(root: string, all: Fanout[]) {
   const f = file(root);
   mkdirSync(dirname(f), { recursive: true });
   let n = 0;
-  writeFileSync(`${f}.tmp`, JSON.stringify(all.filter((x) => x.status === "running" || n++ < 50), null, 1)); // 끝난 건 최근 50개, 진행 중은 전부(폴더·브랜치가 남아 있어서, 리뷰)
+  const live = (x: Fanout) => x.status === "running" || (x.status === "adopted" && x.candidates.some((c, i) => i !== x.winner && existsSync(c.dir))); // 지울 폴더가 남은 것
+  writeFileSync(`${f}.tmp`, JSON.stringify(all.filter((x) => live(x) || n++ < 50), null, 1)); // 끝난 건 최근 50개, 진행 중·남은 후보가 있는 채택은 전부(리뷰)
   renameSync(`${f}.tmp`, f);
 }
 export const getFanout = (root: string, id: string) => listFanouts(root).find((f) => f.id === id) ?? null;
@@ -88,8 +89,9 @@ export async function candidateDiff(c: Candidate): Promise<CandidateDiff> {
   const mb = (await gitOut(c.dir, ["merge-base", c.base, "HEAD"]).catch(() => "")).trim() || c.base;
   const tracked = await gitOut(c.dir, ["diff", "--no-color", "--no-ext-diff", "-M", mb]);
   const untracked = (await gitOut(c.dir, ["ls-files", "--others", "--exclude-standard", "-z"])).split("\0").filter(Boolean);
-  const parts = splitDiff(tracked);
-  const unread: string[] = [...untracked.slice(MAX_UNTRACKED), ...untracked.slice(0, MAX_UNTRACKED).filter((p) => SECRET.test(p))]; // 넘는 것 + 비밀일 수 있는 것 + 못 읽은 것
+  const all = splitDiff(tracked);
+  const parts = all.filter((p) => !SECRET.test(pathOf(p))); // 에이전트가 커밋한 비밀 파일도 내용은 안 보냄(리뷰)
+  const unread: string[] = [...all.map(pathOf).filter((p) => SECRET.test(p)), ...untracked.slice(MAX_UNTRACKED), ...untracked.slice(0, MAX_UNTRACKED).filter((p) => SECRET.test(p))]; // 넘는 것 + 비밀일 수 있는 것 + 못 읽은 것
   for (const p of untracked.slice(0, MAX_UNTRACKED).filter((p) => !SECRET.test(p))) { const x = await gitOut(c.dir, ["diff", "--no-color", "--no-index", "--", "/dev/null", p]).catch(() => ""); if (x) parts.push(x); else unread.push(p); }
   const d = capDiff(parts);
   // 이름만(줄 수 0) + 잘림 표시 — 채택하면 git add -A로 같이 들어가니 목록에서 빠지면 안 됨(리뷰)
@@ -128,6 +130,11 @@ export function capDiff(parts: string[]): CandidateDiff {
 // 후보 하나 지우기 — 일부러 버리는 거라 미커밋·무시된 파일도 지움(force, 본 개수 제한 없음), 브랜치도(-d 거부면 -D).
 // archive(사람이 승인한 정리 스크립트)는 승인돼 있으면 돌리고, 승인 전이면 건너뜀(묻는 창 없이 여럿을 지우는 흐름이라).
 async function dropCandidate(root: string, c: Candidate, skipArchive = false): Promise<void> {
+  if (!existsSync(c.dir)) { // 지난번에 폴더는 지웠는데 브랜치에서 멈춤 → 브랜치만(우리가 만든 후보 브랜치라 -D)
+    await gitIn(root, ["worktree", "prune"]).catch(() => {});
+    if (await gitIn(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${c.branch}`]).then(() => true, () => false)) await gitIn(root, ["branch", "-D", "--", c.branch]);
+    return;
+  }
   const o = { force: true, expectDirty: Number.MAX_SAFE_INTEGER, expectIgnored: Number.MAX_SAFE_INTEGER, deleteBranch: true, allowFailedArchive: true, skipArchive };
   let r = await removeWorkspace(root, c.dir, o);
   if (r.status === "archive-untrusted") r = await removeWorkspace(root, c.dir, { ...o, skipArchive: true });
@@ -164,6 +171,8 @@ export const adoptFanout = (root: string, id: string, winner: number) => once(id
   }
   const mb = (await gitIn(w.dir, ["merge-base", w.base, "HEAD"]).catch(() => "")) || w.base;
   if (Number(await gitIn(w.dir, ["rev-list", "--count", `${mb}..HEAD`]).catch(() => "0")) === 0) throw new Error("no changes");
+  const secrets = (await gitIn(w.dir, ["diff", "--name-only", "-z", mb, "HEAD"]).catch(() => "")).split("\0").filter((p) => p && SECRET.test(p));
+  if (secrets.length) throw new Error(`secret files: ${secrets.slice(0, 5).join(", ")}`); // 에이전트가 직접 커밋한 비밀일 수 있는 파일 — push·PR 전에 사람이 보게(리뷰)
   const v = f.verdict as { state?: string; chair?: { why?: string } } | undefined;
   const body = [
     "## Prompt", f.prompt, "",

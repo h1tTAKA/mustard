@@ -60,7 +60,11 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
     let r = winner === null ? null : await call({ action: "adopt", winner });
     if (!r || r.ok) { closeFanoutTabs(root, losers); r = await call(winner === null ? { action: "discard" } : { action: "drop-losers" }); }
     setActing(false);
-    if (!r.ok) { toast(t(r.error === "no changes" ? "fanout.noChanges" : "fanout.finishFailed", { error: String(r.error ?? "") }), "error"); void load(); return; }
+    if (!r.ok) {
+      const err = String(r.error ?? "");
+      toast(err.startsWith("secret files:") ? t("fanout.secretBlocked", { files: err.slice(13).trim() }) : t(err === "no changes" ? "fanout.noChanges" : "fanout.finishFailed", { error: err }), "error");
+      void load(); return;
+    }
     if (r.left?.length) toast(t("fanout.left", { n: r.left.length }), "error");
     else toast(winner === null ? t("fanout.discarded") : t("fanout.adopted"));
     void load(); void refresh(); // 지운 후보는 diff가 "폴더 없음"이 되어야 남은 후보 버튼이 안 뜸(리뷰)
@@ -91,16 +95,18 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
     if (!r?.ok) toast(t(action === "judge" ? "fanout.judgeFailed" : "fanout.trialFailed", { error: String(r?.error ?? "") }), "error");
     void load();
   };
+  // 원시값만 의존 — 목록을 다시 읽을 때마다(3초·포커스) 새 객체가 와도 diff를 다시 세거나 펼친 걸 접지 않게(리뷰)
+  const curId = cur?.id, curN = cur?.candidates.length ?? 0;
   const refresh = useCallback(async () => {
-    if (!cur) return;
+    if (!curId) return;
     setLoading(true);
     const out: Record<number, CandidateDiff | { error: string }> = {};
-    await Promise.all(cur.candidates.map(async (_, i) => {
-      const r = await post({ action: "diff", path: root, id: cur.id, index: i }).catch((e) => ({ ok: false, error: String(e) }));
+    await Promise.all(Array.from({ length: curN }, async (_, i) => {
+      const r = await post({ action: "diff", path: root, id: curId, index: i }).catch((e) => ({ ok: false, error: String(e) }));
       out[i] = r.ok ? r : { error: String(r.error ?? "") };
     }));
     setDiffs(out); setLoading(false);
-  }, [cur?.id, root]); // eslint-disable-line react-hooks/exhaustive-deps -- 고른 겨루기가 바뀔 때만
+  }, [curId, curN, root]);
   useEffect(() => { setDiffs({}); setOpen(null); void refresh(); }, [refresh]); // eslint-disable-line react-hooks/set-state-in-effect -- 고른 겨루기가 바뀌면 다시 셈
 
   return (
