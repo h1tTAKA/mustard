@@ -52,6 +52,9 @@ assert.strictEqual((await candidateDiff(c2)).files.length, 0);
 writeFileSync(join(root, "b.txt"), "x\n"); g(root, "add", "."); g(root, "commit", "-qm", "main moves");
 assert.deepStrictEqual((await candidateDiff(c0)).files.map((x) => x.path), ["a.txt"]);
 
+// 줄 수: ++ · -- 로 시작하는 코드 줄도 셈(머리말만 뺌)
+assert.deepStrictEqual(capDiff(["diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n--- old comment\n-- y\n+++i;\n++j;\n"]).files[0], { path: "x", added: 2, removed: 2 });
+
 // 상한: 큰 파일은 이름·줄 수만, 전체 글은 MAX_DIFF 이하
 const part = (p: string, n: number) => `diff --git a/${p} b/${p}\n--- a/${p}\n+++ b/${p}\n@@ -0,0 +1,${n} @@\n${"+x\n".repeat(n)}`;
 const cap = capDiff([part("small", 3), part("huge", 20_000), ...Array.from({ length: 10 }, (_, i) => part(`m${i}`, 3000))]);

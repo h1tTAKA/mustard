@@ -104,11 +104,14 @@ export async function candidateDiff(c: Candidate): Promise<CandidateDiff> {
 export const splitDiff = (s: string) => s.split(/^(?=diff --git )/m).filter((x) => x.startsWith("diff --git "));
 // git은 이름에 공백이 있으면 +++ 줄 끝에 탭을 붙임 → 떼고 읽음(안 떼면 비밀 판별·패널 diff 열기가 빗나감, 리뷰)
 const pathOf = (part: string) => (part.match(/^\+\+\+ b\/(.+)$/m)?.[1] ?? part.match(/^diff --git a\/.+ b\/(.+)$/m)?.[1] ?? "?").replace(/\t$/, "");
+// 첫 @@ 뒤부터 셈 — 머리말(--- a/ · +++ b/)만 빼야 ++i; · -- 주석 같은 줄도 세짐(리뷰)
 const countLines = (part: string) => {
-  let added = 0, removed = 0;
+  let added = 0, removed = 0, body = false;
   for (const l of part.split("\n")) {
-    if (l.startsWith("+") && !l.startsWith("+++")) added++;
-    else if (l.startsWith("-") && !l.startsWith("---")) removed++;
+    if (l.startsWith("@@")) { body = true; continue; }
+    if (!body) continue;
+    if (l.startsWith("+")) added++;
+    else if (l.startsWith("-")) removed++;
   }
   return { added, removed };
 };
@@ -166,13 +169,13 @@ export const adoptFanout = (root: string, id: string, winner: number) => once(id
   const title = (f.prompt.split("\n").map((l) => l.trim()).find(Boolean) ?? "Compete result").slice(0, 72);
   if (await gitIn(w.dir, ["status", "--porcelain"])) {
     await gitIn(w.dir, ["add", "-A"]);
-    const secret = (await gitIn(w.dir, ["diff", "--cached", "--name-only", "--no-renames", "--diff-filter=d", "-z"]).catch(() => "")).split("\0").filter((p) => p && SECRET.test(p));
+    const secret = (await gitIn(w.dir, ["diff", "--cached", "--name-only", "--no-renames", "--diff-filter=d", "-z"])).split("\0").filter((p) => p && SECRET.test(p));
     if (secret.length) await gitIn(w.dir, ["--literal-pathspecs", "reset", "-q", "--", ...secret]); // 이름의 [ ] * 를 패턴으로 읽지 않게 // 새로 생기거나 바뀐 비밀일 수 있는 파일은 커밋에서 뺌(폴더엔 남음, 지운 건 그대로)
     if (await gitIn(w.dir, ["diff", "--cached", "--name-only"])) await gitIn(w.dir, ["commit", "-q", "-m", title]);
   }
   const mb = (await gitIn(w.dir, ["merge-base", w.base, "HEAD"]).catch(() => "")) || w.base;
   if (Number(await gitIn(w.dir, ["rev-list", "--count", `${mb}..HEAD`]).catch(() => "0")) === 0) throw new Error("no changes");
-  const secrets = (await gitIn(w.dir, ["diff", "--name-only", "--no-renames", "--diff-filter=d", "-z", mb, "HEAD"]).catch(() => "")).split("\0").filter((p) => p && SECRET.test(p)); // 비밀 파일을 지운 건 막지 않음
+  const secrets = (await gitIn(w.dir, ["diff", "--name-only", "--no-renames", "--diff-filter=d", "-z", mb, "HEAD"])).split("\0").filter((p) => p && SECRET.test(p)); // 비밀 파일을 지운 건 막지 않음
   if (secrets.length) throw new Error(`secret files: ${secrets.slice(0, 5).join(", ")}`); // 에이전트가 직접 커밋한 비밀일 수 있는 파일 — push·PR 전에 사람이 보게(리뷰)
   const v = f.verdict as { state?: string; chair?: { why?: string } } | undefined;
   const body = [
