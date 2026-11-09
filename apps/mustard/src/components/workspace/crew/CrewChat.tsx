@@ -57,7 +57,8 @@ export default function CrewChat({ root }: { root: string }) {
   const [mention, setMention] = useState<{ q: string; at: number } | null>(null); // @ 자동완성
   const [rolesOpen, setRolesOpen] = useState(false);
   // #1174 겨루기 — 이 대화방 안에서 봄(새 패널·탭 안 만듦, 유저 결정). 겨루기를 시작하면 열림
-  const [fanoutOpen, setFanoutOpen] = useState(() => takeFanoutView(root));
+  const [fanoutOpen, setFanoutOpen] = useState(false);
+  useEffect(() => { if (takeFanoutView(root)) setFanoutOpen(true); }, [root]); // eslint-disable-line react-hooks/set-state-in-effect -- 마운트 때 한 번(렌더 중에 꺼내 쓰면 버려진 렌더가 표시를 먹음)
   useEffect(() => {
     const on = (e: Event) => { if ((e as CustomEvent<{ root: string }>).detail?.root === root) { takeFanoutView(root); setFanoutOpen(true); } };
     window.addEventListener(FANOUT_LAUNCH_EVENT, on); return () => window.removeEventListener(FANOUT_LAUNCH_EVENT, on);

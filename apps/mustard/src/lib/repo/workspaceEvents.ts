@@ -20,10 +20,10 @@ export const FANOUT_LAUNCH_EVENT = "mustard:fanout-launch";
 export type FanoutLaunch = { root: string; id: string; prompt: string; candidates: { agent: string; dir: string }[]; taken?: boolean };
 const pendingLaunch = new Map<string, { d: FanoutLaunch; at: number }[]>(); // 터미널 경로 → 아직 못 띄운 겨루기들(여럿이면 차례로)
 const PENDING_TTL = 10 * 60_000; // 10분 넘게 못 띄운 건 버림 — 한참 뒤 낡은 프롬프트로 한꺼번에 뜨지 않게(리뷰)
-const fanoutView = new Set<string>(); // Crew 대화방이 아직 안 떠 있으면 뜰 때 겨루기 화면부터 보이게
-export const takeFanoutView = (root: string) => fanoutView.delete(root);
+const fanoutView = new Map<string, number>(); // Crew 대화방이 아직 안 떠 있으면 뜰 때 겨루기 화면부터 보이게(10분 지나면 무시 — 한참 뒤 엉뚱하게 열리지 않게)
+export const takeFanoutView = (root: string) => { const at = fanoutView.get(root); fanoutView.delete(root); return at !== undefined && Date.now() - at < PENDING_TTL; };
 export const launchFanout = (d: FanoutLaunch) => {
-  fanoutView.add(d.root);
+  fanoutView.set(d.root, Date.now());
   const detail: FanoutLaunch = { ...d, taken: false };
   window.dispatchEvent(new CustomEvent(FANOUT_LAUNCH_EVENT, { detail }));
   if (!detail.taken) pendingLaunch.set(d.root, [...(pendingLaunch.get(d.root) ?? []), { d: detail, at: Date.now() }]);
