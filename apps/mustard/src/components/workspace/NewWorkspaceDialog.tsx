@@ -15,7 +15,7 @@ type From = "branch" | "commit" | "issue" | "pr";
 type Ref = { title: string; headRefName?: string; headRefOid?: string; cross?: boolean };
 const post = async (body: Record<string, unknown>) => (await fetch("/api/repo/workspace", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
 
-export default function NewWorkspaceDialog({ root, initial, onClose }: { root: string; initial?: NewWorkspaceInitial; onClose: () => void }) {
+export default function NewWorkspaceDialog({ root, view, initial, onClose }: { root: string; view?: string; initial?: NewWorkspaceInitial; onClose: () => void }) {
   const t = useT();
   const toast = useToast();
   const [from, setFrom] = useState<From>(initial && initial.kind !== "tracker" ? initial.kind : "branch");
@@ -120,7 +120,7 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
     const cands = (r.fanout.candidates as { agent: string; dir: string }[]);
     const text = prompt.trim();
     afterSetup.current = () => { // 터미널이 접혀 있으면 펼친 뒤 띄움(workspaceEvents), 탭 id 저장은 TerminalPane이
-      launchFanout({ root, id: r.fanout.id, prompt: text, candidates: cands });
+      launchFanout({ root: view ?? root, id: r.fanout.id, prompt: text, candidates: cands }); // 레포 탭이 작업 폴더를 보여 주는 중이면 그 터미널(리뷰)
       toast(t("fanout.started", { n: cands.length }));
     };
     setupQueue.current = cands.slice(1).map((c) => c.dir);

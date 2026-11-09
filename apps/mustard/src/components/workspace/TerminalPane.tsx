@@ -5,7 +5,7 @@ import { launchOpts, liftStoredArgs } from "@/lib/agentLaunch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
 import { useShortcut, useT, useToast, isCurrentTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
-import { FANOUT_CLOSE_TABS_EVENT, FANOUT_LAUNCH_EVENT, takePendingFanout, type FanoutLaunch } from "@/lib/repo/workspaceEvents";
+import { FANOUT_CLOSE_TABS_EVENT, FANOUT_LAUNCH_EVENT, takePendingFanouts, type FanoutLaunch } from "@/lib/repo/workspaceEvents";
 import Terminal from "@/components/workspace/Terminal";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
@@ -232,19 +232,18 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
       });
     };
     const on = (e: Event) => { const d = (e as CustomEvent<FanoutLaunch>).detail; if (d && d.root === cwd && !d.taken) { d.taken = true; run(d); } };
-    const pending = takePendingFanout(cwd); // 터미널이 접혀 있던 사이 맡겨 둔 것
-    if (pending) run(pending);
+    for (const p of takePendingFanouts(cwd)) run(p); // 터미널이 접혀 있던 사이 맡겨 둔 것
     window.addEventListener(FANOUT_LAUNCH_EVENT, on);
     return () => window.removeEventListener(FANOUT_LAUNCH_EVENT, on);
   }, [cwd, t, toast]);
   // #1174 채택·버리기 — 지울 후보 탭들을 한 번에 닫고 터미널 끄기(closeTab의 하나씩 확인 없이)
   useEffect(() => {
     const on = (e: Event) => {
-      const d = (e as CustomEvent<{ root: string; ids: string[] }>).detail;
+      const d = (e as CustomEvent<{ root: string; ids: string[]; taken?: boolean }>).detail;
       if (!d || d.root !== cwd) return;
+      d.taken = true;
       const drop = new Set(d.ids.filter((id) => tabs.some((x) => x.id === id)));
       if (!drop.size) return;
-      for (const id of drop) { try { window.nunopiDesktop?.terminal?.kill({ id }); } catch { /* ignore */ } }
       const next = tabs.filter((x) => !drop.has(x.id));
       const keep = next.length ? next : [{ id: genId(), title: t("workspace.terminalTab", { n: 1 }) }]; // 마지막 탭이었으면 빈 탭 하나(closeTab과 같음)
       setTabs(keep);

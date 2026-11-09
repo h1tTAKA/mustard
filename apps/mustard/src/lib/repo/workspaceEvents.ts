@@ -18,9 +18,32 @@ export const openWorkspaceSettings = (root: string) => window.dispatchEvent(new 
 // 터미널 패널이 접혀 있어 아직 없으면 맡겨 두고(WorkspaceView가 터미널을 펼침), TerminalPane이 붙을 때 가져감(리뷰).
 export const FANOUT_LAUNCH_EVENT = "mustard:fanout-launch";
 export type FanoutLaunch = { root: string; id: string; prompt: string; candidates: { agent: string; dir: string }[]; taken?: boolean };
-const pendingLaunch = new Map<string, FanoutLaunch>(); // 레포 탭 경로 → 아직 못 띄운 겨루기
-export const launchFanout = (d: FanoutLaunch) => { const detail: FanoutLaunch = { ...d, taken: false }; window.dispatchEvent(new CustomEvent(FANOUT_LAUNCH_EVENT, { detail })); if (!detail.taken) pendingLaunch.set(d.root, detail); };
-export const takePendingFanout = (root: string) => { const d = pendingLaunch.get(root); pendingLaunch.delete(root); return d; };
+const pendingLaunch = new Map<string, { d: FanoutLaunch; at: number }[]>(); // 터미널 경로 → 아직 못 띄운 겨루기들(여럿이면 차례로)
+const PENDING_TTL = 10 * 60_000; // 10분 넘게 못 띄운 건 버림 — 한참 뒤 낡은 프롬프트로 한꺼번에 뜨지 않게(리뷰)
+export const launchFanout = (d: FanoutLaunch) => {
+  const detail: FanoutLaunch = { ...d, taken: false };
+  window.dispatchEvent(new CustomEvent(FANOUT_LAUNCH_EVENT, { detail }));
+  if (!detail.taken) pendingLaunch.set(d.root, [...(pendingLaunch.get(d.root) ?? []), { d: detail, at: Date.now() }]);
+};
+export const takePendingFanouts = (root: string): FanoutLaunch[] => {
+  const xs = pendingLaunch.get(root) ?? [];
+  pendingLaunch.delete(root);
+  return xs.filter((x) => Date.now() - x.at < PENDING_TTL).map((x) => x.d);
+};
 // #1174 채택·버리기 — 지울 후보들의 터미널 탭을 확인 없이 닫음(사람이 이미 확인 창에서 고름). TerminalPane이 받음.
 export const FANOUT_CLOSE_TABS_EVENT = "mustard:fanout-close-tabs";
-export const closeFanoutTabs = (root: string, ids: string[]) => window.dispatchEvent(new CustomEvent(FANOUT_CLOSE_TABS_EVENT, { detail: { root, ids } }));
+// 세션은 여기서 바로 끔(터미널 패널이 접혀 TerminalPane이 없어도 — 돌던 에이전트가 지우는 폴더에 쓰지 않게, 리뷰). 탭 정리는 TerminalPane이,
+// 없으면 저장된 탭 목록에서 직접 뺌(TerminalPane과 같은 키).
+export const closeFanoutTabs = (root: string, ids: string[]) => {
+  for (const id of ids) { try { window.nunopiDesktop?.terminal?.kill({ id }); } catch { /* ignore */ } }
+  const detail = { root, ids, taken: false };
+  window.dispatchEvent(new CustomEvent(FANOUT_CLOSE_TABS_EVENT, { detail }));
+  if (detail.taken) return;
+  try {
+    const k = `nunopi:ws-terms:${root}`, d = JSON.parse(localStorage.getItem(k) || "null");
+    if (!d || !Array.isArray(d.tabs)) return;
+    const tabs = d.tabs.filter((x: { id?: string }) => !ids.includes(String(x?.id)));
+    if (!tabs.length) { localStorage.removeItem(k); return; }
+    localStorage.setItem(k, JSON.stringify({ ...d, tabs, activeId: tabs.some((x: { id?: string }) => x.id === d.activeId) ? d.activeId : tabs[tabs.length - 1].id }));
+  } catch { /* ignore */ }
+};
