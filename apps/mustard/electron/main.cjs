@@ -1876,19 +1876,23 @@ ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, ids, text } 
   try { ss = await live(); } catch { return { ok: false, reason: "error" }; } // 데몬·목록 실패는 "터미널 없음"과 구분(#1129 리뷰)
   const target = ss.find((s) => s.id === preferId) ?? ss[0];
   if (!target) return { ok: false, reason: "no-agent" };
-  return pasteToAgent(target.id, text, async () => (await live()).some((s) => s.id === target.id));
+  return pasteToAgent(target.id, text, async () => (await live()).some((s) => s.id === target.id) || ((await sessionKind(target.id)) === "shell" ? "shell" : false));
 });
-// 붙여넣기 + Enter. stillAgent = Enter 직전에 아직 에이전트인지 — 그 사이 셸로 바뀌었으면 Enter 대신 Ctrl-U로 입력 줄을 비움
-// (안 비우면 붙인 글이 셸 입력 줄에 남아 다음 Enter에 명령으로 실행됨, #1174 리뷰). enter=false = 붙이기만(사람이 보고 Enter).
+// 세션 맨 앞 프로그램 — 없음·모름(process 미상)·셸·그 밖(에이전트 쪽)
+async function sessionKind(id) {
+  const s = (await termClient.list()).find((x) => x.id === id);
+  return !s ? "gone" : s.process === undefined ? "unknown" : isShellProc(s.process) ? "shell" : "agent";
+}
+// 붙여넣기 + Enter. stillAgent() = Enter 직전 확인: true(에이전트) → Enter, "shell"(셸로 바뀐 게 확실) → Ctrl-U로 입력 줄을 비움
+// (안 비우면 붙인 글이 셸 입력 줄에 남아 다음 Enter에 명령으로 실행됨), 그 밖(없음·모름·확인 실패) → 키를 안 보냄(쓰던 글을 지우지 않게, #1174 리뷰).
+// enter=false = 붙이기만(사람이 보고 Enter).
 async function pasteToAgent(id, text, stillAgent, enter = true) {
   const body = text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, ""); // ESC·C1(U+0080~009F, CSI 등) 제거(#1169 리뷰)(붙여넣기 조기 종료 방지) — 렌더러도 하지만 신뢰 경계라 한 번 더
   termClient.input({ id, data: `\x1b[200~${body}\x1b[201~` });
   await new Promise((r) => setTimeout(r, 150)); // TUI가 붙여넣기를 다 받은 뒤 Enter
-  // 붙이기 전에 호출부가 대상을 확인함(browser = live(), send-prompt = ready()). 붙인 뒤 다시 볼 때 확인이 실패하면 셸일 수도 있어
-  // 입력 줄을 비움(Ctrl-U) — 에이전트 입력칸이면 방금 붙인 글만 지워짐, 셸이면 명령으로 남지 않음(리뷰: 둘 중 안전한 쪽)
-  let still = false;
-  try { still = await stillAgent(); } catch { /* 모름 = 비움 */ }
-  if (!still) { termClient.input({ id, data: "\x15" }); return { ok: false, reason: "no-agent" }; }
+  let still;
+  try { still = await stillAgent(); } catch { return { ok: false, reason: "error" }; }
+  if (still !== true) { if (still === "shell") termClient.input({ id, data: "\x15" }); return { ok: false, reason: "no-agent" }; }
   if (enter) termClient.input({ id, data: "\r" });
   return { ok: true, id };
 }
@@ -1905,7 +1909,7 @@ ipcMain.handle("terminal:send-prompt", async (_e, { id, text, enter } = {}) => {
     if (await ready().catch(() => false)) {
       await new Promise((r) => setTimeout(r, 800)); // 첫 화면이 그려진 직후엔 입력칸이 아직 안 받는 CLI가 있음
       if (!(await ready().catch(() => false))) continue; // 기다린 사이 에이전트가 꺼졌으면 붙이지 않음(리뷰)
-      return pasteToAgent(id, text, async () => { const s = (await termClient.list()).find((x) => x.id === id); return !!s && s.process !== undefined && !isShellProc(s.process); }, enter !== false);
+      return pasteToAgent(id, text, async () => { const k = await sessionKind(id); return k === "agent" ? true : k === "shell" ? "shell" : false; }, enter !== false);
     }
     await new Promise((r) => setTimeout(r, 500));
   }

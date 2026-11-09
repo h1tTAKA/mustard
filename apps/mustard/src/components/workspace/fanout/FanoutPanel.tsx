@@ -63,7 +63,7 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
     if (!r.ok) { toast(t(r.error === "no changes" ? "fanout.noChanges" : "fanout.finishFailed", { error: String(r.error ?? "") }), "error"); void load(); return; }
     if (r.left?.length) toast(t("fanout.left", { n: r.left.length }), "error");
     else toast(winner === null ? t("fanout.discarded") : t("fanout.adopted"));
-    void load();
+    void load(); void refresh(); // 지운 후보는 diff가 "폴더 없음"이 되어야 남은 후보 버튼이 안 뜸(리뷰)
   };
   // 채택 뒤 정리가 중간에 실패했으면(앱 종료·오류) 다시 — 진 후보 폴더가 아직 있을 때만 버튼이 보임(리뷰)
   const leftovers = cur?.status === "adopted" && cur.candidates.some((_, i) => i !== cur.winner && diffs[i] && !("error" in diffs[i]!));
