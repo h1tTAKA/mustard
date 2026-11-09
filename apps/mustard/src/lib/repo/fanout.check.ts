@@ -9,7 +9,8 @@ const tmp = realpathSync(mkdtempSync(join(tmpdir(), "fo-")));
 process.env.MUSTARD_WORKSPACES_DIR = join(tmp, "workspaces");
 process.env.MUSTARD_FANOUT_DIR = join(tmp, "fanout");
 process.env.MUSTARD_CREW_DIR = join(tmp, "crew");
-const { candidateDiff, capDiff, createFanout, getFanout, listFanouts, setTabs, MAX_DIFF } = await import("./fanout.ts");
+const { adoptFanout, candidateDiff, capDiff, createFanout, discardFanout, getFanout, listFanouts, setTabs, MAX_DIFF } = await import("./fanout.ts");
+const { baseBranch } = await import("./draftPr.ts");
 
 const root = join(tmp, "repo");
 mkdirSync(root);
@@ -57,5 +58,23 @@ const cap = capDiff([part("small", 3), part("huge", 20_000), ...Array.from({ len
 assert.strictEqual(cap.files.find((x) => x.path === "huge")?.big, true);
 assert.strictEqual(cap.files.find((x) => x.path === "huge")?.added, 20_000);
 assert.ok(cap.truncated && cap.diff.length <= MAX_DIFF && cap.diff.includes("+++ b/small") && !cap.diff.includes("+++ b/huge"));
+
+// 채택: 승자에 바뀐 게 없으면 막음 / PR이 실패하면(원격 없음) 승자 커밋만 하고 아무것도 안 지움
+await assert.rejects(adoptFanout(root, f.id, 2), /no changes/);
+await assert.rejects(adoptFanout(root, f.id, 1), /origin/);
+assert.strictEqual(g(c1.dir, "status", "--porcelain"), ""); // 새 파일이 커밋됨
+assert.ok(f.candidates.every((c) => existsSync(c.dir)) && getFanout(root, f.id)?.status === "running");
+// 모두 버리기: 폴더·브랜치 전부(미커밋 있어도), 상태 discarded, 두 번은 안 됨
+assert.deepStrictEqual(await discardFanout(root, f.id), { left: [] });
+assert.ok(f.candidates.every((c) => !existsSync(c.dir)));
+assert.strictEqual(g(root, "branch", "--list", "fix-*"), "");
+assert.strictEqual(getFanout(root, f.id)?.status, "discarded");
+await assert.rejects(discardFanout(root, f.id), /not running/);
+
+// PR 기준 브랜치: 브랜치만, HEAD·SHA·PR 전용 ref는 빈 값(gh 기본)
+assert.strictEqual(baseBranch("refs/heads/main"), "main");
+assert.strictEqual(baseBranch("refs/remotes/origin/release/1.0"), "release/1.0");
+assert.strictEqual(baseBranch("main"), "main");
+for (const x of ["HEAD", "", undefined, "a1b2c3d4", "refs/mustard/pull/3"]) assert.strictEqual(baseBranch(x), "");
 
 console.log("fanout ok");

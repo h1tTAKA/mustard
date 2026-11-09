@@ -5,7 +5,7 @@ import { launchOpts, liftStoredArgs } from "@/lib/agentLaunch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
 import { useShortcut, useT, useToast, isCurrentTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
-import { FANOUT_LAUNCH_EVENT, type FanoutLaunch } from "@/lib/repo/workspaceEvents";
+import { FANOUT_CLOSE_TABS_EVENT, FANOUT_LAUNCH_EVENT, type FanoutLaunch } from "@/lib/repo/workspaceEvents";
 import Terminal from "@/components/workspace/Terminal";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
@@ -232,6 +232,22 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
     window.addEventListener(FANOUT_LAUNCH_EVENT, on);
     return () => window.removeEventListener(FANOUT_LAUNCH_EVENT, on);
   }, [cwd, t, toast]);
+  // #1174 채택·버리기 — 지울 후보 탭들을 한 번에 닫고 터미널 끄기(closeTab의 하나씩 확인 없이)
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ root: string; ids: string[] }>).detail;
+      if (!d || d.root !== cwd) return;
+      const drop = new Set(d.ids.filter((id) => tabs.some((x) => x.id === id)));
+      if (!drop.size) return;
+      for (const id of drop) { try { window.nunopiDesktop?.terminal?.kill({ id }); } catch { /* ignore */ } }
+      const next = tabs.filter((x) => !drop.has(x.id));
+      const keep = next.length ? next : [{ id: genId(), title: t("workspace.terminalTab", { n: 1 }) }]; // 마지막 탭이었으면 빈 탭 하나(closeTab과 같음)
+      setTabs(keep);
+      if (drop.has(activeId) || !next.length) setActiveId(keep[keep.length - 1].id);
+    };
+    window.addEventListener(FANOUT_CLOSE_TABS_EVENT, on);
+    return () => window.removeEventListener(FANOUT_CLOSE_TABS_EVENT, on);
+  }, [cwd, tabs, activeId, t]);
   const launchInNewTab = (agent: string) => {
     setMenuOpen(false);
     markAgentUsed(agent);

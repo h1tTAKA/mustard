@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { IconSwords, IconX, IconRefresh, IconChevronRight, IconTerminal2, IconLoader2, IconGavel, IconStarFilled, IconScale } from "@tabler/icons-react";
-import { useT, useToast } from "@mustard/core";
+import { IconSwords, IconX, IconRefresh, IconChevronRight, IconTerminal2, IconLoader2, IconGavel, IconStarFilled, IconScale, IconCheck, IconTrash, IconSend, IconExternalLink } from "@tabler/icons-react";
+import { useT, useToast, useConfirm } from "@mustard/core";
+import { closeFanoutTabs } from "@/lib/repo/workspaceEvents";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
 import { sessionState, useAgentSessionStates } from "@/lib/agentSessionStates";
@@ -19,6 +20,8 @@ const folder = (dir: string) => dir.split("/").pop() ?? dir;
 export default function FanoutPanel({ root, onClose }: { root: string; onClose: () => void }) {
   const t = useT();
   const toast = useToast();
+  const confirm = useConfirm();
+  const [acting, setActing] = useState(false);
   useAgentSessionStates(); // 세션 상태가 바뀌면 다시 그림
   const [list, setList] = useState<Fanout[] | null>(null);
   const [sel, setSel] = useState<string | null>(null);
@@ -43,6 +46,29 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
   const trialRec = cur?.trial as Trial | undefined;
   const trying = trialRec?.state === "running" && now - trialRec.at < 20 * 60_000;
   useEffect(() => { if (!judging && !trying) return; const h = setInterval(() => void load(), 3000); return () => clearInterval(h); }, [judging, trying, load]); // 판정·재판이 뒤에서 도는 동안 다시 읽기
+  // 채택(winner 번호) / 모두 버리기 — 되돌릴 수 없어 확인 먼저. 지울 후보 탭을 닫고(터미널 끄기) 서버가 폴더·브랜치를 지움
+  const finish = async (winner: number | null) => {
+    if (!cur || acting) return;
+    const ok = await confirm(winner === null
+      ? { title: t("fanout.discardTitle"), message: t("fanout.discardMsg", { n: cur.candidates.length }), confirmText: t("fanout.discard"), tone: "danger" }
+      : { title: t("fanout.adoptTitle", { name: folder(cur.candidates[winner].dir) }), message: t("fanout.adoptMsg", { n: cur.candidates.length - 1 }), confirmText: t("fanout.adopt"), tone: "warn" });
+    if (!ok) return;
+    setActing(true);
+    const r = await post(winner === null ? { action: "discard", path: root, id: cur.id } : { action: "adopt", path: root, id: cur.id, winner }).catch((e) => ({ ok: false, error: String(e) }));
+    setActing(false);
+    if (!r.ok) { toast(t(r.error === "no changes" ? "fanout.noChanges" : "fanout.finishFailed", { error: String(r.error ?? "") }), "error"); return; }
+    closeFanoutTabs(root, cur.candidates.filter((_, i) => i !== winner).map((c) => c.tab).filter((x): x is string => !!x));
+    if (r.left?.length) toast(t("fanout.left", { n: r.left.length }), "error");
+    else toast(winner === null ? t("fanout.discarded") : t("fanout.adopted"));
+    void load();
+  };
+  // 의장이 고른 "가져올 좋은 점"을 승자 터미널 에이전트에게(에이전트 화면일 때만 — 셸이면 안 보냄)
+  const sendGrafts = async (winner: number, lines: string[]) => {
+    const tab = cur?.candidates[winner]?.tab;
+    if (!tab || !lines.length) return;
+    const r = await window.nunopiDesktop?.terminal?.sendPrompt?.({ id: tab, text: `${t("fanout.graftMsg")}\n${lines.map((x) => `- ${x}`).join("\n")}` });
+    if (r?.ok) { toast(t("fanout.graftSent")); requestTerminalFocus(root, tab); } else toast(t("fanout.graftFailed"), "error");
+  };
   const start = async (action: "judge" | "trial") => {
     if (!cur) return;
     setNow(Date.now());
@@ -88,6 +114,13 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
       ) : (
         <div className="nunopi-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
           <p className="line-clamp-3 whitespace-pre-wrap rounded-lg bg-zinc-50 px-2.5 py-2 text-[12px] leading-relaxed text-zinc-700 dark:bg-white/[0.03] dark:text-zinc-300" title={cur.prompt}>{cur.prompt}</p>
+          {cur.status !== "running" && (
+            <div className="flex items-center gap-1.5 rounded-lg bg-zinc-50 px-2.5 py-1.5 text-[12px] text-zinc-600 dark:bg-white/[0.03] dark:text-zinc-300">
+              {cur.status === "adopted" ? <IconCheck size={13} className="shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden /> : <IconTrash size={13} className="shrink-0 text-zinc-400" aria-hidden />}
+              <span className="min-w-0 truncate">{cur.status === "adopted" ? t("fanout.adoptedAs", { name: folder(cur.candidates[cur.winner ?? 0]?.dir ?? "") }) : t("fanout.discarded")}</span>
+              {cur.prUrl && <a href={cur.prUrl} target="_blank" rel="noreferrer" className="ml-auto flex shrink-0 items-center gap-0.5 font-medium text-mustard-700 hover:underline dark:text-mustard-400">PR<IconExternalLink size={12} aria-hidden /></a>}
+            </div>
+          )}
           {cur.candidates.map((c, i) => {
             const d = diffs[i];
             const st = c.tab ? sessionState(c.tab) : null;
@@ -106,7 +139,13 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
                     {!d ? "…" : "error" in d ? <span className="text-rose-500">{t("fanout.diffFailed")}</span>
                       : <>{t("fanout.files", { n: d.files.length })} <span className="text-emerald-600 dark:text-emerald-400">+{d.added}</span> <span className="text-rose-600 dark:text-rose-400">−{d.removed}</span></>}
                   </span>
-                  {c.tab && (
+                  {cur.status === "running" && (
+                    <button type="button" onClick={() => void finish(i)} disabled={acting} title={t("fanout.adoptThis")} aria-label={t("fanout.adoptThis")}
+                      className="shrink-0 rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-emerald-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-emerald-400">
+                      <IconCheck size={13} stroke={2} aria-hidden />
+                    </button>
+                  )}
+                  {c.tab && cur.status === "running" && (
                     <button type="button" onClick={() => requestTerminalFocus(root, c.tab!)} title={t("fanout.goTab")} aria-label={t("fanout.goTab")}
                       className="shrink-0 rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
                       <IconTerminal2 size={13} stroke={2} aria-hidden />
@@ -117,8 +156,16 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
               </div>
             );
           })}
-          <VerdictBox f={cur} verdict={verdict} judging={judging} onJudge={() => void start("judge")} />
-          {verdict?.state === "done" && (verdict.scores?.length ?? 0) >= 2 && <TrialBox f={cur} verdict={verdict} trial={trialRec} trying={trying} onStart={() => void start("trial")} />}
+          {cur.status === "running" && <VerdictBox f={cur} verdict={verdict} judging={judging} onJudge={() => void start("judge")} onSendGrafts={(w, xs) => void sendGrafts(w, xs)} />}
+          {cur.status === "running" && verdict?.state === "done" && (verdict.scores?.length ?? 0) >= 2 && <TrialBox f={cur} verdict={verdict} trial={trialRec} trying={trying} onStart={() => void start("trial")} />}
+          {cur.status === "running" && (
+            <div className="flex justify-end">
+              <button type="button" onClick={() => void finish(null)} disabled={acting}
+                className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-rose-600 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-rose-400">
+                {acting ? <IconLoader2 size={12} className="animate-spin" aria-hidden /> : <IconTrash size={12} stroke={2} aria-hidden />}{t("fanout.discardAll")}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -158,7 +205,7 @@ function DiffView({ d, label }: { d: CandidateDiff; label: string }) {
 
 // 판정 칸(#1174) — 판정 버튼 · 판정 중 · 결과(추천 승자·이유·점수·심사별 순위·가져올 좋은 점). 가린 이름은 order로 풀어 폴더 이름으로 보여 줌.
 const PROVIDER_LABEL: Record<string, string> = { "claude-code": "Claude", codex: "Codex", opencode: "OpenCode" };
-function VerdictBox({ f, verdict, judging, onJudge }: { f: Fanout; verdict?: Verdict; judging: boolean; onJudge: () => void }) {
+function VerdictBox({ f, verdict, judging, onJudge, onSendGrafts }: { f: Fanout; verdict?: Verdict; judging: boolean; onJudge: () => void; onSendGrafts: (winner: number, lines: string[]) => void }) {
   const t = useT();
   const name = (ci: number) => folder(f.candidates[ci]?.dir ?? "?");
   const byLabel = (l: string) => (verdict?.order ? name(verdict.order[LETTERS.indexOf(l)]) : l);
@@ -195,7 +242,14 @@ function VerdictBox({ f, verdict, judging, onJudge }: { f: Fanout; verdict?: Ver
           {done.close && <p className="text-[11.5px] text-amber-700 dark:text-amber-400">{t("fanout.closeRace")}</p>}
           {Object.keys(done.chair.grafts).length > 0 && (
             <div>
-              <div className="text-[11.5px] font-medium text-zinc-500 dark:text-zinc-400">{t("fanout.grafts")}</div>
+              <div className="flex items-center gap-2">
+                <span className="mr-auto text-[11.5px] font-medium text-zinc-500 dark:text-zinc-400">{t("fanout.grafts")}</span>
+                {f.candidates[done.chair.winner]?.tab && (
+                  <button type="button" onClick={() => onSendGrafts(done.chair!.winner, Object.values(done.chair!.grafts).flat())} className={btn}>
+                    <IconSend size={12} stroke={2} aria-hidden />{t("fanout.sendGrafts", { name: name(done.chair.winner) })}
+                  </button>
+                )}
+              </div>
               <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
                 {Object.entries(done.chair.grafts).flatMap(([ci, xs]) => xs.map((x, j) => <li key={`${ci}-${j}`}><span className="font-mono text-[11px] text-zinc-500 dark:text-zinc-400">{name(Number(ci))}</span> {x}</li>))}
               </ul>

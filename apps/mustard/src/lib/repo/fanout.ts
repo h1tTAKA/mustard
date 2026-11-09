@@ -6,7 +6,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
-import { createWorkspace, removeWorkspace } from "./workspaces.ts";
+import { createWorkspace, forceDeleteBranch, removeWorkspace } from "./workspaces.ts";
+import { openDraftPr } from "./draftPr.ts";
 
 const pexec = promisify(execFile);
 // git diff는 차이가 있으면 종료 코드 1(--no-index) — 출력만 쓰고 코드는 안 봄
@@ -113,3 +114,61 @@ export function capDiff(parts: string[]): CandidateDiff {
   }
   return { files, added, removed, diff, truncated };
 }
+
+// 후보 하나 지우기 — 일부러 버리는 거라 미커밋·무시된 파일도 지움(force, 본 개수 제한 없음), 브랜치도(-d 거부면 -D).
+// archive(사람이 승인한 정리 스크립트)는 승인돼 있으면 돌리고, 승인 전이면 건너뜀(묻는 창 없이 여럿을 지우는 흐름이라).
+async function dropCandidate(root: string, c: Candidate): Promise<void> {
+  const o = { force: true, expectDirty: Number.MAX_SAFE_INTEGER, expectIgnored: Number.MAX_SAFE_INTEGER, deleteBranch: true, allowFailedArchive: true };
+  let r = await removeWorkspace(root, c.dir, o);
+  if (r.status === "archive-untrusted") r = await removeWorkspace(root, c.dir, { ...o, skipArchive: true });
+  if (r.status === "removed" && r.branchKept && r.branch) await forceDeleteBranch(root, r.branch).catch(() => {});
+}
+
+// 못 지운 후보 폴더 = 화면이 알려 줌(작업공간 지우기 창으로 마저 지울 수 있음)
+async function dropAll(root: string, cs: Candidate[]): Promise<string[]> {
+  const left: string[] = [];
+  for (const c of cs) await dropCandidate(root, c).catch(() => { left.push(c.dir); });
+  return left;
+}
+
+const gitIn = (dir: string, args: string[]) => pexec("git", args, { cwd: dir, timeout: 60_000 }).then((r) => r.stdout.trim());
+const inFlight = new Set<string>(); // 같은 겨루기 채택·버리기 두 번 눌림 방지
+async function once<T>(id: string, run: () => Promise<T>): Promise<T> {
+  if (inFlight.has(id)) throw new Error("busy");
+  inFlight.add(id);
+  try { return await run(); } finally { inFlight.delete(id); }
+}
+
+// 채택 — 승자 미커밋 변경을 커밋(메시지 = 프롬프트 첫 줄) → push + draft PR → 나머지 후보 지움. PR이 실패하면 아무것도 안 지움.
+export const adoptFanout = (root: string, id: string, winner: number) => once(id, async () => {
+  const f = getFanout(root, id);
+  if (!f || f.status !== "running") throw new Error("not running");
+  const w = f.candidates[winner];
+  if (!w || !existsSync(w.dir)) throw new Error("bad winner");
+  const title = (f.prompt.split("\n").map((l) => l.trim()).find(Boolean) ?? "Compete result").slice(0, 72);
+  if (await gitIn(w.dir, ["status", "--porcelain"])) {
+    await gitIn(w.dir, ["add", "-A"]);
+    await gitIn(w.dir, ["commit", "-q", "-m", title]);
+  }
+  const mb = (await gitIn(w.dir, ["merge-base", w.base, "HEAD"]).catch(() => "")) || w.base;
+  if (Number(await gitIn(w.dir, ["rev-list", "--count", `${mb}..HEAD`]).catch(() => "0")) === 0) throw new Error("no changes");
+  const v = f.verdict as { state?: string; chair?: { why?: string } } | undefined;
+  const body = [
+    "## Prompt", f.prompt, "",
+    "## Compete", ...f.candidates.map((c, i) => `- ${i === winner ? "**adopted**" : "dropped"}: \`${c.agent}\` (\`${c.branch}\`)`), "",
+    ...(v?.state === "done" && v.chair?.why ? ["## Verdict", v.chair.why, ""] : []),
+    "🤖 Opened from Mustard (compete)",
+  ].join("\n");
+  const { url } = await openDraftPr({ dir: w.dir, branch: w.branch, base: w.base, title, body });
+  saveFanout(root, { ...f, status: "adopted", winner, prUrl: url });
+  return { url, left: await dropAll(root, f.candidates.filter((_, i) => i !== winner)) };
+});
+
+// 모두 버리기 — 후보 전부 지움
+export const discardFanout = (root: string, id: string) => once(id, async () => {
+  const f = getFanout(root, id);
+  if (!f || f.status !== "running") throw new Error("not running");
+  const left = await dropAll(root, f.candidates);
+  saveFanout(root, { ...f, status: "discarded" });
+  return { left };
+});

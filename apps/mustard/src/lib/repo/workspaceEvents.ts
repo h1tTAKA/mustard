@@ -18,3 +18,6 @@ export const openWorkspaceSettings = (root: string) => window.dispatchEvent(new 
 export const FANOUT_LAUNCH_EVENT = "mustard:fanout-launch";
 export type FanoutLaunch = { root: string; prompt: string; candidates: { agent: string; dir: string }[]; tabIds?: string[] };
 export const launchFanout = (d: FanoutLaunch): string[] => { const detail: FanoutLaunch = { ...d, tabIds: [] }; window.dispatchEvent(new CustomEvent(FANOUT_LAUNCH_EVENT, { detail })); return detail.tabIds ?? []; };
+// #1174 채택·버리기 — 지울 후보들의 터미널 탭을 확인 없이 닫음(사람이 이미 확인 창에서 고름). TerminalPane이 받음.
+export const FANOUT_CLOSE_TABS_EVENT = "mustard:fanout-close-tabs";
+export const closeFanoutTabs = (root: string, ids: string[]) => window.dispatchEvent(new CustomEvent(FANOUT_CLOSE_TABS_EVENT, { detail: { root, ids } }));

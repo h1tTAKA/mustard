@@ -26,6 +26,7 @@ import { callsEveryone, pickParticipants, planFromWrapUp, readAnswer, readJson, 
 import { isFailedNote } from "@/lib/failText";
 import { freshIds, hasTriggers, readTriggers, scheduleDue, writeTriggers, type CrewTrigger } from "./crewTriggers";
 import { emitNarration } from "@/lib/mcpActivity";
+import { openDraftPr } from "@/lib/repo/draftPr";
 import { appendItems } from "@/lib/catchupStore";
 import { readTrackerAssigned, requestTrackerSync } from "@/lib/trackerSync";
 import { formatGithubHandoff } from "@/lib/githubHandoff";
@@ -846,10 +847,6 @@ async function createPrOnce(root: string, taskId: string): Promise<{ url: string
   if (task.pr) return task.pr;
   const run = [...listRuns(root)].reverse().find((r) => r.taskId === taskId && r.worktree && r.branch);
   if (!run || !existsSync(run.worktree)) throw new Error("no worktree for this card");
-  const git = (args: string[]) => pexecFile("git", args, { cwd: run.worktree, timeout: 120_000 }).then((r) => r.stdout.trim());
-  const remote = await git(["remote"]).catch(() => "");
-  if (!remote.split("\n").includes("origin")) throw new Error("no git remote 'origin'");
-  await git(["push", "-u", "origin", run.branch]);
   const artifacts = (() => { try { return readdirSync(join(run.worktree, ".crew")).filter((f) => f.endsWith(".md")); } catch { return []; } })();
   const body = [
     "## Summary", task.gate?.text || run.summary || task.title, "",
@@ -857,10 +854,7 @@ async function createPrOnce(root: string, taskId: string): Promise<{ url: string
     ...(artifacts.length ? ["## Crew artifacts (in the worktree, not committed)", ...artifacts.map((f) => `- .crew/${f}`), ""] : []),
     "🤖 Opened from Mustard Crew",
   ].join("\n");
-  const base = run.base && run.base !== "HEAD" ? run.base : "";
-  const out = await pexecFile("gh", ["pr", "create", "--draft", "--head", run.branch, ...(base ? ["--base", base] : []), "--title", task.title, "--body", body], { cwd: run.worktree, timeout: 120_000 })
-    .then((r) => r.stdout.trim()).catch((e) => { throw new Error(String((e as { stderr?: string }).stderr || (e as Error).message).trim().slice(0, 300) || "gh failed"); });
-  const url = out.split("\n").map((l) => l.trim()).find((l) => /^https?:\/\//.test(l)) ?? out;
+  const { url } = await openDraftPr({ dir: run.worktree, branch: run.branch, base: run.base, title: task.title, body });
   patchTask(root, taskId, { pr: { url } });
   requestTrackerSync("pr", task.issue, url); // #1172 이슈에 PR 링크 댓글
   say(root, { from: "board", kind: "gate", taskId, taskTitle: task.title, ...tx("crewchat.prCreated", { url }) });
