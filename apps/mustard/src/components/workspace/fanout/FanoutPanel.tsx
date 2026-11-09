@@ -65,6 +65,18 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
     else toast(winner === null ? t("fanout.discarded") : t("fanout.adopted"));
     void load();
   };
+  // 채택 뒤 정리가 중간에 실패했으면(앱 종료·오류) 다시 — 진 후보 폴더가 아직 있을 때만 버튼이 보임(리뷰)
+  const leftovers = cur?.status === "adopted" && cur.candidates.some((_, i) => i !== cur.winner && diffs[i] && !("error" in diffs[i]!));
+  const dropLeft = async () => {
+    if (!cur || acting) return;
+    closeFanoutTabs(root, cur.candidates.filter((_, i) => i !== cur.winner).map((c) => c.tab).filter((x): x is string => !!x));
+    setActing(true);
+    const r = await post({ action: "drop-losers", path: root, id: cur.id }).catch((e) => ({ ok: false, error: String(e) }));
+    setActing(false);
+    if (!r.ok) toast(t("fanout.finishFailed", { error: String(r.error ?? "") }), "error");
+    else if (r.left?.length) toast(t("fanout.left", { n: r.left.length }), "error");
+    void refresh();
+  };
   // 의장이 고른 "가져올 좋은 점"을 승자 터미널 에이전트에게 — 붙이기만, Enter는 사람이(AI가 쓴 글이라 보고 보내게, 리뷰). 셸이면 안 보냄
   const sendGrafts = async (winner: number, lines: string[]) => {
     const tab = cur?.candidates[winner]?.tab;
@@ -121,6 +133,12 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
             <div className="flex items-center gap-1.5 rounded-lg bg-zinc-50 px-2.5 py-1.5 text-[12px] text-zinc-600 dark:bg-white/[0.03] dark:text-zinc-300">
               {cur.status === "adopted" ? <IconCheck size={13} className="shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden /> : <IconTrash size={13} className="shrink-0 text-zinc-400" aria-hidden />}
               <span className="min-w-0 truncate">{cur.status === "adopted" ? t("fanout.adoptedAs", { name: folder(cur.candidates[cur.winner ?? 0]?.dir ?? "") }) : t("fanout.discarded")}</span>
+              {leftovers && (
+                <button type="button" onClick={() => void dropLeft()} disabled={acting}
+                  className="ml-auto flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-rose-600 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-rose-400">
+                  <IconTrash size={12} stroke={2} aria-hidden />{t("fanout.dropLeft")}
+                </button>
+              )}
               {cur.prUrl && <a href={cur.prUrl} target="_blank" rel="noreferrer" className="ml-auto flex shrink-0 items-center gap-0.5 font-medium text-mustard-700 hover:underline dark:text-mustard-400">PR<IconExternalLink size={12} aria-hidden /></a>}
             </div>
           )}

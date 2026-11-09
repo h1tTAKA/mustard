@@ -27,7 +27,9 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
   const [nameTouched, setNameTouched] = useState(initial?.kind === "tracker");
   const [branches, setBranches] = useState<string[]>([]);
   const [items, setItems] = useState<{ issue: { number: number; title: string }[]; pr: { number: number; title: string }[] }>({ issue: [], pr: [] }); // 열린 이슈·PR(번호 칸 목록)
-  const [busy, setBusy] = useState(false);
+  const [busyNow, setBusy] = useState(false);
+  const [chain, setChain] = useState(false); // #1174 겨루기 후보 setup 줄이 도는 동안(첫 후보 setup이 끝나도 나머지가 남음) — 만들기·취소·닫기 잠금(리뷰)
+  const busy = busyNow || chain;
   const [setup, setSetup] = useState<{ dir: string; script: string } | null>(null); // 승인 기다리는 setup
   const prefix = getSetting<string>(GKEYS.branchPrefix, GIT_DEFAULTS.branchPrefix);
   // #1174 여러 에이전트로(겨루기) — 고른 순서대로 후보(같은 에이전트 여러 번 가능, 2~4개), 같은 프롬프트를 각자 터미널 탭에서
@@ -45,6 +47,7 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
     const next = setupQueue.current.shift();
     if (next) { void runSetup(next); return; }
     const go = afterSetup.current; afterSetup.current = null;
+    setChain(false);
     go?.();
     onClose();
   };
@@ -123,6 +126,7 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
       void fetch("/api/repo/fanout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "tabs", path: root, id: r.fanout.id, tabIds }) }).catch(() => {});
     };
     setupQueue.current = cands.slice(1).map((c) => c.dir);
+    setChain(true);
     setBusy(true);
     await runSetup(cands[0].dir);
     setBusy(false);
@@ -177,8 +181,8 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
             <pre className="nunopi-scroll mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-white/70 p-2 font-mono text-[11.5px] leading-relaxed text-zinc-700 dark:bg-black/30 dark:text-zinc-300">{setup.script}</pre>
             <p className="mt-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">{t("newWs.setupHint")}</p>
             <div className="mt-2 flex justify-end gap-1.5">
-              <button type="button" disabled={busy} onClick={() => void decide(false)} className="rounded-lg px-3 py-1 text-[12px] font-medium text-zinc-600 transition hover:bg-amber-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10">{t("newWs.skip")}</button>
-              <button type="button" disabled={busy} onClick={() => void decide(true)} className="rounded-lg bg-amber-500 px-3 py-1 text-[12px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-40">{t("newWs.trustRun")}</button>
+              <button type="button" disabled={busyNow} onClick={() => void decide(false)} className="rounded-lg px-3 py-1 text-[12px] font-medium text-zinc-600 transition hover:bg-amber-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10">{t("newWs.skip")}</button>
+              <button type="button" disabled={busyNow} onClick={() => void decide(true)} className="rounded-lg bg-amber-500 px-3 py-1 text-[12px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-40">{t("newWs.trustRun")}</button>
             </div>
           </div>
         ) : (<>
