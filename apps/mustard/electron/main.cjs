@@ -1876,7 +1876,8 @@ ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, ids, text } 
   try { ss = await live(); } catch { return { ok: false, reason: "error" }; } // 데몬·목록 실패는 "터미널 없음"과 구분(#1129 리뷰)
   const target = ss.find((s) => s.id === preferId) ?? ss[0];
   if (!target) return { ok: false, reason: "no-agent" };
-  return pasteToAgent(target.id, text, async () => (await live()).some((s) => s.id === target.id) || ((await sessionKind(target.id)) === "shell" ? "shell" : false));
+  const r = await pasteToAgent(target.id, text, async () => (await live()).some((s) => s.id === target.id) || ((await sessionKind(target.id)) === "shell" ? "shell" : false));
+  return r.reason === "kept" ? { ok: false, reason: "no-agent" } : r; // 브라우저 쪽 응답은 예전 그대로
 });
 // 세션 맨 앞 프로그램 — 없음·모름(이름 못 읽음)·셸·그 밖(셸 아님). 셸 아님 = 에이전트라는 뜻은 아님(dev 서버도) → Enter 판단은 호출부의 사전 확인과 함께
 // 인앱 브라우저 보내기는 Enter를 화면 판정(live)이 에이전트라고 할 때만 침 — 셸이 아닌 아무 프로그램(dev 서버 등)에 Enter가 가지 않게(리뷰 제안 안 받음)
@@ -1893,7 +1894,8 @@ async function pasteToAgent(id, text, stillAgent, enter = true) {
   await new Promise((r) => setTimeout(r, 150)); // TUI가 붙여넣기를 다 받은 뒤 Enter
   let still;
   try { still = await stillAgent(); } catch { return { ok: false, reason: "error" }; }
-  if (still !== true) { if (still === "shell") termClient.input({ id, data: "\x15" }); return { ok: false, reason: "no-agent" }; }
+  if (still === "shell") { termClient.input({ id, data: "\x15" }); return { ok: false, reason: "no-agent" }; }
+  if (still !== true) return { ok: false, reason: "kept" }; // 붙인 글이 입력칸에 남음(Enter도 지우기도 안 함) — 다시 붙이라고 하면 두 번 들어감(리뷰)
   if (enter) termClient.input({ id, data: "\r" });
   return { ok: true, id };
 }

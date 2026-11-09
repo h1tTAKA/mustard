@@ -82,7 +82,7 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
     const tab = cur?.candidates[winner]?.tab;
     if (!tab || !lines.length) return;
     const r = await window.nunopiDesktop?.terminal?.sendPrompt?.({ id: tab, text: `${t("fanout.graftMsg")}\n${lines.map((x) => `- ${x}`).join("\n")}`, enter: false });
-    if (r?.ok) { toast(t("fanout.graftSent")); requestTerminalFocus(root, tab); } else toast(t("fanout.graftFailed"), "error");
+    if (r?.ok || (r && r.reason === "kept")) { toast(t("fanout.graftSent")); requestTerminalFocus(root, tab); } else toast(t("fanout.graftFailed"), "error"); // kept = 붙어 있음(Enter는 원래 사람이)
   };
   const start = async (action: "judge" | "trial") => {
     if (!cur) return;

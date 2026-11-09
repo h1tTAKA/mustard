@@ -225,7 +225,9 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
           const term = window.nunopiDesktop?.terminal;
           const r = await term?.launchAgent?.({ id: ids[i], agent: c.agent, dark: isCurrentTerminalDark(), ...launchOpts(c.agent), cwd: c.dir });
           const sent = r?.ok ? await term?.sendPrompt?.({ id: ids[i], text: d.prompt }) : null;
-          if (!sent?.ok) { void navigator.clipboard?.writeText(d.prompt).catch(() => {}); toast(t("fanout.pasteYourself", { name: c.dir.split("/").pop() ?? c.agent }), "error"); }
+          const name = c.dir.split("/").pop() ?? c.agent;
+          if (sent && !sent.ok && sent.reason === "kept") toast(t("fanout.pressEnter", { name }), "error"); // 이미 붙어 있음 — Enter만
+          else if (!sent?.ok) { void navigator.clipboard?.writeText(d.prompt).catch(() => {}); toast(t("fanout.pasteYourself", { name }), "error"); }
         })();
       });
     };
