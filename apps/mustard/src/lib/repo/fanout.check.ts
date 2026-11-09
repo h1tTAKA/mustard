@@ -105,6 +105,11 @@ writeFileSync(join(sec.dir, "설정", ".env"), "K=LIVE\n"); writeFileSync(join(s
 g(sec.dir, "add", "."); g(sec.dir, "commit", "-qm", "ko");
 const kd = await candidateDiff(sec);
 assert.ok(!kd.diff.includes("K=LIVE") && kd.files.some((x) => x.path === "설정/.env" && x.big) && kd.files.some((x) => x.path === "설정/메모.txt"));
+// 이름에 공백(git이 +++ 끝에 탭을 붙임)·이름 바꾸기로 비밀이 된/비밀이던 파일도 내용이 안 나감
+writeFileSync(join(sec.dir, "my key.pem"), "PEMDATA\n"); writeFileSync(join(sec.dir, "a b.txt"), "x\n");
+g(sec.dir, "add", "."); g(sec.dir, "commit", "-qm", "sp");
+const sp = await candidateDiff(sec);
+assert.ok(!sp.diff.includes("PEMDATA") && sp.files.some((x) => x.path === "my key.pem" && x.big) && sp.files.some((x) => x.path === "a b.txt" && !x.big));
 await discardFanout(root, f3.id);
 
 // 폴더는 이미 없고 브랜치만 남은 후보도 버리기가 끝까지 감(지난 시도가 중간에 멈춘 경우)
