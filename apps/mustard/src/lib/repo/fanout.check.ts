@@ -9,7 +9,7 @@ const tmp = realpathSync(mkdtempSync(join(tmpdir(), "fo-")));
 process.env.MUSTARD_WORKSPACES_DIR = join(tmp, "workspaces");
 process.env.MUSTARD_FANOUT_DIR = join(tmp, "fanout");
 process.env.MUSTARD_CREW_DIR = join(tmp, "crew");
-const { adoptFanout, candidateDiff, capDiff, createFanout, discardFanout, getFanout, listFanouts, setTabs, MAX_DIFF } = await import("./fanout.ts");
+const { adoptFanout, candidateDiff, capDiff, createFanout, discardFanout, dropLosers, getFanout, listFanouts, setTabs, MAX_DIFF } = await import("./fanout.ts");
 const { baseBranch } = await import("./draftPr.ts");
 
 const root = join(tmp, "repo");
@@ -64,6 +64,7 @@ await assert.rejects(adoptFanout(root, f.id, 2), /no changes/);
 await assert.rejects(adoptFanout(root, f.id, 1), /origin/);
 assert.strictEqual(g(c1.dir, "status", "--porcelain"), ""); // 새 파일이 커밋됨
 assert.ok(f.candidates.every((c) => existsSync(c.dir)) && getFanout(root, f.id)?.status === "running");
+await assert.rejects(dropLosers(root, f.id), /not adopted/); // 나머지 지우기는 채택(PR 성공) 뒤에만
 // 모두 버리기: 폴더·브랜치 전부(미커밋 있어도), 상태 discarded, 두 번은 안 됨
 assert.deepStrictEqual(await discardFanout(root, f.id), { left: [] });
 assert.ok(f.candidates.every((c) => !existsSync(c.dir)));

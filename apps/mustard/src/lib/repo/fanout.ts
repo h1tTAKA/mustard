@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
 import { createWorkspace, forceDeleteBranch, removeWorkspace } from "./workspaces.ts";
-import { openDraftPr } from "./draftPr.ts";
+import { baseBranch, openDraftPr } from "./draftPr.ts";
 
 const pexec = promisify(execFile);
 // git diff는 차이가 있으면 종료 코드 1(--no-index) — 출력만 쓰고 코드는 안 봄
@@ -65,7 +65,7 @@ export async function createFanout(root: string, o: CreateFanoutOpts): Promise<F
       made.push({ agent, dir: w.dir, branch: w.branch, base: w.base });
     }
   } catch (e) {
-    for (const c of made) await dropCandidate(root, c).catch(() => {}); // 복사해 온 무시된 파일이 있어도 지워지게(본 개수 제한 없음, 리뷰)
+    for (const c of made) await dropCandidate(root, c, true).catch(() => {}); // 복사해 온 무시된 파일이 있어도 지워지게(본 개수 제한 없음), 방금 만든 폴더라 정리 스크립트는 안 돌림(리뷰)
     throw e;
   }
   const f: Fanout = { id: randomUUID(), name: o.name, prompt, createdAt: Date.now(), status: "running", candidates: made };
@@ -84,11 +84,12 @@ export async function candidateDiff(c: Candidate): Promise<CandidateDiff> {
   const tracked = await gitOut(c.dir, ["diff", "--no-color", "--no-ext-diff", "-M", mb]);
   const untracked = (await gitOut(c.dir, ["ls-files", "--others", "--exclude-standard", "-z"])).split("\0").filter(Boolean);
   const parts = splitDiff(tracked);
-  for (const p of untracked.slice(0, MAX_UNTRACKED)) parts.push(await gitOut(c.dir, ["diff", "--no-color", "--no-index", "--", "/dev/null", p]).catch(() => ""));
-  const d = capDiff(parts.filter(Boolean));
-  // 넘는 새 파일은 이름만(줄 수 0) + 잘림 표시 — 채택하면 git add -A로 같이 들어가니 목록에서 빠지면 안 됨(리뷰)
-  for (const p of untracked.slice(MAX_UNTRACKED)) d.files.push({ path: p, added: 0, removed: 0, big: true });
-  if (untracked.length > MAX_UNTRACKED) d.truncated = true;
+  const unread: string[] = untracked.slice(MAX_UNTRACKED); // 넘는 것 + 못 읽은 것(시간 초과·너무 큼)
+  for (const p of untracked.slice(0, MAX_UNTRACKED)) { const x = await gitOut(c.dir, ["diff", "--no-color", "--no-index", "--", "/dev/null", p]).catch(() => ""); if (x) parts.push(x); else unread.push(p); }
+  const d = capDiff(parts);
+  // 이름만(줄 수 0) + 잘림 표시 — 채택하면 git add -A로 같이 들어가니 목록에서 빠지면 안 됨(리뷰)
+  for (const p of unread) d.files.push({ path: p, added: 0, removed: 0, big: true });
+  if (unread.length) d.truncated = true;
   return d;
 }
 
@@ -121,8 +122,8 @@ export function capDiff(parts: string[]): CandidateDiff {
 
 // 후보 하나 지우기 — 일부러 버리는 거라 미커밋·무시된 파일도 지움(force, 본 개수 제한 없음), 브랜치도(-d 거부면 -D).
 // archive(사람이 승인한 정리 스크립트)는 승인돼 있으면 돌리고, 승인 전이면 건너뜀(묻는 창 없이 여럿을 지우는 흐름이라).
-async function dropCandidate(root: string, c: Candidate): Promise<void> {
-  const o = { force: true, expectDirty: Number.MAX_SAFE_INTEGER, expectIgnored: Number.MAX_SAFE_INTEGER, deleteBranch: true, allowFailedArchive: true };
+async function dropCandidate(root: string, c: Candidate, skipArchive = false): Promise<void> {
+  const o = { force: true, expectDirty: Number.MAX_SAFE_INTEGER, expectIgnored: Number.MAX_SAFE_INTEGER, deleteBranch: true, allowFailedArchive: true, skipArchive };
   let r = await removeWorkspace(root, c.dir, o);
   if (r.status === "archive-untrusted") r = await removeWorkspace(root, c.dir, { ...o, skipArchive: true });
   if (r.status === "removed" && r.branchKept && r.branch) await forceDeleteBranch(root, r.branch).catch(() => {});
@@ -143,7 +144,7 @@ async function once<T>(id: string, run: () => Promise<T>): Promise<T> {
   try { return await run(); } finally { inFlight.delete(id); }
 }
 
-// 채택 — 승자 미커밋 변경을 커밋(메시지 = 프롬프트 첫 줄) → push + draft PR → 나머지 후보 지움. PR이 실패하면 아무것도 안 지움.
+// 채택 — 승자 미커밋 변경을 커밋(메시지 = 프롬프트 첫 줄) → push + draft PR. 나머지 지우기는 dropLosers(PR이 성공한 뒤에만).
 export const adoptFanout = (root: string, id: string, winner: number) => once(id, async () => {
   const f = getFanout(root, id);
   if (!f || f.status !== "running") throw new Error("not running");
@@ -163,9 +164,16 @@ export const adoptFanout = (root: string, id: string, winner: number) => once(id
     ...(v?.state === "done" && v.chair?.why ? ["## Verdict", v.chair.why, ""] : []),
     "🤖 Opened from Mustard (compete)",
   ].join("\n");
-  const { url } = await openDraftPr({ dir: w.dir, branch: w.branch, base: w.base, title, body });
+  const { url } = await openDraftPr({ dir: w.dir, branch: w.branch, base: baseBranch(w.base), title, body });
   saveFanout(root, { ...(getFanout(root, id) ?? f), status: "adopted", winner, prUrl: url }); // push 동안 끝난 판정·재판을 덮어쓰지 않게 지금 기록에(리뷰)
-  return { url, left: await dropAll(root, f.candidates.filter((_, i) => i !== winner)) };
+  return { url };
+});
+
+// 채택 뒤 나머지 지우기 — 화면이 PR 성공을 보고 진 후보 터미널을 끈 다음 부름(PR이 실패하면 탭도 폴더도 그대로, 리뷰)
+export const dropLosers = (root: string, id: string) => once(id, async () => {
+  const f = getFanout(root, id);
+  if (!f || f.status !== "adopted" || f.winner == null) throw new Error("not adopted");
+  return { left: await dropAll(root, f.candidates.filter((_, i) => i !== f.winner)) };
 });
 
 // 모두 버리기 — 후보 전부 지움

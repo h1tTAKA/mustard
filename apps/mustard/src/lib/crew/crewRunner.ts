@@ -854,7 +854,7 @@ async function createPrOnce(root: string, taskId: string): Promise<{ url: string
     ...(artifacts.length ? ["## Crew artifacts (in the worktree, not committed)", ...artifacts.map((f) => `- .crew/${f}`), ""] : []),
     "🤖 Opened from Mustard Crew",
   ].join("\n");
-  const { url } = await openDraftPr({ dir: run.worktree, branch: run.branch, base: run.base, title: task.title, body });
+  const { url } = await openDraftPr({ dir: run.worktree, branch: run.branch, base: run.base && run.base !== "HEAD" ? run.base : "", title: task.title, body }); // 예전 그대로 넘김
   patchTask(root, taskId, { pr: { url } });
   requestTrackerSync("pr", task.issue, url); // #1172 이슈에 PR 링크 댓글
   say(root, { from: "board", kind: "gate", taskId, taskTitle: task.title, ...tx("crewchat.prCreated", { url }) });

@@ -13,12 +13,13 @@ export function baseBranch(ref: string | undefined): string {
   return r.startsWith("refs/") ? "" : r;
 }
 
+// base = gh --base에 그대로 넣을 브랜치 이름(빈 값 = 레포 기본). ref를 가진 쪽은 baseBranch로 바꿔 넘김.
 export async function openDraftPr(o: { dir: string; branch: string; base?: string; title: string; body: string }): Promise<{ url: string }> {
   const git = (args: string[]) => pexecFile("git", args, { cwd: o.dir, timeout: 120_000 }).then((r) => r.stdout.trim());
   const remote = await git(["remote"]).catch(() => "");
   if (!remote.split("\n").includes("origin")) throw new Error("no git remote 'origin'");
   await git(["push", "-u", "origin", o.branch]);
-  const base = baseBranch(o.base);
+  const base = (o.base ?? "").trim();
   const out = await pexecFile("gh", ["pr", "create", "--draft", "--head", o.branch, ...(base ? ["--base", base] : []), "--title", o.title, "--body", o.body], { cwd: o.dir, timeout: 120_000 })
     .then((r) => r.stdout.trim()).catch((e) => { throw new Error(String((e as { stderr?: string }).stderr || (e as Error).message).trim().slice(0, 300) || "gh failed"); });
   return { url: out.split("\n").map((l) => l.trim()).find((l) => /^https?:\/\//.test(l)) ?? out };

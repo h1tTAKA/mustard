@@ -57,7 +57,10 @@ function background(root: string, id: string, field: "verdict" | "trial", run: (
   }).finally(() => running.delete(key));
   return v;
 }
-export const startJudge = (root: string, id: string) => background(root, id, "verdict", () => judge(root, id));
+export const startJudge = (root: string, id: string) => {
+  if (running.has(`${id}:trial`)) throw new Error("trial running"); // 재판이 옛 1·2위로 끝나며 새 판정 위에 쓰지 않게(리뷰)
+  return background(root, id, "verdict", () => judge(root, id));
+};
 export const startTrial = (root: string, id: string) => background(root, id, "trial", () => trial(root, id));
 
 async function judge(root: string, id: string) {

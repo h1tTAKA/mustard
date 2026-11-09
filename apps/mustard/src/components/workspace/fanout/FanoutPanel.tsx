@@ -53,12 +53,14 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
       ? { title: t("fanout.discardTitle"), message: t("fanout.discardMsg", { n: cur.candidates.length }), confirmText: t("fanout.discard"), tone: "danger" }
       : { title: t("fanout.adoptTitle", { name: folder(cur.candidates[winner].dir) }), message: t("fanout.adoptMsg", { n: cur.candidates.length - 1 }), confirmText: t("fanout.adopt"), tone: "warn" });
     if (!ok) return;
-    // 지울 후보의 터미널부터 끔 — 돌던 에이전트가 지우는 중인 폴더에 쓰지 않게(리뷰). PR이 실패하면 탭만 닫힌 채 폴더는 남음.
-    closeFanoutTabs(root, cur.candidates.filter((_, i) => i !== winner).map((c) => c.tab).filter((x): x is string => !!x));
+    // 지울 후보의 터미널은 지우기 직전에 끔 — 돌던 에이전트가 지우는 중인 폴더에 쓰지 않게. 채택은 PR이 성공한 뒤에만(실패면 탭·폴더 그대로, 리뷰)
+    const losers = cur.candidates.filter((_, i) => i !== winner).map((c) => c.tab).filter((x): x is string => !!x);
+    const call = (body: Record<string, unknown>) => post({ path: root, id: cur.id, ...body }).catch((e) => ({ ok: false, error: String(e) }));
     setActing(true);
-    const r = await post(winner === null ? { action: "discard", path: root, id: cur.id } : { action: "adopt", path: root, id: cur.id, winner }).catch((e) => ({ ok: false, error: String(e) }));
+    let r = winner === null ? null : await call({ action: "adopt", winner });
+    if (!r || r.ok) { closeFanoutTabs(root, losers); r = await call(winner === null ? { action: "discard" } : { action: "drop-losers" }); }
     setActing(false);
-    if (!r.ok) { toast(t(r.error === "no changes" ? "fanout.noChanges" : "fanout.finishFailed", { error: String(r.error ?? "") }), "error"); return; }
+    if (!r.ok) { toast(t(r.error === "no changes" ? "fanout.noChanges" : "fanout.finishFailed", { error: String(r.error ?? "") }), "error"); void load(); return; }
     if (r.left?.length) toast(t("fanout.left", { n: r.left.length }), "error");
     else toast(winner === null ? t("fanout.discarded") : t("fanout.adopted"));
     void load();
@@ -157,7 +159,7 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
               </div>
             );
           })}
-          {cur.status === "running" && <VerdictBox f={cur} verdict={verdict} judging={judging} onJudge={() => void start("judge")} onSendGrafts={(w, xs) => void sendGrafts(w, xs)} />}
+          {cur.status === "running" && <VerdictBox f={cur} verdict={verdict} judging={judging} locked={trying} onJudge={() => void start("judge")} onSendGrafts={(w, xs) => void sendGrafts(w, xs)} />}
           {cur.status === "running" && verdict?.state === "done" && (verdict.scores?.length ?? 0) >= 2 && <TrialBox f={cur} verdict={verdict} trial={trialRec} trying={trying} onStart={() => void start("trial")} />}
           {cur.status === "running" && (
             <div className="flex justify-end">
@@ -206,7 +208,7 @@ function DiffView({ d, label }: { d: CandidateDiff; label: string }) {
 
 // 판정 칸(#1174) — 판정 버튼 · 판정 중 · 결과(추천 승자·이유·점수·심사별 순위·가져올 좋은 점). 가린 이름은 order로 풀어 폴더 이름으로 보여 줌.
 const PROVIDER_LABEL: Record<string, string> = { "claude-code": "Claude", codex: "Codex", opencode: "OpenCode" };
-function VerdictBox({ f, verdict, judging, onJudge, onSendGrafts }: { f: Fanout; verdict?: Verdict; judging: boolean; onJudge: () => void; onSendGrafts: (winner: number, lines: string[]) => void }) {
+function VerdictBox({ f, verdict, judging, locked, onJudge, onSendGrafts }: { f: Fanout; verdict?: Verdict; judging: boolean; locked: boolean; onJudge: () => void; onSendGrafts: (winner: number, lines: string[]) => void }) {
   const t = useT();
   const name = (ci: number) => folder(f.candidates[ci]?.dir ?? "?");
   const byLabel = (l: string) => (verdict?.order ? name(verdict.order[LETTERS.indexOf(l)]) : l);
@@ -218,7 +220,7 @@ function VerdictBox({ f, verdict, judging, onJudge, onSendGrafts }: { f: Fanout;
         <IconGavel size={14} stroke={2} className="shrink-0 text-zinc-500 dark:text-zinc-400" aria-hidden />
         <span className="mr-auto text-[12.5px] font-semibold text-zinc-700 dark:text-zinc-200">{t("fanout.verdict")}</span>
         {judging ? <span className="flex items-center gap-1 text-[11.5px] text-zinc-500 dark:text-zinc-400"><IconLoader2 size={12} className="animate-spin" aria-hidden />{t("fanout.judging")}</span>
-          : <button type="button" onClick={onJudge} className={btn}>{done ? t("fanout.judgeAgain") : t("fanout.judge")}</button>}
+          : <button type="button" onClick={onJudge} disabled={locked} title={locked ? t("fanout.trialRunning") : undefined} className={btn}>{done ? t("fanout.judgeAgain") : t("fanout.judge")}</button>}
       </div>
       {!verdict && !judging && <p className="mt-1.5 text-[11.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">{t("fanout.judgeHint")}</p>}
       {verdict?.state === "failed" && <p className="mt-1.5 text-[11.5px] text-rose-500">{t("fanout.judgeFailed", { error: verdict.error ?? "" })}</p>}

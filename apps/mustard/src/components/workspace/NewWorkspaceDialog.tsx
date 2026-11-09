@@ -40,7 +40,14 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
     void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) setAgents(sortAgents(r.list.filter((a) => a.status === "ok" && agentEnabled(a.id))).map((a) => a.id)); }).catch(() => {});
   }, [multi]);
   const setupQueue = useRef<string[]>([]); // 겨루기 후보들의 setup을 하나씩(승인은 첫 번째에서 — 같은 스크립트면 뒤는 이미 승인됨)
-  const finish = () => { const next = setupQueue.current.shift(); if (next) void runSetup(next); else onClose(); };
+  const afterSetup = useRef<(() => void) | null>(null); // 겨루기: setup이 전부 끝난 뒤 에이전트 띄우기(setup 중에 에이전트가 같은 폴더를 건드리지 않게, 리뷰)
+  const finish = () => {
+    const next = setupQueue.current.shift();
+    if (next) { void runSetup(next); return; }
+    const go = afterSetup.current; afterSetup.current = null;
+    go?.();
+    onClose();
+  };
 
   // 시작점 후보(로컬·원격 브랜치) — 입력칸 자동완성
   useEffect(() => {
@@ -108,12 +115,13 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
     setBusy(false);
     if (!r.ok) { toast(t("newWs.failed", { error: String(r.error ?? "") }), "error"); return; }
     const cands = (r.fanout.candidates as { agent: string; dir: string }[]);
-    const tabIds = launchFanout({ root, prompt: prompt.trim(), candidates: cands });
-    if (!tabIds.length) toast(t("fanout.noTerminal"), "error");
-    else {
+    const text = prompt.trim();
+    afterSetup.current = () => {
+      const tabIds = launchFanout({ root, prompt: text, candidates: cands });
+      if (!tabIds.length) { toast(t("fanout.noTerminal"), "error"); return; }
       toast(t("fanout.started", { n: cands.length }));
       void fetch("/api/repo/fanout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "tabs", path: root, id: r.fanout.id, tabIds }) }).catch(() => {});
-    }
+    };
     setupQueue.current = cands.slice(1).map((c) => c.dir);
     setBusy(true);
     await runSetup(cands[0].dir);
