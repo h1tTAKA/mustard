@@ -123,7 +123,9 @@ export default function NewWorkspaceDialog({ root, initial, onClose }: { root: s
       const tabIds = launchFanout({ root, prompt: text, candidates: cands });
       if (!tabIds.length) { toast(t("fanout.noTerminal"), "error"); return; }
       toast(t("fanout.started", { n: cands.length }));
-      void fetch("/api/repo/fanout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "tabs", path: root, id: r.fanout.id, tabIds }) }).catch(() => {});
+      // 탭 id 저장 — 채택·버리기가 진 후보 터미널을 끄는 데 씀(못 끄면 돌던 에이전트가 지우는 폴더에 씀) → 한 번 더 시도, 그래도 실패면 알림(리뷰)
+      const save = () => fetch("/api/repo/fanout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "tabs", path: root, id: r.fanout.id, tabIds }) }).then((x) => x.json()).then((j) => !!j.ok, () => false);
+      void save().then((ok) => ok || save()).then((ok) => { if (!ok) toast(t("fanout.tabsNotSaved"), "error"); });
     };
     setupQueue.current = cands.slice(1).map((c) => c.dir);
     setChain(true);

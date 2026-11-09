@@ -1893,8 +1893,9 @@ async function pasteToAgent(id, text, stillAgent, enter = true) {
   termClient.input({ id, data: `\x1b[200~${body}\x1b[201~` });
   await new Promise((r) => setTimeout(r, 150)); // TUI가 붙여넣기를 다 받은 뒤 Enter
   let still;
-  try { still = await stillAgent(); } catch { return { ok: false, reason: "error" }; }
+  try { still = await stillAgent(); } catch { return { ok: false, reason: "kept" }; } // 이미 붙임 — 확인만 실패(글은 남아 있음)
   if (still === "shell") { termClient.input({ id, data: "\x15" }); return { ok: false, reason: "no-agent" }; }
+  if (still === "gone") return { ok: false, reason: "no-agent" }; // 세션이 끝남 — 글도 같이 사라짐(화면은 복사로)
   if (still !== true) return { ok: false, reason: "kept" }; // 붙인 글이 입력칸에 남음(Enter도 지우기도 안 함) — 다시 붙이라고 하면 두 번 들어감(리뷰)
   if (enter) termClient.input({ id, data: "\r" });
   return { ok: true, id };
@@ -1912,7 +1913,7 @@ ipcMain.handle("terminal:send-prompt", async (_e, { id, text, enter } = {}) => {
     if (await ready().catch(() => false)) {
       await new Promise((r) => setTimeout(r, 800)); // 첫 화면이 그려진 직후엔 입력칸이 아직 안 받는 CLI가 있음
       if (!(await ready().catch(() => false))) continue; // 기다린 사이 에이전트가 꺼졌으면 붙이지 않음(리뷰)
-      return pasteToAgent(id, text, async () => { const k = await sessionKind(id); return k === "agent" ? true : k === "shell" ? "shell" : false; }, enter !== false);
+      return pasteToAgent(id, text, async () => { const k = await sessionKind(id); return k === "agent" ? true : k === "shell" || k === "gone" ? k : false; }, enter !== false);
     }
     await new Promise((r) => setTimeout(r, 500));
   }
