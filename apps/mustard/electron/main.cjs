@@ -1882,7 +1882,9 @@ ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, ids, text } 
 // 세션 맨 앞 프로그램 — 없음·모름(이름 못 읽음)·셸·그 밖(셸 아님). 셸 아님 = 에이전트라는 뜻은 아님(dev 서버도) → Enter 판단은 호출부의 사전 확인과 함께
 // 인앱 브라우저 보내기는 Enter를 화면 판정(live)이 에이전트라고 할 때만 침 — 셸이 아닌 아무 프로그램(dev 서버 등)에 Enter가 가지 않게(리뷰 제안 안 받음)
 async function sessionKind(id) {
-  const s = (await termClient.list()).find((x) => x.id === id);
+  const ss = await termClient.list({ strict: true }); // 목록을 못 받으면 null — "끝남"과 "모름"을 구분(빈 배열로 받으면 살아 있는 세션을 끝났다고 봄, 리뷰)
+  if (!ss) return "unknown";
+  const s = ss.find((x) => x.id === id);
   return !s ? "gone" : !s.process ? "unknown" : isShellProc(s.process) ? "shell" : "agent"; // 데몬은 이름을 못 읽으면 ""를 줌 → 모름(리뷰)
 }
 // 붙여넣기 + Enter. stillAgent() = Enter 직전 확인: true(에이전트) → Enter, "shell"(셸로 바뀐 게 확실) → Ctrl-U로 입력 줄을 비움
