@@ -13,6 +13,20 @@ export type FanoutPick = { agent: string; model: string };
 export const fanoutReady = (picks: FanoutPick[], prompt: string) => picks.length >= 2 && !!prompt.trim();
 // 모델 이름 제안 — 설정 화면과 같은 목록(/api/agent/models)이 있는 에이전트만, 나머지는 직접 입력
 const MODEL_LIST: Record<string, string> = { claude: "claude-agent", codex: "codex-agent", opencode: "opencode-agent" };
+// 모델 목록 묻기 — providerId(claude-agent 등)마다 한 번. 후보 칸과 심사 모델 칸이 같이 씀
+export function useModelLists(pids: string[]) {
+  const [lists, setLists] = useState<Record<string, { models: string[]; def: string }>>({});
+  const asked = useRef(new Set<string>());
+  const want = pids.join(",");
+  useEffect(() => {
+    for (const p of want ? want.split(",") : []) {
+      if (asked.current.has(p)) continue;
+      asked.current.add(p);
+      void fetch(`/api/agent/models?providerId=${p}`).then((r) => r.json()).then((d) => { if (d.ok) setLists((m) => ({ ...m, [p]: { models: d.models.map((x: { id: string }) => x.id), def: String(d.defaultModel ?? "") } })); }).catch(() => {});
+    }
+  }, [want]);
+  return lists;
+}
 
 export function FanoutPicker({ picks, setPicks, prompt, setPrompt, inputClass, disabled }: {
   picks: FanoutPick[]; setPicks: (f: (p: FanoutPick[]) => FanoutPick[]) => void; prompt: string; setPrompt: (v: string) => void; inputClass: string; disabled?: boolean;
@@ -22,16 +36,7 @@ export function FanoutPicker({ picks, setPicks, prompt, setPrompt, inputClass, d
   useEffect(() => {
     void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) setAgents(sortAgents(r.list.filter((a) => a.status === "ok" && agentEnabled(a.id))).map((a) => a.id)); }).catch(() => {});
   }, []);
-  const [models, setModels] = useState<Record<string, string[]>>({});
-  const asked = useRef(new Set<string>()); // 에이전트마다 한 번만 물음
-  const want = [...new Set(picks.map((p) => p.agent))].filter((a) => MODEL_LIST[a]).join(",");
-  useEffect(() => {
-    for (const a of want ? want.split(",") : []) {
-      if (asked.current.has(a)) continue;
-      asked.current.add(a);
-      void fetch(`/api/agent/models?providerId=${MODEL_LIST[a]}`).then((r) => r.json()).then((d) => { if (d.ok) setModels((m) => ({ ...m, [a]: d.models.map((x: { id: string }) => x.id) })); }).catch(() => {});
-    }
-  }, [want]);
+  const lists = useModelLists([...new Set(picks.map((p) => MODEL_LIST[p.agent]).filter(Boolean))]);
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1">
@@ -60,7 +65,7 @@ export function FanoutPicker({ picks, setPicks, prompt, setPrompt, inputClass, d
                 onChange={(e) => { const v = e.target.value; setPicks((ps) => ps.map((x, j) => (j === i ? { ...x, model: v } : x))); }} className={`${inputClass} font-mono`} />
             </div>
           ))}
-          {Object.entries(models).map(([a, ids]) => <datalist key={a} id={`fanout-models-${a}`}>{ids.map((id) => <option key={id} value={id} />)}</datalist>)}
+          {Object.entries(MODEL_LIST).map(([a, p]) => lists[p] && <datalist key={a} id={`fanout-models-${a}`}>{lists[p].models.map((id) => <option key={id} value={id} />)}</datalist>)}
         </div>
       )}
       <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} disabled={disabled} rows={4} placeholder={t("fanout.promptPlaceholder")} className={`${inputClass} resize-y`} />

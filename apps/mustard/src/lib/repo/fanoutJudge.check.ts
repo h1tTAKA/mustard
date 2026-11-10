@@ -1,6 +1,6 @@
 // fanoutJudge 점검 — node --experimental-strip-types src/lib/repo/fanoutJudge.check.ts
 import assert from "node:assert";
-import { chairPrompt, isClose, judgePrompt, parseChair, parseRanking, shuffleOrder, tally, type Blinded } from "./fanoutJudge.ts";
+import { pickModels, chairPrompt, isClose, judgePrompt, parseChair, parseRanking, shuffleOrder, tally, type Blinded } from "./fanoutJudge.ts";
 
 // 섞기: 순열(빠짐·겹침 없음), rand가 같으면 같은 결과
 const seq = (xs: number[]) => { let i = 0; return () => xs[i++ % xs.length]; };
@@ -45,3 +45,9 @@ assert.ok(chairPrompt("t", b, [{ provider: "claude-code", ranking: ["B", "A"], r
 assert.ok(!/claude|codex/i.test(chairPrompt("t", b, [{ provider: "claude-code", ranking: ["B", "A"] }], tally([["B", "A"]], ["A", "B"]), "English"))); // 심사 모델 이름도 안 보냄
 
 console.log("fanoutJudge ok");
+
+// 심사 모델(#1313) — 아는 심사만, 빈칸·셸 글자는 버림
+assert.deepStrictEqual(pickModels({ "claude-code": " opus ", codex: "", opencode: "x; rm -rf ~", grok: "g" }), { "claude-code": "opus" });
+assert.deepStrictEqual(pickModels(null), {});
+assert.deepStrictEqual(pickModels({ codex: "gpt-5.6-sol", opencode: "opencode/deepseek-v4-flash-free" }), { codex: "gpt-5.6-sol", opencode: "opencode/deepseek-v4-flash-free" });
+console.log("judge models ok");

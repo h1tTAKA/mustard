@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { IconSwords, IconX, IconRefresh, IconChevronRight, IconTerminal2, IconLoader2, IconGavel, IconStarFilled, IconScale, IconCheck, IconTrash, IconSend, IconExternalLink, IconPlus } from "@tabler/icons-react";
 import FanoutStart from "./FanoutStart";
-import { useT, useToast, useConfirm } from "@mustard/core";
+import { useT, useToast, useConfirm, getSetting, setSetting } from "@mustard/core";
+import { useModelLists } from "./FanoutPicker";
 import { closeFanoutTabs } from "@/lib/repo/workspaceEvents";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
@@ -11,7 +12,7 @@ import { sessionState, useAgentSessionStates } from "@/lib/agentSessionStates";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import type { CandidateDiff, Fanout } from "@/lib/repo/fanout";
 import type { Trial, Verdict } from "@/lib/repo/fanoutJudgeRun";
-import { LETTERS } from "@/lib/repo/fanoutJudge";
+import { LETTERS, type JudgeModels } from "@/lib/repo/fanoutJudge";
 
 // 겨루기 화면(#1174) — 오른쪽 Crew 대화방 안에 겹쳐 보임(새 패널·탭 안 만듦, 유저 결정). 고른 겨루기의 후보마다 한 줄:
 // 상태(그 터미널 탭 세션 상태) · 바뀐 파일·줄 수 · diff 펼치기 · 그 탭으로 가기. 판정·재판·채택은 뒤 커밋에서 이 패널 아래에 붙음.
@@ -95,7 +96,7 @@ export default function FanoutPanel({ root, onClose, onBusy }: { root: string; o
   const start = async (action: "judge" | "trial") => {
     if (!cur) return;
     setNow(Date.now());
-    const r = await post({ action, path: root, id: cur.id }).catch(() => null);
+    const r = await post({ action, path: root, id: cur.id, models: getSetting<JudgeModels>(JUDGE_MODELS_KEY, {}) }).catch(() => null);
     if (!r?.ok) toast(t(action === "judge" ? "fanout.judgeFailed" : "fanout.trialFailed", { error: String(r?.error ?? "") }), "error");
     void load();
   };
@@ -242,6 +243,38 @@ function DiffView({ d, label }: { d: CandidateDiff; label: string }) {
 
 // 판정 칸(#1174) — 판정 버튼 · 판정 중 · 결과(추천 승자·이유·점수·심사별 순위·가져올 좋은 점). 가린 이름은 order로 풀어 폴더 이름으로 보여 줌.
 const PROVIDER_LABEL: Record<string, string> = { "claude-code": "Claude", codex: "Codex", opencode: "OpenCode" };
+// 심사 모델 고르기(#1313) — 심사마다 모델(비우면 그 AI 기본). 이 기기 설정에 저장, 판정·재판 요청에 실어 보냄(의장·변론·판사는 Claude 칸)
+const JUDGE_MODELS_KEY = "fanout.judgeModels";
+const JUDGE_PID: Record<string, string> = { "claude-code": "claude-agent", codex: "codex-agent", opencode: "opencode-agent" };
+function JudgeModelsBox({ disabled }: { disabled: boolean }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [models, setModels] = useState<JudgeModels>(() => getSetting<JudgeModels>(JUDGE_MODELS_KEY, {}));
+  const lists = useModelLists(open ? Object.values(JUDGE_PID) : []);
+  const set = (p: string, v: string) => { const next = { ...models, [p]: v }; setModels(next); setSetting(JUDGE_MODELS_KEY, next); };
+  const input = "w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1 font-mono text-[12px] text-zinc-800 outline-none focus:border-mustard-500/60 dark:border-white/10 dark:bg-black/20 dark:text-zinc-100"; // 시작 칸 입력과 같은 모양
+  return (
+    <div className="mt-1.5">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+        className="flex items-center gap-0.5 text-[11.5px] font-medium text-zinc-500 transition hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+        <IconChevronRight size={12} stroke={2} className={`transition ${open ? "rotate-90" : ""}`} aria-hidden />{t("fanout.judgeModels")}
+      </button>
+      {open && (
+        <div className="mt-1 space-y-1">
+          {Object.entries(JUDGE_PID).map(([p, pid]) => (
+            <label key={p} className="flex items-center gap-1.5">
+              <span className="w-16 shrink-0 text-[11.5px] text-zinc-600 dark:text-zinc-400">{PROVIDER_LABEL[p]}</span>
+              <input value={models[p as keyof JudgeModels] ?? ""} disabled={disabled} list={`fanout-judge-${p}`} onChange={(e) => set(p, e.target.value)}
+                placeholder={lists[pid]?.def ? t("fanout.defaultModel", { model: lists[pid].def }) : t("fanout.modelPlaceholder")} className={input} />
+              <datalist id={`fanout-judge-${p}`}>{(lists[pid]?.models ?? []).map((id) => <option key={id} value={id} />)}</datalist>
+            </label>
+          ))}
+          <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{t("fanout.judgeModelsHint")}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 function VerdictBox({ f, verdict, judging, locked, onJudge, onSendGrafts }: { f: Fanout; verdict?: Verdict; judging: boolean; locked: boolean; onJudge: () => void; onSendGrafts: (winner: number, lines: string[]) => void }) {
   const t = useT();
   const name = (ci: number) => folder(f.candidates[ci]?.dir ?? "?");
@@ -257,6 +290,7 @@ function VerdictBox({ f, verdict, judging, locked, onJudge, onSendGrafts }: { f:
           : <button type="button" onClick={onJudge} disabled={locked} title={locked ? t("fanout.trialRunning") : undefined} className={btn}>{done ? t("fanout.judgeAgain") : t("fanout.judge")}</button>}
       </div>
       {!verdict && !judging && <p className="mt-1.5 text-[11.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">{t("fanout.judgeHint")}</p>}
+      <JudgeModelsBox disabled={judging || locked} />
       {verdict?.state === "failed" && <p className="mt-1.5 text-[11.5px] text-rose-500">{t("fanout.judgeFailed", { error: verdict.error ?? "" })}</p>}
       {done?.chair && (
         <div className="mt-2 space-y-2 text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-300">
@@ -297,7 +331,7 @@ function VerdictBox({ f, verdict, judging, locked, onJudge, onSendGrafts }: { f:
             <ul className="mt-1 space-y-1.5">
               {done.judges?.map((j) => (
                 <li key={j.provider}>
-                  <div className="font-medium text-zinc-800 dark:text-zinc-200">{PROVIDER_LABEL[j.provider] ?? j.provider}{j.ranking ? `: ${j.ranking.map(byLabel).join(" > ")}` : ""}</div>
+                  <div className="font-medium text-zinc-800 dark:text-zinc-200">{PROVIDER_LABEL[j.provider] ?? j.provider}{j.model ? <span className="font-mono font-normal text-zinc-500 dark:text-zinc-400"> {j.model}</span> : null}{j.ranking ? `: ${j.ranking.map(byLabel).join(" > ")}` : ""}</div>
                   {j.error ? <div className="text-[11.5px] text-rose-500">{t("fanout.judgeSkipped")}</div>
                     : Object.entries(j.reasons ?? {}).map(([l, r]) => <div key={l} className="text-[11.5px] text-zinc-600 dark:text-zinc-400"><span className="font-mono">{byLabel(l)}</span> {r}</div>)}
                 </li>

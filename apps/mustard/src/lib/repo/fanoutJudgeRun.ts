@@ -8,7 +8,7 @@ import { isFailedNote } from "@/lib/failText";
 import { narrationLocale } from "@/lib/narrationConfig";
 import { candidateDiff, getFanout, saveFanout } from "./fanout";
 import { LENSES, clipArg, defensePrompt, judgeCourtPrompt, jury, jurorPrompt, parseJudgment, parseVote, prosecutionPrompt, rebuttalPrompt, type Arguments, type Vote } from "./fanoutCourt";
-import { LETTERS, chairPrompt, isClose, judgePrompt, parseChair, parseRanking, shuffleOrder, tally, type Blinded, type JudgeResult, type Score } from "./fanoutJudge";
+import { LETTERS, chairPrompt, type JudgeModels, isClose, judgePrompt, parseChair, parseRanking, shuffleOrder, tally, type Blinded, type JudgeResult, type Score } from "./fanoutJudge";
 
 const MODELS = [
   { provider: "claude-code", api: snaClaudeProvider, pid: "claude-agent" },
@@ -17,6 +17,7 @@ const MODELS = [
 ] as const;
 type Model = (typeof MODELS)[number];
 const LANG = { ko: "Korean", ja: "Japanese", en: "English" } as const;
+
 
 export interface Verdict {
   state: "running" | "done" | "failed"; at: number; error?: string;
@@ -28,8 +29,8 @@ export interface Verdict {
 }
 
 // 한 번 묻기 — 무진행 3분·전체 15분(diff가 커서 길게 생각할 수 있음). 실패 문구가 "성공처럼" 오면 실패로.
-export async function askModel(m: Model, prompt: string): Promise<string> {
-  const res = await withIdleTimeout((touch, signal) => m.api.analyze({ locale: narrationLocale(), providerId: m.pid, mode: "pr-review", code: prompt, messages: [{ role: "user", content: prompt }] } as Parameters<typeof m.api.analyze>[0],
+export async function askModel(m: Model, prompt: string, model?: string): Promise<string> {
+  const res = await withIdleTimeout((touch, signal) => m.api.analyze({ locale: narrationLocale(), providerId: m.pid, mode: "pr-review", code: prompt, messages: [{ role: "user", content: prompt }], ...(model ? { providerSettings: { [m.pid]: { model } } } : {}) } as Parameters<typeof m.api.analyze>[0],
     { signal, onStart: touch, onProgress: touch, onThinking: touch }), 180_000, 15 * 60_000);
   const text = (res?.summary ?? "").trim();
   if (!text || isFailedNote(text)) throw new Error(text.slice(0, 200) || "empty");
@@ -57,13 +58,13 @@ function background(root: string, id: string, field: "verdict" | "trial", run: (
   }).finally(() => running.delete(key));
   return v;
 }
-export const startJudge = (root: string, id: string) => {
+export const startJudge = (root: string, id: string, models: JudgeModels = {}) => {
   if (running.has(`${id}:trial`)) throw new Error("trial running"); // 재판이 옛 1·2위로 끝나며 새 판정 위에 쓰지 않게(리뷰)
-  return background(root, id, "verdict", () => judge(root, id));
+  return background(root, id, "verdict", () => judge(root, id, models));
 };
-export const startTrial = (root: string, id: string) => background(root, id, "trial", () => trial(root, id));
+export const startTrial = (root: string, id: string, models: JudgeModels = {}) => background(root, id, "trial", () => trial(root, id, models));
 
-async function judge(root: string, id: string) {
+async function judge(root: string, id: string, models: JudgeModels) {
   const f = getFanout(root, id);
   if (!f) throw new Error("not found");
   const diffs = await Promise.all(f.candidates.map((c) => candidateDiff(c)));
@@ -74,15 +75,15 @@ async function judge(root: string, id: string) {
   const prompt = judgePrompt(f.prompt, blinded, lang);
   const judges: JudgeResult[] = await Promise.all(judgeModels().map(async (m): Promise<JudgeResult> => {
     try {
-      const r = parseRanking(readJson(await askModel(m, prompt)), labels);
-      return r ? { provider: m.provider, ...r } : { provider: m.provider, error: "unreadable" };
-    } catch (e) { return { provider: m.provider, error: String((e as Error)?.message ?? e).slice(0, 200) }; }
+      const r = parseRanking(readJson(await askModel(m, prompt, models[m.provider])), labels);
+      return { provider: m.provider, model: models[m.provider], ...(r ?? { error: "unreadable" }) };
+    } catch (e) { return { provider: m.provider, model: models[m.provider], error: String((e as Error)?.message ?? e).slice(0, 200) }; }
   }));
   const ok = judges.filter((j) => j.ranking);
   if (!ok.length) throw new Error(`no judge answered: ${judges.map((j) => `${j.provider}: ${j.error}`).join("; ")}`);
   const scores = tally(ok.map((j) => j.ranking!), labels);
   // 의장(Claude) — 실패해도 판정은 남김(점수 1위가 추천, 이유 없음)
-  const chair = await askModel(claudeModel, chairPrompt(f.prompt, blinded, judges, scores, lang))
+  const chair = await askModel(claudeModel, chairPrompt(f.prompt, blinded, judges, scores, lang), models[claudeModel.provider])
     .then((t) => parseChair(readJson(t), labels, scores[0].label), () => parseChair(null, labels, scores[0].label));
   const at = (l: string) => order[LETTERS.indexOf(l)];
   const v: Verdict = {
@@ -103,7 +104,8 @@ export interface Trial {
 }
 
 // 재판 — 판정 점수 1·2위 두 후보. 호출 7번(검사·변호 → 반박 2 → 배심 3 → 판사). 변론·판사는 Claude, 배심은 심사 모델을 돌아가며(관점·모델 둘 다 다르게).
-async function trial(root: string, id: string) {
+async function trial(root: string, id: string, models: JudgeModels) {
+  const cm = models[claudeModel.provider];
   const f = getFanout(root, id);
   const v = f?.verdict as Verdict | undefined;
   if (!f || v?.state !== "done" || !v.scores || v.scores.length < 2) throw new Error("judge first");
@@ -112,22 +114,22 @@ async function trial(root: string, id: string) {
   const [da, db] = await Promise.all(pair.map((ci) => candidateDiff(f.candidates[ci])));
   const a = { label: "A", ...da }, b = { label: "B", ...db };
   const lang = language();
-  const [prosecution, defense] = (await Promise.all([askModel(claudeModel, prosecutionPrompt(f.prompt, a, b, lang)), askModel(claudeModel, defensePrompt(f.prompt, a, b, lang))])).map(clipArg);
+  const [prosecution, defense] = (await Promise.all([askModel(claudeModel, prosecutionPrompt(f.prompt, a, b, lang), cm), askModel(claudeModel, defensePrompt(f.prompt, a, b, lang), cm)])).map(clipArg);
   const [rebutProsecution, rebutDefense] = (await Promise.all([
-    askModel(claudeModel, rebuttalPrompt("prosecution", f.prompt, a, b, defense, lang)),
-    askModel(claudeModel, rebuttalPrompt("defense", f.prompt, a, b, prosecution, lang)),
+    askModel(claudeModel, rebuttalPrompt("prosecution", f.prompt, a, b, defense, lang), cm),
+    askModel(claudeModel, rebuttalPrompt("defense", f.prompt, a, b, prosecution, lang), cm),
   ])).map(clipArg);
   const args: Arguments = { prosecution, defense, rebutProsecution, rebutDefense };
-  const models = judgeModels();
+  const jurors = judgeModels();
   const votes: Vote[] = await Promise.all(LENSES.map(async (lens, i): Promise<Vote> => {
-    const m = models[i % models.length];
+    const m = jurors[i % jurors.length];
     try {
-      const r = parseVote(readJson(await askModel(m, jurorPrompt(lens, f.prompt, a, b, args, lang))));
+      const r = parseVote(readJson(await askModel(m, jurorPrompt(lens, f.prompt, a, b, args, lang), models[m.provider])));
       return r ? { lens, provider: m.provider, ...r } : { lens, provider: m.provider, error: "unreadable" };
     } catch (e) { return { lens, provider: m.provider, error: String((e as Error)?.message ?? e).slice(0, 200) }; }
   }));
   const j = jury(votes);
-  const judged = await askModel(claudeModel, judgeCourtPrompt(f.prompt, a, b, args, votes, lang)).then((t) => parseJudgment(readJson(t), j.majority), () => parseJudgment(null, j.majority));
+  const judged = await askModel(claudeModel, judgeCourtPrompt(f.prompt, a, b, args, votes, lang), cm).then((t) => parseJudgment(readJson(t), j.majority), () => parseJudgment(null, j.majority));
   const t: Trial = { state: "done", at: Date.now(), pair, args, votes, judgment: { winner: judged.winner === "A" ? pair[0] : pair[1], verdict: judged.verdict, flip: judged.flip } };
   const cur = getFanout(root, id);
   if (cur) saveFanout(root, { ...cur, trial: t });

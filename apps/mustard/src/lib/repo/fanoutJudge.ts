@@ -4,8 +4,17 @@
 // → 의장이 추천 승자·이유·진 후보별 가져올 좋은 점을 정리. 가린 이름은 결과에서 다시 풂(order).
 
 export const LETTERS = "ABCD";
+// 모델 이름(#1313) — 후보는 터미널 실행 줄에 `--model <이름>`으로 그대로 들어가서 셸이 해석할 글자는 막음, 심사도 같은 규칙
+export const MODEL = /^[\w.:/@-]{1,80}$/;
+// 심사 모델 고르기(#1313) — 심사(claude-code·codex·opencode)마다 모델 이름. 없으면 그 AI 기본 모델. 의장·변론·판사는 Claude 칸을 따름
+export const JUDGE_PROVIDERS = ["claude-code", "codex", "opencode"] as const;
+export type JudgeModels = Partial<Record<(typeof JUDGE_PROVIDERS)[number], string>>;
+export const pickModels = (x: unknown): JudgeModels => {
+  const o = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
+  return Object.fromEntries(JUDGE_PROVIDERS.flatMap((p) => { const v = typeof o[p] === "string" ? (o[p] as string).trim() : ""; return v && MODEL.test(v) ? [[p, v]] : []; }));
+};
 export interface Blinded { label: string; diff: string; files: { path: string; added: number; removed: number; big?: boolean }[]; truncated: boolean }
-export interface JudgeResult { provider: string; ranking?: string[]; reasons?: Record<string, string>; error?: string }
+export interface JudgeResult { provider: string; model?: string; ranking?: string[]; reasons?: Record<string, string>; error?: string }
 export interface Score { label: string; score: number; firsts: number }
 export interface Chair { winner: string; why: string; grafts: Record<string, string[]> }
 

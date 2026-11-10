@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { promisify } from "node:util";
 import { createWorkspace, forceDeleteBranch, removeWorkspace } from "./workspaces.ts";
 import { baseBranch, openDraftPr } from "./draftPr.ts";
+import { MODEL } from "./fanoutJudge.ts"; // 모델 이름 글자 검사(#1313) — 화면도 쓰는 순수 파일에 둠
 
 const pexec = promisify(execFile);
 // git diff는 차이가 있으면 종료 코드 1(--no-index) — 출력만 쓰고 코드는 안 봄
@@ -56,8 +57,6 @@ export function setTabs(root: string, id: string, tabIds: string[]) {
 }
 
 const AGENT = /^[a-z0-9][a-z0-9-]{0,31}$/;
-// 모델 이름(#1313) — 터미널 실행 줄에 `--model <이름>`으로 그대로 들어가서 셸이 해석할 글자는 막음
-export const MODEL = /^[\w.:/@-]{1,80}$/;
 export interface CreateFanoutOpts { name: string; prompt: string; agents: string[]; models?: string[]; base?: string; prefix?: string }
 // 후보 N개 = 작업공간 N개(이름 <이름>-<에이전트>, 같은 에이전트면 createWorkspace가 -2). 중간에 실패하면 만든 것 되돌림.
 export async function createFanout(root: string, o: CreateFanoutOpts): Promise<Fanout> {
