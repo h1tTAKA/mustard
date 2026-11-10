@@ -6,6 +6,11 @@ export function launchOpts(agent: string, extra = "") {
   return { permission: agentPermission(agent).choice, args: [getSetting<string>(AKEYS.args(agent), ""), extra].filter(Boolean).join(" "), env: getSetting<string>(AKEYS.env(agent), ""), trust: getSetting<boolean>(AKEYS.trustFolder, AGENT_DEFAULTS.trustFolder) };
 }
 
+// 겨루기 후보 모델(#1313) — `--model`을 받는다고 아는 에이전트만(모르는 플래그를 붙이면 CLI가 바로 꺼짐). 설정 추가 인자 뒤에 붙어 이번 실행만 바뀜.
+// 한계: 목록 밖 에이전트는 모델 칸이 안 뜸 — 설정의 추가 인자로 지정. 설정 인자에 이미 --model이 있으면 둘 다 붙음(대부분 뒤에 것이 이김).
+export const MODEL_FLAG_AGENTS = new Set(["claude", "codex", "opencode", "gemini", "cursor", "copilot", "aider"]);
+export const modelArg = (agent: string, model?: string) => (model && MODEL_FLAG_AGENTS.has(agent) ? `--model ${model}` : ""); // model은 서버가 글자 검사(MODEL)를 마친 값
+
 // 옛 추가 인자에 알려진 권한 플래그가 있으면 빼서 그 에이전트의 권한 덮어쓰기로 — 한 번만.
 // 예: 예전에 claude 칸에 --dangerously-skip-permissions를 적어 둔 사람 → claude = 전체 액세스, 칸은 나머지만.
 export async function liftStoredArgs(ids: string[]) {

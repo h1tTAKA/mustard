@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconGitBranch, IconGitCommit, IconCircleDot, IconGitPullRequest, IconLoader2, IconFolder } from "@tabler/icons-react";
 import { useT, useToast, getSetting, GKEYS, GIT_DEFAULTS } from "@mustard/core";
-import { FanoutPicker, SetupApproval, fanoutReady } from "@/components/workspace/fanout/FanoutPicker";
+import { FanoutPicker, SetupApproval, fanoutReady, type FanoutPick } from "@/components/workspace/fanout/FanoutPicker";
 import { useSetupChain, createFanoutRun } from "@/components/workspace/fanout/useSetupChain";
 import { branchFor, issueName, slugName } from "@/lib/repo/workspaceName";
 import { launchFanout, openRepoTab, openWorkspaceSettings, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
@@ -34,7 +34,7 @@ export default function NewWorkspaceDialog({ root, view, initial, onClose }: { r
   const prefix = getSetting<string>(GKEYS.branchPrefix, GIT_DEFAULTS.branchPrefix);
   // #1174 여러 에이전트로(겨루기) — 고른 순서대로 후보(같은 에이전트 여러 번 가능, 2~4개), 같은 프롬프트를 각자 터미널 탭에서
   const [multi, setMulti] = useState(false);
-  const [picks, setPicks] = useState<string[]>([]);
+  const [picks, setPicks] = useState<FanoutPick[]>([]);
   const [prompt, setPrompt] = useState("");
 
   // 시작점 후보(로컬·원격 브랜치) — 입력칸 자동완성
@@ -78,7 +78,7 @@ export default function NewWorkspaceDialog({ root, view, initial, onClose }: { r
   // #1174 후보 N개 만들기 → setup을 하나씩 다 돌린 뒤 이 레포 터미널에 후보마다 탭 + 에이전트 + 프롬프트
   const createFanout = async () => {
     setBusy(true);
-    const r = await createFanoutRun({ root, name: finalName, prompt: prompt.trim(), agents: picks, base: from === "issue" ? "" : base.trim(), prefix });
+    const r = await createFanoutRun({ root, name: finalName, prompt: prompt.trim(), picks, base: from === "issue" ? "" : base.trim(), prefix });
     if (!r.ok) { setBusy(false); toast(t("newWs.failed", { error: r.error }), "error"); return; }
     const text = prompt.trim();
     await sc.start(r.candidates.map((c) => c.dir), () => { // 터미널이 접혀 있으면 펼친 뒤 띄움(workspaceEvents), 탭 id 저장은 TerminalPane이

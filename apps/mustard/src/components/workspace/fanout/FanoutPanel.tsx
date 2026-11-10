@@ -169,6 +169,7 @@ export default function FanoutPanel({ root, onClose, onBusy }: { root: string; o
                   </button>
                   <AgentLogo agent={c.agent as AgentId} size={14} />
                   <span className="min-w-0 truncate text-[12.5px] font-medium text-zinc-800 dark:text-zinc-100" title={c.branch}>{folder(c.dir)}</span>
+                  {c.model && <span className="min-w-0 truncate font-mono text-[11px] text-zinc-500 dark:text-zinc-400" title={c.model}>{c.model}</span>}
                   {st && <AgentStateIcon state={st} />}
                   {verdict?.state === "done" && verdict.chair?.winner === i && <IconStarFilled size={12} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-label={t("fanout.recommended")} />}
                   <span className="ml-auto shrink-0 font-mono text-[11.5px] text-zinc-500 dark:text-zinc-400">

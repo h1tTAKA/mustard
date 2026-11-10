@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { IconChevronRight, IconLoader2, IconSwords } from "@tabler/icons-react";
 import { useT, useToast, getSetting, GKEYS, GIT_DEFAULTS } from "@mustard/core";
 import { launchFanout } from "@/lib/repo/workspaceEvents";
-import { FanoutPicker, SetupApproval, fanoutReady } from "./FanoutPicker";
+import { FanoutPicker, SetupApproval, fanoutReady, type FanoutPick } from "./FanoutPicker";
 import { useSetupChain, createFanoutRun } from "./useSetupChain";
 
 // 겨루기 화면 안 시작 칸(#1313) — 새 창 없이 여기서 프롬프트·에이전트 고르고 시작(유저: "크루 대화창에서 그대로").
@@ -17,7 +17,7 @@ export default function FanoutStart({ root, empty, fill, onBusy, onDone }: { roo
   const toast = useToast();
   const sc = useSetupChain(root);
   const [creating, setCreating] = useState(false);
-  const [picks, setPicks] = useState<string[]>([]);
+  const [picks, setPicks] = useState<FanoutPick[]>([]);
   const [prompt, setPrompt] = useState("");
   const [more, setMore] = useState(false);
   const [base, setBase] = useState("");
@@ -38,7 +38,7 @@ export default function FanoutStart({ root, empty, fill, onBusy, onDone }: { roo
     setCreating(true);
     const prefix = getSetting<string>(GKEYS.branchPrefix, GIT_DEFAULTS.branchPrefix);
     const text = prompt.trim();
-    const r = await createFanoutRun({ root, name: "", prompt: text, agents: picks, base: base.trim(), prefix }); // 이름 비움 = fanout-<에이전트>
+    const r = await createFanoutRun({ root, name: "", prompt: text, picks, base: base.trim(), prefix }); // 이름 비움 = fanout-<에이전트>
     if (!r.ok) { setCreating(false); toast(t("newWs.failed", { error: r.error }), "error"); return; }
     await sc.start(r.candidates.map((c) => c.dir), () => {
       launchFanout({ root, id: r.id, prompt: text, candidates: r.candidates }); // 겨루기 화면은 이 이벤트로 목록을 다시 읽고 새 겨루기를 고름

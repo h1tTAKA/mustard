@@ -1,7 +1,7 @@
 "use client";
 // 워크스페이스 터미널 멀티탭(#678) — 탭 바 + 활성 터미널. pty는 메인서 id별로 생존(#647 A안).
 // 활성 탭만 렌더(전환 시 remount → scrollback 재생). 탭 목록은 레포별 localStorage 영속.
-import { launchOpts, liftStoredArgs } from "@/lib/agentLaunch";
+import { launchOpts, liftStoredArgs, modelArg } from "@/lib/agentLaunch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
 import { useShortcut, useT, useToast, isCurrentTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
@@ -223,7 +223,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
         markAgentUsed(c.agent);
         void (async () => {
           const term = window.nunopiDesktop?.terminal;
-          const r = await term?.launchAgent?.({ id: ids[i], agent: c.agent, dark: isCurrentTerminalDark(), ...launchOpts(c.agent), cwd: c.dir });
+          const r = await term?.launchAgent?.({ id: ids[i], agent: c.agent, dark: isCurrentTerminalDark(), ...launchOpts(c.agent, modelArg(c.agent, c.model)), cwd: c.dir });
           const sent = r?.ok ? await term?.sendPrompt?.({ id: ids[i], text: d.prompt }) : null;
           const name = c.dir.split("/").pop() ?? c.agent;
           if (sent && !sent.ok && sent.reason === "kept") toast(t("fanout.pressEnter", { name }), "error"); // 이미 붙어 있음 — Enter만

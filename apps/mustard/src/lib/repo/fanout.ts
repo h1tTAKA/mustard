@@ -17,7 +17,7 @@ export const MIN_CANDIDATES = 2, MAX_CANDIDATES = 4;
 export const MAX_DIFF = 60_000, MAX_FILE_DIFF = 20_000, MAX_UNTRACKED = 200;
 // 비밀일 수 있는 새 파일 — 판정 모델엔 내용 대신 이름만, 채택 커밋엔 안 넣음(에이전트가 만든 .env·키가 push·PR로 나가지 않게, 리뷰)
 export const SECRET = /(^|\/)(\.env(\..*)?|.*\.(pem|key|p12|pfx)|id_(rsa|ed25519|ecdsa)(\.pub)?|credentials(\.json)?|\.npmrc|\.netrc)$/i; // 판정 모델 입력 상한(PR 리뷰와 같은 크기) — 넘는 파일은 이름·줄 수만
-export interface Candidate { agent: string; dir: string; branch: string; base: string; tab?: string } // tab = 그 후보 터미널 탭 id(= 에이전트 세션 id)
+export interface Candidate { agent: string; model?: string; dir: string; branch: string; base: string; tab?: string } // tab = 그 후보 터미널 탭 id(= 에이전트 세션 id), model = 고른 모델(#1313, 없으면 그 에이전트 기본)
 export interface Fanout {
   id: string; name: string; prompt: string; createdAt: number;
   status: "running" | "adopted" | "discarded";
@@ -56,19 +56,23 @@ export function setTabs(root: string, id: string, tabIds: string[]) {
 }
 
 const AGENT = /^[a-z0-9][a-z0-9-]{0,31}$/;
-export interface CreateFanoutOpts { name: string; prompt: string; agents: string[]; base?: string; prefix?: string }
+// 모델 이름(#1313) — 터미널 실행 줄에 `--model <이름>`으로 그대로 들어가서 셸이 해석할 글자는 막음
+export const MODEL = /^[\w.:/@-]{1,80}$/;
+export interface CreateFanoutOpts { name: string; prompt: string; agents: string[]; models?: string[]; base?: string; prefix?: string }
 // 후보 N개 = 작업공간 N개(이름 <이름>-<에이전트>, 같은 에이전트면 createWorkspace가 -2). 중간에 실패하면 만든 것 되돌림.
 export async function createFanout(root: string, o: CreateFanoutOpts): Promise<Fanout> {
   const prompt = o.prompt.trim();
   if (!prompt) throw new Error("prompt required");
   if (o.agents.length < MIN_CANDIDATES || o.agents.length > MAX_CANDIDATES || !o.agents.every((a) => AGENT.test(a))) throw new Error("bad agents");
+  const models = o.agents.map((_, i) => o.models?.[i]?.trim() ?? "");
+  if (!models.every((m) => !m || MODEL.test(m))) throw new Error("bad model");
   const made: Candidate[] = [];
   try {
-    for (const agent of o.agents) {
+    for (const [i, agent] of o.agents.entries()) {
       const w = await createWorkspace(root, { name: `${o.name || "fanout"}-${agent}`, base: o.base, prefix: o.prefix });
       // 시작점이 "HEAD"면 후보 폴더 안에선 그 후보 자신의 HEAD를 가리켜 diff·채택이 "바뀐 것 없음"이 됨 → 만든 직후의 커밋(= 시작점)으로 고정
       const base = w.base === "HEAD" ? (await pexec("git", ["rev-parse", "HEAD"], { cwd: w.dir })).stdout.trim() : w.base;
-      made.push({ agent, dir: w.dir, branch: w.branch, base });
+      made.push({ agent, ...(models[i] ? { model: models[i] } : {}), dir: w.dir, branch: w.branch, base });
     }
   } catch (e) {
     for (const c of made) await dropCandidate(root, c, true).catch(() => {}); // 복사해 온 무시된 파일이 있어도 지워지게(본 개수 제한 없음), 방금 만든 폴더라 정리 스크립트는 안 돌림(리뷰)

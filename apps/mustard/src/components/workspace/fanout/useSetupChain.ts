@@ -55,9 +55,9 @@ export function useSetupChain(root: string) {
 }
 
 // 겨루기 후보 만들기(#1174) — 서버가 후보마다 작업 폴더·브랜치를 만들고 기록을 남김
-export type FanoutCreated = { ok: true; id: string; candidates: { agent: string; dir: string }[] } | { ok: false; error: string };
-export async function createFanoutRun(o: { root: string; name: string; prompt: string; agents: string[]; base: string; prefix: string }): Promise<FanoutCreated> {
-  const r = await fetch("/api/repo/fanout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create", path: o.root, name: o.name, prompt: o.prompt, agents: o.agents, base: o.base, prefix: o.prefix }) })
+export type FanoutCreated = { ok: true; id: string; candidates: { agent: string; model?: string; dir: string }[] } | { ok: false; error: string };
+export async function createFanoutRun(o: { root: string; name: string; prompt: string; picks: { agent: string; model: string }[]; base: string; prefix: string }): Promise<FanoutCreated> {
+  const r = await fetch("/api/repo/fanout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create", path: o.root, name: o.name, prompt: o.prompt, agents: o.picks.map((p) => p.agent), models: o.picks.map((p) => p.model.trim()), base: o.base, prefix: o.prefix }) })
     .then((x) => x.json()).catch((e) => ({ ok: false, error: String(e) }));
   return r.ok ? { ok: true, id: r.fanout.id, candidates: r.fanout.candidates } : { ok: false, error: String(r.error ?? "") };
 }

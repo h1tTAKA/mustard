@@ -19,7 +19,8 @@ export async function POST(request: Request): Promise<Response> {
     switch (b.action) {
       case "create": {
         const agents = Array.isArray(b.agents) ? b.agents.filter((x): x is string => typeof x === "string") : [];
-        const f = await createFanout(root, { name: str(b.name), prompt: str(b.prompt), agents, base: str(b.base) || undefined, prefix: str(b.prefix) });
+        const models = Array.isArray(b.models) ? b.models.map((x) => (typeof x === "string" ? x : "")) : [];
+        const f = await createFanout(root, { name: str(b.name), prompt: str(b.prompt), agents, models, base: str(b.base) || undefined, prefix: str(b.prefix) });
         return Response.json({ ok: true, fanout: f });
       }
       case "list": return Response.json({ ok: true, fanouts: listFanouts(root) });

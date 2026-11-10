@@ -24,9 +24,11 @@ g(root, "add", "."); g(root, "commit", "-qm", "init");
 await assert.rejects(createFanout(root, { name: "x", prompt: "", agents: ["claude", "codex"] }), /prompt/);
 await assert.rejects(createFanout(root, { name: "x", prompt: "p", agents: ["claude"] }), /bad agents/);
 await assert.rejects(createFanout(root, { name: "x", prompt: "p", agents: ["claude", "--evil"] }), /bad agents/);
+await assert.rejects(createFanout(root, { name: "x", prompt: "p", agents: ["claude", "codex"], models: ["opus; rm -rf ~", ""] }), /bad model/, "모델 칸에 셸 글자 거부(#1313)");
 
 // 같은 에이전트 두 번 → 이름 -2, 기록 저장
-const f = await createFanout(root, { name: "fix", prompt: "fix it", agents: ["claude", "claude", "codex"], base: "main" });
+const f = await createFanout(root, { name: "fix", prompt: "fix it", agents: ["claude", "claude", "codex"], models: ["opus", " ", "gpt-5.6-sol"], base: "main" });
+assert.deepStrictEqual(f.candidates.map((c) => c.model), ["opus", undefined, "gpt-5.6-sol"], "후보마다 모델 저장, 비우면 없음(#1313)");
 assert.deepStrictEqual(f.candidates.map((c) => c.dir.split("/").pop()), ["fix-claude", "fix-claude-2", "fix-codex"]);
 assert.ok(f.candidates.every((c) => existsSync(c.dir)));
 assert.strictEqual(getFanout(root, f.id)?.prompt, "fix it");
