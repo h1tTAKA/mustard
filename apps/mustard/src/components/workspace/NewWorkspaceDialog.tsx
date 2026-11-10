@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconGitBranch, IconGitCommit, IconCircleDot, IconGitPullRequest, IconLoader2, IconFolder } from "@tabler/icons-react";
-import { useT, useToast, getSetting, GKEYS, GIT_DEFAULTS, agentEnabled, sortAgents } from "@mustard/core";
-import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
+import { useT, useToast, getSetting, GKEYS, GIT_DEFAULTS } from "@mustard/core";
+import { FanoutPicker, SetupApproval, fanoutReady } from "@/components/workspace/fanout/FanoutPicker";
+import { useSetupChain, createFanoutRun } from "@/components/workspace/fanout/useSetupChain";
 import { branchFor, issueName, slugName } from "@/lib/repo/workspaceName";
 import { launchFanout, openRepoTab, openWorkspaceSettings, type NewWorkspaceInitial } from "@/lib/repo/workspaceEvents";
 
@@ -28,29 +29,13 @@ export default function NewWorkspaceDialog({ root, view, initial, onClose }: { r
   const [branches, setBranches] = useState<string[]>([]);
   const [items, setItems] = useState<{ issue: { number: number; title: string }[]; pr: { number: number; title: string }[] }>({ issue: [], pr: [] }); // 열린 이슈·PR(번호 칸 목록)
   const [busyNow, setBusy] = useState(false);
-  const [chain, setChain] = useState(false); // #1174 겨루기 후보 setup 줄이 도는 동안(첫 후보 setup이 끝나도 나머지가 남음) — 만들기·취소·닫기 잠금(리뷰)
-  const busy = busyNow || chain;
-  const [setup, setSetup] = useState<{ dir: string; script: string } | null>(null); // 승인 기다리는 setup
+  const sc = useSetupChain(root); // setup 줄·승인(겨루기 화면과 같이 씀, #1313)
+  const busy = busyNow || sc.chain || sc.deciding; // #1174 겨루기 후보 setup 줄이 도는 동안 — 만들기·취소·닫기 잠금(리뷰)
   const prefix = getSetting<string>(GKEYS.branchPrefix, GIT_DEFAULTS.branchPrefix);
   // #1174 여러 에이전트로(겨루기) — 고른 순서대로 후보(같은 에이전트 여러 번 가능, 2~4개), 같은 프롬프트를 각자 터미널 탭에서
   const [multi, setMulti] = useState(false);
   const [picks, setPicks] = useState<string[]>([]);
   const [prompt, setPrompt] = useState("");
-  const [agents, setAgents] = useState<string[]>([]); // 감지되고(ok) 켜진 에이전트(＋ 메뉴와 같은 목록)
-  useEffect(() => {
-    if (!multi) return;
-    void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) setAgents(sortAgents(r.list.filter((a) => a.status === "ok" && agentEnabled(a.id))).map((a) => a.id)); }).catch(() => {});
-  }, [multi]);
-  const setupQueue = useRef<string[]>([]); // 겨루기 후보들의 setup을 하나씩(승인은 첫 번째에서 — 같은 스크립트면 뒤는 이미 승인됨)
-  const afterSetup = useRef<(() => void) | null>(null); // 겨루기: setup이 전부 끝난 뒤 에이전트 띄우기(setup 중에 에이전트가 같은 폴더를 건드리지 않게, 리뷰)
-  const finish = () => {
-    const next = setupQueue.current.shift();
-    if (next) { void runSetup(next); return; }
-    const go = afterSetup.current; afterSetup.current = null;
-    setChain(false);
-    go?.();
-    onClose();
-  };
 
   // 시작점 후보(로컬·원격 브랜치) — 입력칸 자동완성
   useEffect(() => {
@@ -88,45 +73,19 @@ export default function NewWorkspaceDialog({ root, view, initial, onClose }: { r
   const finalName = nameTouched ? slugName(name) : suggested;
   const branch = from === "pr" ? ref?.headRefName ?? "" : branchFor(prefix, finalName || "workspace");
   const fanout = multi && from !== "pr"; // PR 시작은 PR 브랜치 이름을 그대로 써서 후보 여러 개와 안 맞음
-  const ready = !busy && (from === "pr" ? !!ref?.headRefName : from === "issue" ? !!ref : from === "commit" ? !!base.trim() : true) && (!fanout || (picks.length >= 2 && !!prompt.trim()));
+  const ready = !busy && (from === "pr" ? !!ref?.headRefName : from === "issue" ? !!ref : from === "commit" ? !!base.trim() : true) && (!fanout || fanoutReady(picks, prompt));
 
-  const runSetup = async (dir: string) => {
-    const s = await post({ action: "setup", path: root, dir }).catch(() => null);
-    if (!s?.ok) { toast(t("newWs.setupFailed"), "error"); finish(); return; }
-    if (s.status === "untrusted") { setSetup({ dir, script: s.script }); return; }
-    if (s.status === "too-long") toast(t("newWs.setupTooLong"), "error");
-    else if (s.status === "failed") toast(t("newWs.setupFailed"), "error");
-    else if (s.status === "ok") toast(t("newWs.setupOk"));
-    finish();
-  };
-  const decide = async (trust: boolean) => {
-    if (!setup) return;
-    setBusy(true);
-    const r = await post({ action: "trust", kind: "setup", path: root, dir: setup.dir, script: setup.script, skip: !trust }).catch(() => null);
-    setBusy(false);
-    if (!r?.ok) { toast(t("newWs.setupChanged"), "error"); setSetup(null); finish(); return; }
-    const dir = setup.dir;
-    setSetup(null);
-    if (trust) { toast(t("newWs.setupRunning")); void runSetup(dir); } else finish();
-  };
-
-  // #1174 후보 N개 만들기 → 이 레포 터미널에 후보마다 탭 + 에이전트 + 프롬프트 → setup 하나씩
+  // #1174 후보 N개 만들기 → setup을 하나씩 다 돌린 뒤 이 레포 터미널에 후보마다 탭 + 에이전트 + 프롬프트
   const createFanout = async () => {
     setBusy(true);
-    const r = await fetch("/api/repo/fanout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create", path: root, name: finalName, prompt: prompt.trim(), agents: picks, base: from === "issue" ? "" : base.trim(), prefix }) })
-      .then((x) => x.json()).catch((e) => ({ ok: false, error: String(e) }));
-    setBusy(false);
-    if (!r.ok) { toast(t("newWs.failed", { error: String(r.error ?? "") }), "error"); return; }
-    const cands = (r.fanout.candidates as { agent: string; dir: string }[]);
+    const r = await createFanoutRun({ root, name: finalName, prompt: prompt.trim(), agents: picks, base: from === "issue" ? "" : base.trim(), prefix });
+    if (!r.ok) { setBusy(false); toast(t("newWs.failed", { error: r.error }), "error"); return; }
     const text = prompt.trim();
-    afterSetup.current = () => { // 터미널이 접혀 있으면 펼친 뒤 띄움(workspaceEvents), 탭 id 저장은 TerminalPane이
-      launchFanout({ root: view ?? root, id: r.fanout.id, prompt: text, candidates: cands }); // 레포 탭이 작업 폴더를 보여 주는 중이면 그 터미널(리뷰)
-      toast(t("fanout.started", { n: cands.length }));
-    };
-    setupQueue.current = cands.slice(1).map((c) => c.dir);
-    setChain(true);
-    setBusy(true);
-    await runSetup(cands[0].dir);
+    await sc.start(r.candidates.map((c) => c.dir), () => { // 터미널이 접혀 있으면 펼친 뒤 띄움(workspaceEvents), 탭 id 저장은 TerminalPane이
+      launchFanout({ root: view ?? root, id: r.id, prompt: text, candidates: r.candidates }); // 레포 탭이 작업 폴더를 보여 주는 중이면 그 터미널(리뷰)
+      toast(t("fanout.started", { n: r.candidates.length }));
+      onClose();
+    }, true);
     setBusy(false);
   };
 
@@ -147,13 +106,13 @@ export default function NewWorkspaceDialog({ root, view, initial, onClose }: { r
     openRepoTab(r.dir, root);
     toast(t("newWs.created", { branch: r.branch }));
     setBusy(true);
-    await runSetup(r.dir);
+    await sc.start([r.dir], onClose);
     setBusy(false);
   };
 
   // Esc = 닫기(setup 승인 중엔 "이번엔 안 돌림"과 같음 — 닫으면 안 돌림)
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) { if (setup) void decide(false); else onClose(); } }; // 만드는 중엔 안 닫음 — setup 승인 묻기가 사라지지 않게(리뷰)
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) { if (sc.setup) void sc.decide(false); else onClose(); } }; // 만드는 중엔 안 닫음 — setup 승인 묻기가 사라지지 않게(리뷰)
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
@@ -169,20 +128,12 @@ export default function NewWorkspaceDialog({ root, view, initial, onClose }: { r
 
   return createPortal(
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[12vh]">
-      <div className="absolute inset-0 bg-black/40 dark:bg-black/50" onClick={() => { if (busy) return; if (setup) void decide(false); else onClose(); }} aria-hidden />
+      <div className="absolute inset-0 bg-black/40 dark:bg-black/50" onClick={() => { if (busy) return; if (sc.setup) void sc.decide(false); else onClose(); }} aria-hidden />
       <div role="dialog" aria-modal="true" aria-label={t("newWs.title")}
         className="relative w-full max-w-lg overflow-visible rounded-2xl border border-zinc-200/80 bg-white shadow-2xl ring-1 ring-black/5 dark:border-white/10 dark:bg-[#14151c] dark:ring-white/5">
         <div className="px-5 pt-4 text-[11.5px] font-medium text-zinc-400 dark:text-zinc-500">{t("newWs.title")}</div>
-        {setup ? (
-          <div className="mx-5 my-4 rounded-xl border border-amber-300/60 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/[0.07]">
-            <div className="text-[12.5px] font-semibold text-amber-800 dark:text-amber-300">{t("newWs.setupTitle")}</div>
-            <pre className="nunopi-scroll mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-white/70 p-2 font-mono text-[11.5px] leading-relaxed text-zinc-700 dark:bg-black/30 dark:text-zinc-300">{setup.script}</pre>
-            <p className="mt-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">{t("newWs.setupHint")}</p>
-            <div className="mt-2 flex justify-end gap-1.5">
-              <button type="button" disabled={busyNow} onClick={() => void decide(false)} className="rounded-lg px-3 py-1 text-[12px] font-medium text-zinc-600 transition hover:bg-amber-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10">{t("newWs.skip")}</button>
-              <button type="button" disabled={busyNow} onClick={() => void decide(true)} className="rounded-lg bg-amber-500 px-3 py-1 text-[12px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-40">{t("newWs.trustRun")}</button>
-            </div>
-          </div>
+        {sc.setup ? (
+          <SetupApproval script={sc.setup.script} busy={sc.deciding} onDecide={(v) => void sc.decide(v)} className="mx-5 my-4" />
         ) : (<>
           <div className="space-y-3 px-5 pb-4 pt-2">
             <p className="text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">{t("newWs.desc")}</p>
@@ -234,24 +185,7 @@ export default function NewWorkspaceDialog({ root, view, initial, onClose }: { r
                 {multi && (
                   <div className="mt-2 space-y-2">
                     <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">{t("fanout.desc")}</p>
-                    <div className="flex flex-wrap gap-1">
-                      {agents.map((a) => (
-                        <button key={a} type="button" disabled={picks.length >= 4} onClick={() => setPicks((p) => [...p, a])}
-                          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[12px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10">
-                          <AgentLogo agent={a as AgentId} size={13} />{AGENT_META[a as AgentId]?.label ?? a}
-                        </button>
-                      ))}
-                      {!agents.length && <span className="text-[11.5px] text-zinc-500 dark:text-zinc-400">{t("fanout.noAgents")}</span>}
-                    </div>
-                    <div className="flex min-h-[30px] flex-wrap items-center gap-1 rounded-lg bg-zinc-50 px-2 py-1 dark:bg-white/[0.03]">
-                      {picks.length ? picks.map((a, i) => (
-                        <button key={i} type="button" onClick={() => setPicks((p) => p.filter((_, j) => j !== i))} title={t("fanout.removePick")}
-                          className="inline-flex items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1 text-[12px] font-medium text-white transition dark:bg-zinc-100 dark:text-zinc-900">
-                          <AgentLogo agent={a as AgentId} size={13} />{AGENT_META[a as AgentId]?.label ?? a}<span aria-hidden>×</span>
-                        </button>
-                      )) : <span className="text-[11.5px] text-zinc-500 dark:text-zinc-400">{t("fanout.pickHint")}</span>}
-                    </div>
-                    <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4} placeholder={t("fanout.promptPlaceholder")} className={`${input} resize-y`} />
+                    <FanoutPicker picks={picks} setPicks={setPicks} prompt={prompt} setPrompt={setPrompt} inputClass={input} />
                   </div>
                 )}
               </div>
