@@ -22,7 +22,10 @@ export function useModelLists(pids: string[]) {
     for (const p of want ? want.split(",") : []) {
       if (asked.current.has(p)) continue;
       asked.current.add(p);
-      void fetch(`/api/agent/models?providerId=${p}`).then((r) => r.json()).then((d) => { if (d.ok) setLists((m) => ({ ...m, [p]: { models: d.models.map((x: { id: string }) => x.id), def: String(d.defaultModel ?? "") } })); }).catch(() => {});
+      void fetch(`/api/agent/models?providerId=${p}`).then((r) => r.json()).then((d) => {
+        if (!d.ok) throw new Error(String(d.error));
+        setLists((m) => ({ ...m, [p]: { models: d.models.map((x: { id: string }) => x.id), def: String(d.defaultModel ?? "") } }));
+      }).catch(() => { asked.current.delete(p); }); // 실패면 고른 에이전트가 바뀔 때(또는 심사 모델 칸을 다시 열 때) 또 물음(리뷰)
     }
   }, [want]);
   return lists;

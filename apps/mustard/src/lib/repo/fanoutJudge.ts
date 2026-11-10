@@ -7,15 +7,19 @@ export const LETTERS = "ABCD";
 // 모델 이름(#1313) — 후보는 터미널 실행 줄에 `--model <이름>`으로 그대로 들어가서 셸이 해석할 글자는 막음, 심사도 같은 규칙.
 // 첫 글자는 영문·숫자 — `-`로 시작하면 `--yolo` 같은 다른 플래그가 되어 고른 권한을 덮을 수 있음(리뷰)
 export const MODEL = /^[A-Za-z0-9][\w.:/@-]{0,79}$/;
-// `--model`을 받는다고 확인한 에이전트(claude·codex·opencode·cursor-agent는 --help로 확인, gemini·copilot·aider는 공식 문서). 모르는 플래그를 붙이면 CLI가 바로 꺼짐
-// 한계: 목록 밖 에이전트는 모델 칸이 안 뜸 — 설정의 추가 인자로 지정
-export const MODEL_FLAG_AGENTS = new Set(["claude", "codex", "opencode", "gemini", "cursor", "copilot", "aider"]);
+// `--model`을 받는다고 --help로 직접 확인한 에이전트만(claude·codex·opencode·cursor-agent). 모르는 플래그를 붙이면 CLI가 바로 꺼짐
+// 한계: 목록 밖 에이전트(확인 못 한 것 포함)는 모델 칸이 안 뜸 — 설정의 추가 인자로 지정. 확인되면 여기 추가
+export const MODEL_FLAG_AGENTS = new Set(["claude", "codex", "opencode", "cursor"]);
 // 심사 모델 고르기(#1313) — 심사(claude-code·codex·opencode)마다 모델 이름. 없으면 그 AI 기본 모델. 의장·변론·판사는 Claude 칸을 따름
 export const JUDGE_PROVIDERS = ["claude-code", "codex", "opencode"] as const;
 export type JudgeModels = Partial<Record<(typeof JUDGE_PROVIDERS)[number], string>>;
 export const pickModels = (x: unknown): JudgeModels => {
   const o = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
-  return Object.fromEntries(JUDGE_PROVIDERS.flatMap((p) => { const v = typeof o[p] === "string" ? (o[p] as string).trim() : ""; return v && MODEL.test(v) ? [[p, v]] : []; }));
+  return Object.fromEntries(JUDGE_PROVIDERS.flatMap((p) => {
+    const v = typeof o[p] === "string" ? (o[p] as string).trim() : "";
+    if (v && !MODEL.test(v)) throw new Error("bad model"); // 조용히 기본 모델로 돌리지 않음 — 후보 모델과 같게 알림(리뷰)
+    return v ? [[p, v]] : [];
+  }));
 };
 export interface Blinded { label: string; diff: string; files: { path: string; added: number; removed: number; big?: boolean }[]; truncated: boolean }
 export interface JudgeResult { provider: string; model?: string; ranking?: string[]; reasons?: Record<string, string>; error?: string }

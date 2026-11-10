@@ -47,8 +47,9 @@ assert.ok(!/claude|codex/i.test(chairPrompt("t", b, [{ provider: "claude-code", 
 console.log("fanoutJudge ok");
 
 // 심사 모델(#1313) — 아는 심사만, 빈칸·셸 글자는 버림
-assert.deepStrictEqual(pickModels({ "claude-code": " opus ", codex: "", opencode: "x; rm -rf ~", grok: "g" }), { "claude-code": "opus" });
+assert.deepStrictEqual(pickModels({ "claude-code": " opus ", codex: "", grok: "g" }), { "claude-code": "opus" });
+assert.throws(() => pickModels({ opencode: "x; rm -rf ~" }), /bad model/);
 assert.deepStrictEqual(pickModels(null), {});
-assert.deepStrictEqual(pickModels({ codex: "--dangerously-bypass-approvals-and-sandbox" }), {}, "플래그처럼 보이는 모델 버림(리뷰)");
+assert.throws(() => pickModels({ codex: "--dangerously-bypass-approvals-and-sandbox" }), /bad model/, "플래그처럼 보이는 모델 거부(리뷰)");
 assert.deepStrictEqual(pickModels({ codex: "gpt-5.6-sol", opencode: "opencode/deepseek-v4-flash-free" }), { codex: "gpt-5.6-sol", opencode: "opencode/deepseek-v4-flash-free" });
 console.log("judge models ok");
