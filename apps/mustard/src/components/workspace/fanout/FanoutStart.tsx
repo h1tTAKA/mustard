@@ -10,7 +10,7 @@ import { useSetupChain, createFanoutRun } from "./useSetupChain";
 // 겨루기 화면 안 시작 칸(#1313) — 새 창 없이 여기서 프롬프트·에이전트 고르고 시작(유저: "크루 대화창에서 그대로").
 // 흐름은 새 작업공간 창 겨루기와 같음: 후보 만들기 → setup 줄(승인은 이 칸 안에서) → 다 끝나면 후보마다 터미널 탭·에이전트·프롬프트.
 // root = Crew 대화방 경로(레포 탭이 보는 폴더) — launch는 그 폴더 터미널로, 서버는 원래 레포를 찾아 만듦.
-// 한계: setup 줄이 도는 동안 대화방 헤더 칼 버튼으로 겨루기 화면을 닫으면 남은 setup·에이전트 띄우기가 끊김(이 화면의 닫기는 잠금).
+// setup 줄이 도는 동안엔 이 화면 닫기·＋·대화방 칼 버튼을 잠금(닫혀 이 칸이 사라지면 남은 setup·에이전트 띄우기가 끊김).
 export default function FanoutStart({ root, empty, fill, onBusy, onDone }: { root: string; empty: boolean; fill: boolean; onBusy: (b: boolean) => void; onDone: () => void }) {
   const t = useT();
   const toast = useToast();

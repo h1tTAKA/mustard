@@ -58,6 +58,7 @@ export default function CrewChat({ root }: { root: string }) {
   const [rolesOpen, setRolesOpen] = useState(false);
   // #1174 겨루기 — 이 대화방 안에서 봄(새 패널·탭 안 만듦, 유저 결정). 겨루기를 시작하면 열림
   const [fanoutOpen, setFanoutOpen] = useState(false);
+  const [fanoutBusy, setFanoutBusy] = useState(false); // #1313 겨루기 화면 시작 칸 setup 줄이 도는 중 — 칼 버튼으로 닫으면 줄이 끊겨서 잠금(리뷰)
   useEffect(() => { if (takeFanoutView(root)) setFanoutOpen(true); }, [root]); // eslint-disable-line react-hooks/set-state-in-effect -- 마운트 때 한 번(렌더 중에 꺼내 쓰면 버려진 렌더가 표시를 먹음)
   useEffect(() => {
     const on = (e: Event) => { if ((e as CustomEvent<{ root: string }>).detail?.root === root) { takeFanoutView(root); setFanoutOpen(true); } };
@@ -208,8 +209,8 @@ export default function CrewChat({ root }: { root: string }) {
           className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200">
           {crewNotify ? <IconBell size={14} aria-hidden /> : <IconBellOff size={14} aria-hidden />}
         </button>
-        <button type="button" onClick={() => setFanoutOpen((o) => !o)} aria-pressed={fanoutOpen} title={t("fanout.title")} aria-label={t("fanout.title")}
-          className={`shrink-0 rounded-md p-1 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200 ${fanoutOpen ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400"}`}>
+        <button type="button" onClick={() => setFanoutOpen((o) => !o)} disabled={fanoutBusy} aria-pressed={fanoutOpen} title={t("fanout.title")} aria-label={t("fanout.title")}
+          className={`shrink-0 rounded-md p-1 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200 disabled:opacity-40 ${fanoutOpen ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400"}`}>
           <IconSwords size={14} aria-hidden />
         </button>
         <button type="button" onClick={() => setRolesOpen(true)} title={t("crewchat.manageRoles")} aria-label={t("crewchat.manageRoles")}
@@ -219,7 +220,7 @@ export default function CrewChat({ root }: { root: string }) {
       </div>
 
       {/* #1174 겨루기 — 방 헤더 아래를 덮음(닫으면 대화로) */}
-      {fanoutOpen && <div className="absolute inset-x-0 bottom-0 top-11 z-20"><FanoutPanel root={root} onClose={() => setFanoutOpen(false)} /></div>}
+      {fanoutOpen && <div className="absolute inset-x-0 bottom-0 top-11 z-20"><FanoutPanel root={root} onClose={() => setFanoutOpen(false)} onBusy={setFanoutBusy} /></div>}
       {/* 멤버 프로필 줄 — 누르면 @부르기, 상태 점(작업 중·내 확인 필요·대기) */}
       <div className="nunopi-scroll flex shrink-0 gap-1 overflow-x-auto border-b border-zinc-200 bg-white px-2 py-2 dark:border-zinc-800 dark:bg-[var(--s-pane)]">
         {roles.map((r) => {

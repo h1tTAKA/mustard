@@ -18,7 +18,7 @@ import { LETTERS } from "@/lib/repo/fanoutJudge";
 const post = async (body: Record<string, unknown>) => (await fetch("/api/repo/fanout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
 const folder = (dir: string) => dir.split("/").pop() ?? dir;
 
-export default function FanoutPanel({ root, onClose }: { root: string; onClose: () => void }) {
+export default function FanoutPanel({ root, onClose, onBusy }: { root: string; onClose: () => void; onBusy?: (b: boolean) => void }) {
   const t = useT();
   const toast = useToast();
   const confirm = useConfirm();
@@ -31,6 +31,7 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
   const [loading, setLoading] = useState(false);
   const [composing, setComposing] = useState(false); // #1313 기록이 있을 때 헤더 ＋로 여는 시작 칸
   const [startBusy, setStartBusy] = useState(false); // 시작 칸 setup 줄이 도는 중 — 닫기 잠금(닫으면 줄이 끊김)
+  useEffect(() => { onBusy?.(startBusy); }, [startBusy, onBusy]); // 대화방 칼 버튼도 같이 잠금
 
   const load = useCallback(async () => {
     const r = await post({ action: "list", path: root }).catch(() => null);
