@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useT, agentEnabled, sortAgents } from "@mustard/core";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
-import { MODEL_FLAG_AGENTS } from "@/lib/repo/fanoutJudge";
+import { MODEL_FLAG_AGENTS, badModel, redIfBad } from "@/lib/repo/fanoutJudge";
 
 // 겨루기 후보 고르기(#1174) — 감지되고 켜진 에이전트 칩을 누른 순서대로 후보(같은 에이전트 여러 번 가능, 최대 4개) + 같은 프롬프트.
 // 새 작업공간 창과 겨루기 화면(#1313)이 같이 씀. 화면에 뜰 때 에이전트를 한 번 감지(＋ 메뉴와 같은 목록)
@@ -65,7 +65,8 @@ export function FanoutPicker({ picks, setPicks, prompt, setPrompt, inputClass, d
             <div key={i} className="flex items-center gap-1.5">
               <AgentLogo agent={p.agent as AgentId} size={13} />
               <input value={p.model} disabled={disabled} list={`fanout-models-${p.agent}`} placeholder={t("fanout.modelPlaceholder")} aria-label={`${AGENT_META[p.agent as AgentId]?.label ?? p.agent} ${i + 1}`}
-                onChange={(e) => { const v = e.target.value; setPicks((ps) => ps.map((x, j) => (j === i ? { ...x, model: v } : x))); }} className={`${inputClass} font-mono`} />
+                onChange={(e) => { const v = e.target.value; setPicks((ps) => ps.map((x, j) => (j === i ? { ...x, model: v } : x))); }}
+                aria-invalid={badModel(p.model)} title={badModel(p.model) ? t("fanout.badModel") : undefined} className={`${redIfBad(inputClass, badModel(p.model))} font-mono`} />
             </div>
           ))}
           {Object.entries(MODEL_LIST).map(([a, p]) => lists[p] && <datalist key={a} id={`fanout-models-${a}`}>{lists[p].models.map((id) => <option key={id} value={id} />)}</datalist>)}

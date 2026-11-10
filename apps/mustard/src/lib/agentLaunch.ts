@@ -9,7 +9,7 @@ export function launchOpts(agent: string, extra = "") {
 
 // 겨루기 후보 모델(#1313) — `--model`을 받는 에이전트만(MODEL_FLAG_AGENTS). 설정 추가 인자 뒤에 붙어 이번 실행만 바뀜.
 // 한계: 설정 인자에 이미 --model이 있으면 둘 다 붙음(대부분 뒤에 것이 이김).
-// 서버도 검사하지만 실행 줄에 그대로 들어가니 여기서도 한 번 더(리뷰). 여기서 걸리는 건 손으로 고친 기록뿐 — 기본 모델로 띄우고 콘솔에 남김
+// 서버도 검사하지만 실행 줄에 그대로 들어가니 여기서도 한 번 더(리뷰). 칸에 잘못 쓴 건 서버 만들기에서 먼저 거절(bad model)되니, 여기서 걸리는 건 손으로 고친 기록뿐 — 기본 모델로 띄우고 콘솔에 남김
 export const modelArg = (agent: string, model?: string) => {
   if (!model || !MODEL_FLAG_AGENTS.has(agent)) return "";
   if (MODEL.test(model)) return `--model ${model}`;

@@ -12,7 +12,7 @@ import { sessionState, useAgentSessionStates } from "@/lib/agentSessionStates";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import type { CandidateDiff, Fanout } from "@/lib/repo/fanout";
 import type { Trial, Verdict } from "@/lib/repo/fanoutJudgeRun";
-import { LETTERS, MODEL, type JudgeModels } from "@/lib/repo/fanoutJudge";
+import { LETTERS, badModel, redIfBad, type JudgeModels } from "@/lib/repo/fanoutJudge";
 
 // 겨루기 화면(#1174) — 오른쪽 Crew 대화방 안에 겹쳐 보임(새 패널·탭 안 만듦, 유저 결정). 고른 겨루기의 후보마다 한 줄:
 // 상태(그 터미널 탭 세션 상태) · 바뀐 파일·줄 수 · diff 펼치기 · 그 탭으로 가기. 판정·재판·채택은 뒤 커밋에서 이 패널 아래에 붙음.
@@ -251,7 +251,7 @@ function JudgeModelsBox({ disabled }: { disabled: boolean }) {
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState<JudgeModels>(() => getSetting<JudgeModels>(JUDGE_MODELS_KEY, {}));
   const lists = useModelLists(open ? Object.values(JUDGE_PID) : []);
-  const bad = (p: string) => { const v = (models[p as keyof JudgeModels] ?? "").trim(); return !!v && !MODEL.test(v); }; // 저장은 하되 칸을 빨갛게 — 판정이 어느 칸 때문에 실패하는지 보이게(리뷰)
+  const bad = (p: string) => badModel(models[p as keyof JudgeModels]); // 저장은 하되 칸을 빨갛게 — 판정이 어느 칸 때문에 실패하는지 보이게(리뷰)
   const set = (p: string, v: string) => { const next = { ...models, [p]: v }; setModels(next); setSetting(JUDGE_MODELS_KEY, next); };
   const input = "w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1 font-mono text-[12px] text-zinc-800 outline-none focus:border-mustard-500/60 dark:border-white/10 dark:bg-black/20 dark:text-zinc-100"; // 시작 칸 입력과 같은 모양
   return (
@@ -267,7 +267,7 @@ function JudgeModelsBox({ disabled }: { disabled: boolean }) {
               <span className="w-16 shrink-0 text-[11.5px] text-zinc-600 dark:text-zinc-400">{PROVIDER_LABEL[p]}</span>
               <input value={models[p as keyof JudgeModels] ?? ""} disabled={disabled} list={`fanout-judge-${p}`} onChange={(e) => set(p, e.target.value)}
                 aria-invalid={bad(p)} title={bad(p) ? t("fanout.badModel") : undefined}
-                placeholder={lists[pid]?.def ? t("fanout.defaultModel", { model: lists[pid].def }) : t("fanout.modelPlaceholder")} className={`${input} ${bad(p) ? "!border-rose-400" : ""}`} />
+                placeholder={lists[pid]?.def ? t("fanout.defaultModel", { model: lists[pid].def }) : t("fanout.modelPlaceholder")} className={redIfBad(input, bad(p))} />
               <datalist id={`fanout-judge-${p}`}>{(lists[pid]?.models ?? []).map((id) => <option key={id} value={id} />)}</datalist>
             </label>
           ))}
