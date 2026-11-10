@@ -9,7 +9,13 @@ export function launchOpts(agent: string, extra = "") {
 
 // 겨루기 후보 모델(#1313) — `--model`을 받는 에이전트만(MODEL_FLAG_AGENTS). 설정 추가 인자 뒤에 붙어 이번 실행만 바뀜.
 // 한계: 설정 인자에 이미 --model이 있으면 둘 다 붙음(대부분 뒤에 것이 이김).
-export const modelArg = (agent: string, model?: string) => (model && MODEL_FLAG_AGENTS.has(agent) && MODEL.test(model) ? `--model ${model}` : ""); // 서버도 검사하지만 실행 줄에 그대로 들어가니 여기서도 한 번 더(리뷰)
+// 서버도 검사하지만 실행 줄에 그대로 들어가니 여기서도 한 번 더(리뷰). 여기서 걸리는 건 손으로 고친 기록뿐 — 기본 모델로 띄우고 콘솔에 남김
+export const modelArg = (agent: string, model?: string) => {
+  if (!model || !MODEL_FLAG_AGENTS.has(agent)) return "";
+  if (MODEL.test(model)) return `--model ${model}`;
+  console.warn(`[fanout] bad model for ${agent}, launching with its default`);
+  return "";
+};
 
 // 옛 추가 인자에 알려진 권한 플래그가 있으면 빼서 그 에이전트의 권한 덮어쓰기로 — 한 번만.
 // 예: 예전에 claude 칸에 --dangerously-skip-permissions를 적어 둔 사람 → claude = 전체 액세스, 칸은 나머지만.

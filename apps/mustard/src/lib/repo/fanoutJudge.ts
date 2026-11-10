@@ -7,7 +7,7 @@ export const LETTERS = "ABCD";
 // 모델 이름(#1313) — 후보는 터미널 실행 줄에 `--model <이름>`으로 그대로 들어가서 셸이 해석할 글자는 막음, 심사도 같은 규칙.
 // 첫 글자는 영문·숫자 — `-`로 시작하면 `--yolo` 같은 다른 플래그가 되어 고른 권한을 덮을 수 있음(리뷰)
 export const MODEL = /^[A-Za-z0-9][\w.:/@-]{0,79}$/;
-// `--model`을 받는다고 --help로 직접 확인한 에이전트만(claude·codex·opencode·cursor-agent). 모르는 플래그를 붙이면 CLI가 바로 꺼짐
+// `--model`을 받는다고 --help로 직접 확인한 에이전트만(claude·codex·opencode·cursor = 실행 파일 cursor-agent). 모르는 플래그를 붙이면 CLI가 바로 꺼짐
 // 한계: 목록 밖 에이전트(확인 못 한 것 포함)는 모델 칸이 안 뜸 — 설정의 추가 인자로 지정. 확인되면 여기 추가
 export const MODEL_FLAG_AGENTS = new Set(["claude", "codex", "opencode", "cursor"]);
 // 심사 모델 고르기(#1313) — 심사(claude-code·codex·opencode)마다 모델 이름. 없으면 그 AI 기본 모델. 의장·변론·판사는 Claude 칸을 따름
