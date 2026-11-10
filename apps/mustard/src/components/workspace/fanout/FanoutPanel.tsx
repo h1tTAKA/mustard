@@ -140,7 +140,7 @@ export default function FanoutPanel({ root, onClose, onBusy }: { root: string; o
         </button>
       </div>
 
-      {list && (!cur || composing) && <FanoutStart root={root} empty={!cur} fill={!cur} onBusy={setStartBusy} onDone={() => setComposing(false)} />}
+      {list && (!cur || composing || startBusy) && <FanoutStart root={root} empty={!cur} fill={!cur} onBusy={setStartBusy} onDone={() => setComposing(false)} />}
       {!cur ? null : (
         <div className="nunopi-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
           <p className="line-clamp-3 whitespace-pre-wrap rounded-lg bg-zinc-50 px-2.5 py-2 text-[12px] leading-relaxed text-zinc-700 dark:bg-white/[0.03] dark:text-zinc-300" title={cur.prompt}>{cur.prompt}</p>
