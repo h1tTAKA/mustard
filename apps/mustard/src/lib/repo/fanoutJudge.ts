@@ -4,8 +4,12 @@
 // → 의장이 추천 승자·이유·진 후보별 가져올 좋은 점을 정리. 가린 이름은 결과에서 다시 풂(order).
 
 export const LETTERS = "ABCD";
-// 모델 이름(#1313) — 후보는 터미널 실행 줄에 `--model <이름>`으로 그대로 들어가서 셸이 해석할 글자는 막음, 심사도 같은 규칙
-export const MODEL = /^[\w.:/@-]{1,80}$/;
+// 모델 이름(#1313) — 후보는 터미널 실행 줄에 `--model <이름>`으로 그대로 들어가서 셸이 해석할 글자는 막음, 심사도 같은 규칙.
+// 첫 글자는 영문·숫자 — `-`로 시작하면 `--yolo` 같은 다른 플래그가 되어 고른 권한을 덮을 수 있음(리뷰)
+export const MODEL = /^[A-Za-z0-9][\w.:/@-]{0,79}$/;
+// `--model`을 받는다고 확인한 에이전트(claude·codex·opencode·cursor-agent는 --help로 확인, gemini·copilot·aider는 공식 문서). 모르는 플래그를 붙이면 CLI가 바로 꺼짐
+// 한계: 목록 밖 에이전트는 모델 칸이 안 뜸 — 설정의 추가 인자로 지정
+export const MODEL_FLAG_AGENTS = new Set(["claude", "codex", "opencode", "gemini", "cursor", "copilot", "aider"]);
 // 심사 모델 고르기(#1313) — 심사(claude-code·codex·opencode)마다 모델 이름. 없으면 그 AI 기본 모델. 의장·변론·판사는 Claude 칸을 따름
 export const JUDGE_PROVIDERS = ["claude-code", "codex", "opencode"] as const;
 export type JudgeModels = Partial<Record<(typeof JUDGE_PROVIDERS)[number], string>>;

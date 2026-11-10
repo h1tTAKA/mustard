@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useT, agentEnabled, sortAgents } from "@mustard/core";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
-import { MODEL_FLAG_AGENTS } from "@/lib/agentLaunch";
+import { MODEL_FLAG_AGENTS } from "@/lib/repo/fanoutJudge";
 
 // 겨루기 후보 고르기(#1174) — 감지되고 켜진 에이전트 칩을 누른 순서대로 후보(같은 에이전트 여러 번 가능, 최대 4개) + 같은 프롬프트.
 // 새 작업공간 창과 겨루기 화면(#1313)이 같이 씀. 화면에 뜰 때 에이전트를 한 번 감지(＋ 메뉴와 같은 목록)

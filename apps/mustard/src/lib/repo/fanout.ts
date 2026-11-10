@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { promisify } from "node:util";
 import { createWorkspace, forceDeleteBranch, removeWorkspace } from "./workspaces.ts";
 import { baseBranch, openDraftPr } from "./draftPr.ts";
-import { MODEL } from "./fanoutJudge.ts"; // 모델 이름 글자 검사(#1313) — 화면도 쓰는 순수 파일에 둠
+import { MODEL, MODEL_FLAG_AGENTS } from "./fanoutJudge.ts"; // 모델 이름 글자 검사·--model 받는 에이전트(#1313) — 화면도 쓰는 순수 파일에 둠
 
 const pexec = promisify(execFile);
 // git diff는 차이가 있으면 종료 코드 1(--no-index) — 출력만 쓰고 코드는 안 봄
@@ -63,7 +63,7 @@ export async function createFanout(root: string, o: CreateFanoutOpts): Promise<F
   const prompt = o.prompt.trim();
   if (!prompt) throw new Error("prompt required");
   if (o.agents.length < MIN_CANDIDATES || o.agents.length > MAX_CANDIDATES || !o.agents.every((a) => AGENT.test(a))) throw new Error("bad agents");
-  const models = o.agents.map((_, i) => o.models?.[i]?.trim() ?? "");
+  const models = o.agents.map((a, i) => (MODEL_FLAG_AGENTS.has(a) ? o.models?.[i]?.trim() ?? "" : "")); // 모델을 못 받는 에이전트면 버림 — 안 쓰일 모델을 기록·화면에 남기지 않게(리뷰)
   if (!models.every((m) => !m || MODEL.test(m))) throw new Error("bad model");
   const made: Candidate[] = [];
   try {
