@@ -52,7 +52,7 @@ export default function FanoutPanel({ root, onClose, onBusy }: { root: string; o
   useEffect(() => { if (!judging && !trying) return; const h = setInterval(() => void load(), 3000); return () => clearInterval(h); }, [judging, trying, load]); // 판정·재판이 뒤에서 도는 동안 다시 읽기
   // 채택(winner 번호) / 모두 버리기 — 되돌릴 수 없어 확인 먼저. 지울 후보 탭을 닫고(터미널 끄기) 서버가 폴더·브랜치를 지움
   const finish = async (winner: number | null) => {
-    if (!cur || acting) return;
+    if (!cur || acting || startBusy) return; // 시작 칸 setup이 도는 중엔 채택·버리기 안 함 — 그 후보 폴더를 setup이 쓰는 중일 수 있음(리뷰)
     const ok = await confirm(winner === null
       ? { title: t("fanout.discardTitle"), message: t("fanout.discardMsg", { n: cur.candidates.length }), confirmText: t("fanout.discard"), tone: "danger" }
       : { title: t("fanout.adoptTitle", { name: folder(cur.candidates[winner].dir) }), message: t("fanout.adoptMsg", { n: cur.candidates.length - 1 }), confirmText: t("fanout.adopt"), tone: "warn" });
@@ -176,7 +176,7 @@ export default function FanoutPanel({ root, onClose, onBusy }: { root: string; o
                       : <>{t("fanout.files", { n: d.files.length })} <span className="text-emerald-600 dark:text-emerald-400">+{d.added}</span> <span className="text-rose-600 dark:text-rose-400">−{d.removed}</span></>}
                   </span>
                   {cur.status === "running" && (
-                    <button type="button" onClick={() => void finish(i)} disabled={acting} title={t("fanout.adoptThis")} aria-label={t("fanout.adoptThis")}
+                    <button type="button" onClick={() => void finish(i)} disabled={acting || startBusy} title={t("fanout.adoptThis")} aria-label={t("fanout.adoptThis")}
                       className="shrink-0 rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-emerald-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-emerald-400">
                       <IconCheck size={13} stroke={2} aria-hidden />
                     </button>
@@ -196,7 +196,7 @@ export default function FanoutPanel({ root, onClose, onBusy }: { root: string; o
           {cur.status === "running" && verdict?.state === "done" && (verdict.scores?.length ?? 0) >= 2 && <TrialBox f={cur} verdict={verdict} trial={trialRec} trying={trying} onStart={() => void start("trial")} />}
           {cur.status === "running" && (
             <div className="flex justify-end">
-              <button type="button" onClick={() => void finish(null)} disabled={acting}
+              <button type="button" onClick={() => void finish(null)} disabled={acting || startBusy}
                 className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-rose-600 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-rose-400">
                 {acting ? <IconLoader2 size={12} className="animate-spin" aria-hidden /> : <IconTrash size={12} stroke={2} aria-hidden />}{t("fanout.discardAll")}
               </button>
