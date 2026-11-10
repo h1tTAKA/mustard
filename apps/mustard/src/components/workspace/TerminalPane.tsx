@@ -4,7 +4,8 @@
 import { launchOpts, liftStoredArgs } from "@/lib/agentLaunch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
-import { useShortcut, useT, isCurrentTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
+import { useShortcut, useT, useToast, isCurrentTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
+import { FANOUT_CLOSE_TABS_EVENT, FANOUT_LAUNCH_EVENT, takePendingFanouts, type FanoutLaunch } from "@/lib/repo/workspaceEvents";
 import Terminal from "@/components/workspace/Terminal";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
@@ -208,6 +209,49 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
     window.addEventListener("mustard:crew-takeover", on);
     return () => window.removeEventListener("mustard:crew-takeover", on);
   }, [cwd, t]);
+  // #1174 겨루기 — 후보마다 새 탭(이름 = 작업 폴더 이름)에서 그 폴더로 가 에이전트를 띄우고, 화면이 뜨면 같은 프롬프트를 보냄
+  const toast = useToast();
+  useEffect(() => {
+    const run = (d: FanoutLaunch) => {
+      const ids = d.candidates.map(() => genId());
+      // 탭 id를 겨루기 기록에 저장 — 패널이 후보 상태(세션 id = 탭 id)·탭으로 가기, 채택·버리기가 진 후보 터미널 끄기에 씀 → 한 번 더 시도, 그래도 실패면 알림
+      const save = () => fetch("/api/repo/fanout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "tabs", path: cwd, id: d.id, tabIds: ids }) }).then((x) => x.json()).then((j) => !!j.ok, () => false);
+      void save().then((ok) => ok || save()).then((ok) => { if (!ok) toast(t("fanout.tabsNotSaved"), "error"); });
+      setTabs((prev) => d.candidates.reduce((acc, c, i) => [...acc, { id: ids[i], title: t("workspace.terminalTab", { n: nextNum(acc) }), customTitle: c.dir.split("/").pop() }], prev));
+      setActiveId(ids[0]);
+      d.candidates.forEach((c, i) => {
+        markAgentUsed(c.agent);
+        void (async () => {
+          const term = window.nunopiDesktop?.terminal;
+          const r = await term?.launchAgent?.({ id: ids[i], agent: c.agent, dark: isCurrentTerminalDark(), ...launchOpts(c.agent), cwd: c.dir });
+          const sent = r?.ok ? await term?.sendPrompt?.({ id: ids[i], text: d.prompt }) : null;
+          const name = c.dir.split("/").pop() ?? c.agent;
+          if (sent && !sent.ok && sent.reason === "kept") toast(t("fanout.pressEnter", { name }), "error"); // 이미 붙어 있음 — Enter만
+          else if (!sent?.ok) { void navigator.clipboard?.writeText(d.prompt).catch(() => {}); toast(t("fanout.pasteYourself", { name }), "error"); }
+        })();
+      });
+    };
+    const on = (e: Event) => { const d = (e as CustomEvent<FanoutLaunch>).detail; if (d && d.root === cwd && !d.taken) { d.taken = true; run(d); } };
+    for (const p of takePendingFanouts(cwd)) run(p); // 터미널이 접혀 있던 사이 맡겨 둔 것
+    window.addEventListener(FANOUT_LAUNCH_EVENT, on);
+    return () => window.removeEventListener(FANOUT_LAUNCH_EVENT, on);
+  }, [cwd, t, toast]);
+  // #1174 채택·버리기 — 지울 후보 탭들을 한 번에 닫고 터미널 끄기(closeTab의 하나씩 확인 없이)
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ root: string; ids: string[]; taken?: boolean }>).detail;
+      if (!d || d.root !== cwd) return;
+      d.taken = true;
+      const drop = new Set(d.ids.filter((id) => tabs.some((x) => x.id === id)));
+      if (!drop.size) return;
+      const next = tabs.filter((x) => !drop.has(x.id));
+      const keep = next.length ? next : [{ id: genId(), title: t("workspace.terminalTab", { n: 1 }) }]; // 마지막 탭이었으면 빈 탭 하나(closeTab과 같음)
+      setTabs(keep);
+      if (drop.has(activeId) || !next.length) setActiveId(keep[keep.length - 1].id);
+    };
+    window.addEventListener(FANOUT_CLOSE_TABS_EVENT, on);
+    return () => window.removeEventListener(FANOUT_CLOSE_TABS_EVENT, on);
+  }, [cwd, tabs, activeId, t]);
   const launchInNewTab = (agent: string) => {
     setMenuOpen(false);
     markAgentUsed(agent);

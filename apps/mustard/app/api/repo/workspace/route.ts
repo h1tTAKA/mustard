@@ -1,22 +1,13 @@
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { checkWorkspace, createWorkspace, forceDeleteBranch, removeWorkspace, findWorktree, type PrStart } from "@/lib/repo/workspaces";
+import { checkWorkspace, createWorkspace, forceDeleteBranch, removeWorkspace, findWorktree, mainRoot, type PrStart } from "@/lib/repo/workspaces";
 import { crossSite } from "@/lib/crew/crewPolicy";
 import { markSetupDone, MAX_REVIEW, readRepoPrefs, readRepoScripts, runSetup, setupScriptFor, readConfig, trustScript, writeRepoPrefs, writeRepoScripts } from "@/lib/crew/worktreeBootstrap";
 
 // 사람용 worktree 작업공간(#1170) — 만들기·점검·지우기·브랜치 강제 삭제·setup 실행·스크립트 승인. 로컬 git 쓰기. 서버 전용.
 // path = 레포 탭 경로(메인이든 그 레포의 worktree든) → 메인 worktree를 root로 씀(archive 설정·승인 기록은 메인 기준, #1176과 같음).
 export const runtime = "nodejs";
-const pexecFile = promisify(execFile);
 
-async function mainRoot(path: string): Promise<string> {
-  const out = (await pexecFile("git", ["worktree", "list", "--porcelain"], { cwd: path, timeout: 15000 })).stdout;
-  const first = out.split("\n").find((l) => l.startsWith("worktree "));
-  if (!first) throw new Error("not a git repo");
-  return first.slice(9);
-}
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 
 export async function POST(request: Request): Promise<Response> {

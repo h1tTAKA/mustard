@@ -1876,12 +1876,50 @@ ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, ids, text } 
   try { ss = await live(); } catch { return { ok: false, reason: "error" }; } // 데몬·목록 실패는 "터미널 없음"과 구분(#1129 리뷰)
   const target = ss.find((s) => s.id === preferId) ?? ss[0];
   if (!target) return { ok: false, reason: "no-agent" };
+  const r = await pasteToAgent(target.id, text, async () => (await live()).some((s) => s.id === target.id) || ((await sessionKind(target.id)) === "shell" ? "shell" : false));
+  return r.reason === "kept" ? { ok: false, reason: "no-agent" } : r; // 브라우저 쪽 응답은 예전 그대로
+});
+// 세션 맨 앞 프로그램 — 없음·모름(이름 못 읽음)·셸·그 밖(셸 아님). 셸 아님 = 에이전트라는 뜻은 아님(dev 서버도) → Enter 판단은 호출부의 사전 확인과 함께
+// 인앱 브라우저 보내기는 Enter를 화면 판정(live)이 에이전트라고 할 때만 침 — 셸이 아닌 아무 프로그램(dev 서버 등)에 Enter가 가지 않게(리뷰 제안 안 받음)
+async function sessionKind(id) {
+  const ss = await termClient.list({ strict: true }); // 목록을 못 받으면 null — "끝남"과 "모름"을 구분(빈 배열로 받으면 살아 있는 세션을 끝났다고 봄, 리뷰)
+  if (!ss) return "unknown";
+  const s = ss.find((x) => x.id === id);
+  return !s ? "gone" : !s.process ? "unknown" : isShellProc(s.process) ? "shell" : "agent"; // 데몬은 이름을 못 읽으면 ""를 줌 → 모름(리뷰)
+}
+// 붙여넣기 + Enter. stillAgent() = Enter 직전 확인: true(에이전트) → Enter, "shell"(셸로 바뀐 게 확실) → Ctrl-U로 입력 줄을 비움
+// (안 비우면 붙인 글이 셸 입력 줄에 남아 다음 Enter에 명령으로 실행됨), 그 밖(없음·모름·확인 실패) → 키를 안 보냄(쓰던 글을 지우지 않게, #1174 리뷰).
+// enter=false = 붙이기만(사람이 보고 Enter).
+async function pasteToAgent(id, text, stillAgent, enter = true) {
   const body = text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, ""); // ESC·C1(U+0080~009F, CSI 등) 제거(#1169 리뷰)(붙여넣기 조기 종료 방지) — 렌더러도 하지만 신뢰 경계라 한 번 더
-  termClient.input({ id: target.id, data: `\x1b[200~${body}\x1b[201~` });
+  termClient.input({ id, data: `\x1b[200~${body}\x1b[201~` });
   await new Promise((r) => setTimeout(r, 150)); // TUI가 붙여넣기를 다 받은 뒤 Enter
-  try { if (!(await live()).some((s) => s.id === target.id)) return { ok: false, reason: "no-agent" }; } catch { return { ok: false, reason: "error" }; } // 그 사이 셸로 바뀌었으면 Enter 안 침
-  termClient.input({ id: target.id, data: "\r" });
-  return { ok: true, id: target.id };
+  let still;
+  try { still = await stillAgent(); } catch { return { ok: false, reason: "kept" }; } // 이미 붙임 — 확인만 실패(글은 남아 있음)
+  if (still === "shell") { termClient.input({ id, data: "\x15" }); return { ok: false, reason: "no-agent" }; }
+  if (still === "gone") return { ok: false, reason: "no-agent" }; // 세션이 끝남 — 글도 같이 사라짐(화면은 복사로)
+  if (still !== true) return { ok: false, reason: "kept" }; // 붙인 글이 입력칸에 남음(Enter도 지우기도 안 함) — 다시 붙이라고 하면 두 번 들어감(리뷰)
+  if (enter) termClient.input({ id, data: "\r" });
+  return { ok: true, id };
+}
+// #1174 겨루기 — 방금 에이전트를 띄운 그 탭(id)에 첫 프롬프트. 실행 기록 신원은 부팅 중에도 에이전트라고 답해서(agentForId),
+// 화면에 에이전트가 실제로 그려질 때까지(parseAgentScreen) 기다림 — 부팅 중에 붙이면 글이 사라짐. 맨 앞이 셸이면 안 보냄.
+// 한계: 화면으로 못 알아보는 에이전트면 60초 뒤 실패 → 화면이 프롬프트를 복사해 두고 직접 붙여 넣게 안내.
+ipcMain.handle("terminal:send-prompt", async (_e, { id, text, enter } = {}) => {
+  if (typeof id !== "string" || !id || typeof text !== "string" || !text.trim()) return { ok: false, reason: "bad-args" };
+  const ready = async () => {
+    const s = (await termClient.list()).find((x) => x.id === id);
+    return !!s && !!s.process && !isShellProc(s.process) && !!parseAgentScreen(liveBuffers.get(id) ?? s.screen, lastTitleRawById.get(id))?.agent;
+  };
+  for (let i = 0; i < 120; i++) {
+    if (await ready().catch(() => false)) {
+      await new Promise((r) => setTimeout(r, 800)); // 첫 화면이 그려진 직후엔 입력칸이 아직 안 받는 CLI가 있음
+      if (!(await ready().catch(() => false))) continue; // 기다린 사이 에이전트가 꺼졌으면 붙이지 않음(리뷰)
+      return pasteToAgent(id, text, async () => { const k = await sessionKind(id); return k === "agent" ? true : k === "shell" || k === "gone" ? k : false; }, enter !== false);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return { ok: false, reason: "not-ready" };
 });
 
 // #1194 빠른 명령(셸) — 그 터미널의 맨 앞 프로그램이 셸일 때만 입력(에이전트 화면·dev 서버 등에 명령이 새지 않게, 리뷰). 이 레포 터미널만.

@@ -23,6 +23,7 @@ import DiffPane from "@/components/workspace/DiffPane";
 import DocViewer from "@/components/workspace/DocViewer";
 import RepoFlowPane from "@/components/workspace/RepoFlowPane";
 import CrewBoard from "@/components/workspace/crew/CrewBoard";
+import { FANOUT_LAUNCH_EVENT } from "@/lib/repo/workspaceEvents";
 import CrewChat, { CREW_OPEN_TASK_EVENT } from "@/components/workspace/crew/CrewChat";
 import BrowserPane, { type BrowserState } from "@/components/workspace/BrowserPane";
 import RepoAnalyzeSection from "@/components/workspace/RepoAnalyzeSection";
@@ -136,6 +137,21 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     const on = (e: Event) => { const d = (e as CustomEvent<{ root: string }>).detail; if (d?.root === path) setCrewOpen(true); };
     window.addEventListener(CREW_OPEN_TASK_EVENT, on); return () => window.removeEventListener(CREW_OPEN_TASK_EVENT, on);
   }, [path]); // 인앱 브라우저 패널(#1034) — 레포별 저장
+  // #1174 겨루기 시작 → 오른쪽 패널을 Crew 대화방으로 열고(그 안에서 겨루기를 봄, 유저 결정: 새 패널·탭 안 만듦), 터미널이 접혀 있으면 펼침(후보 탭이 거기 열림)
+  useEffect(() => {
+    const on = (e: Event) => {
+      if ((e as CustomEvent<{ root: string }>).detail?.root !== path) return;
+      setChatOpen(true);
+      setRightMode(() => { try { localStorage.setItem("nunopi:ws-right-mode", "crew"); } catch { /* ignore */ } return "crew"; });
+      setCollapsed((prev) => {
+        if (!prev.has("terminal")) return prev;
+        const n = new Set(prev); n.delete("terminal");
+        try { localStorage.setItem("nunopi:ws-collapsed", JSON.stringify([...n])); } catch { /* ignore */ }
+        return n;
+      });
+    };
+    window.addEventListener(FANOUT_LAUNCH_EVENT, on); return () => window.removeEventListener(FANOUT_LAUNCH_EVENT, on);
+  }, [path]);
   const [browserTabs, setBrowserTabs] = useState<{ urls: string[]; active: number }>({ urls: [], active: 0 }); // 탭 주소들(레포별)
   const [browserIncoming, setBrowserIncoming] = useState<{ url: string; n: number; devtools?: boolean; urls?: string[]; active?: number; background?: boolean } | null>(null); // 에이전트 열기 요청·분리 창에서 돌아온 탭들
   const [browserRect, setBrowserRect] = useState<SlotRect | null>(null); // dock 속 브라우저 자리(고정 레이어 위치)

@@ -91,6 +91,13 @@ export async function createWorkspace(root: string, o: CreateOpts): Promise<Crea
   throw new Error("name taken");
 }
 
+// 레포 탭 경로(메인이든 그 레포의 worktree든) → 메인 worktree 경로
+export async function mainRoot(path: string): Promise<string> {
+  const first = (await git(path, ["worktree", "list", "--porcelain"], 15_000)).split("\n").find((l) => l.startsWith("worktree "));
+  if (!first) throw new Error("not a git repo");
+  return first.slice(9);
+}
+
 function isUnder(base: string, p: string) { const r = relative(resolve(base), resolve(p)); return !!r && !r.startsWith("..") && !isAbsolute(r); }
 const real = (p: string) => { try { return realpathSync(p); } catch { return resolve(p); } };
 
