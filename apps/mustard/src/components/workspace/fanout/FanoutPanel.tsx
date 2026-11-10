@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { IconSwords, IconX, IconRefresh, IconChevronRight, IconTerminal2, IconLoader2, IconGavel, IconStarFilled, IconScale, IconCheck, IconTrash, IconSend, IconExternalLink } from "@tabler/icons-react";
+import { IconSwords, IconX, IconRefresh, IconChevronRight, IconTerminal2, IconLoader2, IconGavel, IconStarFilled, IconScale, IconCheck, IconTrash, IconSend, IconExternalLink, IconPlus } from "@tabler/icons-react";
+import FanoutStart from "./FanoutStart";
 import { useT, useToast, useConfirm } from "@mustard/core";
 import { closeFanoutTabs } from "@/lib/repo/workspaceEvents";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
@@ -28,6 +29,8 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
   const [diffs, setDiffs] = useState<Record<number, CandidateDiff | { error: string }>>({});
   const [open, setOpen] = useState<number | null>(null); // diff 펼친 후보
   const [loading, setLoading] = useState(false);
+  const [composing, setComposing] = useState(false); // #1313 기록이 있을 때 헤더 ＋로 여는 시작 칸
+  const [startBusy, setStartBusy] = useState(false); // 시작 칸 setup 줄이 도는 중 — 닫기 잠금(닫으면 줄이 끊김)
 
   const load = useCallback(async () => {
     const r = await post({ action: "list", path: root }).catch(() => null);
@@ -120,19 +123,24 @@ export default function FanoutPanel({ root, onClose }: { root: string; onClose: 
             {list.map((f) => <option key={f.id} value={f.id}>{f.name || f.prompt.slice(0, 30)} · {new Date(f.createdAt).toLocaleDateString()}</option>)}
           </select>
         )}
+        {cur && (
+          <button type="button" onClick={() => setComposing((v) => !v)} disabled={startBusy} title={t("fanout.new")} aria-label={t("fanout.new")} aria-pressed={composing}
+            className={`shrink-0 rounded p-1 transition hover:bg-zinc-100 disabled:opacity-40 dark:hover:bg-zinc-800 ${composing ? "text-mustard-600 dark:text-mustard-400" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"}`}>
+            <IconPlus size={13} stroke={2} aria-hidden />
+          </button>
+        )}
         <button type="button" onClick={() => void refresh()} disabled={!cur || loading} title={t("fanout.refresh")} aria-label={t("fanout.refresh")}
           className="shrink-0 rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
           {loading ? <IconLoader2 size={13} className="animate-spin" aria-hidden /> : <IconRefresh size={13} stroke={2} aria-hidden />}
         </button>
-        <button type="button" onClick={onClose} title={t("fanout.close")} aria-label={t("fanout.close")}
-          className="shrink-0 rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+        <button type="button" onClick={onClose} disabled={startBusy} title={t("fanout.close")} aria-label={t("fanout.close")}
+          className="shrink-0 rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
           <IconX size={13} stroke={2} aria-hidden />
         </button>
       </div>
 
-      {!cur ? (
-        <div className="flex flex-1 items-center justify-center px-6 text-center text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">{list ? t("fanout.empty") : ""}</div>
-      ) : (
+      {list && (!cur || composing) && <FanoutStart root={root} empty={!cur} fill={!cur} onBusy={setStartBusy} onDone={() => setComposing(false)} />}
+      {!cur ? null : (
         <div className="nunopi-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
           <p className="line-clamp-3 whitespace-pre-wrap rounded-lg bg-zinc-50 px-2.5 py-2 text-[12px] leading-relaxed text-zinc-700 dark:bg-white/[0.03] dark:text-zinc-300" title={cur.prompt}>{cur.prompt}</p>
           {cur.status !== "running" && (
