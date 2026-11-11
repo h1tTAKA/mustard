@@ -353,7 +353,7 @@ async function wire() {
 }
 
 // 실행 지침에 붙일 최근 팀 대화(사람·역할 말만) — 크루끼리 서로 한 말을 보고 일하게(유저)
-const recentChat = (root: string, skip?: string) => readMsgs(root, 0, 400).filter((m) => m.id !== skip && ["human", "answer", "meeting", "handoff", "question", "decision"].includes(m.kind)).slice(-12)
+const recentChat = (root: string, skip?: string, card?: string) => readMsgs(root, 0, 400).filter((m) => m.id !== skip && (!card || m.taskId !== card) && ["human", "answer", "meeting", "handoff", "question", "decision"].includes(m.kind)).slice(-12)
   .map((m) => `- ${m.from}${m.taskTitle ? ` [${clip(m.taskTitle, 40)}]` : ""}: ${clip(m.text, 300)}`);
 function buildPrompt(title: string, body: string, role: CrewRole, pipeline: string[], stage: number, note?: string, consult?: { from: string; question: string }, chat: string[] = []): string {
   // #1108 답하기 모드 — 동료 질문에 답만(코드 수정 금지), 답은 봉투 message에
@@ -732,14 +732,14 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     // 질문한 말로 답함(일본어로 물으면 일본어) — 판단이 안 서면 앱 언어(유저)
     const lang = `the same language as the human's message (if unclear, ${LANG[narrationLocale()] ?? "English"})`;
     // 카드 밖 대화도 보게 — 예전엔 카드 대화만 넣어 바로 위 논의를 모르고 엉뚱한 카드 얘기를 함(유저)
-    const chat = recentChat(root, human.id);
+    const chat = recentChat(root, human.id, taskId); // 카드 대화는 factsFor가 이미 넣음(중복 X, 리뷰)
     const facts = [...factsFor(root, human, taskId), ...(chat.length ? ["", `Recent team chat (oldest first — the human's message usually continues it):`, ...chat] : [])];
     const t = taskId ? readBoard(root).tasks.find((x) => x.id === taskId) : undefined;
     const card = t ? { taskId: t.id, taskTitle: t.title } : {};
     const request = clip(human.text, 2000);
     // ① 첫 답 + 질문/일 요청 판단
     const op = await askR(first, [`You are "${roleLabel(first.id)}" (${first.id}), an agent on a software team board in Mustard.`,
-      everyone ? `The human wrote to the whole team (@all):` : mentioned.length ? `The human wrote to you directly (@${first.id}) in the team chat:` : `The human wrote in the team chat without @mentioning anyone:`, `> ${request}`, "",
+      everyone ? `The human wrote to the whole team (@all):` : mentioned.length && !routed ? `The human wrote to you directly (@${first.id}) in the team chat:` : `The human wrote in the team chat without @mentioning anyone:`, `> ${request}`, "",
       `Facts (use ONLY these; do not invent progress):`, ...facts, "",
       `Decide the intent:`,
       `- "work": the human asks the team to build, change, fix or plan something NEW that needs its own board card.`,
