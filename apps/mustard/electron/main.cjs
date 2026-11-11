@@ -1888,18 +1888,16 @@ async function sessionKind(id) {
   return !s ? "gone" : !s.process ? "unknown" : isShellProc(s.process) ? "shell" : "agent"; // 데몬은 이름을 못 읽으면 ""를 줌 → 모름(리뷰)
 }
 // 붙여넣기 + Enter. stillAgent() = Enter 직전 확인: true(에이전트) → Enter, "shell"(셸로 바뀐 게 확실) → Ctrl-U로 입력 줄을 비움
-// (안 비우면 붙인 글이 셸 입력 줄에 남아 다음 Enter에 명령으로 실행됨), 그 밖(없음·모름·확인 실패) → 키를 안 보냄(쓰던 글을 지우지 않게, #1174 리뷰).
-// enter=false = 붙이기만(사람이 보고 Enter).
-async function pasteToAgent(id, text, stillAgent, enter = true) {
+// (안 비우면 붙인 글이 셸 입력 줄에 남아 다음 Enter에 명령으로 실행됨), 그 밖(없음·모름·확인 실패) → 키를 안 보냄(쓰던 글을 지우지 않게).
+async function pasteToAgent(id, text, stillAgent) {
   const body = text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, ""); // ESC·C1(U+0080~009F, CSI 등) 제거(#1169 리뷰)(붙여넣기 조기 종료 방지) — 렌더러도 하지만 신뢰 경계라 한 번 더
   termClient.input({ id, data: `\x1b[200~${body}\x1b[201~` });
   await new Promise((r) => setTimeout(r, 150)); // TUI가 붙여넣기를 다 받은 뒤 Enter
   let still;
   try { still = await stillAgent(); } catch { return { ok: false, reason: "kept" }; } // 이미 붙임 — 확인만 실패(글은 남아 있음)
   if (still === "shell") { termClient.input({ id, data: "\x15" }); return { ok: false, reason: "no-agent" }; }
-  if (still === "gone") return { ok: false, reason: "no-agent" }; // 세션이 끝남 — 글도 같이 사라짐(화면은 복사로)
-  if (still !== true) return { ok: false, reason: "kept" }; // 붙인 글이 입력칸에 남음(Enter도 지우기도 안 함) — 다시 붙이라고 하면 두 번 들어감(리뷰)
-  if (enter) termClient.input({ id, data: "\r" });
+  if (still !== true) return { ok: false, reason: "kept" }; // 붙인 글이 입력칸에 남음(Enter도 지우기도 안 함) — 다시 붙이라고 하면 두 번 들어감
+  termClient.input({ id, data: "\r" });
   return { ok: true, id };
 }
 
