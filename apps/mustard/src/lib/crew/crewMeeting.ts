@@ -39,6 +39,12 @@ export function courtSeats(members: string[]): { a: string; b: string; jurors: s
   return a && b ? { a, b, jurors } : null;
 }
 
+// 배심 표 — 첫 글자(마크다운·따옴표 무시)가 A/B면 그 표, 아니면 무효("A안"은 A, "Actually"는 무효)
+export function juryVote(text: string | null): "A" | "B" | null {
+  const m = /^[\s*_"'`(\[]*([AB])(?![a-z])/i.exec(text ?? "");
+  return m ? (m[1].toUpperCase() as "A" | "B") : null;
+}
+
 // 참여 역할 — 아는 역할만, 중복 없이, 진행자 빼고, 최대 max. 하나도 없으면 기본(앱 개발자·테스트 엔지니어).
 export function pickParticipants(wanted: unknown, known: Set<string>, moderator: string, max = 5): string[] {
   const list = (Array.isArray(wanted) ? wanted : []).map((x) => String(x).replace(/^@/, "").trim().toLowerCase())

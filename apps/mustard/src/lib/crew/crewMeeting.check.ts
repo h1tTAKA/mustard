@@ -1,6 +1,6 @@
 // crewMeeting 점검 — node --experimental-strip-types src/lib/crew/crewMeeting.check.ts
 import assert from "node:assert";
-import { callsEveryone, courtSeats, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting.ts";
+import { callsEveryone, courtSeats, juryVote, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting.ts";
 
 const known = new Set(["scope-planner", "screen-designer", "data-architect", "app-builder", "test-engineer", "bug-fixer", "release-checker", "doc-writer"]);
 
@@ -45,4 +45,8 @@ assert.strictEqual(readAnswer('{"intent":"question","format":"court","reply":"x"
 assert.deepStrictEqual(courtSeats(["app-builder", "test-engineer", "bug-fixer", "doc-writer"]), { a: "app-builder", b: "test-engineer", jurors: ["bug-fixer", "doc-writer"] });
 assert.deepStrictEqual(courtSeats(["app-builder", "test-engineer"]), { a: "app-builder", b: "test-engineer", jurors: [] }, "배심 없으면 진행자만 판결");
 assert.strictEqual(courtSeats(["app-builder"]), null, "한 명이면 재판 안 됨");
+assert.strictEqual(juryVote("**A** — 더 설득력 있음"), "A", "마크다운 감싼 표");
+assert.strictEqual(juryVote("B안이 낫다"), "B");
+assert.strictEqual(juryVote("Actually neither"), null, "단어 첫 글자는 표 아님");
+assert.strictEqual(juryVote(null), null, "실패한 배심");
 console.log("crewMeeting.check ok");

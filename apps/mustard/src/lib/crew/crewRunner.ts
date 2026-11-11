@@ -22,7 +22,7 @@ import { defaultSnaModel } from "@mustard/nunopi/server";
 import { translate } from "@mustard/core/messages";
 import { addGuideline, appendMsg, findMsg, parseMentions, readGuidelines, readMsgs, type CrewMsg } from "./crewChat";
 import { snaClaudeProvider, snaCodexProvider, snaOpenCodeProvider } from "@mustard/nunopi/server";
-import { callsEveryone, courtSeats, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting";
+import { callsEveryone, courtSeats, juryVote, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting";
 import { isFailedNote } from "@/lib/failText";
 import { freshIds, hasTriggers, readTriggers, scheduleDue, writeTriggers, type CrewTrigger } from "./crewTriggers";
 import { emitNarration } from "@/lib/mcpActivity";
@@ -741,7 +741,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       `Decide the intent:`,
       `- "work": the human asks the team to build, change, fix or plan something NEW that needs its own board card.`,
       `- "instruction": a guideline, rule, correction, complaint or notice about HOW the team should work (no new card). It is saved as a team guideline every later run follows.`,
-      `- "debate": the human asks the team to discuss, debate or argue it out and reach a conclusion (no card). Add "format":"court" if it is a choice between two options (A or B), else "format":"council".`,
+      `- "debate": the human EXPLICITLY asks the team to debate, argue it out or vote and reach a conclusion (no card). A plain "what do you think?" is "question". Add "format":"court" if it is a choice between two options (A or B), else "format":"council".`,
       `- "question": status, explanation, opinion.`,
       `For "instruction", say concretely what you will do differently from now on — no long apology, no question back.`,
       `Reply as ${first.id} in 1-4 short sentences, in ${lang}. You cannot run tools here.${everyone ? " Other teammates will add their view after you." : ""}`,
@@ -769,39 +769,47 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     if (opener.intent === "debate") { // #1318 토론 — 카드 없이 대화방에서 끝까지
       debating = true;
       const mod = getRole(MODERATOR) ?? first;
-      // 참여자: @all 전원(상한 8) / @ 여러 역할 / 아니면 진행자가 2~5명
-      let members = everyone ? listRoles().map((r) => r.id).filter((id) => id !== mod.id).slice(0, 8) : mentioned.filter((id) => id !== mod.id && getRole(id));
+      // 참여자: @all 전원(상한 8) / @ 여러 역할(상한 8) / 2명 미만이면 진행자가 채움(부른 역할은 유지, 최대 5)
+      let members = everyone ? listRoles().map((r) => r.id).filter((id) => id !== mod.id).slice(0, 8) : mentioned.filter((id) => id !== mod.id && getRole(id)).slice(0, 8);
       if (!everyone && members.length < 2) {
         who = mod; speaking(root, mod.id);
         const kick = readJson((await askR(mod, [`You moderate a team debate on a software board. Topic from the human:`, `> ${request}`, "",
           `Team:`, teamList(), "", `Pick 2-5 roles whose views differ most usefully (not you). Answer ONLY with JSON: {"participants":["role-id",...]}`].join("\n"))).text);
-        members = pickParticipants(kick?.participants, new Set(listRoles().map((r) => r.id)), mod.id);
+        members = [...new Set([...members, ...pickParticipants(kick?.participants, new Set(listRoles().map((r) => r.id)), mod.id)])].slice(0, 5); // 부른 역할 유지(리뷰)
       }
       const log = [`${first.id}: ${clip(opener.reply, 300)}`];
-      // 한 차례 — 실패한 역할은 건너뛰고 계속(회의와 같음)
-      const turn = async (id: string, task: string) => {
-        const r = getRole(id); if (!r) return;
+      // 한 차례 — 실패한 역할은 건너뛰고 계속(회의와 같음). 성공하면 발언, 실패면 null
+      const turn = async (id: string, task: string): Promise<string | null> => {
+        const r = getRole(id); if (!r) return null;
         who = r; speaking(root, r.id);
         try {
           const { text, provider } = await askR(r, [`You are "${roleLabel(r.id)}" (${r.id}) in a team debate. Topic from the human:`, `> ${request}`, "",
             `Board facts:`, ...facts, "", `Debate so far:`, ...log, "", `${task} In ${lang}, plain text, no repeating others.`].join("\n"));
           say(root, { from: r.id, provider, kind: "meeting", text: text.slice(0, 1500), replyTo: human.id, ...card });
           log.push(`${r.id}: ${clip(text, 500)}`);
-        } catch (e) { say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.skipped", { role: roleLabel(r.id), why: String((e as Error)?.message ?? e) }) }); }
+          return text;
+        } catch (e) { say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.skipped", { role: roleLabel(r.id), why: String((e as Error)?.message ?? e) }) }); return null; }
       };
       const seats = opener.format === "court" ? courtSeats(members) : null;
       let closing: string;
+      const council = `You moderate. Conclude in up to 6 short lines: the main points of contention, each role's final position in a few words, and the conclusion with its reason.`;
       if (seats) { // 재판식 — 양측 주장 → 서로 반박 → 배심 → 판결
-        await turn(seats.a, `You argue side A: the first option the human named (or "yes"). Make the strongest case in 2-3 sentences.`);
-        await turn(seats.b, `You argue side B: the second option the human named (or "no"). Make the strongest case in 2-3 sentences.`);
-        await turn(seats.a, `Rebut side B's argument (@${seats.b}) in 1-2 sentences.`);
-        await turn(seats.b, `Rebut side A's argument (@${seats.a}) in 1-2 sentences.`);
-        for (const j of seats.jurors) await turn(j, `You are a juror. Start with "A" or "B" — which side is more convincing — then why in 1-2 sentences.`);
-        closing = `You are the judge. Give the verdict in up to 5 short lines: which side wins (A: @${seats.a} / B: @${seats.b}), the decisive reasons, and what to watch out for.`;
+        const a = await turn(seats.a, `You argue side A: the first option the human named (or "yes"). Make the strongest case in 2-3 sentences.`);
+        const b = await turn(seats.b, `You argue side B: the second option the human named (or "no"). Make the strongest case in 2-3 sentences.`);
+        if (a && b) {
+          await turn(seats.a, `Rebut side B's argument (@${seats.b}) in 1-2 sentences.`);
+          await turn(seats.b, `Rebut side A's argument (@${seats.a}) in 1-2 sentences.`);
+          const votes = { A: 0, B: 0 };
+          for (const j of seats.jurors) {
+            const v = juryVote(await turn(j, `You are a juror. Start with "A" or "B" — which side is more convincing — then why in 1-2 sentences.`));
+            if (v) votes[v]++;
+          }
+          closing = `You are the judge. Juror votes: A ${votes.A}, B ${votes.B}. Give the verdict in up to 5 short lines: which side wins (A: @${seats.a} / B: @${seats.b}), the decisive reasons, and what to watch out for.`;
+        } else closing = council; // 한쪽 주장이 없으면 재판 대신 남은 발언으로 정리(리뷰)
       } else { // 회의식 — 각자 입장 → 반박·보완 → 진행자 결론
         for (const id of members) await turn(id, `State your position and main reason from your role in 2-3 sentences.`);
         for (const id of members) await turn(id, `Now rebut or refine: where you disagree with a named teammate (@role-id) or what they missed, in 1-3 sentences. Change your mind if convinced.`);
-        closing = `You moderate. Conclude in up to 6 short lines: the main points of contention, each role's final position in a few words, and the conclusion with its reason.`;
+        closing = council;
       }
       who = mod; speaking(root, mod.id);
       const end = await askR(mod, [`Team debate. Topic from the human:`, `> ${request}`, "", `Debate:`, ...log, "", `${closing} In ${lang}, plain text.`].join("\n"));
