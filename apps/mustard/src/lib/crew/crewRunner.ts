@@ -806,7 +806,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
           await turn(seats.b, `Rebut side A's argument (@${seats.a}) in 1-2 sentences.`);
           const votes = { A: 0, B: 0 };
           for (const j of seats.jurors) {
-            const v = juryVote(await turn(j, `You are a juror. Start with "A" or "B" — which side is more convincing — then why in 1-2 sentences.`));
+            const v = juryVote(await turn(j, `You are a juror. Side A = @${seats.a}'s position, side B = @${seats.b}'s position. Your first character must be the side you vote for ("A" or "B"), then why in 1-2 sentences.`));
             if (v) votes[v]++;
           }
           closing = `You are the judge.${votes.A + votes.B ? ` Juror votes: A ${votes.A}, B ${votes.B}.` : ""} Give the verdict in up to 5 short lines: which side wins (A: @${seats.a} / B: @${seats.b}), the decisive reasons, and what to watch out for.`;
