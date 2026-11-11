@@ -804,7 +804,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
             const v = juryVote(await turn(j, `You are a juror. Start with "A" or "B" — which side is more convincing — then why in 1-2 sentences.`));
             if (v) votes[v]++;
           }
-          closing = `You are the judge. Juror votes: A ${votes.A}, B ${votes.B}. Give the verdict in up to 5 short lines: which side wins (A: @${seats.a} / B: @${seats.b}), the decisive reasons, and what to watch out for.`;
+          closing = `You are the judge.${votes.A + votes.B ? ` Juror votes: A ${votes.A}, B ${votes.B}.` : ""} Give the verdict in up to 5 short lines: which side wins (A: @${seats.a} / B: @${seats.b}), the decisive reasons, and what to watch out for.`;
         } else closing = council; // 한쪽 주장이 없으면 재판 대신 남은 발언으로 정리(리뷰)
       } else { // 회의식 — 각자 입장 → 반박·보완 → 진행자 결론
         for (const id of members) await turn(id, `State your position and main reason from your role in 2-3 sentences.`);

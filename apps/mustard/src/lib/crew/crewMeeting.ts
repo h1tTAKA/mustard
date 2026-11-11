@@ -41,7 +41,7 @@ export function courtSeats(members: string[]): { a: string; b: string; jurors: s
 
 // 배심 표 — 첫 글자(마크다운·따옴표 무시)가 A/B면 그 표, 아니면 무효("A안"은 A, "Actually"는 무효)
 export function juryVote(text: string | null): "A" | "B" | null {
-  const m = /^[\s*_"'`(\[]*([AB])(?![a-z])/i.exec(text ?? "");
+  const m = /^[\s*_"'`(\[]*([AB])(?![a-z])/.exec(text ?? "");
   return m ? (m[1].toUpperCase() as "A" | "B") : null;
 }
 
