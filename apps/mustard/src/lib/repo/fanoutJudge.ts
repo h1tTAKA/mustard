@@ -9,9 +9,9 @@ export const LETTERS = "ABCD";
 export const MODEL = /^[A-Za-z0-9][\w.:/@-]{0,79}$/;
 export const badModel = (v?: string) => !!v?.trim() && !MODEL.test(v.trim()); // 화면 칸 빨갛게(서버 거절과 같은 규칙)
 export const redIfBad = (cls: string, bad: boolean) => (bad ? cls.replace("border-zinc-200", "border-rose-400").replace("dark:border-white/10", "dark:border-rose-400/70") : cls);
-// `--model`을 받는다고 --help로 직접 확인한 에이전트만(claude·codex·opencode·cursor = 실행 파일 cursor-agent). 모르는 플래그를 붙이면 CLI가 바로 꺼짐
-// 한계: 목록 밖 에이전트(확인 못 한 것 포함)는 모델 칸이 안 뜸 — 설정의 추가 인자로 지정. 확인되면 여기 추가
-export const MODEL_FLAG_AGENTS = new Set(["claude", "codex", "opencode", "cursor"]);
+// `--model`을 받는 에이전트(--help로 확인: claude·codex·opencode·cursor(cursor-agent)·grok·hermes·antigravity(agy)·omp, 문서 기준: gemini·copilot·aider). 모르는 플래그를 붙이면 CLI가 바로 꺼짐
+// 한계: 목록 밖 에이전트는 모델 칸이 안 뜸 — 설정의 추가 인자로 지정. 확인되면 여기 추가
+export const MODEL_FLAG_AGENTS = new Set(["claude", "codex", "opencode", "cursor", "grok", "hermes", "antigravity", "omp", "gemini", "copilot", "aider"]);
 // 심사 모델 고르기(#1313) — 심사(claude-code·codex·opencode)마다 모델 이름. 없으면 그 AI 기본 모델. 의장·변론·판사는 Claude 칸을 따름
 export const JUDGE_PROVIDERS = ["claude-code", "codex", "opencode"] as const;
 export type JudgeModels = Partial<Record<(typeof JUDGE_PROVIDERS)[number], string>>;
