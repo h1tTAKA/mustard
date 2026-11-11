@@ -751,12 +751,11 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       ...(routing || routed ? [`Do NOT bring up cards, approvals or merges unless the human asks about them.`] : [`Only if the message is about the board or a card's progress: if a card waits for the human (spec/schema/merge approval, a question), say what they need to decide — they can reply to that card's message in this chat (a short "ok" approves).`]),
       `If intent is "debate", your reply only opens it in one sentence — the debate runs right after.`,
       mentioned.length && !routed && !everyone ? `If intent is "work", a card for ${mentioned.join(" → ")} starts right after your reply (say so briefly).` : `If intent is "work", your reply opens a short team meeting about it (say so briefly).`,
-      ...(routing ? ["", `Team:`, teamList(), "", `Who is the message for? "me" if it is about your card or role, a teammate's role id if it is clearly meant for that role, "all" if it is for the whole team.`] : []),
+      ...(routing ? ["", `Team:`, teamList(), "", `Who is the message for? "me" if it is about your card or role, a teammate's role id if it is clearly meant for that role, "all" ONLY if the human wants each teammate's own view (e.g. "what do the others think?", "everyone answer"). A request to sum up or pick the best is "me" — you answer it alone from the chat.`] : []),
       `Answer ONLY with JSON: {"intent":"question"|"work"|"instruction"|"debate","format"?:"council"|"court",${routing ? `"audience":"me"|"all"|"<role-id>",` : ""}"reply":"..."}`].join("\n"));
     const opener = readAnswer(op.text);
     // @ 없는 글 — 다른 역할에게 한 말이면 내 답은 버리고 그 역할이 답하게(대기열 맨 앞), 모두에게면 나머지도 이어서(유저: 회사처럼)
-    // 모두에게 던진 질문 = 진행자 한 명이 대화를 보고 정리해 답함(예전: 8명이 줄줄이 맞장구, 유저)
-    const to = routing && opener.audience === "all" && opener.intent === "question" ? MODERATOR : opener.audience;
+    const to = opener.audience;
     if (routing && to && to !== "me" && to !== "all" && to !== first.id && getRole(to)) {
       const active = readBoard(root).tasks.find((x) => activeFor(root, x.id)?.role === to);
       queue.set(root, [{ human, roleId: to, taskId: active?.id, mentioned: [to], routed: true }, ...(queue.get(root) ?? [])]);
