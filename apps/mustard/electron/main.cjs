@@ -1902,25 +1902,6 @@ async function pasteToAgent(id, text, stillAgent, enter = true) {
   if (enter) termClient.input({ id, data: "\r" });
   return { ok: true, id };
 }
-// #1174 겨루기 — 방금 에이전트를 띄운 그 탭(id)에 첫 프롬프트. 실행 기록 신원은 부팅 중에도 에이전트라고 답해서(agentForId),
-// 화면에 에이전트가 실제로 그려질 때까지(parseAgentScreen) 기다림 — 부팅 중에 붙이면 글이 사라짐. 맨 앞이 셸이면 안 보냄.
-// 한계: 화면으로 못 알아보는 에이전트면 60초 뒤 실패 → 화면이 프롬프트를 복사해 두고 직접 붙여 넣게 안내.
-ipcMain.handle("terminal:send-prompt", async (_e, { id, text, enter } = {}) => {
-  if (typeof id !== "string" || !id || typeof text !== "string" || !text.trim()) return { ok: false, reason: "bad-args" };
-  const ready = async () => {
-    const s = (await termClient.list()).find((x) => x.id === id);
-    return !!s && !!s.process && !isShellProc(s.process) && !!parseAgentScreen(liveBuffers.get(id) ?? s.screen, lastTitleRawById.get(id))?.agent;
-  };
-  for (let i = 0; i < 120; i++) {
-    if (await ready().catch(() => false)) {
-      await new Promise((r) => setTimeout(r, 800)); // 첫 화면이 그려진 직후엔 입력칸이 아직 안 받는 CLI가 있음
-      if (!(await ready().catch(() => false))) continue; // 기다린 사이 에이전트가 꺼졌으면 붙이지 않음(리뷰)
-      return pasteToAgent(id, text, async () => { const k = await sessionKind(id); return k === "agent" ? true : k === "shell" || k === "gone" ? k : false; }, enter !== false);
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  return { ok: false, reason: "not-ready" };
-});
 
 // #1194 빠른 명령(셸) — 그 터미널의 맨 앞 프로그램이 셸일 때만 입력(에이전트 화면·dev 서버 등에 명령이 새지 않게, 리뷰). 이 레포 터미널만.
 ipcMain.handle("terminal:shell-input", async (_e, { id, cwd, data } = {}) => {

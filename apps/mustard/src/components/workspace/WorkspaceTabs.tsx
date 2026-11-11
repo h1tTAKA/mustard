@@ -758,7 +758,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
         );
       })()}
       <WorkspaceAddMenu anchor={addMenu} onClose={closeAddMenu} onPick={onPick} />
-      {newWs && <NewWorkspaceDialog root={newWs.root} view={(() => { const x = tabs.find((y) => y.type === "repo" && y.path === newWs.root); return x?.type === "repo" ? x.wt : undefined; })()} initial={newWs.initial} onClose={() => setNewWs(null)} />}{/* #1174 view = 그 레포 탭이 지금 보여 주는 작업 폴더 — 겨루기 후보 탭은 그 터미널에 열림 */}
+      {newWs && <NewWorkspaceDialog root={newWs.root} initial={newWs.initial} onClose={() => setNewWs(null)} />}
       {wsSettings && <WorkspaceSettingsDialog root={wsSettings} onClose={() => setWsSettings(null)} />}
       {rmWs && <RemoveWorkspaceDialog root={rmWs.root} dir={rmWs.dir} onClose={() => setRmWs(null)} />}
     </div>
