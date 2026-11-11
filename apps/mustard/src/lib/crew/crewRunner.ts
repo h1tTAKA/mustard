@@ -353,7 +353,7 @@ async function wire() {
 }
 
 // 실행 지침에 붙일 최근 팀 대화(사람·역할 말만) — 크루끼리 서로 한 말을 보고 일하게(유저)
-const recentChat = (root: string) => readMsgs(root, 0, 400).filter((m) => ["human", "answer", "meeting", "handoff", "question", "decision"].includes(m.kind)).slice(-12)
+const recentChat = (root: string, skip?: string) => readMsgs(root, 0, 400).filter((m) => m.id !== skip && ["human", "answer", "meeting", "handoff", "question", "decision"].includes(m.kind)).slice(-12)
   .map((m) => `- ${m.from}${m.taskTitle ? ` [${clip(m.taskTitle, 40)}]` : ""}: ${clip(m.text, 300)}`);
 function buildPrompt(title: string, body: string, role: CrewRole, pipeline: string[], stage: number, note?: string, consult?: { from: string; question: string }, chat: string[] = []): string {
   // #1108 답하기 모드 — 동료 질문에 답만(코드 수정 금지), 답은 봉투 message에
@@ -729,8 +729,11 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
   const failed = new Set<string>();
   const askR = (r: CrewRole, prompt: string) => askOrFallback(root, r, prompt, human.id, failed);
   try {
-    const lang = LANG[narrationLocale()] ?? "English";
-    const facts = factsFor(root, human, taskId);
+    // 질문한 말로 답함(일본어로 물으면 일본어) — 판단이 안 서면 앱 언어(유저)
+    const lang = `the same language as the human's message (if unclear, ${LANG[narrationLocale()] ?? "English"})`;
+    // 카드 밖 대화도 보게 — 예전엔 카드 대화만 넣어 바로 위 논의를 모르고 엉뚱한 카드 얘기를 함(유저)
+    const chat = recentChat(root, human.id);
+    const facts = [...factsFor(root, human, taskId), ...(chat.length ? ["", `Recent team chat (oldest first — the human's message usually continues it):`, ...chat] : [])];
     const t = taskId ? readBoard(root).tasks.find((x) => x.id === taskId) : undefined;
     const card = t ? { taskId: t.id, taskTitle: t.title } : {};
     const request = clip(human.text, 2000);
@@ -752,12 +755,14 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       `Answer ONLY with JSON: {"intent":"question"|"work"|"instruction"|"debate","format"?:"council"|"court",${routing ? `"audience":"me"|"all"|"<role-id>",` : ""}"reply":"..."}`].join("\n"));
     const opener = readAnswer(op.text);
     // @ 없는 글 — 다른 역할에게 한 말이면 내 답은 버리고 그 역할이 답하게(대기열 맨 앞), 모두에게면 나머지도 이어서(유저: 회사처럼)
-    if (routing && opener.audience && opener.audience !== "me" && opener.audience !== "all" && opener.audience !== first.id && getRole(opener.audience)) {
-      const to = opener.audience, active = readBoard(root).tasks.find((x) => activeFor(root, x.id)?.role === to);
+    // 모두에게 던진 질문 = 진행자 한 명이 대화를 보고 정리해 답함(예전: 8명이 줄줄이 맞장구, 유저)
+    const to = routing && opener.audience === "all" && opener.intent === "question" ? MODERATOR : opener.audience;
+    if (routing && to && to !== "me" && to !== "all" && to !== first.id && getRole(to)) {
+      const active = readBoard(root).tasks.find((x) => activeFor(root, x.id)?.role === to);
       queue.set(root, [{ human, roleId: to, taskId: active?.id, mentioned: [to], routed: true }, ...(queue.get(root) ?? [])]);
       return;
     }
-    if (routing && opener.audience === "all") everyone = true;
+    if (routing && to === "all") everyone = true;
     say(root, { from: first.id, provider: op.provider, kind: opener.intent === "work" || opener.intent === "debate" ? "meeting" : "answer", text: opener.reply.slice(0, 2000), replyTo: human.id, ...card });
     const transcript = [`${first.id}: ${clip(opener.reply, 600)}`];
     if (opener.intent === "instruction") addGuideline(root, human.text.replace(/@[a-z0-9-]+/gi, "").trim()); // 이후 모든 실행에 붙음
