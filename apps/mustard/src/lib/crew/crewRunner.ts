@@ -586,12 +586,11 @@ export function postHuman(root: string, text: string, replyTo?: string, handoff 
       decideCard(root, waiting[0].id, "approve");
       return { msg: m, taskId: waiting[0].id };
     }
+    // 받는 역할만 최근 카드 담당 — 글은 카드에 안 붙이고 카드 메모에도 안 넣음(예전: 상관없는 잡담에 카드 칩이 달리고 작업 메모에 섞임, 유저). 카드 얘기는 그 카드 메시지에 답글로
     const who = pickListener(tasks, (id) => activeFor(root, id)?.role);
-    const card = who.taskId ? tasks.find((t) => t.id === who.taskId) : undefined;
-    const m = appendMsg(root, { from: "human", kind: "human", text: body, ...(replyTo ? { replyTo } : {}), ...(card ? { taskId: card.id, taskTitle: card.title } : {}) });
-    if (card && activeFor(root, card.id)) patchTask(root, card.id, { note: [card.note, body].filter(Boolean).join("\n\n") }); // 실행 중 — 다음 실행에도
-    void answerHuman(root, m, who.role, card?.id, callsEveryone(body)); // @all = 모든 역할(일 요청이면 전원 회의)
-    return { msg: m, ...(card ? { taskId: card.id } : {}) };
+    const m = appendMsg(root, { from: "human", kind: "human", text: body, ...(replyTo ? { replyTo } : {}) });
+    void answerHuman(root, m, who.role, undefined, callsEveryone(body)); // @all = 모든 역할(일 요청이면 전원 회의)
+    return { msg: m };
   }
   const msg = appendMsg(root, { from: "human", kind: "human", text: body, ...(mentions.length ? { mentions } : {}), ...(replyTo ? { replyTo } : {}), ...(task ? { taskId: task.id, taskTitle: task.title } : {}) });
   if (task) {
@@ -684,7 +683,7 @@ async function ask(role: CrewRole, prompt: string, deadline = Date.now() + ASK_M
 function factsFor(root: string, human: CrewMsg, taskId?: string): string[] {
   const tasks = readBoard(root).tasks;
   const t = taskId ? tasks.find((x) => x.id === taskId) : undefined;
-  if (!t) return ["No card is active. Board:", ...tasks.slice(-20).map((x) => `- [${x.status}] ${clip(x.title, 120)}`)];
+  if (!t) return ["This message is not tied to a card. Board:", ...tasks.slice(-20).map((x) => `- [${x.status}] ${clip(x.title, 120)}`)];
   const p = pipelineOf(t), run = activeFor(root, t.id);
   const last = [...readRuns(root)].reverse().find((r) => r.taskId === t.id);
   return [`Card: "${clip(t.title, 200)}" — column: ${t.status}${t.gate ? `, waiting for the human: ${t.gate.kind}${t.gate.text ? ` (${clip(t.gate.text, 300)})` : ""}` : ""}`,
@@ -748,7 +747,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       `- "question": status, explanation, opinion.`,
       `For "instruction", say concretely what you will do differently from now on — no long apology, no question back.`,
       `Reply as ${first.id} in 1-4 short sentences, in ${lang}. You cannot run tools here.${everyone ? " Other teammates will add their view after you." : ""}`,
-      `If a card waits for the human (spec/schema/merge approval, a question), say what they need to decide — they can reply to that card's message in this chat (a short "ok" approves).`,
+      `Only if the message is about the board or a card's progress: if a card waits for the human (spec/schema/merge approval, a question), say what they need to decide — they can reply to that card's message in this chat (a short "ok" approves).`,
       `If intent is "debate", your reply only opens it in one sentence — the debate runs right after.`,
       mentioned.length && !routed && !everyone ? `If intent is "work", a card for ${mentioned.join(" → ")} starts right after your reply (say so briefly).` : `If intent is "work", your reply opens a short team meeting about it (say so briefly).`,
       ...(routing ? ["", `Team:`, teamList(), "", `Who is the message for? "me" if it is about your card or role, a teammate's role id if it is clearly meant for that role, "all" if it is for the whole team.`] : []),
