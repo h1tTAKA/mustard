@@ -1,4 +1,4 @@
-// Draft PR 열기 — 작업 폴더의 브랜치를 origin에 push하고 gh pr create --draft. Crew 머지 관문(#1110)·겨루기 채택(#1174)이 같이 씀. 서버 전용.
+// Draft PR 열기 — 작업 폴더의 브랜치를 origin에 push하고 gh pr create --draft. Crew 머지 관문(#1110)이 씀. 서버 전용.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
