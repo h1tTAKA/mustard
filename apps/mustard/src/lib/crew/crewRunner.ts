@@ -734,8 +734,8 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     const chat = recentChat(root, human.id, taskId); // 카드 대화는 factsFor가 이미 넣음(중복 X, 리뷰)
     const facts = [...factsFor(root, human, taskId), ...(chat.length ? ["", `Recent team chat (oldest first — the human's message usually continues it):`, ...chat] : [])];
     const t = taskId ? readBoard(root).tasks.find((x) => x.id === taskId) : undefined;
-    // @ 없는 글은 받는 역할의 카드를 '참고'로만 — 답에 카드 칩을 달지 않음(상관없는 잡담에 칩, 유저)
-    const card = t && !routing && !routed ? { taskId: t.id, taskTitle: t.title } : {};
+    // 칩은 @역할로 부른 글만(그 역할의 실행 중 카드) — @ 없는 글·@all은 카드를 참고로만(상관없는 잡담에 칩, 유저)
+    const card = t && mentioned.length && !routed ? { taskId: t.id, taskTitle: t.title } : {};
     const request = clip(human.text, 2000);
     // ① 첫 답 + 질문/일 요청 판단
     const op = await askR(first, [`You are "${roleLabel(first.id)}" (${first.id}), an agent on a software team board in Mustard.`,
