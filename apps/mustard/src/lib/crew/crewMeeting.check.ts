@@ -50,4 +50,6 @@ assert.strictEqual(juryVote("B안이 낫다"), "B");
 assert.strictEqual(juryVote("Actually neither"), null, "단어 첫 글자는 표 아님");
 assert.strictEqual(juryVote(null), null, "실패한 배심");
 assert.strictEqual(juryVote("a bit risky, B is better"), null, "소문자 a는 표 아님");
+assert.strictEqual(juryVote("AI tools would help"), null, "대문자 단어 첫 글자도 표 아님");
+assert.strictEqual(juryVote("BEST option"), null);
 console.log("crewMeeting.check ok");
