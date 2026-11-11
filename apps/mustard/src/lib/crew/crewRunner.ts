@@ -22,7 +22,7 @@ import { defaultSnaModel } from "@mustard/nunopi/server";
 import { translate } from "@mustard/core/messages";
 import { addGuideline, appendMsg, findMsg, parseMentions, readGuidelines, readMsgs, type CrewMsg } from "./crewChat";
 import { snaClaudeProvider, snaCodexProvider, snaOpenCodeProvider } from "@mustard/nunopi/server";
-import { callsEveryone, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting";
+import { callsEveryone, courtSeats, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting";
 import { isFailedNote } from "@/lib/failText";
 import { freshIds, hasTriggers, readTriggers, scheduleDue, writeTriggers, type CrewTrigger } from "./crewTriggers";
 import { emitNarration } from "@/lib/mcpActivity";
@@ -723,7 +723,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
   }
   const first = getRole(everyone ? MODERATOR : roleId) ?? getRole(MODERATOR);
   if (!first) { say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.answerFailed", { role: roleId, why: tr("crewchat.why.other") }) }); answerNextIn(root); return; } // 대기열은 계속(리뷰)
-  let who = first, meeting = false;
+  let who = first, meeting = false, debating = false;
   const routing = !everyone && !mentioned.length; // 받는 사람 판단은 @ 없는 글만
   speaking(root, first.id);
   const failed = new Set<string>();
@@ -741,13 +741,15 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       `Decide the intent:`,
       `- "work": the human asks the team to build, change, fix or plan something NEW that needs its own board card.`,
       `- "instruction": a guideline, rule, correction, complaint or notice about HOW the team should work (no new card). It is saved as a team guideline every later run follows.`,
+      `- "debate": the human asks the team to discuss, debate or argue it out and reach a conclusion (no card). Add "format":"court" if it is a choice between two options (A or B), else "format":"council".`,
       `- "question": status, explanation, opinion.`,
       `For "instruction", say concretely what you will do differently from now on — no long apology, no question back.`,
       `Reply as ${first.id} in 1-4 short sentences, in ${lang}. You cannot run tools here.${everyone ? " Other teammates will add their view after you." : ""}`,
       `If a card waits for the human (spec/schema/merge approval, a question), say what they need to decide — they can reply to that card's message in this chat (a short "ok" approves).`,
+      `If intent is "debate", your reply only opens it in one sentence — the debate runs right after.`,
       mentioned.length ? `If intent is "work", a card for ${mentioned.join(" → ")} starts right after your reply (say so briefly).` : `If intent is "work", your reply opens a short team meeting about it (say so briefly).`,
       ...(routing ? ["", `Team:`, teamList(), "", `Who is the message for? "me" if it is about your card or role, a teammate's role id if it is clearly meant for that role, "all" if it is for the whole team.`] : []),
-      `Answer ONLY with JSON: {"intent":"question"|"work"|"instruction",${routing ? `"audience":"me"|"all"|"<role-id>",` : ""}"reply":"..."}`].join("\n"));
+      `Answer ONLY with JSON: {"intent":"question"|"work"|"instruction"|"debate","format"?:"council"|"court",${routing ? `"audience":"me"|"all"|"<role-id>",` : ""}"reply":"..."}`].join("\n"));
     const opener = readAnswer(op.text);
     // @ 없는 글 — 다른 역할에게 한 말이면 내 답은 버리고 그 역할이 답하게(대기열 맨 앞), 모두에게면 나머지도 이어서(유저: 회사처럼)
     if (routing && opener.audience && opener.audience !== "me" && opener.audience !== "all" && opener.audience !== first.id && getRole(opener.audience)) {
@@ -756,12 +758,54 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       return;
     }
     if (routing && opener.audience === "all") everyone = true;
-    say(root, { from: first.id, provider: op.provider, kind: opener.intent === "work" ? "meeting" : "answer", text: opener.reply.slice(0, 2000), replyTo: human.id, ...card });
+    say(root, { from: first.id, provider: op.provider, kind: opener.intent === "work" || opener.intent === "debate" ? "meeting" : "answer", text: opener.reply.slice(0, 2000), replyTo: human.id, ...card });
     const transcript = [`${first.id}: ${clip(opener.reply, 600)}`];
     if (opener.intent === "instruction") addGuideline(root, human.text.replace(/@[a-z0-9-]+/gi, "").trim()); // 이후 모든 실행에 붙음
     //  한계: 터미널 CLI 에이전트가 crew_chat(MCP)으로 준 지침도 저장됨 — 유저 요청(리드 에이전트가 지침 전달). 크루 자신은 crew_* 못 씀(작업 폴더에서 거부), 금지 규칙은 정책 훅이 강제
     if (opener.intent === "work" && mentioned.length && !everyone && !routed) { // @역할 작업 요청 — 회의 없이 그 역할(여럿이면 그 순서) 카드, Ready = 바로 시작
       createFor(root, human.text, mentioned);
+      return;
+    }
+    if (opener.intent === "debate") { // #1318 토론 — 카드 없이 대화방에서 끝까지
+      debating = true;
+      const mod = getRole(MODERATOR) ?? first;
+      // 참여자: @all 전원(상한 8) / @ 여러 역할 / 아니면 진행자가 2~5명
+      let members = everyone ? listRoles().map((r) => r.id).filter((id) => id !== mod.id).slice(0, 8) : mentioned.filter((id) => id !== mod.id && getRole(id));
+      if (!everyone && members.length < 2) {
+        who = mod; speaking(root, mod.id);
+        const kick = readJson((await askR(mod, [`You moderate a team debate on a software board. Topic from the human:`, `> ${request}`, "",
+          `Team:`, teamList(), "", `Pick 2-5 roles whose views differ most usefully (not you). Answer ONLY with JSON: {"participants":["role-id",...]}`].join("\n"))).text);
+        members = pickParticipants(kick?.participants, new Set(listRoles().map((r) => r.id)), mod.id);
+      }
+      const log = [`${first.id}: ${clip(opener.reply, 300)}`];
+      // 한 차례 — 실패한 역할은 건너뛰고 계속(회의와 같음)
+      const turn = async (id: string, task: string) => {
+        const r = getRole(id); if (!r) return;
+        who = r; speaking(root, r.id);
+        try {
+          const { text, provider } = await askR(r, [`You are "${roleLabel(r.id)}" (${r.id}) in a team debate. Topic from the human:`, `> ${request}`, "",
+            `Board facts:`, ...facts, "", `Debate so far:`, ...log, "", `${task} In ${lang}, plain text, no repeating others.`].join("\n"));
+          say(root, { from: r.id, provider, kind: "meeting", text: text.slice(0, 1500), replyTo: human.id, ...card });
+          log.push(`${r.id}: ${clip(text, 500)}`);
+        } catch (e) { say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.skipped", { role: roleLabel(r.id), why: String((e as Error)?.message ?? e) }) }); }
+      };
+      const seats = opener.format === "court" ? courtSeats(members) : null;
+      let closing: string;
+      if (seats) { // 재판식 — 양측 주장 → 서로 반박 → 배심 → 판결
+        await turn(seats.a, `You argue side A: the first option the human named (or "yes"). Make the strongest case in 2-3 sentences.`);
+        await turn(seats.b, `You argue side B: the second option the human named (or "no"). Make the strongest case in 2-3 sentences.`);
+        await turn(seats.a, `Rebut side B's argument (@${seats.b}) in 1-2 sentences.`);
+        await turn(seats.b, `Rebut side A's argument (@${seats.a}) in 1-2 sentences.`);
+        for (const j of seats.jurors) await turn(j, `You are a juror. Start with "A" or "B" — which side is more convincing — then why in 1-2 sentences.`);
+        closing = `You are the judge. Give the verdict in up to 5 short lines: which side wins (A: @${seats.a} / B: @${seats.b}), the decisive reasons, and what to watch out for.`;
+      } else { // 회의식 — 각자 입장 → 반박·보완 → 진행자 결론
+        for (const id of members) await turn(id, `State your position and main reason from your role in 2-3 sentences.`);
+        for (const id of members) await turn(id, `Now rebut or refine: where you disagree with a named teammate (@role-id) or what they missed, in 1-3 sentences. Change your mind if convinced.`);
+        closing = `You moderate. Conclude in up to 6 short lines: the main points of contention, each role's final position in a few words, and the conclusion with its reason.`;
+      }
+      who = mod; speaking(root, mod.id);
+      const end = await askR(mod, [`Team debate. Topic from the human:`, `> ${request}`, "", `Debate:`, ...log, "", `${closing} In ${lang}, plain text.`].join("\n"));
+      say(root, { from: mod.id, provider: end.provider, kind: "meeting", text: end.text.slice(0, 2000), replyTo: human.id, ...card });
       return;
     }
     meeting = opener.intent === "work";
@@ -817,7 +861,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     say(root, { from: mod.id, provider: wrapR.provider, kind: "meeting", text: summary.slice(0, 2000), replyTo: human.id, taskId: made.id, taskTitle: made.title, ...(plan.pipeline[0] ? { mentions: [plan.pipeline[0]] } : {}) });
   } catch (e) {
     // 회의 중에 끊기면 카드 없이 멈췄다고(리뷰: 발언만 남고 끝난 것처럼 보임) + 이유(로그인·한도·시간 초과, 유저)
-    say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx(meeting ? "crewchat.meetingStopped" : "crewchat.answerFailed", { role: roleLabel(who.id), why: String((e as Error)?.message ?? e).slice(0, 160) }) });
+    say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx(debating ? "crewchat.debateStopped" : meeting ? "crewchat.meetingStopped" : "crewchat.answerFailed", { role: roleLabel(who.id), why: String((e as Error)?.message ?? e).slice(0, 160) }) });
   } finally {
     speaking(root);
     answerNextIn(root);
