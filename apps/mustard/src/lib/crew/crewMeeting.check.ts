@@ -1,6 +1,6 @@
 // crewMeeting 점검 — node --experimental-strip-types src/lib/crew/crewMeeting.check.ts
 import assert from "node:assert";
-import { callsEveryone, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting.ts";
+import { callsEveryone, courtSeats, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting.ts";
 
 const known = new Set(["scope-planner", "screen-designer", "data-architect", "app-builder", "test-engineer", "bug-fixer", "release-checker", "doc-writer"]);
 
@@ -37,4 +37,12 @@ assert.strictEqual(readAnswer('{"intent":"instruction","reply":"앞으로 커밋
 assert.strictEqual(readAnswer('{"intent":"order","reply":"x"}').intent, "question");
 assert.strictEqual(readAnswer('{"intent":"question","audience":"@Test-Engineer","reply":"x"}').audience, "test-engineer", "받는 사람");
 assert.strictEqual(readAnswer('{"intent":"question","reply":"x"}').audience, undefined);
+// #1318 토론 — debate 의도·형식(모르면 회의식), 다른 의도엔 format 없음
+assert.deepStrictEqual(readAnswer('{"intent":"debate","format":"court","reply":"양측 들어 봅시다."}'), { intent: "debate", reply: "양측 들어 봅시다.", format: "court" });
+assert.strictEqual(readAnswer('{"intent":"debate","reply":"x"}').format, "council", "형식 없으면 회의식");
+assert.strictEqual(readAnswer('{"intent":"debate","format":"duel","reply":"x"}').format, "council", "모르는 형식도 회의식");
+assert.strictEqual(readAnswer('{"intent":"question","format":"court","reply":"x"}').format, undefined, "토론 아니면 형식 없음");
+assert.deepStrictEqual(courtSeats(["app-builder", "test-engineer", "bug-fixer", "doc-writer"]), { a: "app-builder", b: "test-engineer", jurors: ["bug-fixer", "doc-writer"] });
+assert.deepStrictEqual(courtSeats(["app-builder", "test-engineer"]), { a: "app-builder", b: "test-engineer", jurors: [] }, "배심 없으면 진행자만 판결");
+assert.strictEqual(courtSeats(["app-builder"]), null, "한 명이면 재판 안 됨");
 console.log("crewMeeting.check ok");
