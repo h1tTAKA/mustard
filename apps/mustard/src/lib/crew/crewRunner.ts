@@ -586,10 +586,10 @@ export function postHuman(root: string, text: string, replyTo?: string, handoff 
       decideCard(root, waiting[0].id, "approve");
       return { msg: m, taskId: waiting[0].id };
     }
-    // 받는 역할만 최근 카드 담당 — 글은 카드에 안 붙이고 카드 메모에도 안 넣음(예전: 상관없는 잡담에 카드 칩이 달리고 작업 메모에 섞임, 유저). 카드 얘기는 그 카드 메시지에 답글로
+    // 받는 역할 = 최근 카드 담당, 그 카드는 답의 참고로만 — 글·답에 카드를 붙이지 않고 카드 메모에도 안 넣음(예전: 상관없는 잡담에 카드 칩이 달리고 작업 메모에 섞임, 유저). 카드에 남길 말은 그 카드 메시지에 답글로
     const who = pickListener(tasks, (id) => activeFor(root, id)?.role);
     const m = appendMsg(root, { from: "human", kind: "human", text: body, ...(replyTo ? { replyTo } : {}) });
-    void answerHuman(root, m, who.role, undefined, callsEveryone(body)); // @all = 모든 역할(일 요청이면 전원 회의)
+    void answerHuman(root, m, who.role, who.taskId, callsEveryone(body)); // @all = 모든 역할(일 요청이면 전원 회의)
     return { msg: m };
   }
   const msg = appendMsg(root, { from: "human", kind: "human", text: body, ...(mentions.length ? { mentions } : {}), ...(replyTo ? { replyTo } : {}), ...(task ? { taskId: task.id, taskTitle: task.title } : {}) });
@@ -734,7 +734,8 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     const chat = recentChat(root, human.id, taskId); // 카드 대화는 factsFor가 이미 넣음(중복 X, 리뷰)
     const facts = [...factsFor(root, human, taskId), ...(chat.length ? ["", `Recent team chat (oldest first — the human's message usually continues it):`, ...chat] : [])];
     const t = taskId ? readBoard(root).tasks.find((x) => x.id === taskId) : undefined;
-    const card = t ? { taskId: t.id, taskTitle: t.title } : {};
+    // @ 없는 글은 받는 역할의 카드를 '참고'로만 — 답에 카드 칩을 달지 않음(상관없는 잡담에 칩, 유저)
+    const card = t && !routing && !routed ? { taskId: t.id, taskTitle: t.title } : {};
     const request = clip(human.text, 2000);
     // ① 첫 답 + 질문/일 요청 판단
     const op = await askR(first, [`You are "${roleLabel(first.id)}" (${first.id}), an agent on a software team board in Mustard.`,
