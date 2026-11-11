@@ -748,7 +748,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       `- "question": status, explanation, opinion.`,
       `For "instruction", say concretely what you will do differently from now on — no long apology, no question back.`,
       `Reply as ${first.id} in 1-4 short sentences, in ${lang}. You cannot run tools here.${everyone ? " Other teammates will add their view after you." : ""}`,
-      ...(routing ? [`Do NOT bring up cards, approvals or merges unless the human asks about them.`] : [`If a card waits for the human (spec/schema/merge approval, a question), say what they need to decide — they can reply to that card's message in this chat (a short "ok" approves).`]),
+      ...(routing || routed ? [`Do NOT bring up cards, approvals or merges unless the human asks about them.`] : [`Only if the message is about the board or a card's progress: if a card waits for the human (spec/schema/merge approval, a question), say what they need to decide — they can reply to that card's message in this chat (a short "ok" approves).`]),
       `If intent is "debate", your reply only opens it in one sentence — the debate runs right after.`,
       mentioned.length && !routed && !everyone ? `If intent is "work", a card for ${mentioned.join(" → ")} starts right after your reply (say so briefly).` : `If intent is "work", your reply opens a short team meeting about it (say so briefly).`,
       ...(routing ? ["", `Team:`, teamList(), "", `Who is the message for? "me" if it is about your card or role, a teammate's role id if it is clearly meant for that role, "all" if it is for the whole team.`] : []),
