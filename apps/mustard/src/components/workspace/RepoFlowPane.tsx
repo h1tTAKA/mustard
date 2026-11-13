@@ -125,6 +125,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const atRef = useRef<number | null>(null);                 // 지금 보이는 흐름의 저장 판(at) — 덧붙임이 같은 흐름에 붙는지 서버가 확인
   const [tourIdx, setTourIdx] = useState<number | null>(null); // 지금 단계(null = 둘러보기 안 하는 중)
   const [tourBusy, setTourBusy] = useState(false);           // 단계 설명 만드는 중
+  const scrollRef = useRef<HTMLDivElement | null>(null);    // 흐름 스크롤 영역(둘러보기 카드 위치 맞춤)
+  const stepBoxRef = useRef<HTMLDivElement | null>(null);   // 둘러보기 단계 박스(높이만큼 카드를 아래로)
   const busyN = useRef(0);                                   // 진행 중인 단계 만들기 수
   const [treeMiss, setTreeMiss] = useState(false);           // 지금 단계 파일이 왼쪽 트리에 없음(.gitignore 등)
   const [hovered, setHovered] = useState<string | null>(null); // 호버 카드 키(연결 강조)
@@ -397,7 +399,13 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     const k = nk(tourName);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 단계 이동 시 그 카드 포커스(기존 포커스 강조 재사용)
     setFocused(k);
-    nodeEls.current.get(k)?.scrollIntoView({ block: "center", behavior: "smooth" }); // 위 단계 박스에 가리지 않게 가운데로
+    // 카드를 단계 박스 바로 아래로 — 박스가 길어도 안 가리게(박스 높이는 그려진 뒤 잼, 리뷰 #1322).
+    requestAnimationFrame(() => {
+      const el = nodeEls.current.get(k), box = scrollRef.current;
+      if (!el || !box) return;
+      const boxH = stepBoxRef.current?.offsetHeight ?? 0;
+      box.scrollBy({ top: el.getBoundingClientRect().top - box.getBoundingClientRect().top - boxH - 16, behavior: "smooth" });
+    });
     const node = sections?.flatMap((s) => s.nodes).find((n) => nk(n.name) === k);
     // 왼쪽 파일 트리 펼침·강조(+설정 시 코드 열기). 트리에 없는 파일(숨김)이면 단계 박스에 알림.
     setTreeMiss(node?.file && onRevealFile ? !onRevealFile(node.file) : false);
@@ -569,7 +577,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
           </button>
         )}
       </div>
-      <div className="nunopi-scroll min-h-0 flex-1 overflow-auto p-4">
+      <div ref={scrollRef} className="nunopi-scroll min-h-0 flex-1 overflow-auto p-4">
         {!feature ? (
           <div className="flex h-full items-center justify-center text-center text-[12px] text-zinc-400 dark:text-zinc-500">{t("flow.pickFeature")}</div>
         ) : loading && !sections ? (
@@ -580,7 +588,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
           <div className="mx-auto flex w-full max-w-[30rem] flex-col gap-3">
             {/* #1322 둘러보기 단계 박스 — 지금 단계 이름·설명 + 이전/다음/끝. 카드는 포커스 빛으로 따라감. */}
             {tourIdx != null && tourSteps[tourIdx] && (
-              <div className="sticky top-0 z-30 rounded-lg border border-mustard-500/40 bg-white p-2.5 shadow-sm dark:border-mustard-400/40 dark:bg-[var(--s-bar)]">
+              <div ref={stepBoxRef} className="sticky top-0 z-30 rounded-lg border border-mustard-500/40 bg-white p-2.5 shadow-sm dark:border-mustard-400/40 dark:bg-[var(--s-bar)]">
                 <div className="flex items-center gap-1.5">
                   <span className="shrink-0 font-mono text-[10px] text-mustard-700 dark:text-mustard-400">{tourIdx + 1}/{tourSteps.length}</span>
                   <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-zinc-700 dark:text-zinc-100">{tourSteps[tourIdx].name}</span>
@@ -592,7 +600,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
                     className="shrink-0 rounded p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconX size={13} stroke={2} aria-hidden /></button>
                 </div>
                 {treeMiss && <p className="mt-1 text-[10.5px] text-zinc-400 dark:text-zinc-500">{t("flow.tourTreeMiss")}</p>}
-                <div className="nunopi-scroll mt-1 max-h-[45vh] overflow-auto text-[11.5px] leading-relaxed text-zinc-600 dark:text-zinc-300"><Markdown>{tourSteps[tourIdx].text}</Markdown></div>
+                <div className="nunopi-scroll mt-1 max-h-[30vh] overflow-auto text-[11.5px] leading-relaxed text-zinc-600 dark:text-zinc-300"><Markdown>{tourSteps[tourIdx].text}</Markdown></div>
               </div>
             )}
             {/* #1320 낡음 표시 — 저장 뒤 바뀐 파일 수 + 갱신, 또는 방금 갱신이 한 일. 기존 보조 문구 톤 한 줄(새 패널 없음). */}
