@@ -95,7 +95,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const [diff, setDiff] = useState<SnapDiff | null>(null); // #1320 저장 뒤 바뀐 파일(서버 저장분 기준)
   const [note, setNote] = useState<string | null>(null);    // #1320 방금 갱신이 한 일(AI 안 부름 / N개 파일 살펴봄)
   const overviewRef = useRef<string | null>(null);           // 최신 overview 미러(차분 갱신은 설명 유지)
-  const [loadFailed, setLoadFailed] = useState(false);       // 저장분 불러오기 실패 — 재생성으로 저장분을 덮어쓰지 않게 잠금(리뷰)
+  const [loadFailed, setLoadFailed] = useState(false);
+  const loadFailedRef = useRef(false); // load 안에서 보는 미러(확인창이 열린 채 실패해도 재생성이 못 지나가게)       // 저장분 불러오기 실패 — 재생성으로 저장분을 덮어쓰지 않게 잠금(리뷰)
   const secOfRef = useRef<string | null>(null);              // 지금 보이는 흐름이 어느 기능 것인지(전환 중 갱신이 엉뚱한 기능에 저장되지 않게, 리뷰)
   const [connKeys, setConnKeys] = useState<Set<string>>(new Set()); // 실측 연결 "fileA|fileB"(방향 보존, 조회는 양방향). #842 서브4
 
@@ -171,11 +172,11 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     // 자동(cache)일 때만 저장분 먼저 — 에이전트 재호출 없이 즉시 복원. 저장소=서버 파일(#1320, 옛 localStorage는 1회 이전).
     if (mode === "cache") {
       // 서버 왕복 동안은 이전 흐름을 그대로 두되(깜빡임 없음) 로딩 중이라 갱신·재생성 버튼은 잠김, 갱신은 secOfRef로 한 번 더 막음.
-      setLoading(true); setErr(null); setLoadFailed(false);
+      setLoading(true); setErr(null); setLoadFailed(false); loadFailedRef.current = false;
       const { data, error } = await archGet<{ sections: FlowSection[]; overview: string | null }>(root, "flow", feature);
       if (my !== reqRef.current) return;
       // 서버 오류면 새로 분석해 저장분을 덮어쓰지 않음(리뷰) — 오류만 보여 줌.
-      if (error) { setSections(null); setOverview(null); secOfRef.current = null; setErr(t("flow.loadFailed")); setLoadFailed(true); setLoading(false); return; }
+      if (error) { setSections(null); setOverview(null); secOfRef.current = null; setErr(t("flow.loadFailed")); setLoadFailed(true); loadFailedRef.current = true; setConfirm(null); setLoading(false); return; } // 열려 있던 재생성 확인창도 닫음(잠금 우회 방지, 리뷰)
       if (data?.sections?.length) {
         setSections(data.sections); setOverview(data.overview ?? null); secOfRef.current = feature; setLoading(false);
         // 낡음 표시용 차분은 따로(그래프 맞추느라 느릴 수 있음) — 흐름은 먼저 보여 줌(리뷰).
@@ -183,6 +184,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
         return;
       }
     }
+    if (mode === "regen" && loadFailedRef.current) return; // 저장분 불러오기 실패 상태 — 재생성으로 덮어쓰지 않음(리뷰)
     if (mode === "update" && (secOfRef.current !== feature || !sectionsRef.current)) return; // 다른 기능 흐름이 보이는 중엔 갱신 안 함(리뷰)
     setLoading(true); setRunning(mode === "update" ? "update" : "regen"); setErr(null); setNote(null);
     if (mode !== "update") { setSections(null); setOverview(null); secOfRef.current = null; } // 갱신은 기존 유지
