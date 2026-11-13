@@ -1,6 +1,6 @@
 // graphView.ts self-check(#1322) — 앱 미import. 실행: node --experimental-strip-types src/lib/repo/graphView.check.ts
 import assert from "node:assert";
-import { visibleKinds, searchNodes, neighbors, langStats } from "./graphView.ts";
+import { visibleKinds, searchNodes, neighbors, langStats, shortestPath } from "./graphView.ts";
 import type { RepoGraph } from "./types.ts";
 
 const g: RepoGraph = {
@@ -36,4 +36,10 @@ assert.deepEqual(na.contains.map((n) => n.id), ["a.ts#load"]);
 assert.deepEqual(neighbors(g, "a.ts#load").in.map((l) => `${l.node.id}:${l.relation}`), ["b.tsx#Loader:calls"]); // contains는 in에 안 들어감
 
 assert.deepEqual(langStats(g.nodes), [{ ext: "ts", count: 1 }, { ext: "tsx", count: 1 }]);
+// 경로 — 화살표 반대로도: b.tsx → a.ts(imports), a.ts → load(contains), Loader → load(calls)
+assert.deepEqual(shortestPath(g.edges, "b.tsx", "a.ts#load"), ["b.tsx", "a.ts", "a.ts#load"]);
+assert.deepEqual(shortestPath(g.edges, "b.tsx#Loader", "b.tsx"), ["b.tsx#Loader", "a.ts#load", "a.ts", "b.tsx"]);
+assert.deepEqual(shortestPath(g.edges, "a.ts", "a.ts"), ["a.ts"]);
+assert.equal(shortestPath(g.edges, "b.tsx#Loader", "b.tsx", new Set(["b.tsx#Loader", "b.tsx", "a.ts"])), null); // 보이는 노드만 지남 → 끊김
+assert.equal(shortestPath(g.edges, "a.ts", "nope"), null);
 console.log("graphView.check OK");

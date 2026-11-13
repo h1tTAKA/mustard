@@ -5,10 +5,10 @@
 // 레이아웃 엔진 d3-force(ISC). 팬/줌은 손수(의존성 최소).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, type Simulation, type SimulationNodeDatum } from "d3-force";
-import { IconX, IconLoader2, IconFocus2, IconSearch, IconCode, IconLayoutSidebarRight } from "@tabler/icons-react";
+import { IconX, IconLoader2, IconFocus2, IconSearch, IconCode, IconLayoutSidebarRight, IconRoute } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import type { RepoAssetRole, RepoGraph, RepoNode, RepoNodeKind } from "@/lib/repo/types";
-import { DEPTHS, visibleKinds, searchNodes, neighbors, langStats, type Link } from "@/lib/repo/graphView";
+import { DEPTHS, visibleKinds, searchNodes, neighbors, langStats, shortestPath, type Link } from "@/lib/repo/graphView";
 import { useViewDepth } from "@/lib/repo/viewDepth";
 
 type SimNode = SimulationNodeDatum & { id: string; label: string; file: string; kind: RepoNodeKind; role?: RepoAssetRole; community?: number };
@@ -46,6 +46,10 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);    // 누른 노드 id → 오른쪽 상세
   const [panelOpen, setPanelOpen] = useState(true);
+  // 경로 찾기 — pathPick: 지금 고르는 끝("from"=시작, "to"=끝, null=안 고르는 중). 둘 다 정해지면 최단 경로.
+  const [pathPick, setPathPick] = useState<null | "from" | "to">(null);
+  const [pathFrom, setPathFrom] = useState<string | null>(null);
+  const [pathTo, setPathTo] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -57,13 +61,13 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
   const rafRef = useRef(0);
   const hoverRef = useRef<SimNode | null>(null);
   // 그리기용 강조 상태 미러 — draw는 rAF에서 돌아 state를 직접 못 봄.
-  const hlRef = useRef<{ sel: string | null; match: Set<string>; picked: Set<number> }>({ sel: null, match: new Set(), picked: new Set() });
+  const hlRef = useRef<{ sel: string | null; match: Set<string>; picked: Set<number>; path: Set<string>; pathEdges: Set<string> }>({ sel: null, match: new Set(), picked: new Set(), path: new Set(), pathEdges: new Set() });
 
   // 1) 그래프 로드 — 서브2 캐시 라우트 재사용.
   useEffect(() => {
     let alive = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 로드 시작 초기화(비동기 fetch 준비)
-    setLoading(true); setErr(null); setSelected(null); setPicked(new Set()); setQuery("");
+    setLoading(true); setErr(null); setSelected(null); setPicked(new Set()); setQuery(""); setPathPick(null); setPathFrom(null); setPathTo(null);
     void (async () => {
       try {
         const r = await fetch("/api/repo/codegraph", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root }) });
@@ -87,12 +91,16 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
   const matches = useMemo(() => searchNodes(shown, query), [shown, query]);
   const communities = useMemo(() => [...(graph?.communities ?? [])].sort((a, b) => b.count - a.count).slice(0, MAX_CHIPS), [graph]);
   const langs = useMemo(() => langStats(graph?.nodes ?? []).slice(0, 6), [graph]);
+  // 지금 깊이에 보이는 노드만 지나는 최단 경로(그려지는 것과 맞게). 끝점이 안 보이면 null.
+  const path = useMemo(() => (graph && pathFrom && pathTo ? shortestPath(graph.edges, pathFrom, pathTo, new Set(shown.map((n) => n.id))) : null), [graph, shown, pathFrom, pathTo]);
   const detail = useMemo(() => (graph && selected ? neighbors(graph, selected) : null), [graph, selected]);
 
   useEffect(() => {
-    hlRef.current = { sel: selected, match: new Set(query.trim() ? matches.map((n) => n.id) : []), picked };
+    const pathEdges = new Set<string>();
+    if (path) for (let i = 1; i < path.length; i++) { pathEdges.add(`${path[i - 1]}|${path[i]}`); pathEdges.add(`${path[i]}|${path[i - 1]}`); }
+    hlRef.current = { sel: selected, match: new Set(query.trim() ? matches.map((n) => n.id) : []), picked, path: new Set(path ?? [pathFrom, pathTo].filter((x): x is string => !!x)), pathEdges };
     dirtyRef.current = true;
-  }, [selected, matches, picked, query]);
+  }, [selected, matches, picked, query, path, pathFrom, pathTo]);
 
   // 화면→그래프 좌표 역변환(줌/팬 역산). 히트테스트·드래그에.
   const toGraph = useCallback((sx: number, sy: number) => {
@@ -120,8 +128,9 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     const ctx = cv.getContext("2d");
     if (!ctx) return;
     const v = viewRef.current;
-    const { sel, match, picked: pk } = hlRef.current;
-    const dim = (n: SimNode) => pk.size > 0 && (n.community == null || !pk.has(n.community)); // 덩어리 거름 밖 → 흐리게(배치 유지)
+    const { sel, match, picked: pk, path: onPath, pathEdges } = hlRef.current;
+    // 흐리게(배치 유지): 경로가 있으면 경로 밖 전부, 아니면 덩어리 거름 밖.
+    const dim = (n: SimNode) => (pathEdges.size > 0 ? !onPath.has(n.id) : pk.size > 0 && (n.community == null || !pk.has(n.community)));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     ctx.translate(v.x, v.y); ctx.scale(v.k, v.k);
@@ -130,7 +139,7 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     for (const l of linksRef.current) {
       const s = l.source as SimNode, tg = l.target as SimNode;
       if (typeof s !== "object" || typeof tg !== "object") continue;
-      if (sel && (s.id === sel || tg.id === sel)) hot.push([s, tg]);
+      if (pathEdges.size ? pathEdges.has(`${s.id}|${tg.id}`) : sel && (s.id === sel || tg.id === sel)) hot.push([s, tg]);
       else if (dim(s) || dim(tg)) faint.push([s, tg]);
       else normal.push([s, tg]);
     }
@@ -142,15 +151,16 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     };
     stroke(faint, "rgba(120,120,135,0.07)", 0.6);
     stroke(normal, "rgba(120,120,135,0.28)", 0.6);
-    stroke(hot, HL, 1.4);
+    stroke(hot, HL, pathEdges.size ? 2.2 : 1.4);
     // 노드
     for (const n of nodesRef.current) {
       ctx.globalAlpha = dim(n) && n.id !== sel && !match.has(n.id) ? 0.15 : 1;
+      const ring = n.id === sel || match.has(n.id) || onPath.has(n.id);
       ctx.beginPath();
       ctx.arc(n.x ?? 0, n.y ?? 0, n.id === sel ? NODE_R * 1.6 : NODE_R, 0, Math.PI * 2);
       ctx.fillStyle = (n.role && ROLE_COLOR[n.role]) || (KIND_COLOR[n.kind] ?? "#9ca3af");
       ctx.fill();
-      if (n.id === sel || match.has(n.id)) { ctx.lineWidth = 1.5 / v.k; ctx.strokeStyle = HL; ctx.stroke(); }
+      if (ring) { ctx.lineWidth = 1.5 / v.k; ctx.strokeStyle = HL; ctx.stroke(); }
     }
     ctx.globalAlpha = 1;
     // 라벨 — 확대(k>1.6) 시, 또는 호버·선택·검색 결과만(클러터 방지)
@@ -158,7 +168,7 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     ctx.fillStyle = "rgba(228,228,235,0.92)";
     ctx.font = `${11 / v.k}px ui-monospace, monospace`;
     for (const n of nodesRef.current) {
-      if (!(v.k > 1.6 && !dim(n)) && n !== hov && n.id !== sel && !match.has(n.id)) continue;
+      if (!(v.k > 1.6 && !dim(n)) && n !== hov && n.id !== sel && !match.has(n.id) && !onPath.has(n.id)) continue;
       ctx.fillText(n.label, (n.x ?? 0) + NODE_R + 1.5 / v.k, (n.y ?? 0) + 3 / v.k);
     }
   }, []);
@@ -197,8 +207,17 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     return () => ro.disconnect();
   }, []);
 
-  // 노드 고르기 + 화면 가운데로(검색 결과·상세 목록에서 누를 때). 지금 깊이에 안 보이는 노드면 고르기만.
+  // 경로 끝 고르기 — 시작 → 끝 순. 끝까지 고르면 고르기 모드 끝.
+  const choosePathEnd = useCallback((id: string) => {
+    if (pathPick === "from") { setPathFrom(id); setPathTo(null); setPathPick("to"); }
+    else if (pathPick === "to") { setPathTo(id); setPathPick(null); }
+  }, [pathPick]);
+  const clearPath = () => { setPathPick(null); setPathFrom(null); setPathTo(null); };
+
+  // 노드 고르기 + 화면 가운데로(검색 결과·상세 목록에서 누를 때). 경로 고르는 중이면 경로 끝으로.
+  // 지금 깊이에 안 보이는 노드면 고르기만.
   const pick = useCallback((id: string) => {
+    if (pathPick) { choosePathEnd(id); setQuery(""); return; }
     setSelected(id);
     const n = nodesRef.current.find((x) => x.id === id), wrap = wrapRef.current;
     if (!n || !wrap) return;
@@ -206,7 +225,7 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     v.k = Math.max(v.k, 1.8);
     v.x = wrap.clientWidth / 2 - (n.x ?? 0) * v.k; v.y = wrap.clientHeight / 2 - (n.y ?? 0) * v.k;
     dirtyRef.current = true;
-  }, []);
+  }, [pathPick, choosePathEnd]);
 
   // ── 팬/줌/드래그(손수) ──
   const dragRef = useRef<{ id: number; node: SimNode | null; sx: number; sy: number; moved: boolean; panx: number; pany: number } | null>(null);
@@ -246,7 +265,9 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     if (!d) return;
     if (d.node) { d.node.fx = null; d.node.fy = null; }
     // #1322: 클릭(안 움직임) = 노드 고르기(오른쪽 상세), 빈 곳 클릭 = 고르기 해제. 코드 열기는 두 번 클릭·상세의 버튼.
-    if (!d.moved) setSelected(d.node ? d.node.id : null);
+    if (d.moved) return;
+    if (pathPick) { if (d.node) choosePathEnd(d.node.id); return; } // 경로 고르는 중 — 빈 곳 클릭은 무시
+    setSelected(d.node ? d.node.id : null);
   };
   const onDoubleClick = (e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -266,15 +287,16 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
   // 전체 보기(리셋).
   const reset = () => { viewRef.current = { x: 0, y: 0, k: 1 }; simRef.current?.alpha(0.4).restart(); dirtyRef.current = true; };
 
-  // ESC — 검색어 → 선택 → 닫기 순으로 하나씩 비움.
+  // ESC — 검색어 → 경로 → 선택 → 닫기 순으로 하나씩 비움.
+  const pathActive = !!(pathPick || pathFrom);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (query) setQuery(""); else if (selected) setSelected(null); else onClose();
+      if (query) setQuery(""); else if (pathActive) { setPathPick(null); setPathFrom(null); setPathTo(null); } else if (selected) setSelected(null); else onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, query, selected]);
+  }, [onClose, query, selected, pathActive]);
 
   const togglePick = (id: number) => setPicked((prev) => { const s = new Set(prev); if (s.has(id)) s.delete(id); else s.add(id); return s; });
   const nodeCount = graph?.nodes.length ?? 0;
@@ -329,8 +351,9 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
               </div>
             )}
           </div>
-          {/* 검색 — 이름·파일·시그니처. 결과 누르면 그 노드로 이동·선택 */}
-          <div className="relative">
+          {/* 검색 — 이름·파일·시그니처. 결과 누르면 그 노드로 이동·선택(경로 고르는 중이면 경로 끝으로) */}
+          <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
             <IconSearch size={13} stroke={2} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-zinc-400" aria-hidden />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("graph.search")} aria-label={t("graph.search")}
               className="w-full rounded-md border border-zinc-200 bg-white py-1 pl-7 pr-2 text-[12px] text-zinc-700 outline-none focus:border-mustard-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:focus:border-mustard-400" />
@@ -339,6 +362,12 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
                 {matches.length ? matches.map((n) => nodeRow(n, n.file)) : <p className="px-1.5 py-1 text-[11px] text-zinc-400">{t("graph.noMatch")}</p>}
               </div>
             )}
+          </div>
+            {/* 경로 찾기 — 누르면 시작·끝 노드 고르기(캔버스 클릭 또는 검색), 켜진 상태에서 다시 누르면 지움 */}
+            <button type="button" onClick={() => (pathActive ? clearPath() : (setPathPick("from"), setPanelOpen(true)))} aria-pressed={pathActive} title={t("graph.pathTitle")}
+              className={`flex items-center gap-1 ${chip(pathActive)}`}>
+              <IconRoute size={13} stroke={2} aria-hidden />{t("graph.path")}
+            </button>
           </div>
         </div>
       )}
@@ -371,7 +400,25 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
         {/* 오른쪽 패널 — 고른 노드 없으면 요약, 있으면 상세 */}
         {panelOpen && graph && (
           <aside className="nunopi-scroll flex w-72 shrink-0 flex-col gap-3 overflow-auto border-l border-zinc-200 p-3 dark:border-zinc-800">
-            {!sel ? (
+            {pathActive ? (
+              <div className="flex flex-col gap-1.5">
+                <p className="text-[12px] font-semibold text-zinc-700 dark:text-zinc-200">{t("graph.path")}</p>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  {byId.get(pathFrom ?? "")?.label ?? "…"} → {byId.get(pathTo ?? "")?.label ?? "…"}
+                </p>
+                {pathPick ? (
+                  <p className="text-[11px] text-mustard-700 dark:text-mustard-400">{t(pathPick === "from" ? "graph.pathPickFrom" : "graph.pathPickTo")}</p>
+                ) : path ? (
+                  <div className="flex flex-col gap-0.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">{t("graph.pathSteps", { n: path.length - 1 })}</p>
+                    {path.map((id, i) => { const n = byId.get(id); return n ? nodeRow(n, String(i + 1)) : null; })}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{t("graph.pathNone")}</p>
+                )}
+                <button type="button" onClick={clearPath} className="self-start text-[11px] font-medium text-mustard-700 hover:underline dark:text-mustard-400">{t("graph.pathClear")}</button>
+              </div>
+            ) : !sel ? (
               <>
                 <p className="truncate text-[13px] font-semibold text-zinc-700 dark:text-zinc-200">{root.split("/").filter(Boolean).pop()}</p>
                 <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">{t("graph.counts", { files: graph.stats.files, symbols: symbolCount, edges: graph.edges.length, clusters: graph.communities?.length ?? 0 })}</p>

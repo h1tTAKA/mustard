@@ -1,5 +1,5 @@
 // 코드 그래프 탐색 화면(#1322) 순수 계산 — 보기 깊이·검색·이웃·언어 집계. fs·React 없음(점검 쉬움).
-import type { RepoGraph, RepoNode, RepoNodeKind, RepoRelation } from "./types";
+import type { RepoEdge, RepoGraph, RepoNode, RepoNodeKind, RepoRelation } from "./types";
 
 // 보기 깊이 — 초보=파일만, 개발자=+클래스·컴포넌트, 숙련자=전부(함수·타입까지). 흐름 설명글 깊이와 같은 값.
 export type ViewDepth = "beginner" | "dev" | "expert";
@@ -53,4 +53,31 @@ export function langStats(nodes: RepoNode[]): { ext: string; count: number }[] {
     if (ext) m.set(ext, (m.get(ext) ?? 0) + 1);
   }
   return [...m].map(([ext, count]) => ({ ext, count })).sort((a, b) => b.count - a.count);
+}
+
+// 경로 찾기(#1322) — a에서 b까지 최단 연결(BFS). 화살표 반대 방향도 따라감("누가 누구를 부르나"를 양쪽으로 잇기).
+// allowed가 있으면 그 노드만 지남(지금 보기 깊이에 보이는 노드). 없으면 null. 한계: 최단 1개만.
+export function shortestPath(edges: RepoEdge[], a: string, b: string, allowed?: Set<string>): string[] | null {
+  if (a === b) return [a];
+  const adj = new Map<string, string[]>();
+  const add = (x: string, y: string) => { const l = adj.get(x); if (l) l.push(y); else adj.set(x, [y]); };
+  for (const e of edges) {
+    if (allowed && (!allowed.has(e.source) || !allowed.has(e.target))) continue;
+    add(e.source, e.target); add(e.target, e.source);
+  }
+  const prev = new Map<string, string>([[a, a]]);
+  const queue = [a];
+  for (let i = 0; i < queue.length; i++) {
+    for (const nx of adj.get(queue[i]) ?? []) {
+      if (prev.has(nx)) continue;
+      prev.set(nx, queue[i]);
+      if (nx === b) {
+        const path = [b];
+        while (path[0] !== a) path.unshift(prev.get(path[0])!);
+        return path;
+      }
+      queue.push(nx);
+    }
+  }
+  return null;
 }
