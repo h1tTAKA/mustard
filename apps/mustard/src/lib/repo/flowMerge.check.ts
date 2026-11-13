@@ -1,6 +1,6 @@
 // flowMerge.ts self-check(#1320) — 앱 미import. 실행: node --experimental-strip-types src/lib/repo/flowMerge.check.ts
 import assert from "node:assert";
-import { applyFlowDiff, mergeFlow } from "./flowMerge.ts";
+import { applyFlowDiff, mergeFlow, tourOrder } from "./flowMerge.ts";
 
 const flow = [
   { layer: "진입", nodes: [{ name: "Page", file: "a.tsx", next: ["Api"] }, { name: "Old", file: "gone.ts", next: ["Api"] }] },
@@ -29,4 +29,10 @@ assert.ok(!r4.some((s) => s.layer === "x"));
 // 옛 mergeFlow — 이름 중복 제외.
 assert.strictEqual(mergeFlow(flow, [{ layer: "진입", nodes: [{ name: "page" }] }])[0].nodes.length, 2);
 
+// 둘러보기 — 레이어 순, 레이어 안은 next 따라(C → A), 순환(X↔Y)은 원래 순서, 중복 이름 한 번
+assert.deepEqual(tourOrder([
+  { layer: "진입", nodes: [{ name: "A" }, { name: "C", next: ["a"] }] },
+  { layer: "처리", nodes: [{ name: "X", next: ["Y"] }, { name: "Y", next: ["X"] }, { name: "c" }] },
+]), ["C", "A", "X", "Y"]);
+assert.deepEqual(tourOrder([]), []);
 console.log("flowMerge.check OK");

@@ -2,15 +2,21 @@
 // POST {op:"get", path, kind:"cats"|"flow", feature?, diff?} → { data, diff }  (diff:true일 때만 저장 뒤 바뀐 파일 계산 — 그래프 맞추느라 느릴 수 있음)
 // POST {op:"put", path, kind, feature?, data, legacy?}    → 지금 파일 스냅샷과 함께 저장(legacy=옛 브라우저 저장분 이전 → 스냅샷 없이)
 // POST {op:"skeleton", path, data: files[]}              → 파일별 심볼 뼈대 텍스트(차분 갱신 프롬프트용)
+// POST {op:"patch", path, kind:"flow", feature, data:{overviews?, tour?}, at?} → 흐름 덧붙임만 합침(스냅샷·노드 그대로, #1322)
+// POST {op:"node", path, id, file, line?}        → 그래프 노드 설명: 저장분(파일 해시 같을 때) {text} 또는 새로 쓸 재료 {hash, snippet}(#1322)
+// POST {op:"node-put", path, id, hash, text}      → 노드 설명 저장
+// POST {op:"snippets", path, data:[{file,line?}]}  → 실제 코드 발췌 텍스트(흐름 설명·둘러보기 근거, #1322)
+//   put에 keepExtras:true면 저장돼 있던 덧붙임을 서버에서 그대로 이어 붙임(구조 변화 없는 갱신), 아니면 버림(흐름이 바뀐 저장).
 // POST {op:"begin", path}                               → {token} 분석 시작 시점 스냅샷 표(put에 token으로 넘기면 그 스냅샷으로 저장)
 //   get에 diff:true·token:true면 같은 표도 같이 줌(갱신만 요청 — 낡음 표시용 조회는 표를 안 만들어 보관함을 안 밀어냄)
 import { existsSync, statSync } from "node:fs";
+import { fileHash } from "@/lib/repo/incremental";
 import { crossSite } from "@/lib/crew/crewPolicy";
-import { readArch, writeArch, currentSnap, diffFrom, fileSkeletons, getFlow, setFlow, beginSnap, takeSnap, type ArchCategory, type ArchSection } from "@/lib/repo/archStore";
+import { readArch, writeArch, currentSnap, diffFrom, fileSkeletons, getFlow, setFlow, beginSnap, takeSnap, cleanExtras, getNodeNote, setNodeNote, codeSnippet, codeSnippets, neighborSkeletons, type ArchCategory, type ArchSection } from "@/lib/repo/archStore";
 
 export async function POST(request: Request): Promise<Response> {
   if (crossSite(request)) return Response.json({ error: "cross-site" }, { status: 403 }); // 다른 사이트가 몰래 저장·스캔 못 하게(리뷰)
-  let b: { op?: unknown; path?: unknown; kind?: unknown; feature?: unknown; data?: unknown; diff?: unknown; legacy?: unknown; token?: unknown; wantToken?: unknown };
+  let b: { op?: unknown; path?: unknown; kind?: unknown; feature?: unknown; data?: unknown; diff?: unknown; legacy?: unknown; token?: unknown; wantToken?: unknown; keepExtras?: unknown; id?: unknown; file?: unknown; line?: unknown; hash?: unknown; text?: unknown; extra?: unknown };
   try { b = await request.json(); } catch { return Response.json({ error: "invalid body" }, { status: 400 }); }
   if (!b || typeof b !== "object") return Response.json({ error: "invalid body" }, { status: 400 });
   const { op, path, kind, feature } = b;
@@ -22,6 +28,34 @@ export async function POST(request: Request): Promise<Response> {
       const files = Array.isArray(b.data) ? (b.data as unknown[]).filter((x): x is string => typeof x === "string") : [];
       return Response.json({ text: await fileSkeletons(path, files) });
     }
+    if (op === "node" || op === "node-put") {
+      if (typeof b.id !== "string" || !b.id) return Response.json({ error: "id required" }, { status: 400 });
+      if (op === "node-put") {
+        if (typeof b.hash !== "string" || typeof b.text !== "string" || !b.text.trim()) return Response.json({ error: "hash, text required" }, { status: 400 });
+        const f = readArch(path);
+        setNodeNote(f, b.id, { hash: b.hash, text: b.text.slice(0, 4000) });
+        writeArch(path, f);
+        return Response.json({ ok: true });
+      }
+      if (typeof b.file !== "string" || !b.file) return Response.json({ error: "file required" }, { status: 400 });
+      const snip = codeSnippet(path, b.file, typeof b.line === "number" ? b.line : undefined, b.line ? 80 : 150); // 레포 밖·없는 파일은 null
+      if (!snip) return Response.json({ error: "cannot read file" }, { status: 400 });
+      const skel = await neighborSkeletons(path, [b.file], 15); // 이 노드가 쓰는·이 노드를 쓰는 파일의 함수 목록(추측 대신 근거)
+      // 파일 내용 + 연결 목록 + 이웃 뼈대가 다 같아야 저장분을 씀(리뷰: 이웃 파일 함수가 바뀌면 다시 씀)
+      const hash = fileHash(`${snip.hash}\n${typeof b.extra === "string" ? b.extra : ""}\n${skel}`);
+      const saved = getNodeNote(readArch(path), b.id);
+      if (saved && saved.hash === hash) return Response.json({ text: saved.text });
+      return Response.json({ hash, snippet: `${snip.text.slice(0, 12000)}${skel ? `\n\n[연결된 파일 뼈대 — 함수·클래스 목록]\n${skel.slice(0, 6000)}` : ""}` });
+    }
+    if (op === "snippets") { // 흐름 노드 파일들의 실제 코드 발췌(#1322 설명·둘러보기 근거)
+      // data = [{file,line?}] 또는 {items, whole?, span?, maxChars?, neighbors?} — whole=파일 앞에서 통째(span줄까지), neighbors=한 칸 이웃 파일 뼈대도.
+      const o = (Array.isArray(b.data) ? { items: b.data } : (b.data ?? {})) as { items?: unknown; whole?: unknown; span?: unknown; maxChars?: unknown; neighbors?: unknown };
+      const items = Array.isArray(o.items) ? (o.items as { file?: unknown; line?: unknown }[]).filter((x) => typeof x?.file === "string").map((x) => ({ file: x.file as string, line: o.whole === true ? undefined : typeof x.line === "number" ? x.line : undefined })) : [];
+      const num = (v: unknown, d: number, max: number) => (typeof v === "number" && v > 0 ? Math.min(v, max) : d);
+      const code = codeSnippets(path, items.slice(0, 60), num(o.span, 60, 400), num(o.maxChars, 40000, 120000));
+      const skel = o.neighbors === true ? await neighborSkeletons(path, items.map((x) => x.file)) : "";
+      return Response.json({ text: skel ? `${code}\n\n[연결된 파일 뼈대 — 함수·클래스 목록(줄: 종류 이름 시그니처)]\n${skel}` : code });
+    }
     if (op === "begin") return Response.json({ token: beginSnap(await currentSnap(path)) });
     if (kind !== "cats" && kind !== "flow") return Response.json({ error: "kind must be cats|flow" }, { status: 400 });
     if (kind === "flow" && (typeof feature !== "string" || !feature.trim())) return Response.json({ error: "feature required" }, { status: 400 });
@@ -31,25 +65,42 @@ export async function POST(request: Request): Promise<Response> {
       const f = readArch(path);
       const saved = kind === "cats" ? f.cats : getFlow(f, name);
       if (!saved) return Response.json({ data: null, diff: null });
-      const data = kind === "cats" ? f.cats!.items : { sections: getFlow(f, name)!.sections, overview: getFlow(f, name)!.overview };
+      const fl = getFlow(f, name);
+      const data = kind === "cats" ? f.cats!.items : { sections: fl!.sections, overview: fl!.overview, baseDepth: fl!.baseDepth, at: fl!.at, ...cleanExtras(fl) }; // 읽을 때도 모양 검사(옛·손상 파일, 리뷰)
       if (b.diff !== true) return Response.json({ data, diff: null });
       const cur = await currentSnap(path);
       return Response.json({ data, diff: diffFrom(saved, cur), ...(b.wantToken === true ? { token: beginSnap(cur) } : {}) });
+    }
+    if (op === "patch") {
+      if (kind !== "flow") return Response.json({ error: "patch is flow only" }, { status: 400 });
+      const x = cleanExtras(b.data);
+      const f = readArch(path);
+      const fl = getFlow(f, name);
+      if (!fl) return Response.json({ error: "no flow" }, { status: 404 });
+      // 흐름 판(at)이 다르면 그사이 재생성·갱신으로 노드가 바뀐 것 → 옛 흐름 기준 설명·단계를 붙이지 않음(리뷰)
+      if (typeof (b as { at?: unknown }).at === "number" && (b as { at?: unknown }).at !== fl.at) return Response.json({ stale: true }, { status: 409 });
+      if (x.overviews) fl.overviews = { ...cleanExtras(fl).overviews, ...x.overviews };
+      if (x.tour) fl.tour = x.tour;
+      writeArch(path, f);
+      return Response.json({ ok: true });
     }
     if (op === "put") {
       // 스냅샷(그래프 맞추기, await)을 먼저 — 읽고-고치고-쓰기 사이에 await가 없어야 동시 저장끼리 서로 안 지움(리뷰).
       const snap = b.legacy === true ? undefined : (takeSnap(b.token) ?? await currentSnap(path));
       const at = Date.now();
       if (kind === "cats" && !Array.isArray(b.data)) return Response.json({ error: "data must be an array" }, { status: 400 });
-      const d = b.data as { sections?: unknown; overview?: unknown } | null;
+      const d = b.data as { sections?: unknown; overview?: unknown; baseDepth?: unknown } | null;
       if (kind === "flow" && (!d || !Array.isArray(d.sections))) return Response.json({ error: "data.sections must be an array" }, { status: 400 });
       const f = readArch(path);
       if (kind === "cats") f.cats = { items: b.data as ArchCategory[], snap, at };
-      else setFlow(f, name, { sections: d!.sections as ArchSection[], overview: typeof d!.overview === "string" ? d!.overview : null, snap, at });
+      // 덧붙임은 클라가 보낸 게 아니라 지금 파일에 있는 걸 이어 붙임 — 설명 쓰기(patch)와 갱신이 겹쳐도 새 설명이 안 지워지게(리뷰).
+      else setFlow(f, name, { sections: d!.sections as ArchSection[], overview: typeof d!.overview === "string" ? d!.overview : null, snap, at,
+        ...(["beginner", "dev", "expert"].includes(d!.baseDepth as string) ? { baseDepth: d!.baseDepth as string } : {}),
+        ...(b.keepExtras === true ? cleanExtras(getFlow(f, name)) : {}) });
       writeArch(path, f);
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, at });
     }
-    return Response.json({ error: "op must be get|put|skeleton" }, { status: 400 });
+    return Response.json({ error: "op must be get|put|patch|node|node-put|snippets|skeleton|begin" }, { status: 400 });
   } catch (e) {
     return Response.json({ error: String((e as Error)?.message || e) }, { status: 500 });
   }

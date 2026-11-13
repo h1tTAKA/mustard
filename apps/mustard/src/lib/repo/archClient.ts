@@ -9,8 +9,38 @@ const legacyKey = (root: string, kind: Kind, feature?: string) =>
   kind === "cats" ? `nunopi:ws:${root}:analyze-cats` : `nunopi:ws:${root}:flow:${encodeURIComponent(feature ?? "")}`;
 
 // token = 분석 시작 시점 스냅샷 표(archBegin 또는 diff 조회가 준 것). 없으면 저장 시점 스냅샷.
-export async function archPut(root: string, kind: Kind, data: unknown, feature?: string, opts: { legacy?: boolean; token?: string } = {}): Promise<boolean> {
-  try { return (await post({ op: "put", path: root, kind, feature, data, legacy: opts.legacy, token: opts.token })).ok; } catch { return false; }
+// keepExtras = 저장돼 있던 깊이별 설명·둘러보기를 서버에서 이어 붙임(#1322, 구조 변화 없는 갱신).
+// 성공하면 저장한 흐름 판(at, 0 아님), 실패면 null — patch가 "같은 흐름에 붙이는지" 확인할 때 씀(#1322).
+export async function archPut(root: string, kind: Kind, data: unknown, feature?: string, opts: { legacy?: boolean; token?: string; keepExtras?: boolean } = {}): Promise<number | null> {
+  try {
+    const r = await post({ op: "put", path: root, kind, feature, data, legacy: opts.legacy, token: opts.token, keepExtras: opts.keepExtras });
+    if (!r.ok) return null;
+    const d = await r.json().catch(() => null);
+    return typeof d?.at === "number" ? d.at : null;
+  } catch { return null; }
+}
+
+// 흐름 덧붙임(깊이별 설명·둘러보기)만 저장 — 스냅샷·노드는 그대로(#1322).
+// at = 설명·단계를 만들 때 본 흐름 판. 그사이 흐름이 바뀌었으면 "stale"(조용히 버림).
+export async function archPatch(root: string, feature: string, data: object, at: number | null): Promise<"ok" | "stale" | "fail"> {
+  try {
+    const r = await post({ op: "patch", path: root, kind: "flow", feature, data, ...(at ? { at } : {}) });
+    return r.ok ? "ok" : r.status === 409 ? "stale" : "fail";
+  } catch { return "fail"; }
+}
+
+// 그래프 노드 설명(#1322) — 저장분이 지금 파일과 맞으면 {text}, 아니면 새로 쓸 재료 {hash, snippet}. 실패 null.
+// extra = 설명에 같이 쓴 재료(연결 목록) — 이것까지 같아야 저장분을 씀.
+export async function archNode(root: string, id: string, file: string, line?: number, extra = ""): Promise<{ text?: string; hash?: string; snippet?: string } | null> {
+  try { const r = await post({ op: "node", path: root, id, file, line, extra }); return r.ok ? await r.json() : null; } catch { return null; }
+}
+// 흐름 노드 파일들의 실제 코드 발췌(설명·둘러보기 근거). 실패면 빈 문자열.
+// opts: whole=파일 앞에서 통째(span줄까지), maxChars=전체 상한, neighbors=한 칸 이웃 파일 뼈대도 붙임.
+export async function archSnippets(root: string, items: { file: string; line?: number }[], opts: { whole?: boolean; span?: number; maxChars?: number; neighbors?: boolean } = {}): Promise<string> {
+  try { const d = await (await post({ op: "snippets", path: root, data: { items, ...opts } })).json(); return typeof d?.text === "string" ? d.text : ""; } catch { return ""; }
+}
+export async function archNodePut(root: string, id: string, hash: string, text: string): Promise<boolean> {
+  try { return (await post({ op: "node-put", path: root, id, hash, text })).ok; } catch { return false; }
 }
 
 // 분석 시작 — 지금 스냅샷을 서버가 잡아 두고 표를 줌(실패하면 undefined → 저장 시점 스냅샷).
@@ -33,8 +63,8 @@ export async function archGet<T>(root: string, kind: Kind, feature?: string, dif
   if (kind === "flow" && Array.isArray(old)) old = { sections: old, overview: null };
   const ok = kind === "cats" ? Array.isArray(old) && old.length > 0 : Array.isArray((old as { sections?: unknown } | null)?.sections);
   if (!ok) return { data: null, diff: null };
-  await archPut(root, kind, old, feature, { legacy: true });
-  return { data: old as T, diff: null };
+  const at = await archPut(root, kind, old, feature, { legacy: true });
+  return { data: (kind === "flow" && at ? { ...(old as object), at } : old) as T, diff: null }; // 옮긴 흐름도 판(at)을 알게(리뷰)
 }
 
 // 차분 갱신 프롬프트용 파일 심볼 뼈대. 실패면 빈 문자열(파일 이름만으로 진행).

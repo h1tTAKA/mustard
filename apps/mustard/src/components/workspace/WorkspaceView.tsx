@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { IconRefresh, IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld, IconLayoutKanban, IconMessageChatbot } from "@tabler/icons-react";
 import { isNunopiEnabled } from "@/lib/product";
 import { NunopiGlyph } from "@/components/brand/ModeSwapToggle";
-import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, GKEYS, withModel, BROWSER_KEYS, BROWSER_DEFAULTS, EKEYS, EDITOR_DEFAULTS } from "@mustard/core";
+import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, GKEYS, ARCHKEYS, withModel, BROWSER_KEYS, BROWSER_DEFAULTS, EKEYS, EDITOR_DEFAULTS } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
 import FileTree from "@/components/workspace/FileTree";
 import { POLL_MS, pollPlan, sameFiles, sameStatus, treeDue } from "@/lib/repoRefresh";
@@ -109,6 +109,11 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const chatCards = useSetting<boolean>(CUKEYS.chatCards, CATCHUP_DEFAULTS.chatCards);
   const chatPid = (chatProvider || providerId) as AgentProviderKind;
   const chatPs = useMemo(() => withModel(providerSettings, chatPid, chatModel), [providerSettings, chatPid, chatModel]);
+  // #1322 아키텍처 분석 AI·모델(설정 > 아키텍처). "" = 워크스페이스 기본 AI / 그 AI 기본 모델
+  const archProvider = useSetting<string>(ARCHKEYS.provider, "");
+  const archModel = useSetting<string>(ARCHKEYS.model, "");
+  const archPid = (archProvider || providerId) as AgentProviderKind;
+  const archPs = useMemo(() => withModel(providerSettings, archPid, archModel), [providerSettings, archPid, archModel]);
   // #1127 PR 에이전트 리뷰 AI·모델(설정 > 연동 > GitHub)
   const prReviewProvider = useSetting<string>(GKEYS.prReviewProvider, "");
   const prReviewModel = useSetting<string>(GKEYS.prReviewModel, "");
@@ -612,24 +617,22 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     setActiveDoc((cur) => { if (cur !== id) return cur; const rest = docTabs.filter((x) => x !== id); return rest.length ? rest[rest.length - 1] : null; });
   }
 
-  // 코드/diff 탭(#714) — 문서 탭과 동형. 그 탭 컨텍스트로 챗 포커스도 맞춘다.
-  const focusForTab = (tb: CodeTab) => {
-    const name = tb.file.split("/").pop() ?? tb.file;
-    // #1078 diff 질문은 캐치업 diff 카드에서 — 탭 연결은 파일만(diff·커밋 전 변경 탭은 질문 대상을 안 바꿈, 유저 결정)
-    if (tb.kind === "file") focusChat(`file:${tb.file}`, "file", name);
+  // 코드/diff 탭(#714) — 문서 탭과 동형.
+  // #1322 유저 결정: 탭을 열거나 바꿔도 질문 세션을 자동으로 만들지 않음(둘러보기로 파일이 여러 개 열리면 질문 목록이 쌓였음).
+  // 파일 탭 오른쪽 위 "이 파일에 대해 질문" 버튼을 눌러야만 그 파일 질문 세션을 엶(diff 질문은 캐치업 diff 카드에서, #1078).
+  const askFile = (file: string) => {
+    askChat(`file:${file}`, "file", file.split("/").pop() ?? file);
+    setChatOpen(true); try { localStorage.setItem("nunopi:ws-chat-open", "1"); } catch { /* ignore */ }
   };
   function openCodeTab(tb: CodeTab) {
     const key = codeTabKey(tb);
     setCodeTabs((prev) => (prev.some((x) => codeTabKey(x) === key) ? prev : [...prev, tb])); // 있으면 그대로(활성만 바꿈), 없으면 추가
     setActiveCode(key);
-    focusForTab(tb);
     ensureExpanded("code");
   }
   useEffect(() => { openCodeTabRef.current = openCodeTab; }); // 링크 처리기가 최신 openCodeTab을 쓰게(#1193)
   function activateCode(key: string) {
     setActiveCode(key);
-    const tb = codeTabs.find((x) => codeTabKey(x) === key);
-    if (tb) focusForTab(tb);
   }
   function closeCodeTab(key: string) {
     setCodeTabs((prev) => prev.filter((x) => codeTabKey(x) !== key));
@@ -637,6 +640,11 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   }
   const activeTab = codeTabs.find((tb) => codeTabKey(tb) === activeCode) ?? null;
   const activeFile = activeTab?.kind === "file" ? activeTab.file : null; // FileTree 선택 하이라이트용
+  // #1322 둘러보기가 가리킨 파일 — 트리 펼침·강조. 코드 탭을 바꾸면(activeFile 변경) 강조는 탭 쪽으로 넘어가고 끝(리뷰).
+  const [treeReveal, setTreeReveal] = useState<{ file: string; n: number; at: number } | null>(null);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- 코드 탭이 바뀌면 둘러보기 강조 해제
+  useEffect(() => { setTreeReveal(null); }, [activeFile]);
+  const treeSelected = treeReveal?.file ?? activeFile;
 
   // 웹(비데스크톱): 터미널·폴더접근 불가 → 안내.
   if (mounted && !desktop) {
@@ -673,6 +681,13 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
             );
           })}
         </div>
+        {/* #1322 이 파일에 대해 질문 — 눌러야만 질문 세션이 생김(흐름 패널 질문 버튼과 같은 모양) */}
+        {activeTab?.kind === "file" && (
+          <button type="button" onClick={() => askFile(activeTab.file)} title={t("code.ask")} aria-label={t("code.ask")}
+            className="mx-1 shrink-0 self-center rounded p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-mustard-600 dark:hover:bg-zinc-700 dark:hover:text-mustard-400">
+            <IconMessageCircle size={13} stroke={2} aria-hidden />
+          </button>
+        )}
       </div>
       <div className="min-h-0 flex-1">
         {activeTab?.kind === "diff"
@@ -697,7 +712,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     // <webview>는 DOM에서 빠지면 페이지가 죽어서(새로고침·기록 유실) 위치만 따라가게 한다.
     browser: browserOpen ? <BrowserSlot anchor={dockRef} onRect={setBrowserRect} /> : null,
     crew: crewOpen ? <CrewBoard root={path} onClose={() => setCrewOpen(false)} /> : null, // 에이전트 팀 보드(#1098)
-    flow: <RepoFlowPane feature={flowFeature} root={path} providerId={providerId} providerSettings={providerSettings} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onAskArch={askArch} onQuoteNode={quoteNode} onClose={() => setFlowFeature(null)} />,
+    flow: <RepoFlowPane feature={flowFeature} root={path} providerId={archPid} providerSettings={archPs} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onRevealFile={(file) => { if (!files.includes(file)) return false; setTreeReveal((r) => ({ file, n: (r?.n ?? 0) + 1, at: Date.now() })); return true; }} onAskArch={askArch} onQuoteNode={quoteNode} onClose={() => setFlowFeature(null)} />,
   };
 
   // 4존 셸.
@@ -803,7 +818,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
               {treeLoading ? (
                 <div className="flex h-full items-center justify-center text-zinc-400"><IconLoader2 size={16} stroke={2} className="animate-spin" aria-hidden /></div>
               ) : files.length > 0 ? (
-                <FileTree key={path} files={files} status={fileStatus} selected={activeFile} storageKey={path ? `nunopi:ws:${path}:tree-open` : undefined} onSelect={(id) => openCodeTab({ kind: "file", file: id })} />
+                <FileTree key={path} files={files} status={fileStatus} selected={treeSelected} reveal={treeReveal} storageKey={path ? `nunopi:ws:${path}:tree-open` : undefined} onSelect={(id) => openCodeTab({ kind: "file", file: id })} />
               ) : (
                 <ZonePlaceholder Icon={IconFiles} label={t("workspace.tree")} />
               )}
@@ -814,7 +829,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
             <>
               {leftFill !== "analyze" && <div onMouseDown={startDrag("analyzeH", analyzeH)} className="h-1 shrink-0 cursor-row-resize transition hover:bg-mustard-500/40 dark:hover:bg-mustard-400/40" />}
               <div style={leftFill === "analyze" ? undefined : { height: analyzeH }} className={`flex flex-col overflow-hidden border-t border-zinc-200 dark:border-zinc-800 ${leftFill === "analyze" ? "min-h-0 flex-1" : "shrink-0"}`}>
-                <RepoAnalyzeSection root={path} providerId={providerId} providerSettings={providerSettings} onOpenFlow={(f) => { setFlowFeature(f); ensureExpanded("flow"); }} onOpenGraph={() => setGraphOpen(true)} />
+                <RepoAnalyzeSection root={path} providerId={archPid} providerSettings={archPs} onOpenFlow={(f) => { setFlowFeature(f); ensureExpanded("flow"); }} onOpenGraph={() => setGraphOpen(true)} />
               </div>
             </>
           )}
@@ -917,7 +932,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
           </>
         )}
         {/* 코드그래프 raw 뷰어(#842 서브5) — 헤더 밑 콘텐츠 영역 오버레이(전체화면 아님). 노드 클릭 → 코드 탭. */}
-        {graphOpen && <RepoGraphViewer root={path} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onClose={() => setGraphOpen(false)} />}
+        {graphOpen && <RepoGraphViewer root={path} providerId={archPid} providerSettings={archPs} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onClose={() => setGraphOpen(false)} />}
       </div>
     </div>
   );
