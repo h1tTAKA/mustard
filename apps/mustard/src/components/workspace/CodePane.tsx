@@ -71,7 +71,14 @@ export default function CodePane({ root, file }: { root: string; file: string })
   }
 
   return (
-    <div style={font} className={`nunopi-scroll h-full overflow-auto bg-white p-3 dark:bg-[var(--s-pane)] [&_pre]:!m-0 [&_pre]:!bg-transparent [&_pre]:[font-family:inherit] ${wrap ? "[&_pre]:whitespace-pre-wrap [&_pre]:[overflow-wrap:anywhere]" : ""}`}>
+    // #1324 ⌘A/Ctrl+A — 코드 탭에 포커스가 있으면 이 파일 코드만 전부 선택(앱 화면 전체 선택 대신). tabIndex로 클릭하면 포커스가 옴.
+    <div style={font} tabIndex={0} onKeyDown={(e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "a") return;
+      e.preventDefault(); e.stopPropagation();
+      const sel = window.getSelection(), body = e.currentTarget.firstElementChild;
+      if (!sel || !body) return;
+      const r = document.createRange(); r.selectNodeContents(body); sel.removeAllRanges(); sel.addRange(r);
+    }} className={`nunopi-scroll h-full overflow-auto bg-white p-3 outline-none dark:bg-[var(--s-pane)] [&_pre]:!m-0 [&_pre]:!bg-transparent [&_pre]:[font-family:inherit] ${wrap ? "[&_pre]:whitespace-pre-wrap [&_pre]:[overflow-wrap:anywhere]" : ""}`}>
       {html ? <div dangerouslySetInnerHTML={{ __html: html }} /> : <pre className="text-zinc-700 dark:text-zinc-200">{raw}</pre>}
     </div>
   );
