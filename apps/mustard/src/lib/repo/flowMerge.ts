@@ -35,3 +35,24 @@ export function applyFlowDiff(existing: FlowSection[], incoming: FlowSection[], 
     .map((s) => ({ layer: s.layer, nodes: s.nodes.map((n) => (n.next ? { ...n, next: n.next.filter((x) => names.has(nk(x))) } : n)) }))
     .filter((s) => s.nodes.length);
 }
+
+// 둘러보기 순서(#1322) — 레이어 순(진입 → 처리 → 데이터), 레이어 안은 next 연결을 따라(앞 노드가 가리키는 노드를 뒤로).
+// 순환이거나 연결 없으면 원래 순서. 같은 이름은 한 번만. 반환 = 노드 이름.
+export function tourOrder(sections: FlowSection[]): string[] {
+  const out: string[] = [], seen = new Set<string>();
+  for (const s of sections) {
+    const nodes = s.nodes.filter((n) => !seen.has(nk(n.name)));
+    const inLayer = new Set(nodes.map((n) => nk(n.name)));
+    const indeg = new Map(nodes.map((n) => [nk(n.name), 0]));
+    for (const n of nodes) for (const t of n.next ?? []) if (inLayer.has(nk(t)) && nk(t) !== nk(n.name)) indeg.set(nk(t), (indeg.get(nk(t)) ?? 0) + 1);
+    const left = [...nodes];
+    while (left.length) {
+      const i = Math.max(0, left.findIndex((n) => !indeg.get(nk(n.name)))); // 들어오는 게 없는 첫 노드, 없으면(순환) 맨 앞
+      const [n] = left.splice(i, 1);
+      if (seen.has(nk(n.name))) continue;
+      seen.add(nk(n.name)); out.push(n.name);
+      for (const t of n.next ?? []) if (indeg.has(nk(t))) indeg.set(nk(t), (indeg.get(nk(t)) ?? 1) - 1);
+    }
+  }
+  return out;
+}

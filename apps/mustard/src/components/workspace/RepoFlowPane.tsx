@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { IconSitemap, IconX, IconLoader2, IconChevronDown, IconRefresh, IconCode, IconBook2, IconSparkles, IconMessageCircle } from "@tabler/icons-react";
+import { IconSitemap, IconX, IconLoader2, IconChevronDown, IconRefresh, IconCode, IconBook2, IconSparkles, IconMessageCircle, IconPlayerPlay, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import { useT, useLocale } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
@@ -10,14 +10,15 @@ import { fetchGraphDigest } from "@/lib/repo/fetchDigest";
 import { archGet, archPut, archSkeleton, archBegin, archPatch } from "@/lib/repo/archClient";
 import { useViewDepth } from "@/lib/repo/viewDepth";
 import { DEPTHS } from "@/lib/repo/graphView";
-import { applyFlowDiff, mergeFlow } from "@/lib/repo/flowMerge";
+import { applyFlowDiff, mergeFlow, tourOrder } from "@/lib/repo/flowMerge";
 import type { SnapDiff } from "@/lib/repo/incremental";
 
 // 기능별 아키텍처 플로우(#743) — 레이어=밴드(위→아래), 알약 노드, 노드→코드 점프.
 // next(다음 노드)를 받아 SVG 곡선으로 연결해 흐름을 직관적으로.
 type FlowNode = { name: string; file?: string; line?: number; role?: string; next?: string[] };
 type FlowSection = { layer: string; nodes: FlowNode[] };
-type Overviews = { dev?: string; expert?: string }; // #1322 깊이별 설명글(overview 자체 = 초보용 기본)
+type Overviews = { dev?: string; expert?: string };
+type Tour = { depth: string; steps: { name: string; text: string }[] }; // #1322 둘러보기 단계(처음 한 번 AI, 저장) // #1322 깊이별 설명글(overview 자체 = 초보용 기본)
 type StreamEvent = { type: string; message?: string; response?: { summary?: string } };
 // 지하철식 직각 배선: 소스 노드 왼쪽에서 나와 → 왼쪽 거터의 전용 레인(세로) → 타깃 왼쪽으로 들어감.
 // 박스는 거터 오른쪽에만 있어 선이 박스를 뚫지 않음. 소스별 레인·색 분리로 스파게티 방지.
@@ -102,6 +103,10 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const [overviews, setOverviews] = useState<Overviews>({}); // #1322 개발자·숙련자용 설명(없으면 초보용 기본을 보여 줌)
   const overviewsRef = useRef<Overviews>({});                // 구조 변화 없는 갱신 때 그대로 넘겨 유지
   const [writing, setWriting] = useState(false);             // 깊이별 설명 쓰는 중
+  const [tour, setTour] = useState<Tour | null>(null);       // #1322 저장된 둘러보기
+  const tourRef = useRef<Tour | null>(null);                 // 구조 변화 없는 갱신 때 그대로 넘겨 유지
+  const [tourIdx, setTourIdx] = useState<number | null>(null); // 지금 단계(null = 둘러보기 안 하는 중)
+  const [tourBusy, setTourBusy] = useState(false);           // 단계 설명 만드는 중
   const [loadFailed, setLoadFailed] = useState(false);
   const loadFailedRef = useRef(false); // load 안에서 보는 미러(확인창이 열린 채 실패해도 재생성이 못 지나가게)       // 저장분 불러오기 실패 — 재생성으로 저장분을 덮어쓰지 않게 잠금(리뷰)
   const secOfRef = useRef<string | null>(null);              // 지금 보이는 흐름이 어느 기능 것인지(전환 중 갱신이 엉뚱한 기능에 저장되지 않게, 리뷰)
@@ -175,17 +180,18 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const load = useCallback(async (mode: "cache" | "regen" | "update" = "cache") => {
     if (!feature || !root || !providerId || !providerSettings) return;
     const my = ++reqRef.current;
-    if (mode !== "update") { nodeEls.current.clear(); setLines([]); setDiff(null); setNote(null); }
+    if (mode !== "update") { nodeEls.current.clear(); setLines([]); setDiff(null); setNote(null); setTour(null); }
+    setTourIdx(null); // 다시 불러오거나 고치면 둘러보기는 끝냄
     // 자동(cache)일 때만 저장분 먼저 — 에이전트 재호출 없이 즉시 복원. 저장소=서버 파일(#1320, 옛 localStorage는 1회 이전).
     if (mode === "cache") {
       // 서버 왕복 동안은 이전 흐름을 그대로 두되(깜빡임 없음) 로딩 중이라 갱신·재생성 버튼은 잠김, 갱신은 secOfRef로 한 번 더 막음.
       setLoading(true); setErr(null); setLoadFailed(false); loadFailedRef.current = false;
-      const { data, error } = await archGet<{ sections: FlowSection[]; overview: string | null; overviews?: Overviews }>(root, "flow", feature);
+      const { data, error } = await archGet<{ sections: FlowSection[]; overview: string | null; overviews?: Overviews; tour?: Tour }>(root, "flow", feature);
       if (my !== reqRef.current) return;
       // 서버 오류면 새로 분석해 저장분을 덮어쓰지 않음(리뷰) — 오류만 보여 줌.
       if (error) { setSections(null); setOverview(null); secOfRef.current = null; setErr(t("flow.loadFailed")); setLoadFailed(true); loadFailedRef.current = true; setConfirm(null); setLoading(false); return; } // 열려 있던 재생성 확인창도 닫음(잠금 우회 방지, 리뷰)
       if (data?.sections?.length) {
-        setSections(data.sections); setOverview(data.overview ?? null); setOverviews(data.overviews ?? {}); secOfRef.current = feature; setLoading(false);
+        setSections(data.sections); setOverview(data.overview ?? null); setOverviews(data.overviews ?? {}); setTour(data.tour ?? null); secOfRef.current = feature; setLoading(false);
         // 낡음 표시용 차분은 따로(그래프 맞추느라 느릴 수 있음) — 흐름은 먼저 보여 줌(리뷰).
         void archGet(root, "flow", feature, true).then(({ diff: d }) => { if (my === reqRef.current) setDiff(d); });
         return;
@@ -210,7 +216,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
           const next = applyFlowDiff(sectionsRef.current ?? [], [], d.removed, []);
           setSections(next);
           // 구조 변화 없음 = 노드 의미 그대로 → 깊이별 설명도 유지(#1322).
-          if (!await archPut(root, "flow", { sections: next, overview: overviewRef.current, overviews: overviewsRef.current }, feature, { token })) return saveFailed();
+          if (!await archPut(root, "flow", { sections: next, overview: overviewRef.current, overviews: overviewsRef.current, tour: tourRef.current ?? undefined }, feature, { token })) return saveFailed();
           if (my === reqRef.current) { setDiff(null); setNote(t("flow.noStructural", { n: d.changed.length + d.removed.length })); }
           return;
         }
@@ -229,7 +235,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
         // 줄이 하나도 없으면 "없음"(관련 변경 없음)일 때만 정상 — 빈 답·엉뚱한 산문이면 스냅샷을 앞당기지 않고 오류로(다시 갱신 가능, 리뷰).
         if (!parsed.length && !/^[\s"'`*.。-]*(없음|none|なし)[\s"'`*.。-]*$/i.test(text)) { setErr(`no flow — ${text.slice(0, 140)}`); return; }
         const next = applyFlowDiff(sectionsRef.current ?? [], parsed, inc.removed, inc.structural);
-        setSections(next); setOverviews({}); // 노드가 바뀜 → 깊이별 설명은 버림(저장도 안 넘김)
+        setSections(next); setOverviews({}); setTour(null); // 노드가 바뀜 → 깊이별 설명은 버림(저장도 안 넘김)
         if (!await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature, { token })) return saveFailed();
         if (my === reqRef.current) { setDiff(null); setNote(t("flow.diffUpdated", { n: inc.structural.length })); }
         return;
@@ -254,7 +260,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       // 차분 정보 없는 갱신(옛 저장분)=기존 흐름에 새 노드만 병합, 그 외(재생성·구조 변화가 많은 갱신)=교체.
       const base = sectionsRef.current;
       const nextSecs = mode === "update" && base && !d ? mergeFlow(base, parsed) : parsed;
-      setSections(nextSecs); setOverview(ov); setOverviews({}); secOfRef.current = feature;
+      setSections(nextSecs); setOverview(ov); setOverviews({}); setTour(null); secOfRef.current = feature;
       if (!await archPut(root, "flow", { sections: nextSecs, overview: ov }, feature, { token })) return saveFailed(); // 영속(#743 → #1320 서버)
       if (my === reqRef.current) setDiff(null); // 방금 저장 = 최신
     } catch (e) {
@@ -272,6 +278,65 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   useEffect(() => { sectionsRef.current = sections; }, [sections]);
   useEffect(() => { overviewRef.current = overview; }, [overview]);
   useEffect(() => { overviewsRef.current = overviews; }, [overviews]);
+  useEffect(() => { tourRef.current = tour; }, [tour]);
+
+  // #1322 둘러보기 — 흐름 순서(tourOrder)대로 단계. 지금 흐름에 없는 노드 단계는 건너뜀(구조 변화 없는 갱신으로 지워진 노드).
+  const tourSteps = useMemo(() => {
+    if (!tour || !sections) return [];
+    const have = new Set(sections.flatMap((s) => s.nodes.map((n) => nk(n.name))));
+    return tour.steps.filter((st) => have.has(nk(st.name)));
+  }, [tour, sections]);
+  const startTour = useCallback(async () => {
+    if (!feature || !root || !sectionsRef.current) return;
+    if (tourRef.current?.steps.length) { setTourIdx(0); return; }
+    const f = feature, d = depth, my = reqRef.current;
+    setTourBusy(true); setErr(null);
+    try {
+      const order = tourOrder(sectionsRef.current);
+      const byKey = new Map(sectionsRef.current.flatMap((s) => s.nodes.map((n) => [nk(n.name), { ...n, layer: s.layer }] as const)));
+      const lines = order.map((name, i) => { const n = byKey.get(nk(name))!; return `${i + 1}. ${n.layer} | ${n.name} | ${n.file ?? ""}${n.line ? `:${n.line}` : ""} | ${n.role ?? ""}`; });
+      const who = d === "beginner" ? "개발 초보도 이해하게 쉬운 말로" : d === "dev" ? "개발자 눈높이로 설계 이유와 데이터 흐름 위주로" : "숙련자 눈높이로 짧고 밀도 있게";
+      const ctx = `레포: ${basename(root)}\n\n["${f}" 흐름 — 둘러볼 순서]\n${lines.join("\n")}${overviewRef.current ? `\n\n[설명]\n${overviewRef.current}` : ""}`;
+      const prompt = `위 순서대로 "${f}" 기능을 처음 보는 사람에게 한 단계씩 안내하려고 해. 각 노드마다 ${who} 2~3문장으로, 이 단계에서 무슨 일이 일어나고 앞 단계에서 뭘 받아 다음 단계로 뭘 넘기는지 설명해줘. 형식은 노드마다 한 줄만, 순서 그대로:\n표시이름 | 설명\n(표시이름은 위와 정확히 같게. 설명 안에 파이프(|) 기호 금지. 인사·머리말 없이 줄만.)`;
+      const answer = await ask(ctx, prompt);
+      if (my !== reqRef.current) return;
+      if (answer.err) { setErr(answer.err); return; }
+      const got = new Map<string, string>();
+      for (const raw of stripCardBlock(answer.text).split("\n")) {
+        const line = raw.trim().replace(/^[-*•\d.)\s]+/, "");
+        const at = line.indexOf("|");
+        if (at > 0) got.set(nk(line.slice(0, at)), line.slice(at + 1).trim());
+      }
+      // AI가 빠뜨린 노드는 한줄역할로 채움(단계가 비지 않게). 하나도 못 받으면 오류.
+      if (!got.size) { setErr(`no tour — ${answer.text.slice(0, 140)}`); return; }
+      const next: Tour = { depth: d, steps: order.map((name) => ({ name, text: got.get(nk(name)) || byKey.get(nk(name))?.role || "" })) };
+      if (!await archPatch(root, f, { tour: next })) { if (my === reqRef.current) setErr(t("flow.saveFailed")); return; }
+      if (my !== reqRef.current) return;
+      setTour(next); setTourIdx(0);
+    } finally { setTourBusy(false); }
+  }, [feature, root, depth, ask, t]);
+
+  // 지금 단계 카드 = 포커스 빛 + 화면 안으로.
+  const tourName = tourIdx != null ? tourSteps[tourIdx]?.name : undefined;
+  useEffect(() => {
+    if (!tourName) return;
+    const k = nk(tourName);
+    setFocused(k); // 단계 이동 시 그 카드 포커스(기존 포커스 강조 재사용)
+    nodeEls.current.get(k)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [tourName]);
+  // 키보드 ←/→/Esc(입력창에 쓰는 중이면 무시).
+  useEffect(() => {
+    if (tourIdx == null) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (e.key === "ArrowRight") setTourIdx((i) => (i == null ? i : Math.min(i + 1, tourSteps.length - 1)));
+      else if (e.key === "ArrowLeft") setTourIdx((i) => (i == null ? i : Math.max(i - 1, 0)));
+      else if (e.key === "Escape") { setTourIdx(null); setFocused(null); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tourIdx, tourSteps.length]);
 
   // #1322 지금 깊이(개발자·숙련자)로 설명글만 다시 쓰기 — 흐름(노드)은 그대로, 덧붙임으로만 저장(스냅샷 안 건드림).
   const writeDepth = useCallback(async () => {
@@ -400,6 +465,11 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
                 <IconMessageCircle size={13} stroke={2} aria-hidden />
               </button>
             )}
+            {/* #1322 둘러보기 — 흐름 순서대로 카드 하나씩(단계 설명은 처음 한 번 AI). 흐름 없으면 비활성. */}
+            <button type="button" onClick={() => void startTour()} disabled={loading || !sections || tourBusy} title={t("flow.tourTitle")} aria-label={t("flow.tourTitle")}
+              className="shrink-0 rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-mustard-400">
+              {tourBusy ? <IconLoader2 size={13} stroke={2} className="animate-spin" aria-hidden /> : <IconPlayerPlay size={13} stroke={2} aria-hidden />}
+            </button>
             {/* 갱신 — 새 노드만 병합 추가(모달 확인). 흐름 없으면 비활성. */}
             <button type="button" onClick={() => setConfirm("update")} disabled={loading || !sections} title={t("flow.updateTitle")} aria-label={t("flow.updateTitle")}
               className="shrink-0 rounded p-1 text-amber-500 transition hover:bg-zinc-100 disabled:opacity-40 dark:hover:bg-zinc-800">
@@ -428,6 +498,22 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
           <div className="flex flex-col gap-1"><p className="text-[12px] text-rose-500">{t("flow.error")}</p><p className="break-words text-[10px] text-zinc-400 dark:text-zinc-500">{err}</p></div>
         ) : sections ? (
           <div className="mx-auto flex w-full max-w-[30rem] flex-col gap-3">
+            {/* #1322 둘러보기 단계 박스 — 지금 단계 이름·설명 + 이전/다음/끝. 카드는 포커스 빛으로 따라감. */}
+            {tourIdx != null && tourSteps[tourIdx] && (
+              <div className="sticky top-0 z-30 rounded-lg border border-mustard-500/40 bg-white p-2.5 shadow-sm dark:border-mustard-400/40 dark:bg-[var(--s-bar)]">
+                <div className="flex items-center gap-1.5">
+                  <span className="shrink-0 font-mono text-[10px] text-mustard-700 dark:text-mustard-400">{tourIdx + 1}/{tourSteps.length}</span>
+                  <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-zinc-700 dark:text-zinc-100">{tourSteps[tourIdx].name}</span>
+                  <button type="button" onClick={() => setTourIdx((i) => Math.max((i ?? 0) - 1, 0))} disabled={tourIdx === 0} title={t("flow.tourPrev")} aria-label={t("flow.tourPrev")}
+                    className="shrink-0 rounded p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconChevronLeft size={14} stroke={2} aria-hidden /></button>
+                  <button type="button" onClick={() => setTourIdx((i) => Math.min((i ?? 0) + 1, tourSteps.length - 1))} disabled={tourIdx >= tourSteps.length - 1} title={t("flow.tourNext")} aria-label={t("flow.tourNext")}
+                    className="shrink-0 rounded p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconChevronRight size={14} stroke={2} aria-hidden /></button>
+                  <button type="button" onClick={() => { setTourIdx(null); setFocused(null); }} title={t("flow.tourEnd")} aria-label={t("flow.tourEnd")}
+                    className="shrink-0 rounded p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconX size={13} stroke={2} aria-hidden /></button>
+                </div>
+                <p className="mt-1 text-[11.5px] leading-relaxed text-zinc-600 dark:text-zinc-300">{tourSteps[tourIdx].text}</p>
+              </div>
+            )}
             {/* #1320 낡음 표시 — 저장 뒤 바뀐 파일 수 + 갱신, 또는 방금 갱신이 한 일. 기존 보조 문구 톤 한 줄(새 패널 없음). */}
             {(note || (diff && diff.changed.length + diff.removed.length > 0)) && (
               <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
