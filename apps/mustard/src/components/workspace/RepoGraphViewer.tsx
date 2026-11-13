@@ -124,10 +124,10 @@ export default function RepoGraphViewer({ root, providerId, providerSettings, on
     if (!n || !providerId || !providerSettings) { setNote(null); return; } // 프로바이더 없으면 설명 없음
     const nb = neighbors(graph, n.id);
     const links = [...nb.out.map((l) => `→ ${l.relation} ${l.node.label} (${l.node.file})`), ...nb.in.map((l) => `← ${l.relation} ${l.node.label} (${l.node.file})`)].slice(0, 20);
-    const key = `${root}\0${n.id}`;
+    const key = `${root}\0${n.id}\0${links.join("\n")}`; // 연결이 바뀌면(그래프 다시 빌드) 다른 키 → 다시 씀(리뷰)
     let job = noteCache.current.get(key);
     if (!job) {
-      job = (async () => {
+      job = (async () => { try {
         // 저장분은 파일 내용 + 연결 목록이 같을 때만 씀(다른 파일이 바뀌어 연결이 달라지면 다시 씀, 리뷰).
         const got = await archNode(root, n.id, n.file, n.line, links.join("\n"));
         if (!got) return { err: t("graph.noteFailed") };
@@ -139,7 +139,7 @@ export default function RepoGraphViewer({ root, providerId, providerSettings, on
         if (!text) return { err: a.err || t("graph.noteFailed") };
         if (got.hash) void archNodePut(root, n.id, got.hash, text);
         return { text };
-      })();
+      } catch { return { err: t("graph.noteFailed") }; } })(); // 네트워크 예외도 실패로 → 아래에서 캐시에서 빼서 다음에 다시(리뷰)
       const mine = job;
       noteCache.current.set(key, mine);
       void mine.then((r) => { if (r.err && noteCache.current.get(key) === mine) noteCache.current.delete(key); }); // 실패는 다음에 다시 시도
