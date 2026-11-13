@@ -7,7 +7,8 @@ import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import { stripCardBlock } from "@mustard/core";
 import { fetchGraphDigest } from "@/lib/repo/fetchDigest";
-import { archGet, archPut } from "@/lib/repo/archClient";
+import { archGet, archPut, archSkeleton } from "@/lib/repo/archClient";
+import { applyFlowDiff, mergeFlow } from "@/lib/repo/flowMerge";
 import type { SnapDiff } from "@/lib/repo/incremental";
 
 // 기능별 아키텍처 플로우(#743) — Manyfast 유저플로우식: 레이어=밴드(위→아래), 알약 노드, 노드→코드 점프.
@@ -21,6 +22,7 @@ type Line = { key: string; sk: string; tk: string; color: string; laneX: number;
 
 const basename = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
 const nk = (s: string) => s.trim().toLowerCase(); // 노드 이름 정규화 키(엣지 매칭용)
+const DIFF_FULL = 30; // #1320 구조가 바뀐 파일이 이보다 많으면 차분 말고 처음부터 다시(부분 수선보다 정확)
 // 출처(source 노드)별 색 — 겹쳐도 어디서 나왔는지 구분되게. 다크 배경서 잘 보이는 톤.
 const EDGE_COLORS = ["#60a5fa", "#f87171", "#34d399", "#fbbf24", "#c084fc", "#f472b6", "#2dd4bf", "#fb923c", "#a3e635", "#38bdf8"];
 // 거터는 좁은 패널서 박스 폭을 뺏지 않게 상한(MAX_GUTTER)까지만. 레인이 상한 넘으면 x 재사용(색으로 구분).
@@ -54,21 +56,6 @@ function parseFlow(text: string): FlowSection[] {
     byLayer.get(layer)!.push({ name, file, line: lineNo, role, next });
   }
   return order.map((layer) => ({ layer, nodes: byLayer.get(layer)! }));
-}
-
-// 갱신: 기존 흐름 유지 + 새로 발견된 노드만 해당 레이어(없으면 새 레이어)에 추가(이름 중복 제외).
-function mergeFlow(existing: FlowSection[], incoming: FlowSection[]): FlowSection[] {
-  const out = existing.map((s) => ({ layer: s.layer, nodes: s.nodes.map((n) => ({ ...n })) }));
-  const layerIdx = new Map(out.map((s, i) => [nk(s.layer), i]));
-  const seen = new Set(out.flatMap((s) => s.nodes.map((n) => nk(n.name))));
-  for (const s of incoming) for (const n of s.nodes) {
-    if (seen.has(nk(n.name))) continue;
-    seen.add(nk(n.name));
-    const li = layerIdx.get(nk(s.layer));
-    if (li != null) out[li].nodes.push({ ...n });
-    else { layerIdx.set(nk(s.layer), out.length); out.push({ layer: s.layer, nodes: [{ ...n }] }); }
-  }
-  return out;
 }
 
 // 응답에서 설명(산문) 추출 — 노드 라인(| 포함)·섹션 마커([설명]/[흐름])만 빼고, 문단 구분(빈 줄)은 보존.
@@ -106,6 +93,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const nodeEls = useRef(new Map<string, HTMLElement>()); // 이름키 → 노드 DOM(엣지 끝점 측정)
 
   const [diff, setDiff] = useState<SnapDiff | null>(null); // #1320 저장 뒤 바뀐 파일(서버 저장분 기준)
+  const [note, setNote] = useState<string | null>(null);    // #1320 방금 갱신이 한 일(AI 안 부름 / N개 파일 살펴봄)
+  const overviewRef = useRef<string | null>(null);           // 최신 overview 미러(차분 갱신은 설명 유지)
   const [connKeys, setConnKeys] = useState<Set<string>>(new Set()); // 실측 연결 "fileA|fileB"(방향 보존, 조회는 양방향). #842 서브4
 
   // 이름-레벨 엣지 = LLM next + 실측 뒷받침(grounded) + LLM이 놓친 실측 연결 보강. 곡선·레인·인접의 단일 소스.
@@ -152,20 +141,70 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     return out;
   }, [edges]);
 
-  // mode: "cache"=저장분 우선(자동), "regen"=전체 새로, "update"=새 노드만 병합 추가.
+  // 에이전트 한 번 묻기(chat 모드 스트림 → result.summary). 흐름 생성·차분 갱신 공용.
+  const ask = useCallback(async (ctx: string, prompt: string): Promise<{ text: string; err?: string }> => {
+    const res = await fetch("/api/agent/analyze", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ providerId, request: { code: ctx, locale, providerId, mode: "chat", messages: [{ role: "user", content: prompt }], providerSettings } }),
+    });
+    if (!res.ok || !res.body) return { text: "", err: `HTTP ${res.status}` };
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "", answer = "", streamErr = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const ls = buf.split("\n"); buf = ls.pop() ?? "";
+      for (const l of ls) { if (!l.trim()) continue; let ev: StreamEvent; try { ev = JSON.parse(l) as StreamEvent; } catch { continue; } if (ev.type === "result") answer = ev.response?.summary ?? ""; else if (ev.type === "error") streamErr = ev.message ?? "error"; }
+    }
+    return streamErr ? { text: "", err: streamErr } : { text: answer };
+  }, [providerId, providerSettings, locale]);
+
+  // mode: "cache"=저장분 우선(자동), "regen"=전체 새로, "update"=저장 뒤 바뀐 파일만 반영(#1320, 차분 정보 없으면 옛 방식: 새 노드만 병합).
   const load = useCallback(async (mode: "cache" | "regen" | "update" = "cache") => {
     if (!feature || !root || !providerId || !providerSettings) return;
     const my = ++reqRef.current;
-    if (mode !== "update") { nodeEls.current.clear(); setLines([]); }
+    if (mode !== "update") { nodeEls.current.clear(); setLines([]); setDiff(null); setNote(null); }
     // 자동(cache)일 때만 저장분 먼저 — 에이전트 재호출 없이 즉시 복원. 저장소=서버 파일(#1320, 옛 localStorage는 1회 이전).
     if (mode === "cache") {
       const { data, diff: d } = await archGet<{ sections: FlowSection[]; overview: string | null }>(root, "flow", feature);
       if (my !== reqRef.current) return;
       if (data?.sections?.length) { setSections(data.sections); setOverview(data.overview ?? null); setDiff(d); setLoading(false); setErr(null); return; }
     }
-    setLoading(true); setRunning(mode === "update" ? "update" : "regen"); setErr(null);
+    setLoading(true); setRunning(mode === "update" ? "update" : "regen"); setErr(null); setNote(null);
     if (mode !== "update") { setSections(null); setOverview(null); } // 갱신은 기존 유지
     try {
+      // #1320 차분 갱신 — 저장 뒤 바뀐 파일을 서버에서 받아: 구조 변화 0이면 AI 없이 지운 파일 노드만 정리,
+      // 너무 많으면 처음부터, 그 외엔 바뀐 파일만 AI에 보여 줌.
+      let inc: SnapDiff | null = null, d: SnapDiff | null = null;
+      if (mode === "update") {
+        d = (await archGet(root, "flow", feature)).diff;
+        if (my !== reqRef.current) return;
+        if (d && !d.structural.length) {
+          const next = applyFlowDiff(sectionsRef.current ?? [], [], d.removed, []);
+          setSections(next);
+          await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature);
+          if (my === reqRef.current) { setDiff(null); setNote(t("flow.noStructural", { n: d.changed.length + d.removed.length })); }
+          return;
+        }
+        if (d && d.structural.length <= DIFF_FULL) inc = d;
+      }
+      if (inc) {
+        const skel = await archSkeleton(root, inc.structural);
+        const cur = (sectionsRef.current ?? []).flatMap((s) => s.nodes.map((n) => `${s.layer} | ${n.name} | ${n.file ?? ""}${n.line ? `:${n.line}` : ""} | ${n.role ?? ""}${n.next?.length ? ` | → ${n.next.join(", ")}` : ""}`));
+        const ctx = `레포: ${basename(root)}\n\n[지금 "${feature}" 흐름]\n${cur.join("\n")}\n\n[분석 뒤 구조가 바뀌었거나 새로 생긴 파일과 그 심볼]\n${skel || inc.structural.slice(0, 30).join("\n")}${inc.removed.length ? `\n\n[지워진 파일]\n${inc.removed.slice(0, 30).join("\n")}` : ""}`;
+        const prompt = `"${feature}" 기능 흐름을 바뀐 코드에 맞춰 고치려고 해. 위 "바뀐 파일" 중 이 기능과 관련된 파일만 골라서, 그 파일에 해당하는 노드를 모두 아래 형식으로 한 줄씩 써줘(그 파일의 기존 노드가 아직 맞으면 그대로 다시 포함, 새 함수·파일이 흐름에 끼면 추가). 관련 없는 파일은 쓰지 마. 관련된 게 하나도 없으면 "없음" 한 줄만. 설명·인사 없이 줄만:\n레이어 | 표시이름 | 파일경로:라인 | 한줄역할 | → 다음노드이름\n(레이어 이름과 다음노드 표시이름은 지금 흐름에 있는 것과 정확히 맞춰. 파일경로는 위 실제 경로만.)`;
+        const answer = await ask(ctx, prompt);
+        if (my !== reqRef.current) return;
+        if (answer.err) { setErr(answer.err); return; }
+        const parsed = parseFlow(stripCardBlock(answer.text));
+        const next = applyFlowDiff(sectionsRef.current ?? [], parsed, inc.removed, inc.structural);
+        setSections(next);
+        await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature);
+        if (my === reqRef.current) { setDiff(null); setNote(t("flow.diffUpdated", { n: inc.structural.length })); }
+        return;
+      }
       const tr = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root }) });
       const td = await tr.json().catch(() => null);
       const files: string[] = td && Array.isArray(td.files) ? td.files : [];
@@ -175,30 +214,16 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       const digest = await fetchGraphDigest(root);
       const ctx = `레포: ${name}\n파일 목록:\n${list.join("\n")}${digest ? `\n\n${digest}` : ""}`;
       const prompt = `레포 "${name}"에서 "${feature}" 기능의 아키텍처를 정리해줘.${digest ? " 아래 실측 코드그래프 구조(모듈·의존·허브)를 근거로, 이 기능에 실제로 연결된 파일을 허브·의존 따라 빠짐없이 찾되 없는 파일은 지어내지 마." : ""} 아래 두 부분을 순서대로:\n\n[설명]\n이 기능이 전체적으로 어떻게 동작하는지, 각 조각이 왜 있고 서로 어떻게 이어지는지, 데이터가 어디서 어디로 흐르는지를 개발 초보도 완전히 이해할 수 있게 친절하고 자세히. 형식은 마크다운으로:\n- 맨 위 큰 제목 한 줄(\`## 제목\`).\n- 흐름을 논리적 구간(예: 진입, 처리, provider 호출, 후처리·렌더)으로 나눠 **각 구간마다 \`### 소제목\` + 2~4문장**, 구간 사이는 \`---\` 한 줄로 구분.\n- 파일/함수 이름은 백틱(\`)으로 감싸. 파이프(|) 기호는 쓰지 마.\n\n[흐름]\n그 다음 각 노드를 한 줄씩, 아래 형식으로만:\n레이어 | 표시이름 | 파일경로:라인 | 한줄역할 | → 다음노드이름\n(진입(UI/route)→처리(IPC/handler)→서비스/로직→데이터/외부 순. 파일경로는 위 목록의 실제 경로. 라인 모르면 파일만. "→ 다음노드"는 흐름상 이어지는 노드 표시이름들(쉼표로 여러 개), 없으면 생략. 표시이름은 서로 정확히 일치시켜 연결되게. **중요: 이 기능과 관련된 파일은 하나도 빠뜨리지 말고 전부 노드로 넣어. [설명]에서 언급한 파일은 반드시 [흐름]에도 노드로 포함. 관련 있으면 확실치 않아도 넣되, 없는 파일을 지어내진 마.** 예: 진입·UI | AnalyzeControls | src/components/AnalyzeControls.tsx | 분석 버튼 | → analyze route)`;
-      const res = await fetch("/api/agent/analyze", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerId, request: { code: ctx, locale, providerId, mode: "chat", messages: [{ role: "user", content: prompt }], providerSettings } }),
-      });
-      if (!res.ok || !res.body) { if (my === reqRef.current) setErr(`HTTP ${res.status}`); return; }
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = "", answer = "", streamErr = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const ls = buf.split("\n"); buf = ls.pop() ?? "";
-        for (const l of ls) { if (!l.trim()) continue; let ev: StreamEvent; try { ev = JSON.parse(l) as StreamEvent; } catch { continue; } if (ev.type === "result") answer = ev.response?.summary ?? ""; else if (ev.type === "error") streamErr = ev.message ?? "error"; }
-      }
+      const answer = await ask(ctx, prompt);
       if (my !== reqRef.current) return; // 더 최신 요청이 진행 중 → 폐기
-      if (streamErr) { setErr(streamErr); return; }
-      const clean = stripCardBlock(answer); // 튜터가 자동으로 붙이는 nunopi-cards 블록 제거
+      if (answer.err) { setErr(answer.err); return; }
+      const clean = stripCardBlock(answer.text); // 튜터가 자동으로 붙이는 nunopi-cards 블록 제거
       const parsed = parseFlow(clean);
       if (!parsed.length) { setErr(`no flow — ${clean.slice(0, 140)}`); return; }
       const ov = parseOverview(clean) || null;
-      // 갱신(update)=기존 흐름에 새 노드만 병합, 그 외=교체.
+      // 차분 정보 없는 갱신(옛 저장분)=기존 흐름에 새 노드만 병합, 그 외(재생성·구조 변화가 많은 갱신)=교체.
       const base = sectionsRef.current;
-      const nextSecs = mode === "update" && base ? mergeFlow(base, parsed) : parsed;
+      const nextSecs = mode === "update" && base && !d ? mergeFlow(base, parsed) : parsed;
       setSections(nextSecs); setOverview(ov);
       await archPut(root, "flow", { sections: nextSecs, overview: ov }, feature); // 영속(#743 → #1320 서버)
       if (my === reqRef.current) setDiff(null); // 방금 저장 = 최신
@@ -207,10 +232,11 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     } finally {
       if (my === reqRef.current) { setLoading(false); setRunning(null); }
     }
-  }, [feature, root, providerId, providerSettings, locale]);
+  }, [feature, root, providerId, providerSettings, ask, t]);
 
-  // 최신 sections 미러(갱신 병합 기준).
+  // 최신 sections·overview 미러(갱신 병합 기준).
   useEffect(() => { sectionsRef.current = sections; }, [sections]);
+  useEffect(() => { overviewRef.current = overview; }, [overview]);
 
   // 코드그래프 실측 연결 조회 — 플로우 노드 파일들 사이 실제 imports/calls. 곡선 근거화(#842 서브4).
   useEffect(() => {
@@ -345,6 +371,16 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
           <div className="flex flex-col gap-1"><p className="text-[12px] text-rose-500">{t("flow.error")}</p><p className="break-words text-[10px] text-zinc-400 dark:text-zinc-500">{err}</p></div>
         ) : sections ? (
           <div className="mx-auto flex w-full max-w-[30rem] flex-col gap-3">
+            {/* #1320 낡음 표시 — 저장 뒤 바뀐 파일 수 + 갱신, 또는 방금 갱신이 한 일. 기존 보조 문구 톤 한 줄(새 패널 없음). */}
+            {(note || (diff && diff.changed.length + diff.removed.length > 0)) && (
+              <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                {note ?? t("flow.stale", { n: diff!.changed.length + diff!.removed.length, m: diff!.structural.length + diff!.removed.length })}
+                {!note && (
+                  <button type="button" onClick={() => setConfirm("update")} disabled={loading}
+                    className="ml-1.5 font-medium text-mustard-700 hover:underline disabled:opacity-50 dark:text-mustard-400">{t("flow.updateTitle")}</button>
+                )}
+              </p>
+            )}
             {/* 이 아키텍처 설명(초보용) — 흐름 위 접이식 박스(#743). */}
             {overview && (
               <div className="rounded-lg border border-zinc-200 bg-zinc-50/70 dark:border-zinc-800 dark:bg-zinc-800/40">

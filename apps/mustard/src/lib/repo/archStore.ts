@@ -44,3 +44,17 @@ export async function currentSnap(root: string): Promise<Snap> {
 
 // 저장분이 있으면 지금과 비교한 차분, 없으면 null.
 export const diffFrom = (saved: { snap?: Snap } | undefined, cur: Snap): SnapDiff | null => (saved?.snap ? diffSnap(saved.snap, cur) : null);
+
+// 차분 갱신 프롬프트용 파일 뼈대 — 파일별 심볼(줄·종류·이름·시그니처). 파일 30개·파일당 40개 상한(토큰 방어).
+export async function fileSkeletons(root: string, files: string[]): Promise<string> {
+  const { graph } = await loadOrBuildGraph(root);
+  const want = new Set(files.slice(0, 30));
+  const by = new Map<string, string[]>();
+  for (const n of graph.nodes) {
+    if (n.kind === "file" || !want.has(n.file)) continue;
+    const a = by.get(n.file) ?? [];
+    if (a.length < 40) a.push(`  ${n.line ?? "?"}: ${n.kind} ${n.label}${n.signature ? ` ${n.signature}` : ""}`);
+    by.set(n.file, a);
+  }
+  return [...want].map((f) => `${f}\n${(by.get(f) ?? ["  (심볼 없음)"]).join("\n")}`).join("\n");
+}

@@ -48,6 +48,26 @@ function parseCategories(text: string): RepoCategory[] {
   return out;
 }
 
+// 에이전트 스트림 읽기(chat 모드) — result.summary = 응답 텍스트. 전체 분석·차분 갱신 공용.
+async function readStream(body: ReadableStream<Uint8Array>): Promise<{ answer: string; streamErr: string }> {
+  const reader = body.getReader();
+  const dec = new TextDecoder();
+  let buf = "", answer = "", streamErr = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const ls = buf.split("\n"); buf = ls.pop() ?? "";
+    for (const l of ls) {
+      if (!l.trim()) continue;
+      let ev: StreamEvent; try { ev = JSON.parse(l) as StreamEvent; } catch { continue; }
+      if (ev.type === "result") answer = ev.response?.summary ?? "";
+      else if (ev.type === "error") streamErr = ev.message ?? "stream error";
+    }
+  }
+  return { answer, streamErr };
+}
+
 // 좌측 "레포 분석하기" 섹션(#743) — [분석하기] → 기능 카테고리 목록 → 클릭 → 플로우 패널(feature=title).
 export default function RepoAnalyzeSection({ root, providerId, providerSettings, onOpenFlow, onOpenGraph }: {
   root: string;
@@ -80,6 +100,25 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
     setDetail(null);
     const fail = (d: string) => { setErr(t("repo.analyzeError")); setDetail(d); };
     try {
+      // #1320 차분 갱신 — 저장 뒤 구조가 바뀐 파일이 없으면 AI 없이 끝(스냅샷만 새로), 있으면 그 파일들만 보여 주고 새 기능만 받음.
+      const d = merge && cats ? (await archGet<RepoCategory[]>(root, "cats")).diff : null;
+      if (d && !d.structural.length) { await archPut(root, "cats", cats); return; }
+      if (d) {
+        const name = root.split("/").filter(Boolean).pop() ?? root;
+        const ctx = `레포: ${name}\n\n[지금 기능 목록]\n${cats!.map((c) => `\`${c.id}\` · ${c.title}${c.blurb ? ` · ${c.blurb}` : ""}`).join("\n")}\n\n[분석 뒤 구조가 바뀌었거나 새로 생긴 파일]\n${d.structural.slice(0, 200).join("\n")}`;
+        const prompt = `위 바뀐 파일들 때문에 "지금 기능 목록"에 없는 새 기능/영역이 생겼으면 그것만 같은 형식으로 한 줄씩 적어줘. 이미 있는 기능에 속하는 변경이면 적지 마. 새 기능이 없으면 "없음" 한 줄만. 인사·설명 없이:\n\`slug\` · 제목 · 한줄설명`;
+        const res = await fetch("/api/agent/analyze", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ providerId, request: { code: ctx, locale, providerId, mode: "chat", messages: [{ role: "user", content: prompt }], providerSettings } }),
+        });
+        if (!res.ok || !res.body) { fail(`analyze HTTP ${res.status}`); return; }
+        const { answer, streamErr } = await readStream(res.body);
+        if (streamErr) { fail(`agent: ${streamErr}`); return; }
+        const next = mergeCats(cats!, parseCategories(stripCardBlock(answer)));
+        setCats(next);
+        await archPut(root, "cats", next);
+        return;
+      }
       // 1) 레포 파일 목록(컨텍스트) — 노이즈 제외 + 상한(토큰 방어).
       const tr = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root }) });
       if (!tr.ok) { fail(`tree HTTP ${tr.status}`); return; }
@@ -98,21 +137,7 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
         body: JSON.stringify({ providerId, request: { code: ctx, locale, providerId, mode: "chat", messages: [{ role: "user", content: prompt }], providerSettings } }),
       });
       if (!res.ok || !res.body) { const b = await res.text().catch(() => ""); fail(`analyze HTTP ${res.status}${b ? ` ${b.slice(0, 160)}` : ""}`); return; }
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = "", answer = "", streamErr = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const ls = buf.split("\n"); buf = ls.pop() ?? "";
-        for (const l of ls) {
-          if (!l.trim()) continue;
-          let ev: StreamEvent; try { ev = JSON.parse(l) as StreamEvent; } catch { continue; }
-          if (ev.type === "result") answer = ev.response?.summary ?? "";
-          else if (ev.type === "error") streamErr = ev.message ?? "stream error";
-        }
-      }
+      const { answer, streamErr } = await readStream(res.body);
       if (streamErr) { fail(`agent: ${streamErr}`); return; }
       if (!answer.trim()) { fail(t("repo.emptyResponseDetail")); return; }
       const parsed = parseCategories(stripCardBlock(answer)); // 튜터 자동 카드 블록 제거 후 파싱

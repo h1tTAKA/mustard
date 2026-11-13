@@ -27,3 +27,9 @@ export async function archGet<T>(root: string, kind: Kind, feature?: string): Pr
   await archPut(root, kind, old, feature);
   return { data: old as T, diff: null };
 }
+
+// 차분 갱신 프롬프트용 파일 심볼 뼈대. 실패면 빈 문자열(파일 이름만으로 진행).
+export async function archSkeleton(root: string, files: string[]): Promise<string> {
+  try { const d = await (await post({ op: "skeleton", path: root, data: files })).json(); return typeof d?.text === "string" ? d.text : ""; }
+  catch { return ""; }
+}
