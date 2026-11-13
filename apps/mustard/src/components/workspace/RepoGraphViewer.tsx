@@ -8,7 +8,7 @@ import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, t
 import { IconX, IconLoader2, IconFocus2, IconSearch, IconCode, IconLayoutSidebarRight, IconRoute } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import type { RepoAssetRole, RepoGraph, RepoNode, RepoNodeKind } from "@/lib/repo/types";
-import { DEPTHS, visibleKinds, searchNodes, neighbors, langStats, shortestPath, type Link } from "@/lib/repo/graphView";
+import { DEPTHS, visibleKinds, searchNodes, neighbors, langStats, shortestPath, impactOf, type Link } from "@/lib/repo/graphView";
 import { useViewDepth } from "@/lib/repo/viewDepth";
 
 type SimNode = SimulationNodeDatum & { id: string; label: string; file: string; kind: RepoNodeKind; role?: RepoAssetRole; community?: number };
@@ -27,6 +27,8 @@ const NODE_R = 4, DRAG_THRESHOLD = 4; // 노드 반경(그래프 좌표), 클릭
 const BIG_GRAPH = 5000;               // 이 이상이면 무거움 배너(silent 캡 금지)
 const MAX_CHIPS = 14, MAX_LIST = 50;  // 덩어리 칩·상세 목록 상한(화면 넘침 방지)
 const HL = "#e8b93a";                  // 강조색(머스타드)
+const CHANGED = "#f97316", AFFECTED = "#facc15"; // 영향 강조: 바뀐 노드(주황)·한 칸 이웃(노랑)
+type ImpactBase = "off" | "analysis" | "worktree" | "branch";
 
 export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
   root: string;
@@ -50,6 +52,9 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
   const [pathPick, setPathPick] = useState<null | "from" | "to">(null);
   const [pathFrom, setPathFrom] = useState<string | null>(null);
   const [pathTo, setPathTo] = useState<string | null>(null);
+  // 영향 강조 — 기준을 고르면 서버에서 바뀐 파일 목록을 받아 바뀐 노드 + 한 칸 이웃을 칠함.
+  const [impactBase, setImpactBase] = useState<ImpactBase>("off");
+  const [impact, setImpact] = useState<{ files: string[]; noBase?: boolean; error?: string } | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -61,13 +66,13 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
   const rafRef = useRef(0);
   const hoverRef = useRef<SimNode | null>(null);
   // 그리기용 강조 상태 미러 — draw는 rAF에서 돌아 state를 직접 못 봄.
-  const hlRef = useRef<{ sel: string | null; match: Set<string>; picked: Set<number>; path: Set<string>; pathEdges: Set<string> }>({ sel: null, match: new Set(), picked: new Set(), path: new Set(), pathEdges: new Set() });
+  const hlRef = useRef<{ sel: string | null; match: Set<string>; picked: Set<number>; path: Set<string>; pathEdges: Set<string>; changed: Set<string>; affected: Set<string> }>({ sel: null, match: new Set(), picked: new Set(), path: new Set(), pathEdges: new Set(), changed: new Set(), affected: new Set() });
 
   // 1) 그래프 로드 — 서브2 캐시 라우트 재사용.
   useEffect(() => {
     let alive = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 로드 시작 초기화(비동기 fetch 준비)
-    setLoading(true); setErr(null); setSelected(null); setPicked(new Set()); setQuery(""); setPathPick(null); setPathFrom(null); setPathTo(null);
+    setLoading(true); setErr(null); setSelected(null); setPicked(new Set()); setQuery(""); setPathPick(null); setPathFrom(null); setPathTo(null); setImpactBase("off");
     void (async () => {
       try {
         const r = await fetch("/api/repo/codegraph", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root }) });
@@ -93,14 +98,32 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
   const langs = useMemo(() => langStats(graph?.nodes ?? []).slice(0, 6), [graph]);
   // 지금 깊이에 보이는 노드만 지나는 최단 경로(그려지는 것과 맞게). 끝점이 안 보이면 null.
   const path = useMemo(() => (graph && pathFrom && pathTo ? shortestPath(graph.edges, pathFrom, pathTo, new Set(shown.map((n) => n.id))) : null), [graph, shown, pathFrom, pathTo]);
+  // 영향 기준이 바뀌면 바뀐 파일 목록 다시 받기(늦게 온 옛 응답은 버림).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 기준 전환 시 이전 결과 비움(비동기 조회 준비)
+    setImpact(null);
+    if (impactBase === "off") return;
+    let alive = true;
+    void (async () => {
+      try {
+        const r = await fetch("/api/repo/impact", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, base: impactBase }) });
+        const d = await r.json().catch(() => null);
+        if (!alive) return;
+        setImpact(r.ok && Array.isArray(d?.files) ? { files: d.files as string[], noBase: !!d.noBase } : { files: [], error: d?.error ? String(d.error) : `HTTP ${r.status}` });
+      } catch (e) { if (alive) setImpact({ files: [], error: e instanceof Error ? e.message : String(e) }); }
+    })();
+    return () => { alive = false; };
+  }, [root, impactBase]);
+  const hit = useMemo(() => (graph && impact ? impactOf(graph, impact.files) : null), [graph, impact]);
   const detail = useMemo(() => (graph && selected ? neighbors(graph, selected) : null), [graph, selected]);
 
   useEffect(() => {
     const pathEdges = new Set<string>();
     if (path) for (let i = 1; i < path.length; i++) { pathEdges.add(`${path[i - 1]}|${path[i]}`); pathEdges.add(`${path[i]}|${path[i - 1]}`); }
-    hlRef.current = { sel: selected, match: new Set(query.trim() ? matches.map((n) => n.id) : []), picked, path: new Set(path ?? [pathFrom, pathTo].filter((x): x is string => !!x)), pathEdges };
+    hlRef.current = { sel: selected, match: new Set(query.trim() ? matches.map((n) => n.id) : []), picked, path: new Set(path ?? [pathFrom, pathTo].filter((x): x is string => !!x)), pathEdges,
+      changed: hit?.changed ?? new Set(), affected: hit?.affected ?? new Set() };
     dirtyRef.current = true;
-  }, [selected, matches, picked, query, path, pathFrom, pathTo]);
+  }, [selected, matches, picked, query, path, pathFrom, pathTo, hit]);
 
   // 화면→그래프 좌표 역변환(줌/팬 역산). 히트테스트·드래그에.
   const toGraph = useCallback((sx: number, sy: number) => {
@@ -128,9 +151,12 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     const ctx = cv.getContext("2d");
     if (!ctx) return;
     const v = viewRef.current;
-    const { sel, match, picked: pk, path: onPath, pathEdges } = hlRef.current;
-    // 흐리게(배치 유지): 경로가 있으면 경로 밖 전부, 아니면 덩어리 거름 밖.
-    const dim = (n: SimNode) => (pathEdges.size > 0 ? !onPath.has(n.id) : pk.size > 0 && (n.community == null || !pk.has(n.community)));
+    const { sel, match, picked: pk, path: onPath, pathEdges, changed, affected } = hlRef.current;
+    const impactOn = changed.size > 0;
+    // 흐리게(배치 유지): 경로가 있으면 경로 밖 전부 → 영향 강조 중이면 바뀐·영향 밖 → 아니면 덩어리 거름 밖.
+    const dim = (n: SimNode) => (pathEdges.size > 0 ? !onPath.has(n.id)
+      : impactOn ? !changed.has(n.id) && !affected.has(n.id)
+      : pk.size > 0 && (n.community == null || !pk.has(n.community)));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     ctx.translate(v.x, v.y); ctx.scale(v.k, v.k);
@@ -139,7 +165,7 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     for (const l of linksRef.current) {
       const s = l.source as SimNode, tg = l.target as SimNode;
       if (typeof s !== "object" || typeof tg !== "object") continue;
-      if (pathEdges.size ? pathEdges.has(`${s.id}|${tg.id}`) : sel && (s.id === sel || tg.id === sel)) hot.push([s, tg]);
+      if (pathEdges.size ? pathEdges.has(`${s.id}|${tg.id}`) : sel ? s.id === sel || tg.id === sel : impactOn && (changed.has(s.id) || changed.has(tg.id)) && !dim(s) && !dim(tg)) hot.push([s, tg]);
       else if (dim(s) || dim(tg)) faint.push([s, tg]);
       else normal.push([s, tg]);
     }
@@ -151,7 +177,7 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     };
     stroke(faint, "rgba(120,120,135,0.07)", 0.6);
     stroke(normal, "rgba(120,120,135,0.28)", 0.6);
-    stroke(hot, HL, pathEdges.size ? 2.2 : 1.4);
+    stroke(hot, !pathEdges.size && !sel && impactOn ? CHANGED : HL, pathEdges.size ? 2.2 : 1.4);
     // 노드
     for (const n of nodesRef.current) {
       ctx.globalAlpha = dim(n) && n.id !== sel && !match.has(n.id) ? 0.15 : 1;
@@ -161,6 +187,7 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
       ctx.fillStyle = (n.role && ROLE_COLOR[n.role]) || (KIND_COLOR[n.kind] ?? "#9ca3af");
       ctx.fill();
       if (ring) { ctx.lineWidth = 1.5 / v.k; ctx.strokeStyle = HL; ctx.stroke(); }
+      else if (!pathEdges.size && (changed.has(n.id) || affected.has(n.id))) { ctx.lineWidth = 2 / v.k; ctx.strokeStyle = changed.has(n.id) ? CHANGED : AFFECTED; ctx.stroke(); }
     }
     ctx.globalAlpha = 1;
     // 라벨 — 확대(k>1.6) 시, 또는 호버·선택·검색 결과만(클러터 방지)
@@ -168,7 +195,7 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     ctx.fillStyle = "rgba(228,228,235,0.92)";
     ctx.font = `${11 / v.k}px ui-monospace, monospace`;
     for (const n of nodesRef.current) {
-      if (!(v.k > 1.6 && !dim(n)) && n !== hov && n.id !== sel && !match.has(n.id) && !onPath.has(n.id)) continue;
+      if (!(v.k > 1.6 && !dim(n)) && n !== hov && n.id !== sel && !match.has(n.id) && !onPath.has(n.id) && !changed.has(n.id)) continue;
       ctx.fillText(n.label, (n.x ?? 0) + NODE_R + 1.5 / v.k, (n.y ?? 0) + 3 / v.k);
     }
   }, []);
@@ -368,6 +395,11 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
               className={`flex items-center gap-1 ${chip(pathActive)}`}>
               <IconRoute size={13} stroke={2} aria-hidden />{t("graph.path")}
             </button>
+            {/* 영향 강조 기준 — 끔 / 분석 뒤 / 커밋 안 한 변경 / main 대비 */}
+            <select value={impactBase} onChange={(e) => { setImpactBase(e.target.value as ImpactBase); setPanelOpen(true); }} title={t("graph.impactTitle")} aria-label={t("graph.impactTitle")}
+              className={`shrink-0 rounded-md border border-zinc-200 bg-white py-0.5 pl-1.5 pr-1 text-[11px] outline-none dark:border-zinc-700 dark:bg-zinc-900 ${impactBase !== "off" ? "text-mustard-700 dark:text-mustard-400" : "text-zinc-500 dark:text-zinc-400"}`}>
+              {(["off", "analysis", "worktree", "branch"] as const).map((b) => <option key={b} value={b}>{t(`graph.impact.${b}`)}</option>)}
+            </select>
           </div>
         </div>
       )}
@@ -417,6 +449,25 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
                   <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{t("graph.pathNone")}</p>
                 )}
                 <button type="button" onClick={clearPath} className="self-start text-[11px] font-medium text-mustard-700 hover:underline dark:text-mustard-400">{t("graph.pathClear")}</button>
+              </div>
+            ) : !sel && impactBase !== "off" ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-[12px] font-semibold text-zinc-700 dark:text-zinc-200">{t(`graph.impact.${impactBase}`)}</p>
+                {!impact ? (
+                  <p className="flex items-center gap-1.5 text-[11px] text-zinc-400"><IconLoader2 size={12} stroke={2} className="animate-spin" aria-hidden />{t("graph.loading")}</p>
+                ) : impact.error ? (
+                  <p className="break-words text-[11px] text-rose-500">{impact.error}</p>
+                ) : impact.noBase ? (
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{t(impactBase === "analysis" ? "graph.impactNoAnalysis" : "graph.impactNoBranch")}</p>
+                ) : !impact.files.length ? (
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{t("graph.impactNone")}</p>
+                ) : (
+                  <>
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{t("graph.impactCounts", { files: impact.files.length, changed: hit?.changed.size ?? 0, affected: hit?.affected.size ?? 0 })}</p>
+                    {linkList(t("graph.impactChanged"), graph.nodes.filter((n) => n.kind === "file" && hit?.changed.has(n.id)))}
+                    {linkList(t("graph.impactAffected"), graph.nodes.filter((n) => hit?.affected.has(n.id) && visibleKinds(depth).has(n.kind)))}
+                  </>
+                )}
               </div>
             ) : !sel ? (
               <>

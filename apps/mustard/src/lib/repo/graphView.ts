@@ -81,3 +81,15 @@ export function shortestPath(edges: RepoEdge[], a: string, b: string, allowed?: 
   }
   return null;
 }
+
+// 영향 강조(#1322) — 바뀐 파일에 든 노드(changed) + 거기 한 칸 연결된 노드(affected, changed 제외). 한계: 한 칸만.
+export function impactOf(graph: RepoGraph, files: string[]): { changed: Set<string>; affected: Set<string> } {
+  const fs = new Set(files);
+  const changed = new Set(graph.nodes.filter((n) => fs.has(n.file)).map((n) => n.id));
+  const affected = new Set<string>();
+  for (const e of graph.edges) {
+    if (changed.has(e.source) && !changed.has(e.target)) affected.add(e.target);
+    if (changed.has(e.target) && !changed.has(e.source)) affected.add(e.source);
+  }
+  return { changed, affected };
+}

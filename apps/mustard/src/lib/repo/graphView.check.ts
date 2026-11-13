@@ -1,6 +1,6 @@
 // graphView.ts self-check(#1322) — 앱 미import. 실행: node --experimental-strip-types src/lib/repo/graphView.check.ts
 import assert from "node:assert";
-import { visibleKinds, searchNodes, neighbors, langStats, shortestPath } from "./graphView.ts";
+import { visibleKinds, searchNodes, neighbors, langStats, shortestPath, impactOf } from "./graphView.ts";
 import type { RepoGraph } from "./types.ts";
 
 const g: RepoGraph = {
@@ -42,4 +42,9 @@ assert.deepEqual(shortestPath(g.edges, "b.tsx#Loader", "b.tsx"), ["b.tsx#Loader"
 assert.deepEqual(shortestPath(g.edges, "a.ts", "a.ts"), ["a.ts"]);
 assert.equal(shortestPath(g.edges, "b.tsx#Loader", "b.tsx", new Set(["b.tsx#Loader", "b.tsx", "a.ts"])), null); // 보이는 노드만 지남 → 끊김
 assert.equal(shortestPath(g.edges, "a.ts", "nope"), null);
+// 영향 — b.tsx 바뀜 → b.tsx·Loader가 changed, imports·calls로 붙은 a.ts·load가 affected
+const im = impactOf(g, ["b.tsx"]);
+assert.deepEqual([...im.changed].sort(), ["b.tsx", "b.tsx#Loader"]);
+assert.deepEqual([...im.affected].sort(), ["a.ts", "a.ts#load"]);
+assert.equal(impactOf(g, ["gone.ts"]).changed.size, 0);
 console.log("graphView.check OK");
