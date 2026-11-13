@@ -13,6 +13,11 @@ export async function archPut(root: string, kind: Kind, data: unknown, feature?:
   try { return (await post({ op: "put", path: root, kind, feature, data, legacy: opts.legacy, token: opts.token })).ok; } catch { return false; }
 }
 
+// 흐름 덧붙임(깊이별 설명·둘러보기)만 저장 — 스냅샷·노드는 그대로(#1322).
+export async function archPatch(root: string, feature: string, data: object): Promise<boolean> {
+  try { return (await post({ op: "patch", path: root, kind: "flow", feature, data })).ok; } catch { return false; }
+}
+
 // 분석 시작 — 지금 스냅샷을 서버가 잡아 두고 표를 줌(실패하면 undefined → 저장 시점 스냅샷).
 export async function archBegin(root: string): Promise<string | undefined> {
   try { const d = await (await post({ op: "begin", path: root })).json(); return typeof d?.token === "string" ? d.token : undefined; } catch { return undefined; }

@@ -13,8 +13,10 @@ import { snapOf, diffSnap, type Snap, type SnapDiff } from "./incremental";
 export type ArchFlowNode = { name: string; file?: string; line?: number; role?: string; next?: string[] };
 export type ArchSection = { layer: string; nodes: ArchFlowNode[] };
 export type ArchCategory = { id: string; title: string; blurb?: string };
+// 흐름의 덧붙임(#1322) — 깊이별 설명글(overview 자체는 초보용 기본), 둘러보기 단계. 흐름(노드)이 바뀌면 같이 버림.
+export type ArchExtras = { overviews?: { dev?: string; expert?: string }; tour?: { depth: string; steps: { name: string; text: string }[] } };
 // snap 없음 = 예전 브라우저 저장분을 옮긴 것(언제 분석했는지 모름) → 차분 없이 옛 방식 갱신.
-export interface ArchFlow { sections: ArchSection[]; overview: string | null; snap?: Snap; at: number }
+export interface ArchFlow extends ArchExtras { sections: ArchSection[]; overview: string | null; snap?: Snap; at: number }
 export interface ArchCats { items: ArchCategory[]; snap?: Snap; at: number }
 export interface ArchFile { v: 1; cats?: ArchCats; flows: Record<string, ArchFlow> }
 

@@ -2,11 +2,13 @@
 // POST {op:"get", path, kind:"cats"|"flow", feature?, diff?} → { data, diff }  (diff:true일 때만 저장 뒤 바뀐 파일 계산 — 그래프 맞추느라 느릴 수 있음)
 // POST {op:"put", path, kind, feature?, data, legacy?}    → 지금 파일 스냅샷과 함께 저장(legacy=옛 브라우저 저장분 이전 → 스냅샷 없이)
 // POST {op:"skeleton", path, data: files[]}              → 파일별 심볼 뼈대 텍스트(차분 갱신 프롬프트용)
+// POST {op:"patch", path, kind:"flow", feature, data:{overviews?, tour?}} → 흐름 덧붙임만 합침(스냅샷·노드 그대로, #1322)
+//   put의 data에 overviews·tour를 같이 주면 유지, 안 주면 버림(흐름이 바뀐 저장은 옛 설명·단계가 안 맞으니까).
 // POST {op:"begin", path}                               → {token} 분석 시작 시점 스냅샷 표(put에 token으로 넘기면 그 스냅샷으로 저장)
 //   get에 diff:true·token:true면 같은 표도 같이 줌(갱신만 요청 — 낡음 표시용 조회는 표를 안 만들어 보관함을 안 밀어냄)
 import { existsSync, statSync } from "node:fs";
 import { crossSite } from "@/lib/crew/crewPolicy";
-import { readArch, writeArch, currentSnap, diffFrom, fileSkeletons, getFlow, setFlow, beginSnap, takeSnap, type ArchCategory, type ArchSection } from "@/lib/repo/archStore";
+import { readArch, writeArch, currentSnap, diffFrom, fileSkeletons, getFlow, setFlow, beginSnap, takeSnap, type ArchCategory, type ArchSection, type ArchExtras } from "@/lib/repo/archStore";
 
 export async function POST(request: Request): Promise<Response> {
   if (crossSite(request)) return Response.json({ error: "cross-site" }, { status: 403 }); // 다른 사이트가 몰래 저장·스캔 못 하게(리뷰)
@@ -31,25 +33,40 @@ export async function POST(request: Request): Promise<Response> {
       const f = readArch(path);
       const saved = kind === "cats" ? f.cats : getFlow(f, name);
       if (!saved) return Response.json({ data: null, diff: null });
-      const data = kind === "cats" ? f.cats!.items : { sections: getFlow(f, name)!.sections, overview: getFlow(f, name)!.overview };
+      const fl = getFlow(f, name);
+      const data = kind === "cats" ? f.cats!.items : { sections: fl!.sections, overview: fl!.overview, overviews: fl!.overviews, tour: fl!.tour };
       if (b.diff !== true) return Response.json({ data, diff: null });
       const cur = await currentSnap(path);
       return Response.json({ data, diff: diffFrom(saved, cur), ...(b.wantToken === true ? { token: beginSnap(cur) } : {}) });
+    }
+    if (op === "patch") {
+      if (kind !== "flow") return Response.json({ error: "patch is flow only" }, { status: 400 });
+      const x = (b.data && typeof b.data === "object" ? b.data : {}) as ArchExtras;
+      const f = readArch(path);
+      const fl = getFlow(f, name);
+      if (!fl) return Response.json({ error: "no flow" }, { status: 404 });
+      const ov = x.overviews && typeof x.overviews === "object" ? x.overviews : {};
+      const clean = Object.fromEntries((["dev", "expert"] as const).filter((k) => typeof ov[k] === "string").map((k) => [k, ov[k]]));
+      if (Object.keys(clean).length) fl.overviews = { ...fl.overviews, ...clean };
+      if (x.tour && Array.isArray(x.tour.steps) && typeof x.tour.depth === "string") fl.tour = { depth: x.tour.depth, steps: x.tour.steps.filter((s) => typeof s?.name === "string" && typeof s?.text === "string") };
+      writeArch(path, f);
+      return Response.json({ ok: true });
     }
     if (op === "put") {
       // 스냅샷(그래프 맞추기, await)을 먼저 — 읽고-고치고-쓰기 사이에 await가 없어야 동시 저장끼리 서로 안 지움(리뷰).
       const snap = b.legacy === true ? undefined : (takeSnap(b.token) ?? await currentSnap(path));
       const at = Date.now();
       if (kind === "cats" && !Array.isArray(b.data)) return Response.json({ error: "data must be an array" }, { status: 400 });
-      const d = b.data as { sections?: unknown; overview?: unknown } | null;
+      const d = b.data as ({ sections?: unknown; overview?: unknown } & ArchExtras) | null;
       if (kind === "flow" && (!d || !Array.isArray(d.sections))) return Response.json({ error: "data.sections must be an array" }, { status: 400 });
       const f = readArch(path);
       if (kind === "cats") f.cats = { items: b.data as ArchCategory[], snap, at };
-      else setFlow(f, name, { sections: d!.sections as ArchSection[], overview: typeof d!.overview === "string" ? d!.overview : null, snap, at });
+      else setFlow(f, name, { sections: d!.sections as ArchSection[], overview: typeof d!.overview === "string" ? d!.overview : null, snap, at,
+        ...(d!.overviews && typeof d!.overviews === "object" ? { overviews: d!.overviews } : {}), ...(d!.tour && typeof d!.tour === "object" ? { tour: d!.tour } : {}) });
       writeArch(path, f);
       return Response.json({ ok: true });
     }
-    return Response.json({ error: "op must be get|put|skeleton" }, { status: 400 });
+    return Response.json({ error: "op must be get|put|patch|skeleton|begin" }, { status: 400 });
   } catch (e) {
     return Response.json({ error: String((e as Error)?.message || e) }, { status: 500 });
   }
