@@ -14,7 +14,7 @@ export type DockNode =
 
 // 현재 존재하는 패널만으로 기본 트리 — 지금 화면과 동일하게(터미널 좌 | 코드 우, 문서는 코드 아래).
 // 접힌 터미널(has.terminal=false)은 넣지 않음(#1322) — 전엔 항상 넣어서, 터미널을 접어 둔 채 코드 탭이 처음 열리면 터미널이 도로 펴졌음.
-// 아무 패널도 없으면 터미널 하나(빈 dock 방지).
+// 아무 패널도 없으면 터미널 하나(빈 dock 방지). 한계: 그 경우 접힌 터미널이라도 보임 — 빈 dock을 그릴 수 없어서(전과 같음).
 export function defaultTree(has: Record<PanelId, boolean>): DockNode {
   const term: DockNode | null = has.terminal ? { t: "leaf", panel: "terminal" } : null;
   let right: DockNode | null = null;

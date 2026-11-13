@@ -126,7 +126,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const [tourIdx, setTourIdx] = useState<number | null>(null); // 지금 단계(null = 둘러보기 안 하는 중)
   const [tourBusy, setTourBusy] = useState(false);           // 단계 설명 만드는 중
   const scrollRef = useRef<HTMLDivElement | null>(null);    // 흐름 스크롤 영역(둘러보기 카드 위치 맞춤)
-  const stepBoxRef = useRef<HTMLDivElement | null>(null);   // 둘러보기 단계 박스(높이만큼 카드를 아래로)
+  const stepBoxRef = useRef<HTMLDivElement | null>(null);
+  const scrollRaf = useRef(0);   // 둘러보기 단계 박스(높이만큼 카드를 아래로)
   const busyN = useRef(0);                                   // 진행 중인 단계 만들기 수
   const [treeMiss, setTreeMiss] = useState(false);           // 지금 단계 파일이 왼쪽 트리에 없음(.gitignore 등)
   const [hovered, setHovered] = useState<string | null>(null); // 호버 카드 키(연결 강조)
@@ -181,8 +182,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   }, [edges]);
 
   // #1322 흐름 노드 파일들의 실제 코드 발췌(근거용) + 흐름 줄 목록.
-  // 흐름 설명용 — 파일을 앞에서 통째로(400줄까지, 전체 12만 자) + 이웃 뼈대. 줄 수가 모자라 AI가 짐작으로 채우지 않게(리뷰 #1322).
-  const codeOf = useCallback((secs: FlowSection[]) => (root ? archSnippets(root, secs.flatMap((s) => s.nodes.filter((n) => n.file).map((n) => ({ file: n.file!, line: n.line }))), { whole: true, span: 400, maxChars: 120000, neighbors: true }) : Promise.resolve("")), [root]);
+  // 흐름 설명용 — 파일을 앞에서 통째로(400줄까지, 전체 12만 자) + 이웃 뼈대. 줄 수가 모자라 AI가 짐작으로 채우지 않게(리뷰 #1322). 한계: 10만 자 넘는 흐름은 뒤 파일이 빠짐(앞=진입부터).
+  const codeOf = useCallback((secs: FlowSection[]) => (root ? archSnippets(root, secs.flatMap((s) => s.nodes.filter((n) => n.file).map((n) => ({ file: n.file!, line: n.line }))), { whole: true, span: 400, maxChars: 100000, neighbors: true }) : Promise.resolve("")), [root]);
   const flowLines = (secs: FlowSection[]) => secs.flatMap((s) => s.nodes.map((n) => `${s.layer} | ${n.name} | ${n.file ?? ""}${n.line ? `:${n.line}` : ""} | ${n.role ?? ""}${n.next?.length ? ` | → ${n.next.join(", ")}` : ""}`));
 
   // 에이전트 한 번 묻기 — 흐름 생성·차분 갱신·둘러보기·깊이별 설명 공용(lib/repo/askAgent).
@@ -401,12 +402,13 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 단계 이동 시 그 카드 포커스(기존 포커스 강조 재사용)
     setFocused(k);
     // 카드를 단계 박스 바로 아래로 — 박스가 길어도 안 가리게(박스 높이는 그려진 뒤 잼, 리뷰 #1322).
-    requestAnimationFrame(() => requestAnimationFrame(() => { // 두 프레임 뒤 — "트리에 없음" 줄 등 박스 내용이 다 그려진 다음 높이를 잼(리뷰)
+    if (scrollRaf.current) cancelAnimationFrame(scrollRaf.current); // 단계를 빨리 넘기면 앞 단계 스크롤은 취소(리뷰)
+    scrollRaf.current = requestAnimationFrame(() => { scrollRaf.current = requestAnimationFrame(() => { // 두 프레임 뒤 — "트리에 없음" 줄 등 박스 내용이 다 그려진 다음 높이를 잼(리뷰)
       const el = nodeEls.current.get(k), box = scrollRef.current;
       if (!el || !box) return;
       const boxH = stepBoxRef.current?.offsetHeight ?? 0;
       box.scrollBy({ top: el.getBoundingClientRect().top - box.getBoundingClientRect().top - boxH - 16, behavior: "smooth" });
-    }));
+    }); });
     const node = sections?.flatMap((s) => s.nodes).find((n) => nk(n.name) === k);
     // 왼쪽 파일 트리 펼침·강조(+설정 시 코드 열기). 트리에 없는 파일(숨김)이면 단계 박스에 알림.
     setTreeMiss(node?.file && onRevealFile ? !onRevealFile(node.file) : false);
