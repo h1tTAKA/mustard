@@ -34,7 +34,7 @@ export interface SymbolInfo {
 }
 
 // 원시 호출 — 아직 대상 미해결. callerId=이 호출을 감싼 심볼(없으면 null=모듈레벨, 버림).
-// member=this/self.x() 형태(대상이 caller의 소속 클래스 메서드) vs bare foo()(#843 Graft owner 기법).
+// member=this/self.x() 형태(대상이 caller의 소속 클래스 메서드) vs bare foo()(#843 소속 클래스 기준).
 export interface RawCall { callerId: string; calleeName: string; member: boolean; qualifier?: string } // qualifier: Q.x()의 Q(#1023)
 
 // 원시 상속 — classId(하위 클래스 심볼 id) → baseName(상위 이름, 미해결). relation=extends|implements(#843).
@@ -235,7 +235,7 @@ export function resolveCalls(
   for (const syms of importedSymbols.values()) for (const s of syms) if (!importByName.has(s.name)) importByName.set(s.name, s.id);
   // #843 scope-aware: owner 클래스별 메서드 인덱스 + caller id→owner. this/self 호출을 소속 클래스로 한정.
   // first-wins(로컬/import 이름 해석과 동일 정책, 결정적). 오버로드(Java만)·동명 재정의는 arity 없이는 단일 엣지로
-  // 정확 구분 불가 → 첫 정의로 해석(문서화된 한계, 리뷰 🟡). arity 기반 구분은 후속(Graft resolve.ts 참고).
+  // 정확 구분 불가 → 첫 정의로 해석(문서화된 한계, 리뷰 🟡). arity 기반 구분은 후속.
   const byOwnerName = new Map<string, string>(); // "Owner.method" → id(첫 것)
   const ownerOfId = new Map<string, string>();    // symbol id → owner 클래스
   for (const s of localSymbols) {
@@ -260,7 +260,7 @@ export function resolveCalls(
       // 못 찾으면 버림 — list.add() 같은 변수 메서드를 동명 함수로 잇지 않게(기존 노이즈 정책 유지).
       target = c.callerId.split("#")[0].endsWith(".go") ? goPkgName.get(`${c.qualifier}|${c.calleeName}`) : anyOwnerName.get(`${c.qualifier}.${c.calleeName}`);
     } else if (c.member) {
-      // this/self.x() — caller의 소속 클래스 메서드로만. 없으면 미해결(bare 이름 추측 금지, Graft 원칙).
+      // this/self.x() — caller의 소속 클래스 메서드로만. 없으면 미해결(bare 이름 추측 금지).
       const owner = ownerOfId.get(c.callerId);
       target = owner ? byOwnerName.get(`${owner}.${c.calleeName}`) : undefined;
     } else {

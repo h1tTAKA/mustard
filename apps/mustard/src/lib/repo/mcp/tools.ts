@@ -1,9 +1,10 @@
-// 코드그래프 MCP 툴셋(#853) — 에이전트가 그래프로 코드베이스 즉시 탐색(READ). Graft 6툴 + search(PageRank).
+// 코드그래프 MCP 툴셋(#853) — 에이전트가 그래프로 코드베이스 즉시 탐색(READ). 찾기·호출·참조·파일 API·구조 요약 + search(PageRank).
 // lib 재사용(loadOrBuildGraph/graphDigest/graphRank). 결과는 텍스트(MCP content).
 import { loadOrBuildGraph, currentFingerprint } from "../loadGraph";
 import { readCachedGraph } from "../graphStore";
 import { graphDigest } from "../graphDigest";
 import { graphRank } from "../graphrank";
+import { readArch, currentSnap, diffFrom } from "../archStore";
 import type { RepoGraph, RepoNode } from "../types";
 
 export interface McpTool {
@@ -110,6 +111,36 @@ export const TOOLS: McpTool[] = [
       if (!cached) return { text: "no cached graph yet — first query will build it" };
       const fresh = cached.fingerprint === cur;
       return { text: `${fresh ? "fresh" : "stale (will rebuild on next query)"} · builtAt ${new Date(cached.builtAt).toISOString()} · nodes ${cached.graph.nodes.length} edges ${cached.graph.edges.length}` };
+    },
+  },
+  {
+    // #1320 화면 "아키텍처"에서 만든 기능 목록·기능별 흐름(LLM 분석 결과)을 에이전트도 읽게.
+    name: "katchup_features",
+    description: "Feature list and per-feature architecture flows saved from Mustard's Architecture view (layers, nodes with file:line, role, next). No args = list features and saved flows (with how many files changed since); feature = that flow in full.",
+    inputSchema: { type: "object", properties: { feature: { type: "string", description: "Feature name as listed (omit to list)" } } },
+    handler: async (root, args) => {
+      const f = readArch(root);
+      const names = Object.keys(f.flows);
+      if (!f.cats && !names.length) return { text: "no saved architecture analysis yet — open Architecture in Mustard and analyze" };
+      const snap = await currentSnap(root);
+      const stale = (s: Parameters<typeof diffFrom>[0]) => { const d = diffFrom(s, snap); const n = d ? d.changed.length + d.removed.length : 0; return n ? ` (${n} files changed since)` : ""; };
+      const q = str(args.feature);
+      if (!q) {
+        const out: string[] = [];
+        if (f.cats) out.push(`[features]${stale(f.cats)}`, ...f.cats.items.map((c) => `- ${c.title}${c.blurb ? ` — ${c.blurb}` : ""}`));
+        if (names.length) out.push("", "[saved flows]", ...names.map((n) => `- ${n}${stale(f.flows[n])}`));
+        return { text: out.join("\n") };
+      }
+      const key = names.find((n) => n === q) ?? names.find((n) => n.toLowerCase() === q.toLowerCase());
+      if (!key) return { text: `no saved flow for "${q}". saved: ${names.join(", ") || "(none)"}` };
+      const fl = f.flows[key];
+      const out = [`# ${key}${stale(fl)}`];
+      if (fl.overview) out.push("", fl.overview);
+      for (const s of fl.sections) {
+        out.push("", `## ${s.layer}`);
+        for (const n of s.nodes) out.push(`- ${n.name}${n.file ? ` @ ${n.file}${n.line ? `:${n.line}` : ""}` : ""}${n.role ? ` — ${n.role}` : ""}${n.next?.length ? ` → ${n.next.join(", ")}` : ""}`);
+      }
+      return { text: out.join("\n") };
     },
   },
 ];

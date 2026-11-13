@@ -44,6 +44,7 @@ export function extractConcept(tool: string, args: Record<string, unknown>): { k
     case "katchup_trace_calls": { const t = s(args.symbol); return t ? { kind: "symbol", target: t } : null; }
     case "katchup_file_api": { const t = s(args.file); return t ? { kind: "file", target: t } : null; }
     case "katchup_search": { const t = s(args.query); return t ? { kind: "query", target: t } : null; }
+    case "katchup_features": { const t = s(args.feature); return t ? { kind: "query", target: t } : null; } // #1320 목록만이면 스킵
     case "katchup_repo_map": return { kind: "repo", target: translate(actLocale(), "stream.repoStructure") };
     default: return null; // check_freshness 등
   }

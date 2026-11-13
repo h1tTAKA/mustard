@@ -1,7 +1,7 @@
 "use client";
 // 코드그래프 raw 뷰어(#842 서브5, opt-in) — 노드-엣지 다이어그램을 캔버스에 포스 레이아웃으로.
 // 서브4 플로우(사람 친화 밴드/알약)와 별개: 그래프 구조 자체를 보고 싶은 유저용. 모달 오버레이.
-// 착안: NanoNets/Graft viewer/graph.ts(d3-force). 레이아웃 엔진 d3-force(ISC). 팬/줌은 손수(의존성 최소).
+// 레이아웃 엔진 d3-force(ISC). 팬/줌은 손수(의존성 최소).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, type Simulation, type SimulationNodeDatum } from "d3-force";
 import { IconX, IconLoader2, IconFocus2 } from "@tabler/icons-react";

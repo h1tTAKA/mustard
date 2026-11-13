@@ -1,5 +1,5 @@
 // import 지정자 → 레포 내 파일 해석(#853) — 상대(./ ../) + tsconfig paths 별칭(@/* 등) + baseUrl bare.
-// (상대만 해석하면 Next 앱의 @/ 별칭 import가 전부 엣지 0 → 그래프 반쪽. Graft도 TS는 상대만이라 여기서 이김.)
+// (상대만 해석하면 Next 앱의 @/ 별칭 import가 전부 엣지 0 → 그래프 반쪽.)
 // 경량 모듈(node:path/fs만) — 단위테스트·재사용 쉽게 graph.ts서 분리.
 import { readFileSync } from "node:fs";
 import { join, posix } from "node:path";

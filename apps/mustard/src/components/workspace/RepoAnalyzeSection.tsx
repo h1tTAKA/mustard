@@ -6,6 +6,7 @@ import { useT, useLocale } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { stripCardBlock } from "@mustard/core";
 import { fetchGraphDigest } from "@/lib/repo/fetchDigest";
+import { archGet, archPut, archBegin } from "@/lib/repo/archClient";
 
 // 레포 기능 카테고리(#743) — 에이전트가 파일 목록 보고 나눔.
 export type RepoCategory = { id: string; title: string; blurb?: string };
@@ -47,6 +48,26 @@ function parseCategories(text: string): RepoCategory[] {
   return out;
 }
 
+// 에이전트 스트림 읽기(chat 모드) — result.summary = 응답 텍스트. 전체 분석·차분 갱신 공용.
+async function readStream(body: ReadableStream<Uint8Array>): Promise<{ answer: string; streamErr: string }> {
+  const reader = body.getReader();
+  const dec = new TextDecoder();
+  let buf = "", answer = "", streamErr = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const ls = buf.split("\n"); buf = ls.pop() ?? "";
+    for (const l of ls) {
+      if (!l.trim()) continue;
+      let ev: StreamEvent; try { ev = JSON.parse(l) as StreamEvent; } catch { continue; }
+      if (ev.type === "result") answer = ev.response?.summary ?? "";
+      else if (ev.type === "error") streamErr = ev.message ?? "stream error";
+    }
+  }
+  return { answer, streamErr };
+}
+
 // 좌측 "레포 분석하기" 섹션(#743) — [분석하기] → 기능 카테고리 목록 → 클릭 → 플로우 패널(feature=title).
 export default function RepoAnalyzeSection({ root, providerId, providerSettings, onOpenFlow, onOpenGraph }: {
   root: string;
@@ -63,16 +84,22 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
   const [detail, setDetail] = useState<string | null>(null); // 실패 원인 상세(디버깅·안내)
   const [confirm, setConfirm] = useState<null | "reanalyze" | "update">(null); // 확인 모달(내용 바뀜·추가 경고)
   const [running, setRunning] = useState<null | "reanalyze" | "update">(null); // 지금 도는 액션(그 버튼만 스핀)
-  const catsKey = root ? `nunopi:ws:${root}:analyze-cats` : null; // 레포별 카테고리 영속 키(#743)
-
-  // 저장된 카테고리 복원 — 새로고침/재시작/레포 재진입 시 재분석 없이 바로 목록 표시.
+  const [restored, setRestored] = useState(false); // 저장분 확인 끝(전엔 "분석하기"를 잠가 저장분을 덮어쓰지 않게, 리뷰)
+  // 저장된 카테고리 복원 — 새로고침/재시작/레포 재진입 시 재분석 없이 바로 목록 표시. 저장소=서버 파일(#1320).
   useEffect(() => {
-    if (!catsKey) return;
-    let saved: RepoCategory[] | null = null;
-    try { const raw = localStorage.getItem(catsKey); if (raw) { const j = JSON.parse(raw); if (Array.isArray(j) && j.length) saved = j; } } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 레포별 저장 카테고리 1회 복원
-    setCats(saved);
-  }, [catsKey]);
+    if (!root) return;
+    let alive = true;
+    // 레포가 바뀌면 이전 레포 목록을 먼저 비움 — 불러오는 사이 갱신이 다른 레포 목록을 섞어 저장하지 않게(리뷰).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 레포 전환 시 초기화
+    setCats(null); setRestored(false); setErr(null); setDetail(null);
+    void archGet<RepoCategory[]>(root, "cats").then(({ data, error }) => {
+      if (!alive) return;
+      if (error) { setErr(t("repo.loadFailed")); return; } // 서버 오류 — 분석하기를 잠가 둔 채(저장분 덮어쓰기 방지)
+      setCats(data?.length ? data : null); setRestored(true);
+    });
+    return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 레포가 바뀔 때만 다시 불러옴(언어 전환으로 목록이 비거나 저장과 경합하지 않게, 리뷰)
+  }, [root]);
 
   // merge=true(갱신): 기존 목록에 새 항목만 추가. false(분석/재분석): 전체 교체.
   const analyze = useCallback(async (merge = false) => {
@@ -82,6 +109,33 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
     setDetail(null);
     const fail = (d: string) => { setErr(t("repo.analyzeError")); setDetail(d); };
     try {
+      // #1320 차분 갱신 — 저장 뒤 구조가 바뀐 파일이 없으면 AI 없이 끝(스냅샷만 새로), 있으면 그 파일들만 보여 주고 새 기능만 받음.
+      const g = merge && cats ? await archGet<RepoCategory[]>(root, "cats", undefined, "token") : null;
+      if (g?.error) { fail("load failed"); return; }
+      const d = g?.diff ?? null;
+      const token = g?.token ?? await archBegin(root); // 분석 시작 시점 스냅샷(AI가 도는 사이 고친 파일은 다음 갱신 대상으로)
+      const save = async (items: RepoCategory[]) => { if (!await archPut(root, "cats", items, undefined, { token })) fail("save failed"); };
+      if (d && !d.structural.length) { await save(cats!); return; }
+      if (d) {
+        const name = root.split("/").filter(Boolean).pop() ?? root;
+        const ctx = `레포: ${name}\n\n[지금 기능 목록]\n${cats!.map((c) => `\`${c.id}\` · ${c.title}${c.blurb ? ` · ${c.blurb}` : ""}`).join("\n")}\n\n[분석 뒤 구조가 바뀌었거나 새로 생긴 파일]\n${d.structural.slice(0, 200).join("\n")}`;
+        const prompt = `위 바뀐 파일들 때문에 "지금 기능 목록"에 없는 새 기능/영역이 생겼으면 그것만 같은 형식으로 한 줄씩 적어줘. 이미 있는 기능에 속하는 변경이면 적지 마. 새 기능이 없으면 "없음" 한 줄만. 인사·설명 없이:\n\`slug\` · 제목 · 한줄설명`;
+        const res = await fetch("/api/agent/analyze", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ providerId, request: { code: ctx, locale, providerId, mode: "chat", messages: [{ role: "user", content: prompt }], providerSettings } }),
+        });
+        if (!res.ok || !res.body) { fail(`analyze HTTP ${res.status}`); return; }
+        const { answer, streamErr } = await readStream(res.body);
+        if (streamErr) { fail(`agent: ${streamErr}`); return; }
+        const text = stripCardBlock(answer);
+        const found = parseCategories(text);
+        // 목록 줄이 없으면 "없음"일 때만 정상 — 빈 답·엉뚱한 답이면 스냅샷 안 앞당기고 오류(리뷰).
+        if (!found.length && !/^[\s"'`*.。-]*(없음|none|なし)[\s"'`*.。-]*$/i.test(text)) { fail(`no list — ${text.slice(0, 160)}`); return; }
+        const next = mergeCats(cats!, found);
+        setCats(next);
+        await save(next);
+        return;
+      }
       // 1) 레포 파일 목록(컨텍스트) — 노이즈 제외 + 상한(토큰 방어).
       const tr = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root }) });
       if (!tr.ok) { fail(`tree HTTP ${tr.status}`); return; }
@@ -100,37 +154,21 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
         body: JSON.stringify({ providerId, request: { code: ctx, locale, providerId, mode: "chat", messages: [{ role: "user", content: prompt }], providerSettings } }),
       });
       if (!res.ok || !res.body) { const b = await res.text().catch(() => ""); fail(`analyze HTTP ${res.status}${b ? ` ${b.slice(0, 160)}` : ""}`); return; }
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = "", answer = "", streamErr = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const ls = buf.split("\n"); buf = ls.pop() ?? "";
-        for (const l of ls) {
-          if (!l.trim()) continue;
-          let ev: StreamEvent; try { ev = JSON.parse(l) as StreamEvent; } catch { continue; }
-          if (ev.type === "result") answer = ev.response?.summary ?? "";
-          else if (ev.type === "error") streamErr = ev.message ?? "stream error";
-        }
-      }
+      const { answer, streamErr } = await readStream(res.body);
       if (streamErr) { fail(`agent: ${streamErr}`); return; }
       if (!answer.trim()) { fail(t("repo.emptyResponseDetail")); return; }
       const parsed = parseCategories(stripCardBlock(answer)); // 튜터 자동 카드 블록 제거 후 파싱
       if (!parsed.length) { fail(`no JSON array — ${answer.slice(0, 160)}`); return; }
-      setCats((prev) => {
-        const next = merge && prev ? mergeCats(prev, parsed) : parsed;
-        if (catsKey) { try { localStorage.setItem(catsKey, JSON.stringify(next)); } catch { /* ignore */ } } // 영속(#743)
-        return next;
-      });
+      const next = merge && cats ? mergeCats(cats, parsed) : parsed;
+      setCats(next);
+      await save(next); // 영속(#743 → #1320 서버)
     } catch (e) {
       fail(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
       setRunning(null);
     }
-  }, [root, providerId, providerSettings, locale, t, catsKey]);
+  }, [root, providerId, providerSettings, locale, t, cats]);
 
   const hasCats = !!(cats && cats.length);
   return (
@@ -160,7 +198,7 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
           </>
         ) : (
           // 최초 분석 — 덮을 게 없어 바로 실행.
-          <button type="button" onClick={() => void analyze(false)} disabled={loading}
+          <button type="button" onClick={() => void analyze(false)} disabled={loading || !restored}
             className="inline-flex shrink-0 items-center gap-1 rounded bg-mustard-500/12 px-1.5 py-0.5 text-[10px] font-semibold text-mustard-700 ring-1 ring-inset ring-mustard-500/35 transition hover:bg-mustard-500/20 disabled:opacity-50 dark:bg-mustard-400/12 dark:text-mustard-400 dark:ring-mustard-400/30 dark:hover:bg-mustard-400/20">
             {loading ? <IconLoader2 size={11} stroke={2} className="animate-spin" aria-hidden /> : <IconSparkles size={11} stroke={2} aria-hidden />} {t("repo.analyzeRun")}
           </button>

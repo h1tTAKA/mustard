@@ -99,7 +99,7 @@ assert.strictEqual(decide("mcp__filesystem__edit_file", {}, W), "ask", "MCP 쓰�
 assert.strictEqual(decide("mcp__github__submit_review", {}, W), "ask");
 assert.strictEqual(decide("mcp__mustard__katchup_find_code", {}, W), "allow", "MCP 읽기");
 for (const n of ["query_sql", "query_drop_table", "search_truncate", "read_overwrite", "fetch_url", "read_url", "eval_code", "api_request", "call_api", "check_in", "status_toggle", "read_pin", "query_ingest", "get_thread_resolve", "find_store", "update_status", "create_check_run", "get_or_create", "merge_pull_request_get", "update_issue_status", "delete_show", "list_and_create", "find_and_replace", "mark_read"]) assert.strictEqual(decide(`mcp__x__${n}`, {}, W), "ask", `MCP 쓰기 섞인 이름: ${n}`);
-for (const n of ["mcp__plugin_loom-memory_loom-memory__memory_search", "mcp__plugin_loom-memory_loom__memory_read", "mcp__mustard__katchup_find_code", "mcp__mustard__katchup_repo_map", "mcp__mustard__browser_read"]) assert.strictEqual(decide(n, {}, W), "allow", `MCP 읽기: ${n}`);
+for (const n of ["mcp__plugin_loom-memory_loom-memory__memory_search", "mcp__plugin_loom-memory_loom__memory_read", "mcp__mustard__katchup_find_code", "mcp__mustard__katchup_repo_map", "mcp__mustard__katchup_features", "mcp__mustard__browser_read"]) assert.strictEqual(decide(n, {}, W), "allow", `MCP 읽기: ${n}`);
 for (const n of ["mcp__x__drop__query", "mcp__evil__katchup_find_code", "mcp__github__get_file_contents", "mcp__loom_evil__memory_search", "mcp__x_loom__memory_read", "mcp__x__loom__memory_read"]) assert.strictEqual(decide(n, {}, W), "ask", `목록 밖 MCP는 사람: ${n}`);
 assert.strictEqual(A("ls # it's fine"), "allow", "주석 안 ' (오탐 방지)");
 assert.strictEqual(A("echo ok # don't\nls"), "allow");

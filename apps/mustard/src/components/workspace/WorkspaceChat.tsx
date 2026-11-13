@@ -25,6 +25,7 @@ import { isNunopiEnabled } from "@/lib/product";
 import { isCardWorthy } from "@/lib/cardWorthy";
 import { buildWorkHistory, type AskItem } from "@/lib/catchupAskContext";
 import { commitHashesIn, withRelatedCards } from "@/lib/catchupMarkdown";
+import { archGet } from "@/lib/repo/archClient";
 type StreamEvent = { type: "progress"; line: string } | { type: "result"; response: { summary: string } } | { type: "error"; message: string };
 
 type SessionKind = "repo" | "file" | "diff" | "branch" | "worktree" | "arch";
@@ -386,17 +387,11 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
 
   // kind별 컨텍스트 빌드(세션키 캐시).
   // 아키텍처 세션 컨텍스트 — #743이 저장한 flow 캐시(설명 overview + 레이어별 노드)를 사람이 읽는 문자열로.
-  // 캐시 없으면(아직 미생성) feature명 + 안내만. localStorage 동기 읽기(전송 시점).
-  function archContext(feature: string): string {
-    let sections: ArchSection[] = [], overview = "";
-    try {
-      const raw = localStorage.getItem(`nunopi:ws:${root}:flow:${encodeURIComponent(feature)}`);
-      if (raw) {
-        const j = JSON.parse(raw);
-        if (Array.isArray(j)) sections = j as ArchSection[];
-        else { sections = Array.isArray(j?.sections) ? j.sections : []; overview = typeof j?.overview === "string" ? j.overview : ""; }
-      }
-    } catch { /* 캐시 손상 → 폴백 */ }
+  // 캐시 없으면(아직 미생성) feature명 + 안내만. 전송 시점에 서버 저장분 읽기(#1320).
+  async function archContext(feature: string): Promise<string> {
+    const { data } = await archGet<{ sections?: ArchSection[]; overview?: string | null }>(root, "flow", feature);
+    const sections: ArchSection[] = Array.isArray(data?.sections) ? data.sections : [];
+    const overview = data?.overview ?? "";
     const lines: string[] = [`# 기능(아키텍처): ${feature}`];
     if (overview) lines.push(`\n## 설명\n${overview}`);
     if (sections.length) {
@@ -464,7 +459,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
           ctx = parts.join("\n\n") + "\n";
         }
       } else if (s.kind === "arch") {
-        ctx = archContext(s.key.slice("arch:".length));
+        ctx = await archContext(s.key.slice("arch:".length));
       } else if (s.kind === "repo") {
         ctx = await repoContext();
       }
