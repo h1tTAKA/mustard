@@ -99,12 +99,12 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const [diff, setDiff] = useState<SnapDiff | null>(null); // #1320 저장 뒤 바뀐 파일(서버 저장분 기준)
   const [note, setNote] = useState<string | null>(null);    // #1320 방금 갱신이 한 일(AI 안 부름 / N개 파일 살펴봄)
   const overviewRef = useRef<string | null>(null);           // 최신 overview 미러(차분 갱신은 설명 유지)
-  const [depth, setDepth] = useViewDepth();                  // #1322 보기 깊이(그래프 모달과 공유)
+  const [savedDepth, setDepth] = useViewDepth();             // #1322 보기 깊이(그래프 모달과 공유)
+  const depth = savedDepth ?? "beginner";                    // 안 골랐으면 초보 = 지금까지 보던 기본 설명(회귀 없음, 리뷰)
   const [overviews, setOverviews] = useState<Overviews>({}); // #1322 개발자·숙련자용 설명(없으면 초보용 기본을 보여 줌)
-  const overviewsRef = useRef<Overviews>({});                // 구조 변화 없는 갱신 때 그대로 넘겨 유지
   const [writing, setWriting] = useState(false);             // 깊이별 설명 쓰는 중
   const [tour, setTour] = useState<Tour | null>(null);       // #1322 저장된 둘러보기
-  const tourRef = useRef<Tour | null>(null);                 // 구조 변화 없는 갱신 때 그대로 넘겨 유지
+  const tourRef = useRef<Tour | null>(null);                 // 최신 tour 미러(▶ 눌렀을 때 저장분 있나)
   const [tourIdx, setTourIdx] = useState<number | null>(null); // 지금 단계(null = 둘러보기 안 하는 중)
   const [tourBusy, setTourBusy] = useState(false);           // 단계 설명 만드는 중
   const [loadFailed, setLoadFailed] = useState(false);
@@ -191,7 +191,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       // 서버 오류면 새로 분석해 저장분을 덮어쓰지 않음(리뷰) — 오류만 보여 줌.
       if (error) { setSections(null); setOverview(null); secOfRef.current = null; setErr(t("flow.loadFailed")); setLoadFailed(true); loadFailedRef.current = true; setConfirm(null); setLoading(false); return; } // 열려 있던 재생성 확인창도 닫음(잠금 우회 방지, 리뷰)
       if (data?.sections?.length) {
-        setSections(data.sections); setOverview(data.overview ?? null); setOverviews(data.overviews ?? {}); setTour(data.tour ?? null); secOfRef.current = feature; setLoading(false);
+        setSections(data.sections); setOverview(data.overview ?? null); setOverviews(data.overviews ?? {}); setTour(Array.isArray(data.tour?.steps) ? data.tour! : null); secOfRef.current = feature; setLoading(false);
         // 낡음 표시용 차분은 따로(그래프 맞추느라 느릴 수 있음) — 흐름은 먼저 보여 줌(리뷰).
         void archGet(root, "flow", feature, true).then(({ diff: d }) => { if (my === reqRef.current) setDiff(d); });
         return;
@@ -216,7 +216,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
           const next = applyFlowDiff(sectionsRef.current ?? [], [], d.removed, []);
           setSections(next);
           // 구조 변화 없음 = 노드 의미 그대로 → 깊이별 설명도 유지(#1322).
-          if (!await archPut(root, "flow", { sections: next, overview: overviewRef.current, overviews: overviewsRef.current, tour: tourRef.current ?? undefined }, feature, { token })) return saveFailed();
+          if (!await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature, { token, keepExtras: true })) return saveFailed();
           if (my === reqRef.current) { setDiff(null); setNote(t("flow.noStructural", { n: d.changed.length + d.removed.length })); }
           return;
         }
@@ -277,7 +277,6 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   // 최신 sections·overview 미러(갱신 병합 기준).
   useEffect(() => { sectionsRef.current = sections; }, [sections]);
   useEffect(() => { overviewRef.current = overview; }, [overview]);
-  useEffect(() => { overviewsRef.current = overviews; }, [overviews]);
   useEffect(() => { tourRef.current = tour; }, [tour]);
 
   // #1322 둘러보기 — 흐름 순서(tourOrder)대로 단계. 지금 흐름에 없는 노드 단계는 건너뜀(구조 변화 없는 갱신으로 지워진 노드).
@@ -328,6 +327,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   useEffect(() => {
     if (tourIdx == null) return;
     const onKey = (e: KeyboardEvent) => {
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return; // 그래프 모달 등이 위에 떠 있으면 그쪽 키(리뷰)
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
       if (e.key === "ArrowRight") setTourIdx((i) => (i == null ? i : Math.min(i + 1, tourSteps.length - 1)));

@@ -3,16 +3,16 @@
 // POST {op:"put", path, kind, feature?, data, legacy?}    → 지금 파일 스냅샷과 함께 저장(legacy=옛 브라우저 저장분 이전 → 스냅샷 없이)
 // POST {op:"skeleton", path, data: files[]}              → 파일별 심볼 뼈대 텍스트(차분 갱신 프롬프트용)
 // POST {op:"patch", path, kind:"flow", feature, data:{overviews?, tour?}} → 흐름 덧붙임만 합침(스냅샷·노드 그대로, #1322)
-//   put의 data에 overviews·tour를 같이 주면 유지, 안 주면 버림(흐름이 바뀐 저장은 옛 설명·단계가 안 맞으니까).
+//   put에 keepExtras:true면 저장돼 있던 덧붙임을 서버에서 그대로 이어 붙임(구조 변화 없는 갱신), 아니면 버림(흐름이 바뀐 저장).
 // POST {op:"begin", path}                               → {token} 분석 시작 시점 스냅샷 표(put에 token으로 넘기면 그 스냅샷으로 저장)
 //   get에 diff:true·token:true면 같은 표도 같이 줌(갱신만 요청 — 낡음 표시용 조회는 표를 안 만들어 보관함을 안 밀어냄)
 import { existsSync, statSync } from "node:fs";
 import { crossSite } from "@/lib/crew/crewPolicy";
-import { readArch, writeArch, currentSnap, diffFrom, fileSkeletons, getFlow, setFlow, beginSnap, takeSnap, type ArchCategory, type ArchSection, type ArchExtras } from "@/lib/repo/archStore";
+import { readArch, writeArch, currentSnap, diffFrom, fileSkeletons, getFlow, setFlow, beginSnap, takeSnap, cleanExtras, type ArchCategory, type ArchSection } from "@/lib/repo/archStore";
 
 export async function POST(request: Request): Promise<Response> {
   if (crossSite(request)) return Response.json({ error: "cross-site" }, { status: 403 }); // 다른 사이트가 몰래 저장·스캔 못 하게(리뷰)
-  let b: { op?: unknown; path?: unknown; kind?: unknown; feature?: unknown; data?: unknown; diff?: unknown; legacy?: unknown; token?: unknown; wantToken?: unknown };
+  let b: { op?: unknown; path?: unknown; kind?: unknown; feature?: unknown; data?: unknown; diff?: unknown; legacy?: unknown; token?: unknown; wantToken?: unknown; keepExtras?: unknown };
   try { b = await request.json(); } catch { return Response.json({ error: "invalid body" }, { status: 400 }); }
   if (!b || typeof b !== "object") return Response.json({ error: "invalid body" }, { status: 400 });
   const { op, path, kind, feature } = b;
@@ -41,14 +41,12 @@ export async function POST(request: Request): Promise<Response> {
     }
     if (op === "patch") {
       if (kind !== "flow") return Response.json({ error: "patch is flow only" }, { status: 400 });
-      const x = (b.data && typeof b.data === "object" ? b.data : {}) as ArchExtras;
+      const x = cleanExtras(b.data);
       const f = readArch(path);
       const fl = getFlow(f, name);
       if (!fl) return Response.json({ error: "no flow" }, { status: 404 });
-      const ov = x.overviews && typeof x.overviews === "object" ? x.overviews : {};
-      const clean = Object.fromEntries((["dev", "expert"] as const).filter((k) => typeof ov[k] === "string").map((k) => [k, ov[k]]));
-      if (Object.keys(clean).length) fl.overviews = { ...fl.overviews, ...clean };
-      if (x.tour && Array.isArray(x.tour.steps) && typeof x.tour.depth === "string") fl.tour = { depth: x.tour.depth, steps: x.tour.steps.filter((s) => typeof s?.name === "string" && typeof s?.text === "string") };
+      if (x.overviews) fl.overviews = { ...cleanExtras(fl).overviews, ...x.overviews };
+      if (x.tour) fl.tour = x.tour;
       writeArch(path, f);
       return Response.json({ ok: true });
     }
@@ -57,12 +55,13 @@ export async function POST(request: Request): Promise<Response> {
       const snap = b.legacy === true ? undefined : (takeSnap(b.token) ?? await currentSnap(path));
       const at = Date.now();
       if (kind === "cats" && !Array.isArray(b.data)) return Response.json({ error: "data must be an array" }, { status: 400 });
-      const d = b.data as ({ sections?: unknown; overview?: unknown } & ArchExtras) | null;
+      const d = b.data as { sections?: unknown; overview?: unknown } | null;
       if (kind === "flow" && (!d || !Array.isArray(d.sections))) return Response.json({ error: "data.sections must be an array" }, { status: 400 });
       const f = readArch(path);
       if (kind === "cats") f.cats = { items: b.data as ArchCategory[], snap, at };
+      // 덧붙임은 클라가 보낸 게 아니라 지금 파일에 있는 걸 이어 붙임 — 설명 쓰기(patch)와 갱신이 겹쳐도 새 설명이 안 지워지게(리뷰).
       else setFlow(f, name, { sections: d!.sections as ArchSection[], overview: typeof d!.overview === "string" ? d!.overview : null, snap, at,
-        ...(d!.overviews && typeof d!.overviews === "object" ? { overviews: d!.overviews } : {}), ...(d!.tour && typeof d!.tour === "object" ? { tour: d!.tour } : {}) });
+        ...(b.keepExtras === true ? cleanExtras(getFlow(f, name)) : {}) });
       writeArch(path, f);
       return Response.json({ ok: true });
     }

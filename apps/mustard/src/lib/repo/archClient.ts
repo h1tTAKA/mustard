@@ -9,8 +9,9 @@ const legacyKey = (root: string, kind: Kind, feature?: string) =>
   kind === "cats" ? `nunopi:ws:${root}:analyze-cats` : `nunopi:ws:${root}:flow:${encodeURIComponent(feature ?? "")}`;
 
 // token = 분석 시작 시점 스냅샷 표(archBegin 또는 diff 조회가 준 것). 없으면 저장 시점 스냅샷.
-export async function archPut(root: string, kind: Kind, data: unknown, feature?: string, opts: { legacy?: boolean; token?: string } = {}): Promise<boolean> {
-  try { return (await post({ op: "put", path: root, kind, feature, data, legacy: opts.legacy, token: opts.token })).ok; } catch { return false; }
+// keepExtras = 저장돼 있던 깊이별 설명·둘러보기를 서버에서 이어 붙임(#1322, 구조 변화 없는 갱신).
+export async function archPut(root: string, kind: Kind, data: unknown, feature?: string, opts: { legacy?: boolean; token?: string; keepExtras?: boolean } = {}): Promise<boolean> {
+  try { return (await post({ op: "put", path: root, kind, feature, data, legacy: opts.legacy, token: opts.token, keepExtras: opts.keepExtras })).ok; } catch { return false; }
 }
 
 // 흐름 덧붙임(깊이별 설명·둘러보기)만 저장 — 스냅샷·노드는 그대로(#1322).

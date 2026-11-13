@@ -140,7 +140,7 @@ export const TOOLS: McpTool[] = [
         out.push("", `## ${s.layer}`);
         for (const n of s.nodes) out.push(`- ${n.name}${n.file ? ` @ ${n.file}${n.line ? `:${n.line}` : ""}` : ""}${n.role ? ` — ${n.role}` : ""}${n.next?.length ? ` → ${n.next.join(", ")}` : ""}`);
       }
-      if (fl.tour?.steps.length) out.push("", "## walkthrough (in order)", ...fl.tour.steps.map((st, i) => `${i + 1}. ${st.name} — ${st.text}`)); // #1322 둘러보기 단계
+      if (Array.isArray(fl.tour?.steps) && fl.tour.steps.length) out.push("", "## walkthrough (in order)", ...fl.tour.steps.map((st, i) => `${i + 1}. ${st.name} — ${st.text}`)); // #1322 둘러보기 단계
       return { text: out.join("\n") };
     },
   },

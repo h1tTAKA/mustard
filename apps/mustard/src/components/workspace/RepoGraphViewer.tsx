@@ -43,7 +43,8 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  const [depth, setDepth] = useViewDepth();                         // 보기 깊이(흐름 패널과 공유)
+  const [savedDepth, setDepth] = useViewDepth();                    // 보기 깊이(흐름 패널과 공유)
+  const depth = savedDepth ?? "expert";                              // 안 골랐으면 전부 = 예전 그래프 그대로(리뷰)
   const [picked, setPicked] = useState<Set<number>>(new Set());     // 고른 덩어리(비면 전부)
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);    // 누른 노드 id → 오른쪽 상세
@@ -296,7 +297,9 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     if (pathPick) { if (d.node) choosePathEnd(d.node.id); return; } // 경로 고르는 중 — 빈 곳 클릭은 무시
     setSelected(d.node ? d.node.id : null);
   };
+  // 한계: 코드 탭이 줄 이동을 아직 몰라 line은 넘겨도 파일 맨 위로 열림(흐름 패널과 같음).
   const onDoubleClick = (e: React.MouseEvent) => {
+    if (pathPick || pathFrom) return; // 경로 고르는 중 두 번 클릭은 끝 고르기만(코드 안 열림, 리뷰)
     const rect = e.currentTarget.getBoundingClientRect();
     const n = nodeAt(e.clientX - rect.left, e.clientY - rect.top);
     if (n && onOpenFile) onOpenFile(n.file, byId.get(n.id)?.line);
