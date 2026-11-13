@@ -207,7 +207,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       // 너무 많으면 처음부터, 그 외엔 바뀐 파일만 AI에 보여 줌.
       let inc: SnapDiff | null = null, d: SnapDiff | null = null, token: string | undefined;
       // 저장 실패(서버는 썼는데 응답만 못 받았을 수도) → 판을 모름으로. 다음 덧붙임이 판 불일치로 계속 버려지지 않게(리뷰).
-      const saveFailed = () => { atRef.current = null; unsavedRef.current = true; if (my === reqRef.current) setErr(t("flow.saveFailed")); };
+      // 판·저장상태는 지금 화면의 요청일 때만 고침 — 그새 다른 기능으로 바꿨으면 그 기능 상태를 건드리지 않게(리뷰).
+      const saveFailed = () => { if (my === reqRef.current) { atRef.current = null; unsavedRef.current = true; setErr(t("flow.saveFailed")); } };
       if (mode === "update") {
         const g = await archGet(root, "flow", feature, "token");
         if (g.error) { if (my === reqRef.current) setErr(t("flow.loadFailed")); return; }
@@ -220,7 +221,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
           // 구조 변화 없음 = 노드 의미 그대로 → 깊이별 설명도 유지(#1322).
           const at = await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature, { token, keepExtras: true });
           if (!at) return saveFailed();
-          atRef.current = at; unsavedRef.current = false;
+          if (my === reqRef.current) { atRef.current = at; unsavedRef.current = false; }
           if (my === reqRef.current) { setDiff(null); setNote(t("flow.noStructural", { n: d.changed.length + d.removed.length })); }
           return;
         }
@@ -242,7 +243,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
         setSections(next); setOverviews({}); setTour(null); // 노드가 바뀜 → 깊이별 설명은 버림(저장도 안 넘김)
         const at = await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature, { token });
         if (!at) return saveFailed();
-        atRef.current = at; unsavedRef.current = false;
+        if (my === reqRef.current) { atRef.current = at; unsavedRef.current = false; }
         if (my === reqRef.current) { setDiff(null); setNote(t("flow.diffUpdated", { n: inc.structural.length })); }
         return;
       }
@@ -269,7 +270,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       setSections(nextSecs); setOverview(ov); setOverviews({}); setTour(null); secOfRef.current = feature;
       const at = await archPut(root, "flow", { sections: nextSecs, overview: ov }, feature, { token }); // 영속(#743 → #1320 서버)
       if (!at) return saveFailed();
-      atRef.current = at; unsavedRef.current = false;
+      if (my === reqRef.current) { atRef.current = at; unsavedRef.current = false; }
       if (my === reqRef.current) setDiff(null); // 방금 저장 = 최신
     } catch (e) {
       if (my === reqRef.current) setErr(e instanceof Error ? e.message : String(e));
