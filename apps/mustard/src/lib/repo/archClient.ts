@@ -35,8 +35,9 @@ export async function archNode(root: string, id: string, file: string, line?: nu
   try { const r = await post({ op: "node", path: root, id, file, line, extra }); return r.ok ? await r.json() : null; } catch { return null; }
 }
 // 흐름 노드 파일들의 실제 코드 발췌(설명·둘러보기 근거). 실패면 빈 문자열.
-export async function archSnippets(root: string, items: { file: string; line?: number }[]): Promise<string> {
-  try { const d = await (await post({ op: "snippets", path: root, data: items })).json(); return typeof d?.text === "string" ? d.text : ""; } catch { return ""; }
+// opts: whole=파일 앞에서 통째(span줄까지), maxChars=전체 상한, neighbors=한 칸 이웃 파일 뼈대도 붙임.
+export async function archSnippets(root: string, items: { file: string; line?: number }[], opts: { whole?: boolean; span?: number; maxChars?: number; neighbors?: boolean } = {}): Promise<string> {
+  try { const d = await (await post({ op: "snippets", path: root, data: { items, ...opts } })).json(); return typeof d?.text === "string" ? d.text : ""; } catch { return ""; }
 }
 export async function archNodePut(root: string, id: string, hash: string, text: string): Promise<boolean> {
   try { return (await post({ op: "node-put", path: root, id, hash, text })).ok; } catch { return false; }

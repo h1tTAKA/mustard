@@ -133,7 +133,7 @@ export default function RepoGraphViewer({ root, providerId, providerSettings, on
         if (!got) return { err: t("graph.noteFailed") };
         if (got.text) return { text: got.text };
         const ctx = `레포: ${root.split("/").filter(Boolean).pop()}\n노드: ${n.label} (${n.kind}) @ ${n.file}${n.line ? `:${n.line}` : ""}${n.signature ? `\n시그니처: ${n.signature}` : ""}${links.length ? `\n\n[연결]\n${links.join("\n")}` : ""}\n\n[코드 발췌 — 줄 번호: 내용]\n${got.snippet ?? ""}`;
-        const prompt = `위 코드의 \`${n.label}\`(${n.kind})가 무슨 일을 하는지 개발 초보도 알게 3~5문장으로 설명해줘. 무엇을 받아서 무엇을 하고 무엇을 돌려주는지, 이 레포에서 누가 쓰고 무엇을 쓰는지([연결] 참고) 실제 코드 기준으로. 마지막 줄에 "근거:" 다음 실제로 본 위치를 \`파일:줄\` 형식 1~3개. 코드는 위 발췌에 있으니 '코드를 보지 못했다'는 말은 하지 마. 제목·목록 없이 문장만.`;
+        const prompt = `위 코드의 \`${n.label}\`(${n.kind})가 무슨 일을 하는지 개발 초보도 알게 3~5문장으로 설명해줘. 무엇을 받아서 무엇을 하고 무엇을 돌려주는지, 이 레포에서 누가 쓰고 무엇을 쓰는지([연결] 참고) 실제 코드 기준으로. 마지막 줄에 "근거:" 다음 실제로 본 위치를 \`파일:줄\` 형식 1~3개. 선생님이 설명하듯 자연스러운 단정형 평서문으로 쓰고, '확인된다', '보인다', '추측', '발췌', '알 수 없다' 같은 표현은 절대 쓰지 마. 내용은 위 코드와 [연결된 파일 뼈대]에 맞게, 코드에 없는 건 지어내지 말고 빼. 출처는 마지막 '근거:' 줄에만. 제목·목록 없이 문장만.`;
         const a = await askAgent(providerId, providerSettings, locale, ctx, prompt);
         const text = a.err ? "" : stripCardBlock(a.text).trim();
         if (!text) return { err: a.err || t("graph.noteFailed") };

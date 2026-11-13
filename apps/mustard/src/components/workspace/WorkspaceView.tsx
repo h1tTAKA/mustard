@@ -707,7 +707,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     // <webview>는 DOM에서 빠지면 페이지가 죽어서(새로고침·기록 유실) 위치만 따라가게 한다.
     browser: browserOpen ? <BrowserSlot anchor={dockRef} onRect={setBrowserRect} /> : null,
     crew: crewOpen ? <CrewBoard root={path} onClose={() => setCrewOpen(false)} /> : null, // 에이전트 팀 보드(#1098)
-    flow: <RepoFlowPane feature={flowFeature} root={path} providerId={archPid} providerSettings={archPs} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onRevealFile={(file) => setTreeReveal((r) => ({ file, n: (r?.n ?? 0) + 1, at: Date.now() }))} onAskArch={askArch} onQuoteNode={quoteNode} onClose={() => setFlowFeature(null)} />,
+    flow: <RepoFlowPane feature={flowFeature} root={path} providerId={archPid} providerSettings={archPs} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onRevealFile={(file) => { if (!files.includes(file)) return false; setTreeReveal((r) => ({ file, n: (r?.n ?? 0) + 1, at: Date.now() })); return true; }} onAskArch={askArch} onQuoteNode={quoteNode} onClose={() => setFlowFeature(null)} />,
   };
 
   // 4존 셸.

@@ -25,7 +25,10 @@ type Line = { key: string; sk: string; tk: string; color: string; laneX: number;
 const basename = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
 const nk = (s: string) => s.trim().toLowerCase(); // 노드 이름 정규화 키(엣지 매칭용)
 // 근거 규칙(#1322) — AI가 파일 이름만 보고 짐작하지 않게 실제 코드 발췌를 주고, 어디서 봤는지 달게 함.
-const EVIDENCE = "설명은 위 [코드 발췌]에서 실제로 읽은 내용을 근거로 해. 코드는 발췌에 있으니 '코드를 보지 못했다'는 말은 하지 마. 발췌에 없어서 짐작한 부분은 '추측'이라고 밝혀.";
+// 리뷰 #1322: "발췌에 없다·추측" 같은 군말이 유저 설명을 흐림 → 확인된 것만 쓰게. 코드 발췌 + 연결 파일 뼈대를 같이 줌.
+// 말투(#1322 유저 피드백): "~로 확인된다·추측·발췌에 없다" 같은 감사 보고서 말투 금지 — 선생님이 설명하듯 단정적으로. 근거는 끝 줄에만.
+const EVIDENCE = "목표는 이 코드를 처음 보는 사람이 전체 구조를 이해하게 돕는 거야. 선생님이 설명하듯 자연스러운 단정형 평서문으로 써(예: '이 함수는 ~를 받아 ~를 만든다'). '확인된다', '확인할 수 있다', '보인다', '것으로 보인다', '추측', '발췌', '알 수 없다', '보지 못했다' 같은 표현은 절대 쓰지 마. 내용은 위 [코드 발췌]와 [연결된 파일 뼈대]의 실제 코드에 맞게 쓰고, 코드에 없는 건 지어내지 말고 그냥 빼. 출처는 본문에 섞지 말고 끝의 '근거:' 줄에만.";
+const TOUR_CHUNK = 6, TOUR_PAR = 3; // 둘러보기는 노드 6개씩 나눠 파일 코드를 통째로 보여 줌(한 번에 다 넣으면 뒤쪽이 잘림), 동시에 3묶음
 // #1322 설명 깊이별 눈높이(설정 > 아키텍처 > 설명 깊이).
 const WHO: Record<ArchDepth, string> = {
   beginner: "개발 초보도 완전히 이해할 수 있게 친절하고 자세히(어려운 말은 풀어서, 비유 환영). 실제 코드에서 어떤 함수가 무엇을 받아 무엇을 하고 어디로 넘기는지 구체적으로",
@@ -84,7 +87,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   providerId?: AgentProviderKind;
   providerSettings?: ProviderSettings;
   onOpenFile?: (file: string, line?: number) => void;
-  onRevealFile?: (file: string) => void; // #1322 둘러보기 단계 파일을 왼쪽 파일 트리에서 펼쳐 강조
+  onRevealFile?: (file: string) => boolean; // #1322 둘러보기 단계 파일을 왼쪽 파일 트리에서 펼쳐 강조 — 트리에 없으면(.gitignore 등 숨김) false
   onAskArch?: (feature: string) => void; // 이 아키텍처에 대해 질문(우측 챗에 arch 세션 열기, #746)
   onQuoteNode?: (text: string) => void;  // 카드 클릭 시 그 노드+연결 노드 지칭 문구를 챗 입력창에(#746)
   onClose?: () => void;
@@ -123,6 +126,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const [tourIdx, setTourIdx] = useState<number | null>(null); // 지금 단계(null = 둘러보기 안 하는 중)
   const [tourBusy, setTourBusy] = useState(false);           // 단계 설명 만드는 중
   const busyN = useRef(0);                                   // 진행 중인 단계 만들기 수
+  const [treeMiss, setTreeMiss] = useState(false);           // 지금 단계 파일이 왼쪽 트리에 없음(.gitignore 등)
   const [hovered, setHovered] = useState<string | null>(null); // 호버 카드 키(연결 강조)
   const [focused, setFocused] = useState<string | null>(null); // 클릭 포커스 카드 키(무관 어둡게)
   const [loadFailed, setLoadFailed] = useState(false);
@@ -175,7 +179,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   }, [edges]);
 
   // #1322 흐름 노드 파일들의 실제 코드 발췌(근거용) + 흐름 줄 목록.
-  const codeOf = useCallback((secs: FlowSection[]) => (root ? archSnippets(root, secs.flatMap((s) => s.nodes.filter((n) => n.file).map((n) => ({ file: n.file!, line: n.line })))) : Promise.resolve("")), [root]);
+  const codeOf = useCallback((secs: FlowSection[]) => (root ? archSnippets(root, secs.flatMap((s) => s.nodes.filter((n) => n.file).map((n) => ({ file: n.file!, line: n.line }))), { span: 50, maxChars: 90000, neighbors: true }) : Promise.resolve("")), [root]);
   const flowLines = (secs: FlowSection[]) => secs.flatMap((s) => s.nodes.map((n) => `${s.layer} | ${n.name} | ${n.file ?? ""}${n.line ? `:${n.line}` : ""} | ${n.role ?? ""}${n.next?.length ? ` | → ${n.next.join(", ")}` : ""}`));
 
   // 에이전트 한 번 묻기 — 흐름 생성·차분 갱신·둘러보기·깊이별 설명 공용(lib/repo/askAgent).
@@ -191,38 +195,45 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       const byKey = new Map(secs.flatMap((s) => s.nodes.map((n) => [nk(n.name), { ...n, layer: s.layer }] as const)));
       const lines = order.map((name, i) => { const n = byKey.get(nk(name))!; return `${i + 1}. ${n.layer} | ${n.name} | ${n.file ?? ""}${n.line ? `:${n.line}` : ""} | ${n.role ?? ""}${n.next?.length ? ` | → ${n.next.join(", ")}` : ""}`; });
       const files = [...new Set(secs.flatMap((s) => s.nodes.map((n) => n.file).filter((x): x is string => !!x)))];
-      const [code, conns] = await Promise.all([
-        codeOf(secs),
-        fetch("/api/repo/codegraph/connections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, files }) })
-          .then((r) => r.json()).then((d) => (Array.isArray(d?.connections) ? (d.connections as { from: string; to: string; relation?: string }[]) : [])).catch(() => []),
-      ]);
+      const conns = await fetch("/api/repo/codegraph/connections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root, files }) })
+        .then((r) => r.json()).then((d) => (Array.isArray(d?.connections) ? (d.connections as { from: string; to: string; relation?: string }[]) : [])).catch(() => []);
       if (my !== reqRef.current) return false;
       const links = conns.slice(0, 120).map((c) => `${c.from} → ${c.to}${c.relation ? ` (${c.relation})` : ""}`);
-      const ctx = `레포: ${basename(root)}\n\n["${f}" 흐름 — 둘러볼 순서]\n${lines.join("\n")}${links.length ? `\n\n[실측 연결 — 파일 사이 import·호출]\n${links.join("\n")}` : ""}${code ? `\n\n[코드 발췌]\n${code}` : ""}${overviewRef.current ? `\n\n[설명]\n${overviewRef.current}` : ""}`;
-      const prompt = `위 순서대로 "${f}" 기능을 처음 보는 사람에게 한 단계씩 안내하려고 해. ${WHO[depth]}. 노드마다 아래 세 가지를 실제 코드 기준으로 설명해줘:\n1) 이 파일 안에 있는 주요 함수·로직(백틱으로 이름)과 각각의 역할\n2) 화살표(→ 다음노드, 실측 연결)로 이어진 파일과 어떤 관계인지(무엇을 받고 무엇을 넘기는지)\n3) 그 함수·로직들이 서로 어떻게 물려서 이 기능을 해내는지\n끝에 "근거:" 한 줄로 실제로 본 위치를 \`파일:줄\` 형식 1~3개. ${EVIDENCE}\n형식: 노드마다 "### 표시이름" 한 줄로 시작하고 그 아래 설명(짧은 문단·목록 가능). 표시이름은 위와 정확히 같게, 순서 그대로. 인사·머리말 없이.`;
-      const answer = await ask(ctx, prompt);
-      if (my !== reqRef.current) return false;
-      if (answer.err) { setErr(answer.err); return false; }
-      // "### 이름" 블록으로 나눔(옛 형식 "이름 | 설명" 줄도 받음).
+      // 노드를 묶음으로 나눠, 묶음마다 그 노드 파일 코드를 통째로(+연결 파일 뼈대) 보여 주고 그 노드들만 쓰게 함.
+      const chunks: string[][] = [];
+      for (let i = 0; i < order.length; i += TOUR_CHUNK) chunks.push(order.slice(i, i + TOUR_CHUNK));
       const got = new Map<string, string>();
-      // "### 노드이름"(요청한 제목 단계)이고 아직 안 나온 노드일 때만 나눔 — 순서가 섞여도 받고, 노드 안 소제목(####·이미 나온 이름)은 그 노드 설명에 남김(리뷰)
-      const left = new Set(order.map(nk));
-      let fence = false;
-      let curName: string | null = null, buf: string[] = [];
-      const flush = () => { if (curName) got.set(nk(curName), buf.join("\n").trim()); };
-      for (const raw of stripCardBlock(answer.text).split("\n")) {
-        if (/^\s*```/.test(raw)) fence = !fence; // 코드 블록 안 "###"은 제목 아님(리뷰)
-        const h = fence ? null : raw.match(/^#{2,3}\s+(?:\d+[.)]\s+)?(.+?)\s*$/); // ## 로 흘러도 받음(소제목 ####는 그 노드 설명)
-        const hn = h ? h[1].replace(/[`*]/g, "").trim() : "";
-        if (h && left.has(nk(hn))) { flush(); curName = hn; buf = []; left.delete(nk(hn)); continue; }
-        if (curName) { buf.push(raw); continue; }
-        const line = raw.trim().replace(/^(?:[-*•]\s*|\d+[.)]\s+)/, ""); // 목록 표시만 뗌(숫자로 시작하는 이름 404.tsx 보존, 리뷰)
-        const at = line.indexOf("|");
-        if (at > 0) got.set(nk(line.slice(0, at)), line.slice(at + 1).trim());
-      }
-      flush();
+      let lastErr = "";
+      const runChunk = async (chunk: string[]) => {
+        const items = chunk.map((nm) => byKey.get(nk(nm))).filter((n) => n?.file).map((n) => ({ file: n!.file!, line: n!.line }));
+        const code = items.length ? await archSnippets(root, items, { whole: true, span: 400, maxChars: 60000, neighbors: true }) : "";
+        if (my !== reqRef.current) return;
+        const ctx = `레포: ${basename(root)}\n\n["${f}" 흐름 — 전체 둘러볼 순서]\n${lines.join("\n")}${links.length ? `\n\n[실측 연결 — 파일 사이 import·호출]\n${links.join("\n")}` : ""}${code ? `\n\n[코드 발췌]\n${code}` : ""}${overviewRef.current ? `\n\n[설명]\n${overviewRef.current}` : ""}`;
+        const prompt = `"${f}" 기능을 처음 보는 사람에게 위 순서대로 한 단계씩 안내하려고 해. 이번에는 다음 노드만 설명해줘: ${chunk.join(", ")}. ${WHO[depth]}. 노드마다 아래 세 가지를 실제 코드 기준으로:\n1) 이 파일 안에 있는 주요 함수·로직(백틱으로 이름)과 각각의 역할\n2) 화살표(→ 다음노드, 실측 연결)로 이어진 파일과 어떤 관계인지(무엇을 받고 무엇을 넘기는지)\n3) 그 함수·로직들이 서로 어떻게 물려서 이 기능을 해내는지\n끝에 "근거:" 한 줄로 실제로 본 위치를 \`파일:줄\` 형식 1~3개. ${EVIDENCE}\n형식: 노드마다 "### 표시이름" 한 줄로 시작하고 그 아래 설명(짧은 문단·목록 가능). 표시이름은 위와 정확히 같게. 인사·머리말 없이.`;
+        const answer = await ask(ctx, prompt);
+        if (my !== reqRef.current) return;
+        if (answer.err) { lastErr = answer.err; return; }
+        // "### 이름"(요청한 제목 단계, ## 로 흘러도 받음)이고 이 묶음에서 아직 안 나온 노드일 때만 나눔 — 소제목·코드 블록 안 제목은 그 노드 설명에 남김(리뷰).
+        const left = new Set(chunk.map(nk));
+        let fence = false, curName: string | null = null, buf: string[] = [];
+        const flush = () => { if (curName) got.set(nk(curName), buf.join("\n").trim()); };
+        for (const raw of stripCardBlock(answer.text).split("\n")) {
+          if (/^\s*```/.test(raw)) fence = !fence;
+          const h = fence ? null : raw.match(/^#{2,3}\s+(?:\d+[.)]\s+)?(.+?)\s*$/);
+          const hn = h ? h[1].replace(/[`*]/g, "").trim() : "";
+          if (h && left.has(nk(hn))) { flush(); curName = hn; buf = []; left.delete(nk(hn)); continue; }
+          if (curName) { buf.push(raw); continue; }
+          const line = raw.trim().replace(/^(?:[-*•]\s*|\d+[.)]\s+)/, ""); // 옛 형식 "이름 | 설명"(숫자로 시작하는 이름 404.tsx 보존)
+          const bar = line.indexOf("|");
+          if (bar > 0 && left.has(nk(line.slice(0, bar)))) got.set(nk(line.slice(0, bar)), line.slice(bar + 1).trim());
+        }
+        flush();
+      };
+      for (let i = 0; i < chunks.length; i += TOUR_PAR) await Promise.all(chunks.slice(i, i + TOUR_PAR).map(runChunk));
+      if (my !== reqRef.current) return false;
+      if (!got.size && lastErr) { setErr(lastErr); return false; }
       // AI가 빠뜨린 노드는 한줄역할로 채움(단계가 비지 않게). 하나도 못 받으면 오류.
-      if (![...got.values()].some(Boolean)) { setErr(`no tour — ${answer.text.slice(0, 140)}`); return false; }
+      if (![...got.values()].some(Boolean)) { setErr("no tour"); return false; }
       const next: Tour = { depth, steps: order.map((name) => ({ name, text: got.get(nk(name)) || byKey.get(nk(name))?.role || "" })) };
       const saved = await archPatch(root, f, { tour: next }, at0);
       if (saved === "stale") return false; // 그사이 흐름이 바뀜 — 버림
@@ -231,7 +242,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       setTour(next);
       return true;
     } finally { busyN.current--; setTourBusy(busyN.current > 0); }
-  }, [root, depth, ask, t, codeOf]);
+  }, [root, depth, ask, t]);
 
   // mode: "cache"=저장분 우선(자동), "regen"=전체 새로, "update"=저장 뒤 바뀐 파일만 반영(#1320, 차분 정보 없으면 옛 방식: 새 노드만 병합).
   const load = useCallback(async (mode: "cache" | "regen" | "update" = "cache") => {
@@ -379,7 +390,9 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     setFocused(k);
     nodeEls.current.get(k)?.scrollIntoView({ block: "center", behavior: "smooth" }); // 위 단계 박스에 가리지 않게 가운데로
     const node = sections?.flatMap((s) => s.nodes).find((n) => nk(n.name) === k);
-    if (node?.file) { onRevealFile?.(node.file); if (tourOpenCode) onOpenFile?.(node.file, node.line); } // 왼쪽 파일 트리 펼침·강조(+설정 시 코드 열기)
+    // 왼쪽 파일 트리 펼침·강조(+설정 시 코드 열기). 트리에 없는 파일(숨김)이면 단계 박스에 알림.
+    setTreeMiss(node?.file && onRevealFile ? !onRevealFile(node.file) : false);
+    if (node?.file && tourOpenCode) onOpenFile?.(node.file, node.line);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 단계(이름)가 바뀔 때만 이동(흐름·콜백 바뀜엔 다시 안 엶)
   }, [tourName]);
   // 키보드 ←/→/Esc(입력창에 쓰는 중이면 무시).
@@ -569,6 +582,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
                   <button type="button" onClick={() => { setTourIdx(null); setFocused(null); }} title={t("flow.tourEnd")} aria-label={t("flow.tourEnd")}
                     className="shrink-0 rounded p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconX size={13} stroke={2} aria-hidden /></button>
                 </div>
+                {treeMiss && <p className="mt-1 text-[10.5px] text-zinc-400 dark:text-zinc-500">{t("flow.tourTreeMiss")}</p>}
                 <div className="nunopi-scroll mt-1 max-h-[45vh] overflow-auto text-[11.5px] leading-relaxed text-zinc-600 dark:text-zinc-300"><Markdown>{tourSteps[tourIdx].text}</Markdown></div>
               </div>
             )}
@@ -670,9 +684,9 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
                         <IconCode size={13} stroke={2} aria-hidden />
                       </button>
                     )}
-                    <span className="text-[12px] font-medium text-zinc-700 dark:text-zinc-100">{n.name}</span>
+                    <span className="max-w-full text-[12px] font-medium text-zinc-700 [overflow-wrap:anywhere] dark:text-zinc-100">{n.name}</span>
                     {n.file && <span className="break-all font-mono text-[9px] text-mustard-600 dark:text-mustard-400">{n.file}{n.line ? `:${n.line}` : ""}</span>}
-                    {n.role && <span className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">{n.role}</span>}
+                    {n.role && <span className="max-w-full text-[10px] leading-snug text-zinc-500 [overflow-wrap:anywhere] dark:text-zinc-400">{n.role}</span>}
                   </div>
                   );
                 })}

@@ -131,6 +131,22 @@ export function codeSnippets(root: string, items: { file: string; line?: number 
   return out.join("\n\n");
 }
 
+// 한 칸 이웃 파일의 뼈대(#1322) — 흐름에 없지만 흐름 파일이 import·호출하는 파일(예: AppState·HomeScreen)의 함수·클래스 목록.
+// AI가 "그 파일은 발췌에 없다"며 추측하지 않게, 통째 코드 대신 뼈대만(토큰 방어). 상한 limit개.
+export async function neighborSkeletons(root: string, files: string[], limit = 25): Promise<string> {
+  const { graph } = await loadOrBuildGraph(root);
+  const fileOf = new Map(graph.nodes.map((n) => [n.id, n.file]));
+  const mine = new Set(files), near: string[] = [], seen = new Set<string>();
+  for (const e of graph.edges) {
+    if (e.relation === "contains") continue;
+    const a = fileOf.get(e.source), b = fileOf.get(e.target);
+    if (!a || !b || a === b) continue;
+    const other = mine.has(a) && !mine.has(b) ? b : mine.has(b) && !mine.has(a) ? a : null;
+    if (other && !seen.has(other)) { seen.add(other); near.push(other); if (near.length >= limit) break; }
+  }
+  return near.length ? fileSkeletons(root, near) : "";
+}
+
 // 차분 갱신 프롬프트용 파일 뼈대 — 파일별 심볼(줄·종류·이름·시그니처). 파일 30개·파일당 40개 상한(토큰 방어).
 export async function fileSkeletons(root: string, files: string[]): Promise<string> {
   const { graph } = await loadOrBuildGraph(root);

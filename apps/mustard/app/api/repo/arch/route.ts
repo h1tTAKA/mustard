@@ -12,7 +12,7 @@
 import { existsSync, statSync } from "node:fs";
 import { fileHash } from "@/lib/repo/incremental";
 import { crossSite } from "@/lib/crew/crewPolicy";
-import { readArch, writeArch, currentSnap, diffFrom, fileSkeletons, getFlow, setFlow, beginSnap, takeSnap, cleanExtras, getNodeNote, setNodeNote, codeSnippet, codeSnippets, type ArchCategory, type ArchSection } from "@/lib/repo/archStore";
+import { readArch, writeArch, currentSnap, diffFrom, fileSkeletons, getFlow, setFlow, beginSnap, takeSnap, cleanExtras, getNodeNote, setNodeNote, codeSnippet, codeSnippets, neighborSkeletons, type ArchCategory, type ArchSection } from "@/lib/repo/archStore";
 
 export async function POST(request: Request): Promise<Response> {
   if (crossSite(request)) return Response.json({ error: "cross-site" }, { status: 403 }); // 다른 사이트가 몰래 저장·스캔 못 하게(리뷰)
@@ -43,11 +43,17 @@ export async function POST(request: Request): Promise<Response> {
       const hash = fileHash(`${snip.hash}\n${typeof b.extra === "string" ? b.extra : ""}`); // 파일 내용 + 연결 목록(리뷰: 다른 파일이 바뀌어 연결이 달라지면 다시 씀)
       const saved = getNodeNote(readArch(path), b.id);
       if (saved && saved.hash === hash) return Response.json({ text: saved.text });
-      return Response.json({ hash, snippet: snip.text.slice(0, 8000) });
+      const skel = await neighborSkeletons(path, [b.file], 15); // 이 노드가 쓰는·이 노드를 쓰는 파일의 함수 목록(추측 대신 근거)
+      return Response.json({ hash, snippet: `${snip.text.slice(0, 12000)}${skel ? `\n\n[연결된 파일 뼈대 — 함수·클래스 목록]\n${skel.slice(0, 6000)}` : ""}` });
     }
     if (op === "snippets") { // 흐름 노드 파일들의 실제 코드 발췌(#1322 설명·둘러보기 근거)
-      const items = Array.isArray(b.data) ? (b.data as { file?: unknown; line?: unknown }[]).filter((x) => typeof x?.file === "string").map((x) => ({ file: x.file as string, line: typeof x.line === "number" ? x.line : undefined })) : [];
-      return Response.json({ text: codeSnippets(path, items.slice(0, 60)) });
+      // data = [{file,line?}] 또는 {items, whole?, span?, maxChars?, neighbors?} — whole=파일 앞에서 통째(span줄까지), neighbors=한 칸 이웃 파일 뼈대도.
+      const o = (Array.isArray(b.data) ? { items: b.data } : (b.data ?? {})) as { items?: unknown; whole?: unknown; span?: unknown; maxChars?: unknown; neighbors?: unknown };
+      const items = Array.isArray(o.items) ? (o.items as { file?: unknown; line?: unknown }[]).filter((x) => typeof x?.file === "string").map((x) => ({ file: x.file as string, line: o.whole === true ? undefined : typeof x.line === "number" ? x.line : undefined })) : [];
+      const num = (v: unknown, d: number, max: number) => (typeof v === "number" && v > 0 ? Math.min(v, max) : d);
+      const code = codeSnippets(path, items.slice(0, 60), num(o.span, 60, 400), num(o.maxChars, 40000, 120000));
+      const skel = o.neighbors === true ? await neighborSkeletons(path, items.map((x) => x.file)) : "";
+      return Response.json({ text: skel ? `${code}\n\n[연결된 파일 뼈대 — 함수·클래스 목록(줄: 종류 이름 시그니처)]\n${skel}` : code });
     }
     if (op === "begin") return Response.json({ token: beginSnap(await currentSnap(path)) });
     if (kind !== "cats" && kind !== "flow") return Response.json({ error: "kind must be cats|flow" }, { status: 400 });
