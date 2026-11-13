@@ -720,14 +720,14 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
                   // 최대 축약 — 노드명만 지칭([name]). 연결 관계는 arch 세션 컨텍스트에 이미 들어있음.
                   const quote = () => { if (onQuoteNode) onQuoteNode(t("flow.quoteSolo", { name: n.name })); };
                   // 유저 결정(#1327): 카드 클릭 = 포커스 + 그 파일 코드 탭 열기 + 왼쪽 파일 트리 펼침·강조(예전 #743은 포커스만, 코드는 아이콘으로만).
-                  // 포커스를 끄는 클릭(이미 켜진 카드)은 다시 열지 않음.
-                  const openHere = () => { if (!n.file || focused === key) return; onOpenFile?.(n.file, n.line); onRevealFile?.(n.file); };
+                  // 이미 열린 탭이면 그 탭으로 전환만(둘러보기가 켠 카드를 눌러도 열림, 리뷰). 한계: 트리에 없는(숨김) 파일은 카드 클릭엔 안내 없음.
+                  const openHere = () => { if (!n.file) return; onOpenFile?.(n.file, n.line); onRevealFile?.(n.file); };
                   return (
                   <div key={j} role="button" tabIndex={0}
                     ref={(el) => { if (el) nodeEls.current.set(key, el); }}
                     onMouseEnter={() => setHovered(key)} onMouseLeave={() => setHovered(null)}
                     onClick={(e) => { e.stopPropagation(); openHere(); toggleFocus(); quote(); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openHere(); toggleFocus(); quote(); } }}
+                    onKeyDown={(e) => { if (e.target !== e.currentTarget) return; /* 안쪽 </> 버튼 키는 그 버튼이 처리(리뷰) */ if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openHere(); toggleFocus(); quote(); } }}
                     style={{ opacity: dimmed ? 0.3 : 1 }}
                     className={`group relative flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-lg border px-2.5 py-1.5 pr-7 text-left transition duration-150 ${lifted ? "z-20 scale-[1.03] border-mustard-500 shadow-[0_0_16px_0_rgba(212,160,23,0.55)] dark:border-mustard-400 dark:shadow-[0_0_18px_0_rgba(232,185,58,0.55)]" : "z-10 border-zinc-200 hover:border-mustard-500 dark:border-zinc-700 dark:hover:border-mustard-400"} bg-white dark:bg-zinc-800/60`}>
                     {n.file && (
