@@ -10,13 +10,23 @@ const legacyKey = (root: string, kind: Kind, feature?: string) =>
 
 // token = 분석 시작 시점 스냅샷 표(archBegin 또는 diff 조회가 준 것). 없으면 저장 시점 스냅샷.
 // keepExtras = 저장돼 있던 깊이별 설명·둘러보기를 서버에서 이어 붙임(#1322, 구조 변화 없는 갱신).
-export async function archPut(root: string, kind: Kind, data: unknown, feature?: string, opts: { legacy?: boolean; token?: string; keepExtras?: boolean } = {}): Promise<boolean> {
-  try { return (await post({ op: "put", path: root, kind, feature, data, legacy: opts.legacy, token: opts.token, keepExtras: opts.keepExtras })).ok; } catch { return false; }
+// 성공하면 저장한 흐름 판(at, 0 아님), 실패면 null — patch가 "같은 흐름에 붙이는지" 확인할 때 씀(#1322).
+export async function archPut(root: string, kind: Kind, data: unknown, feature?: string, opts: { legacy?: boolean; token?: string; keepExtras?: boolean } = {}): Promise<number | null> {
+  try {
+    const r = await post({ op: "put", path: root, kind, feature, data, legacy: opts.legacy, token: opts.token, keepExtras: opts.keepExtras });
+    if (!r.ok) return null;
+    const d = await r.json().catch(() => null);
+    return typeof d?.at === "number" ? d.at : null;
+  } catch { return null; }
 }
 
 // 흐름 덧붙임(깊이별 설명·둘러보기)만 저장 — 스냅샷·노드는 그대로(#1322).
-export async function archPatch(root: string, feature: string, data: object): Promise<boolean> {
-  try { return (await post({ op: "patch", path: root, kind: "flow", feature, data })).ok; } catch { return false; }
+// at = 설명·단계를 만들 때 본 흐름 판. 그사이 흐름이 바뀌었으면 "stale"(조용히 버림).
+export async function archPatch(root: string, feature: string, data: object, at: number | null): Promise<"ok" | "stale" | "fail"> {
+  try {
+    const r = await post({ op: "patch", path: root, kind: "flow", feature, data, ...(at ? { at } : {}) });
+    return r.ok ? "ok" : r.status === 409 ? "stale" : "fail";
+  } catch { return "fail"; }
 }
 
 // 분석 시작 — 지금 스냅샷을 서버가 잡아 두고 표를 줌(실패하면 undefined → 저장 시점 스냅샷).

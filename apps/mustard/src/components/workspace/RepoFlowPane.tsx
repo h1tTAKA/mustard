@@ -104,6 +104,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const [overviews, setOverviews] = useState<Overviews>({}); // #1322 개발자·숙련자용 설명(없으면 초보용 기본을 보여 줌)
   const [writing, setWriting] = useState(false);             // 깊이별 설명 쓰는 중
   const [tour, setTour] = useState<Tour | null>(null);       // #1322 저장된 둘러보기
+  const atRef = useRef<number | null>(null);                 // 지금 보이는 흐름의 저장 판(at) — 덧붙임이 같은 흐름에 붙는지 서버가 확인
   const [tourIdx, setTourIdx] = useState<number | null>(null); // 지금 단계(null = 둘러보기 안 하는 중)
   const [tourBusy, setTourBusy] = useState(false);           // 단계 설명 만드는 중
   const [loadFailed, setLoadFailed] = useState(false);
@@ -185,12 +186,12 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     if (mode === "cache") {
       // 서버 왕복 동안은 이전 흐름을 그대로 두되(깜빡임 없음) 로딩 중이라 갱신·재생성 버튼은 잠김, 갱신은 secOfRef로 한 번 더 막음.
       setLoading(true); setErr(null); setLoadFailed(false); loadFailedRef.current = false;
-      const { data, error } = await archGet<{ sections: FlowSection[]; overview: string | null; overviews?: Overviews; tour?: Tour }>(root, "flow", feature);
+      const { data, error } = await archGet<{ sections: FlowSection[]; overview: string | null; overviews?: Overviews; tour?: Tour; at?: number }>(root, "flow", feature);
       if (my !== reqRef.current) return;
       // 서버 오류면 새로 분석해 저장분을 덮어쓰지 않음(리뷰) — 오류만 보여 줌.
       if (error) { setSections(null); setOverview(null); secOfRef.current = null; setErr(t("flow.loadFailed")); setLoadFailed(true); loadFailedRef.current = true; setConfirm(null); setLoading(false); return; } // 열려 있던 재생성 확인창도 닫음(잠금 우회 방지, 리뷰)
       if (data?.sections?.length) {
-        setSections(data.sections); setOverview(data.overview ?? null); setOverviews(data.overviews ?? {}); setTour(Array.isArray(data.tour?.steps) ? data.tour! : null); secOfRef.current = feature; setLoading(false);
+        setSections(data.sections); setOverview(data.overview ?? null); setOverviews(data.overviews ?? {}); setTour(Array.isArray(data.tour?.steps) ? data.tour! : null); atRef.current = data.at ?? null; secOfRef.current = feature; setLoading(false);
         // 낡음 표시용 차분은 따로(그래프 맞추느라 느릴 수 있음) — 흐름은 먼저 보여 줌(리뷰).
         void archGet(root, "flow", feature, true).then(({ diff: d }) => { if (my === reqRef.current) setDiff(d); });
         return;
@@ -215,7 +216,9 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
           const next = applyFlowDiff(sectionsRef.current ?? [], [], d.removed, []);
           setSections(next);
           // 구조 변화 없음 = 노드 의미 그대로 → 깊이별 설명도 유지(#1322).
-          if (!await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature, { token, keepExtras: true })) return saveFailed();
+          const at = await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature, { token, keepExtras: true });
+          if (!at) return saveFailed();
+          atRef.current = at;
           if (my === reqRef.current) { setDiff(null); setNote(t("flow.noStructural", { n: d.changed.length + d.removed.length })); }
           return;
         }
@@ -235,7 +238,9 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
         if (!parsed.length && !/^[\s"'`*.。-]*(없음|none|なし)[\s"'`*.。-]*$/i.test(text)) { setErr(`no flow — ${text.slice(0, 140)}`); return; }
         const next = applyFlowDiff(sectionsRef.current ?? [], parsed, inc.removed, inc.structural);
         setSections(next); setOverviews({}); setTour(null); // 노드가 바뀜 → 깊이별 설명은 버림(저장도 안 넘김)
-        if (!await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature, { token })) return saveFailed();
+        const at = await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature, { token });
+        if (!at) return saveFailed();
+        atRef.current = at;
         if (my === reqRef.current) { setDiff(null); setNote(t("flow.diffUpdated", { n: inc.structural.length })); }
         return;
       }
@@ -260,7 +265,9 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       const base = sectionsRef.current;
       const nextSecs = mode === "update" && base && !d ? mergeFlow(base, parsed) : parsed;
       setSections(nextSecs); setOverview(ov); setOverviews({}); setTour(null); secOfRef.current = feature;
-      if (!await archPut(root, "flow", { sections: nextSecs, overview: ov }, feature, { token })) return saveFailed(); // 영속(#743 → #1320 서버)
+      const at = await archPut(root, "flow", { sections: nextSecs, overview: ov }, feature, { token }); // 영속(#743 → #1320 서버)
+      if (!at) return saveFailed();
+      atRef.current = at;
       if (my === reqRef.current) setDiff(null); // 방금 저장 = 최신
     } catch (e) {
       if (my === reqRef.current) setErr(e instanceof Error ? e.message : String(e));
@@ -286,7 +293,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const startTour = useCallback(async () => {
     if (!feature || !root || !sectionsRef.current) return;
     if (tourSteps.length) { setTourIdx(0); return; } // 지금 흐름에 남은 단계가 없으면(노드가 다 지워짐) 새로 만듦(리뷰)
-    const f = feature, d = depth, my = reqRef.current;
+    const f = feature, d = depth, my = reqRef.current, at0 = atRef.current;
     setTourBusy(true); setErr(null);
     try {
       const order = tourOrder(sectionsRef.current);
@@ -307,7 +314,9 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       // AI가 빠뜨린 노드는 한줄역할로 채움(단계가 비지 않게). 하나도 못 받으면 오류.
       if (!got.size) { setErr(`no tour — ${answer.text.slice(0, 140)}`); return; }
       const next: Tour = { depth: d, steps: order.map((name) => ({ name, text: got.get(nk(name)) || byKey.get(nk(name))?.role || "" })) };
-      if (!await archPatch(root, f, { tour: next })) { if (my === reqRef.current) setErr(t("flow.saveFailed")); return; }
+      const saved = await archPatch(root, f, { tour: next }, at0);
+      if (saved === "stale") return; // 그사이 흐름이 바뀜 — 버림
+      if (saved === "fail") { if (my === reqRef.current) setErr(t("flow.saveFailed")); return; }
       if (my !== reqRef.current) return;
       setTour(next); setTourIdx(0);
     } finally { setTourBusy(false); }
@@ -339,7 +348,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   // #1322 지금 깊이(개발자·숙련자)로 설명글만 다시 쓰기 — 흐름(노드)은 그대로, 덧붙임으로만 저장(스냅샷 안 건드림).
   const writeDepth = useCallback(async () => {
     if (!feature || !root || depth === "beginner" || !sectionsRef.current) return;
-    const f = feature, d = depth, my = reqRef.current; // 쓰는 사이 재생성·갱신·기능 전환이 있으면(my 바뀜) 버림 — 새 흐름에 옛 설명이 붙지 않게
+    const f = feature, d = depth, my = reqRef.current, at0 = atRef.current; // 쓰는 사이 재생성·갱신·기능 전환이 있으면(my 바뀜) 버림 — 새 흐름에 옛 설명이 붙지 않게
     setWriting(true); setErr(null);
     try {
       const cur = sectionsRef.current.flatMap((s) => s.nodes.map((n) => `${s.layer} | ${n.name} | ${n.file ?? ""}${n.line ? `:${n.line}` : ""} | ${n.role ?? ""}${n.next?.length ? ` | → ${n.next.join(", ")}` : ""}`));
@@ -353,7 +362,9 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       if (answer.err) { setErr(answer.err); return; }
       const text = parseOverview(stripCardBlock(answer.text));
       if (!text) { setErr(`no overview — ${answer.text.slice(0, 140)}`); return; }
-      if (!await archPatch(root, f, { overviews: { [d]: text } })) { if (my === reqRef.current) setErr(t("flow.saveFailed")); return; }
+      const saved = await archPatch(root, f, { overviews: { [d]: text } }, at0);
+      if (saved === "stale") return; // 그사이 흐름이 바뀜(재생성·갱신) — 버림
+      if (saved === "fail") { if (my === reqRef.current) setErr(t("flow.saveFailed")); return; }
       if (my === reqRef.current) setOverviews((o) => ({ ...o, [d]: text }));
     } finally { setWriting(false); }
   }, [feature, root, depth, ask, t]);

@@ -256,6 +256,7 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
   }, [pathPick, choosePathEnd]);
 
   // ── 팬/줌/드래그(손수) ──
+  const pathEndAtRef = useRef(0); // 경로 끝을 클릭으로 고른 시각 — 그 클릭이 두 번 클릭의 일부면 코드 열기 막음(리뷰)
   const dragRef = useRef<{ id: number; node: SimNode | null; sx: number; sy: number; moved: boolean; panx: number; pany: number } | null>(null);
   const onPointerDown = (e: React.PointerEvent) => {
     if (dragRef.current) return; // 이미 한 포인터 추적 중 — 두 번째 터치 무시(멀티터치 상태 덮어쓰기 방지)
@@ -294,12 +295,13 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     if (d.node) { d.node.fx = null; d.node.fy = null; }
     // #1322: 클릭(안 움직임) = 노드 고르기(오른쪽 상세), 빈 곳 클릭 = 고르기 해제. 코드 열기는 두 번 클릭·상세의 버튼.
     if (d.moved) return;
-    if (pathPick) { if (d.node) choosePathEnd(d.node.id); return; } // 경로 고르는 중 — 빈 곳 클릭은 무시
+    if (pathPick) { if (d.node) { choosePathEnd(d.node.id); pathEndAtRef.current = Date.now(); } return; } // 경로 고르는 중 — 빈 곳 클릭은 무시
     setSelected(d.node ? d.node.id : null);
   };
   // 한계: 코드 탭이 줄 이동을 아직 몰라 line은 넘겨도 파일 맨 위로 열림(흐름 패널과 같음).
   const onDoubleClick = (e: React.MouseEvent) => {
-    if (pathPick) return; // 경로 고르는 중 두 번 클릭은 끝 고르기만(코드 안 열림, 리뷰). 경로를 다 고른 뒤엔 다시 열림
+    // 경로 고르는 중(또는 방금 그 클릭으로 끝을 고름) 두 번 클릭은 끝 고르기만 — 코드 안 열림(리뷰). 경로를 다 고른 뒤엔 다시 열림.
+    if (pathPick || Date.now() - pathEndAtRef.current < 600) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const n = nodeAt(e.clientX - rect.left, e.clientY - rect.top);
     if (n && onOpenFile) onOpenFile(n.file, byId.get(n.id)?.line);

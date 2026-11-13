@@ -13,6 +13,7 @@ import { readArch, currentSnap, diffFrom } from "@/lib/repo/archStore";
 export const runtime = "nodejs";
 const pexecFile = promisify(execFile);
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
+const zlist = (s: string) => s.split("\0").filter(Boolean); // -z 출력 — 한글 등 비ASCII·공백 이름도 따옴표·이스케이프 없이 그대로(리뷰)
 
 export async function POST(request: Request): Promise<Response> {
   if (crossSite(request)) return Response.json({ error: "cross-site" }, { status: 403 });
@@ -41,8 +42,8 @@ export async function POST(request: Request): Promise<Response> {
       if (!ref) return Response.json({ files: [], noBase: true });
       from = lines(await git(["merge-base", "HEAD", ref]))[0];
     }
-    const changed = lines(await git(["diff", "--name-only", "--relative", from]));
-    const untracked = lines(await git(["ls-files", "--others", "--exclude-standard"]));
+    const changed = zlist(await git(["diff", "--name-only", "-z", "--relative", from]));
+    const untracked = zlist(await git(["ls-files", "-z", "--others", "--exclude-standard"]));
     return Response.json({ files: [...new Set([...changed, ...untracked])].sort() });
   } catch (e) {
     return Response.json({ error: String((e as Error)?.message ?? e) }, { status: 500 });

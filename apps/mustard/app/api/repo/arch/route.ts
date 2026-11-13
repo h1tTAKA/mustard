@@ -34,7 +34,7 @@ export async function POST(request: Request): Promise<Response> {
       const saved = kind === "cats" ? f.cats : getFlow(f, name);
       if (!saved) return Response.json({ data: null, diff: null });
       const fl = getFlow(f, name);
-      const data = kind === "cats" ? f.cats!.items : { sections: fl!.sections, overview: fl!.overview, ...cleanExtras(fl) }; // 읽을 때도 모양 검사(옛·손상 파일, 리뷰)
+      const data = kind === "cats" ? f.cats!.items : { sections: fl!.sections, overview: fl!.overview, at: fl!.at, ...cleanExtras(fl) }; // 읽을 때도 모양 검사(옛·손상 파일, 리뷰)
       if (b.diff !== true) return Response.json({ data, diff: null });
       const cur = await currentSnap(path);
       return Response.json({ data, diff: diffFrom(saved, cur), ...(b.wantToken === true ? { token: beginSnap(cur) } : {}) });
@@ -45,6 +45,8 @@ export async function POST(request: Request): Promise<Response> {
       const f = readArch(path);
       const fl = getFlow(f, name);
       if (!fl) return Response.json({ error: "no flow" }, { status: 404 });
+      // 흐름 판(at)이 다르면 그사이 재생성·갱신으로 노드가 바뀐 것 → 옛 흐름 기준 설명·단계를 붙이지 않음(리뷰)
+      if (typeof (b as { at?: unknown }).at === "number" && (b as { at?: unknown }).at !== fl.at) return Response.json({ stale: true }, { status: 409 });
       if (x.overviews) fl.overviews = { ...cleanExtras(fl).overviews, ...x.overviews };
       if (x.tour) fl.tour = x.tour;
       writeArch(path, f);
@@ -63,7 +65,7 @@ export async function POST(request: Request): Promise<Response> {
       else setFlow(f, name, { sections: d!.sections as ArchSection[], overview: typeof d!.overview === "string" ? d!.overview : null, snap, at,
         ...(b.keepExtras === true ? cleanExtras(getFlow(f, name)) : {}) });
       writeArch(path, f);
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, at });
     }
     return Response.json({ error: "op must be get|put|patch|skeleton|begin" }, { status: 400 });
   } catch (e) {
