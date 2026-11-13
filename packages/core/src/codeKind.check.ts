@@ -4,7 +4,7 @@ import { codeKind } from "./codeKind.ts";
 
 const cases: [string, string][] = [
   // 경로·파일
-  ["ios/Runner/Info.plist:9", "path"], ["ios/Runner/Info.plist:29-36", "path"], ["lib/", "path"], ["Info.plist", "path"], ["main.dart", "path"], ["src/a.ts", "path"], ["app.tsx", "path"], ["App.js", "path"], ["path.ts", "path"], ["Button.js", "path"],
+  ["ios/Runner/Info.plist:9", "path"], ["ios/Runner/Info.plist:29-36", "path"], ["lib/", "path"], ["Info.plist", "path"], ["main.dart", "path"], ["src/a.ts", "path"], ["app.tsx", "path"], ["App.js", "path"], ["path.ts", "path"], ["Button.js", "path"], ["next.config.js", "path"], ["express.js", "path"], ["app.log", "path"], ["app.env", "path"],
   // 함수
   ["application(_:didFinishLaunchingWithOptions:)", "fn"], ["testExample()", "fn"], ["GeneratedPluginRegistrant.register(with:)", "fn"], ["super.application(...)", "fn"], ["AppState.load()", "fn"],
   // 타입

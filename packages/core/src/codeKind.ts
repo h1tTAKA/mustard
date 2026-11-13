@@ -15,11 +15,15 @@ const EXT = new Set(("ts tsx js jsx mjs cjs json jsonc md mdx dart swift kt kts 
   + "html htm css scss sass less vue svelte astro sh bash zsh fish ps1 txt log csv sql proto graphql gql env ini conf cfg properties lua ex exs erl hs ml scala clj "
   + "storyboard xib xcscheme xcconfig entitlements pbxproj podspec gemspec csproj sln resx xaml png jpg jpeg gif webp svg ico pdf wasm zip dockerfile tf hcl nix vim").split(" "));
 
-// "console.log"·"process.env"처럼 흔한 객체의 멤버 접근 — 확장자처럼 보여도 파일 아님
-const OBJ = new Set(["console", "process", "window", "document", "this", "self", "super", "os", "sys", "fs", "path", "math", "json", "object", "array", "string", "navigator", "location", "event", "e", "req", "res", "app", "module", "exports", "require"]);
-// 파일처럼 생겼지만 아닌 것 — 라이브러리 이름(Node.js), 확장자가 애매할 때(log·env)의 흔한 객체 멤버(console.log·process.env). app.tsx·App.js 같은 진짜 파일은 그대로(리뷰).
+// 파일처럼 생겼지만 아닌 것 — 라이브러리 이름(Node.js), 객체 멤버(console.log·process.env). app.tsx·App.js 같은 진짜 파일은 그대로(리뷰).
 const LIBJS = new Set(["node", "vue", "next", "nuxt", "express", "chart", "three", "d3", "react", "angular", "ember", "backbone", "moment", "p5", "socket", "alpine", "nest", "deno", "bun"]);
-const notFile = (s: string, ext: string) => { const base = s.split(".")[0].toLowerCase(); return (ext === "js" && LIBJS.has(base)) || ((ext === "log" || ext === "env") && OBJ.has(base)); };
+// 딱 두 조각일 때만: "Node.js"(대문자 시작 라이브러리 이름)·"console.log"/"process.env". next.config.js·express.js·app.log 같은 파일은 경로(리뷰).
+const notFile = (s: string, ext: string) => {
+  const parts = s.split(".");
+  if (parts.length !== 2) return false;
+  const [base] = parts;
+  return (ext === "js" && /^[A-Z]/.test(base) && LIBJS.has(base.toLowerCase())) || ((ext === "log" || ext === "env") && (base === "console" || base === "process"));
+};
 // "and/or", "GET/POST", "on/off" — 슬래시가 있어도 경로가 아닌 짝말(한 번 나뉘고 양쪽이 대문자 약어거나 흔한 짝말)
 const PAIR = new Set(["and", "or", "on", "off", "yes", "no", "true", "false", "read", "write", "input", "output", "get", "set", "in", "out", "open", "close", "start", "stop", "show", "hide", "enable", "disable"]);
 const SLASH_WORDS = (s: string) => { const p = s.split("/"); return p.length === 2 && p.every((x) => /^[A-Z]+$/.test(x) || PAIR.has(x.toLowerCase())); };
