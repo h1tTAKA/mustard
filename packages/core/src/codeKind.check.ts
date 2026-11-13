@@ -10,13 +10,13 @@ const cases: [string, string][] = [
   // 타입
   ["AppDelegate", "type"], ["FlutterAppDelegate", "type"], ["XCTestCase", "type"], ["List<String>", "type"],
   // 설정 키
-  ["MAX_FILES", "key"], ["catchup.enabled", "key"], ["--merge", "key"], ["<key>", "key"], ["<true/>", "key"],
+  ["MAX_FILES", "key"], ["--merge", "key"], ["<key>", "key"], ["<true/>", "key"],
   // 값
   ["#D1D6DB", "val"], ["0xFFD1D6DB", "val"], ["false", "val"], ["42", "val"], ["\"玄関\"", "val"], ["$(FLUTTER_BUILD_NAME)", "val"], ["16px", "val"],
   // 키워드
   ["static", "kw"], ["const", "kw"], ["await", "kw"], ["@main", "kw"],
   // 모르는 것
-  ["fieldLine", "plain"], ["static const fieldLine", "plain"], ["", "plain"],
+  ["fieldLine", "plain"], ["Node.js", "plain"], ["API", "plain"], ["JSON", "plain"], ["console.log", "plain"], ["catchup.enabled", "plain"], ["and/or", "plain"], ["GET/POST", "plain"], ["src/lib", "path"], ["https://x.com/a", "path"], ["static const fieldLine", "plain"], ["", "plain"],
 ];
 for (const [s, k] of cases) assert.equal(codeKind(s), k, s);
 console.log("codeKind ok");

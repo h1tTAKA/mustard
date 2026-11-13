@@ -15,6 +15,12 @@ const EXT = new Set(("ts tsx js jsx mjs cjs json jsonc md mdx dart swift kt kts 
   + "html htm css scss sass less vue svelte astro sh bash zsh fish ps1 txt log csv sql proto graphql gql env ini conf cfg properties lua ex exs erl hs ml scala clj "
   + "storyboard xib xcscheme xcconfig entitlements pbxproj podspec gemspec csproj sln resx xaml png jpg jpeg gif webp svg ico pdf wasm zip dockerfile tf hcl nix vim").split(" "));
 
+// "console.log"·"process.env"처럼 흔한 객체의 멤버 접근 — 확장자처럼 보여도 파일 아님
+const OBJ = new Set(["console", "process", "window", "document", "this", "self", "super", "os", "sys", "fs", "path", "math", "json", "object", "array", "string", "navigator", "location", "event", "e", "req", "res", "app", "module", "exports", "require"]);
+// "and/or", "GET/POST", "on/off" — 슬래시가 있어도 경로가 아닌 짝말(한 번 나뉘고 양쪽이 대문자 약어거나 흔한 짝말)
+const PAIR = new Set(["and", "or", "on", "off", "yes", "no", "true", "false", "read", "write", "input", "output", "get", "set", "in", "out", "open", "close", "start", "stop", "show", "hide", "enable", "disable"]);
+const SLASH_WORDS = (s: string) => { const p = s.split("/"); return p.length === 2 && p.every((x) => /^[A-Z]+$/.test(x) || PAIR.has(x.toLowerCase())); };
+
 export function codeKind(raw: string): CodeKind {
   const s = raw.trim();
   if (!s || s.length > 120) return "plain";
@@ -23,16 +29,16 @@ export function codeKind(raw: string): CodeKind {
     || /^(["'`]).*\1$/.test(s) || /^(true|false|null|nil|undefined|None|True|False|NaN)$/.test(s) || /^\$\(.+\)$/.test(s)) return "val";
   // 파일·경로 — 슬래시가 있고 공백 없음, 또는 이름.확장자(+줄 번호)
   if (!/\s/.test(s) && !s.includes("(") && !s.startsWith("<")) { // "<true/>" 같은 태그는 경로 아님
-    if (/[\\/]/.test(s) && /[\w.-]/.test(s)) return "path";
+    if (/[\\/]/.test(s) && /[\w.-]/.test(s) && !SLASH_WORDS(s)) return "path";
     const m = s.match(/^[\w@.-]*[\w-]\.([a-z][a-z0-9]{0,9})(:\d+(-\d+)?)?$/i);
-    if (m && (EXT.has(m[1].toLowerCase()) || m[2])) return "path"; // 이름.확장자 — 아는 확장자이거나 줄 번호가 붙을 때만("catchup.enabled" 같은 키와 구분)
+    if (m && (EXT.has(m[1].toLowerCase()) || m[2]) && !/^[A-Z][a-z]+\.js$/.test(s) && !OBJ.has(s.split(".")[0].toLowerCase())) return "path"; // Node.js·Vue.js 같은 이름 제외 // 이름.확장자 — 아는 확장자이거나 줄 번호가 붙을 때만("catchup.enabled" 같은 키와 구분)
   }
   // 함수·메서드 — 이름 뒤 괄호(인자 포함 가능)
   if (/^[\w$.@:<>]+\s*\(.*\)$/.test(s) || /^[\w$]+(\.[\w$]+)*\(_?:?.*\)$/.test(s)) return "fn";
   if (KW.has(s)) return "kw";
-  // 설정 키 — 대문자_밑줄, 점·하이픈으로 이은 소문자 키, --플래그, <태그>
-  if (/^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/.test(s) || /^[a-z][\w]*(\.[a-z][\w]*)+$/.test(s) || /^--?[a-z][\w-]*$/.test(s) || /^<\/?[\w:-]+\/?>$/.test(s)) return "key";
+  // 설정 키 — 대문자_밑줄, --플래그, <태그>("user.name"·"console.log" 같은 점 이음은 멤버 접근과 구분이 안 돼 회색)
+  if (/^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/.test(s) || /^--?[a-z][\w-]*$/.test(s) || /^<\/?[\w:-]+\/?>$/.test(s)) return "key";
   // 타입·클래스 — 대문자로 시작하는 한 단어(제네릭 허용)
-  if (/^[A-Z][A-Za-z0-9]*(<[\w, <>]+>)?$/.test(s)) return "type";
+  if (/^[A-Z][A-Za-z0-9]*(<[\w, <>]+>)?$/.test(s) && /[a-z]/.test(s)) return "type"; // API·JSON 같은 약어는 제외
   return "plain";
 }
