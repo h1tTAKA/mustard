@@ -37,7 +37,8 @@ function sniff(head: string): string {
     if (Object.hasOwn(m, k)) return m[k];
   }
   // JSON — 4000자까지만 보므로 통째 파싱 대신 첫 모양으로: {"키" / [ 뒤에 값 시작({ [ " 숫자 ] true false null)
-  if (/^\{\s*("|\})/.test(t) || /^\[\s*([{["\d\]-]|true|false|null)/.test(t)) return "json";
+  // 배열은 값 문법까지 봄 — "[2026-11-14 10:00] 로그", "[1] 참고문헌", "[nullable] x" 같은 글이 JSON으로 칠해지지 않게(리뷰)
+  if (/^\{\s*("|\})/.test(t) || /^\[\s*(\{|\[|\]|"[^"\n]*"\s*[,\]]|-?\d+(\.\d+)?\s*[,\]]|(true|false|null)\s*[,\]])/.test(t)) return "json";
   return "text";
 }
 

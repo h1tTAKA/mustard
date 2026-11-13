@@ -29,5 +29,7 @@ assert.equal(langOf(".flutter-plugins-dependencies", '{"info":"x","plugins":{}}'
 assert.equal(langOf("tool", "#!/usr/bin/env python3\nprint(1)"), "python");
 assert.equal(langOf("run", "#!/bin/bash\necho"), "bash");
 assert.equal(langOf("a.zzz", "hello"), "text");
+for (const h of ["[2026-11-14 10:00] started", "[1] Smith et al.", "[1]: https://x", "[nullable] x", "[section]\nk=v", "{{ template }}", "[link](x)"]) assert.equal(langOf("notes", h), "text", h);
+for (const h of ['[{"a":1}]', "[1, 2]", '["a", "b"]', "[]", "[true]", '{"k": 1}']) assert.equal(langOf("data", h), "json", h);
 assert.equal(langOf("a.ts", "<?xml"), "ts"); // 확장자로 알면 내용 무시
 console.log("codeLang ok");
