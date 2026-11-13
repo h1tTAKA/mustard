@@ -34,7 +34,7 @@ export async function POST(request: Request): Promise<Response> {
       const saved = kind === "cats" ? f.cats : getFlow(f, name);
       if (!saved) return Response.json({ data: null, diff: null });
       const fl = getFlow(f, name);
-      const data = kind === "cats" ? f.cats!.items : { sections: fl!.sections, overview: fl!.overview, overviews: fl!.overviews, tour: fl!.tour };
+      const data = kind === "cats" ? f.cats!.items : { sections: fl!.sections, overview: fl!.overview, ...cleanExtras(fl) }; // 읽을 때도 모양 검사(옛·손상 파일, 리뷰)
       if (b.diff !== true) return Response.json({ data, diff: null });
       const cur = await currentSnap(path);
       return Response.json({ data, diff: diffFrom(saved, cur), ...(b.wantToken === true ? { token: beginSnap(cur) } : {}) });

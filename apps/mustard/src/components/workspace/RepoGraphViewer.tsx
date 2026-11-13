@@ -299,7 +299,7 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
   };
   // 한계: 코드 탭이 줄 이동을 아직 몰라 line은 넘겨도 파일 맨 위로 열림(흐름 패널과 같음).
   const onDoubleClick = (e: React.MouseEvent) => {
-    if (pathPick || pathFrom) return; // 경로 고르는 중 두 번 클릭은 끝 고르기만(코드 안 열림, 리뷰)
+    if (pathPick) return; // 경로 고르는 중 두 번 클릭은 끝 고르기만(코드 안 열림, 리뷰). 경로를 다 고른 뒤엔 다시 열림
     const rect = e.currentTarget.getBoundingClientRect();
     const n = nodeAt(e.clientX - rect.left, e.clientY - rect.top);
     if (n && onOpenFile) onOpenFile(n.file, byId.get(n.id)?.line);

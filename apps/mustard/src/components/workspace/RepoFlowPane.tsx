@@ -104,7 +104,6 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const [overviews, setOverviews] = useState<Overviews>({}); // #1322 개발자·숙련자용 설명(없으면 초보용 기본을 보여 줌)
   const [writing, setWriting] = useState(false);             // 깊이별 설명 쓰는 중
   const [tour, setTour] = useState<Tour | null>(null);       // #1322 저장된 둘러보기
-  const tourRef = useRef<Tour | null>(null);                 // 최신 tour 미러(▶ 눌렀을 때 저장분 있나)
   const [tourIdx, setTourIdx] = useState<number | null>(null); // 지금 단계(null = 둘러보기 안 하는 중)
   const [tourBusy, setTourBusy] = useState(false);           // 단계 설명 만드는 중
   const [loadFailed, setLoadFailed] = useState(false);
@@ -277,7 +276,6 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   // 최신 sections·overview 미러(갱신 병합 기준).
   useEffect(() => { sectionsRef.current = sections; }, [sections]);
   useEffect(() => { overviewRef.current = overview; }, [overview]);
-  useEffect(() => { tourRef.current = tour; }, [tour]);
 
   // #1322 둘러보기 — 흐름 순서(tourOrder)대로 단계. 지금 흐름에 없는 노드 단계는 건너뜀(구조 변화 없는 갱신으로 지워진 노드).
   const tourSteps = useMemo(() => {
@@ -287,7 +285,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   }, [tour, sections]);
   const startTour = useCallback(async () => {
     if (!feature || !root || !sectionsRef.current) return;
-    if (tourRef.current?.steps.length) { setTourIdx(0); return; }
+    if (tourSteps.length) { setTourIdx(0); return; } // 지금 흐름에 남은 단계가 없으면(노드가 다 지워짐) 새로 만듦(리뷰)
     const f = feature, d = depth, my = reqRef.current;
     setTourBusy(true); setErr(null);
     try {
@@ -313,7 +311,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       if (my !== reqRef.current) return;
       setTour(next); setTourIdx(0);
     } finally { setTourBusy(false); }
-  }, [feature, root, depth, ask, t]);
+  }, [feature, root, depth, ask, t, tourSteps.length]);
 
   // 지금 단계 카드 = 포커스 빛 + 화면 안으로.
   const tourName = tourIdx != null ? tourSteps[tourIdx]?.name : undefined;

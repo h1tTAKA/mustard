@@ -4,7 +4,7 @@ import { loadOrBuildGraph, currentFingerprint } from "../loadGraph";
 import { readCachedGraph } from "../graphStore";
 import { graphDigest } from "../graphDigest";
 import { graphRank } from "../graphrank";
-import { readArch, currentSnap, diffFrom } from "../archStore";
+import { readArch, currentSnap, diffFrom, cleanExtras } from "../archStore";
 import type { RepoGraph, RepoNode } from "../types";
 
 export interface McpTool {
@@ -140,7 +140,8 @@ export const TOOLS: McpTool[] = [
         out.push("", `## ${s.layer}`);
         for (const n of s.nodes) out.push(`- ${n.name}${n.file ? ` @ ${n.file}${n.line ? `:${n.line}` : ""}` : ""}${n.role ? ` — ${n.role}` : ""}${n.next?.length ? ` → ${n.next.join(", ")}` : ""}`);
       }
-      if (Array.isArray(fl.tour?.steps) && fl.tour.steps.length) out.push("", "## walkthrough (in order)", ...fl.tour.steps.map((st, i) => `${i + 1}. ${st.name} — ${st.text}`)); // #1322 둘러보기 단계
+      const steps = cleanExtras(fl).tour?.steps ?? [];
+      if (steps.length) out.push("", "## walkthrough (in order)", ...steps.map((st, i) => `${i + 1}. ${st.name} — ${st.text}`)); // #1322 둘러보기 단계
       return { text: out.join("\n") };
     },
   },
