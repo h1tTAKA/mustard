@@ -1,15 +1,5 @@
-// 코드 그래프 탐색 화면(#1322) 순수 계산 — 보기 깊이·검색·이웃·언어 집계. fs·React 없음(점검 쉬움).
-import type { RepoEdge, RepoGraph, RepoNode, RepoNodeKind, RepoRelation } from "./types";
-
-// 보기 깊이 — 초보=파일만, 개발자=+클래스·컴포넌트, 숙련자=전부(함수·타입까지). 흐름 설명글 깊이와 같은 값.
-export type ViewDepth = "beginner" | "dev" | "expert";
-export const DEPTHS: ViewDepth[] = ["beginner", "dev", "expert"];
-const KINDS: Record<ViewDepth, RepoNodeKind[]> = {
-  beginner: ["file"],
-  dev: ["file", "class", "component"],
-  expert: ["file", "class", "component", "function", "type"],
-};
-export const visibleKinds = (d: ViewDepth): Set<RepoNodeKind> => new Set(KINDS[d]);
+// 코드 그래프 탐색 화면(#1322) 순수 계산 — 검색·이웃·언어 집계·경로·영향. fs·React 없음(점검 쉬움).
+import type { RepoEdge, RepoGraph, RepoNode, RepoRelation } from "./types";
 
 // 이름·파일·시그니처에서 찾기(대소문자 무시). 이름이 검색어로 시작하면 앞으로. 많으면 limit개만.
 export function searchNodes(nodes: RepoNode[], q: string, limit = 30): RepoNode[] {

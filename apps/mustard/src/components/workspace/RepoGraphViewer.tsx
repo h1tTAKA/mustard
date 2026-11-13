@@ -6,10 +6,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, type Simulation, type SimulationNodeDatum } from "d3-force";
 import { IconX, IconLoader2, IconFocus2, IconSearch, IconCode, IconLayoutSidebarRight, IconRoute } from "@tabler/icons-react";
-import { useT } from "@mustard/core";
+import { useT, useLocale, stripCardBlock, Markdown } from "@mustard/core";
+import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import type { RepoAssetRole, RepoGraph, RepoNode, RepoNodeKind } from "@/lib/repo/types";
-import { DEPTHS, visibleKinds, searchNodes, neighbors, langStats, shortestPath, impactOf, type Link } from "@/lib/repo/graphView";
-import { useViewDepth } from "@/lib/repo/viewDepth";
+import { searchNodes, neighbors, langStats, shortestPath, impactOf, type Link } from "@/lib/repo/graphView";
+import { archNode, archNodePut } from "@/lib/repo/archClient";
+import { askAgent } from "@/lib/repo/askAgent";
 
 type SimNode = SimulationNodeDatum & { id: string; label: string; file: string; kind: RepoNodeKind; role?: RepoAssetRole; community?: number };
 type SimLink = { source: SimNode | string; target: SimNode | string; relation: string };
@@ -30,8 +32,10 @@ const HL = "#e8b93a";                  // 강조색(머스타드)
 const CHANGED = "#f97316", AFFECTED = "#facc15"; // 영향 강조: 바뀐 노드(주황)·한 칸 이웃(노랑)
 type ImpactBase = "off" | "analysis" | "worktree" | "branch";
 
-export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
+export default function RepoGraphViewer({ root, providerId, providerSettings, onOpenFile, onClose }: {
   root: string;
+  providerId?: AgentProviderKind;       // #1322 노드 설명(AI)용 — 없으면 설명 없이 구조만
+  providerSettings?: ProviderSettings;
   onOpenFile?: (file: string, line?: number) => void;
   onClose: () => void;
 }) {
@@ -43,8 +47,7 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  const [savedDepth, setDepth] = useViewDepth();                    // 보기 깊이(흐름 패널과 공유)
-  const depth = savedDepth ?? "expert";                              // 안 골랐으면 전부 = 예전 그래프 그대로(리뷰)
+  const { locale } = useLocale();
   const [picked, setPicked] = useState<Set<number>>(new Set());     // 고른 덩어리(비면 전부)
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);    // 누른 노드 id → 오른쪽 상세
@@ -87,18 +90,12 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     return () => { alive = false; };
   }, [root]);
 
-  // 보기 깊이에 맞는 노드만(종류로 거름). 깊이를 바꾸면 배치도 새로 — 모드 전환이라 흔들려도 됨.
-  const shown = useMemo(() => {
-    if (!graph) return [];
-    const kinds = visibleKinds(depth);
-    return graph.nodes.filter((n) => kinds.has(n.kind));
-  }, [graph, depth]);
+  const shown = useMemo(() => graph?.nodes ?? [], [graph]);
   const byId = useMemo(() => new Map(graph?.nodes.map((n) => [n.id, n]) ?? []), [graph]);
   const matches = useMemo(() => searchNodes(shown, query), [shown, query]);
   const communities = useMemo(() => [...(graph?.communities ?? [])].sort((a, b) => b.count - a.count).slice(0, MAX_CHIPS), [graph]);
   const langs = useMemo(() => langStats(graph?.nodes ?? []).slice(0, 6), [graph]);
-  // 지금 깊이에 보이는 노드만 지나는 최단 경로(그려지는 것과 맞게). 끝점이 안 보이면 null.
-  const path = useMemo(() => (graph && pathFrom && pathTo ? shortestPath(graph.edges, pathFrom, pathTo, new Set(shown.map((n) => n.id))) : null), [graph, shown, pathFrom, pathTo]);
+  const path = useMemo(() => (graph && pathFrom && pathTo ? shortestPath(graph.edges, pathFrom, pathTo) : null), [graph, pathFrom, pathTo]);
   // 영향 기준이 바뀌면 바뀐 파일 목록 다시 받기(늦게 온 옛 응답은 버림).
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 기준 전환 시 이전 결과 비움(비동기 조회 준비)
@@ -116,6 +113,36 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
     return () => { alive = false; };
   }, [root, impactBase]);
   const hit = useMemo(() => (graph && impact ? impactOf(graph, impact.files) : null), [graph, impact]);
+  // #1322 노드 설명 — 누르면 저장분(파일 그대로면) 즉시, 없으면 그 노드의 실제 코드 + 연결을 AI에 보여 주고 근거와 함께 씀 → 저장.
+  const [note, setNote] = useState<{ id: string; text?: string; busy?: boolean; err?: string } | null>(null);
+  const noteCache = useRef(new Map<string, string>()); // 이 창 안 캐시(같은 노드 다시 누르면 서버도 안 감)
+  useEffect(() => {
+    if (!graph || !selected) { setNote(null); return; } // eslint-disable-line react-hooks/set-state-in-effect -- 선택 해제 시 비움
+    const n = graph.nodes.find((x) => x.id === selected);
+    if (!n || !providerId || !providerSettings) { setNote(null); return; } // 프로바이더 없으면 설명 없음
+    const hit = noteCache.current.get(n.id);
+    if (hit) { setNote({ id: n.id, text: hit }); return; } // 캐시 즉시
+    let alive = true;
+    setNote({ id: n.id, busy: true });
+    void (async () => {
+      const got = await archNode(root, n.id, n.file, n.line);
+      if (!alive) return;
+      if (!got) { setNote({ id: n.id, err: t("graph.noteFailed") }); return; }
+      if (got.text) { noteCache.current.set(n.id, got.text); setNote({ id: n.id, text: got.text }); return; }
+      const nb = neighbors(graph, n.id);
+      const links = [...nb.out.map((l) => `→ ${l.relation} ${l.node.label} (${l.node.file})`), ...nb.in.map((l) => `← ${l.relation} ${l.node.label} (${l.node.file})`)].slice(0, 20);
+      const ctx = `레포: ${root.split("/").filter(Boolean).pop()}\n노드: ${n.label} (${n.kind}) @ ${n.file}${n.line ? `:${n.line}` : ""}${n.signature ? `\n시그니처: ${n.signature}` : ""}${links.length ? `\n\n[연결]\n${links.join("\n")}` : ""}\n\n[코드 발췌 — 줄 번호: 내용]\n${got.snippet ?? ""}`;
+      const prompt = `위 코드의 \`${n.label}\`(${n.kind})가 무슨 일을 하는지 개발 초보도 알게 3~5문장으로 설명해줘. 무엇을 받아서 무엇을 하고 무엇을 돌려주는지, 이 레포에서 누가 쓰고 무엇을 쓰는지([연결] 참고) 실제 코드 기준으로. 마지막 줄에 "근거:" 다음 실제로 본 위치를 \`파일:줄\` 형식 1~3개. 코드는 위 발췌에 있으니 '코드를 보지 못했다'는 말은 하지 마. 제목·목록 없이 문장만.`;
+      const a = await askAgent(providerId, providerSettings, locale, ctx, prompt);
+      if (!alive) return;
+      const text = a.err ? "" : stripCardBlock(a.text).trim();
+      if (!text) { setNote({ id: n.id, err: a.err || t("graph.noteFailed") }); return; }
+      noteCache.current.set(n.id, text);
+      setNote({ id: n.id, text });
+      if (got.hash) void archNodePut(root, n.id, got.hash, text);
+    })();
+    return () => { alive = false; };
+  }, [graph, selected, root, providerId, providerSettings, locale, t]);
   const detail = useMemo(() => (graph && selected ? neighbors(graph, selected) : null), [graph, selected]);
 
   useEffect(() => {
@@ -366,12 +393,6 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
       {graph && (
         <div className="flex shrink-0 flex-col gap-1.5 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
           <div className="flex items-center gap-2">
-            {/* 보기 깊이 — 초보=파일만, 개발자=+클래스·컴포넌트, 숙련자=+함수·타입(흐름 설명 깊이와 공유) */}
-            <div className="flex shrink-0 items-center gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800/70" role="group" title={t("graph.depthTitle")}>
-              {DEPTHS.map((d) => (
-                <button key={d} type="button" onClick={() => setDepth(d)} aria-pressed={depth === d} className={chip(depth === d)}>{t(`graph.depth.${d}`)}</button>
-              ))}
-            </div>
             {/* 덩어리 칩 — 누르면 그 덩어리만 진하게(여러 개 가능), 다시 누르면 해제 */}
             {communities.length > 0 && (
               <div className="nunopi-scroll flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" title={t("graph.clusterTitle")}>
@@ -420,7 +441,7 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
                 onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onDoubleClick={onDoubleClick} onWheel={onWheel} />
               {/* 범례 — 노드 종류 색(지금 깊이에서 보이는 종류만) */}
               <div className="pointer-events-none absolute bottom-3 left-3 flex flex-col gap-1 rounded-lg border border-zinc-200 bg-white/80 px-2.5 py-2 text-[10px] dark:border-zinc-700 dark:bg-zinc-900/80">
-                {(Object.keys(KIND_COLOR) as RepoNodeKind[]).filter((k) => visibleKinds(depth).has(k)).map((k) => (
+                {(Object.keys(KIND_COLOR) as RepoNodeKind[]).map((k) => (
                   <span key={k} className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
                     <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: KIND_COLOR[k] }} aria-hidden /> {KIND_LABEL[k]}
                   </span>
@@ -470,7 +491,7 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
                   <>
                     <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{t("graph.impactCounts", { files: impact.files.length, changed: hit?.changed.size ?? 0, affected: hit?.affected.size ?? 0 })}</p>
                     {linkList(t("graph.impactChanged"), graph.nodes.filter((n) => n.kind === "file" && hit?.changed.has(n.id)))}
-                    {linkList(t("graph.impactAffected"), graph.nodes.filter((n) => hit?.affected.has(n.id) && visibleKinds(depth).has(n.kind)))}
+                    {linkList(t("graph.impactAffected"), graph.nodes.filter((n) => hit?.affected.has(n.id)))}
                   </>
                 )}
               </div>
@@ -499,9 +520,17 @@ export default function RepoGraphViewer({ root, onOpenFile, onClose }: {
                     className="flex items-center gap-1 self-start break-all text-left font-mono text-[10px] text-mustard-600 hover:underline dark:text-mustard-400">
                     <IconCode size={12} stroke={2} className="shrink-0" aria-hidden />{sel.file}{sel.line ? `:${sel.line}` : ""}
                   </button>
-                  {sel.signature && <p className="break-all font-mono text-[10px] text-zinc-500 dark:text-zinc-400">{sel.owner ? `${sel.owner}.` : ""}{sel.label}{sel.signature}</p>}
+                  {sel.signature && <p className="break-all font-mono text-[10px] text-zinc-500 dark:text-zinc-400">{sel.owner ? `${sel.owner}.` : ""}{sel.signature.startsWith(sel.label) ? sel.signature : `${sel.label}${sel.signature}`}</p>}
                   {commName(sel.community) && <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{t("graph.cluster", { name: commName(sel.community)! })}</p>}
                 </div>
+                {/* #1322 이 노드가 하는 일(AI, 코드 근거) */}
+                {note?.id === sel.id && (
+                  <div className="rounded-md border border-zinc-200 bg-zinc-50/70 px-2.5 py-2 text-[11.5px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:bg-zinc-800/40 dark:text-zinc-300">
+                    {note.busy ? <span className="flex items-center gap-1.5 text-zinc-400"><IconLoader2 size={12} stroke={2} className="animate-spin" aria-hidden />{t("graph.noteWriting")}</span>
+                      : note.err ? <span className="break-words text-rose-500">{note.err}</span>
+                      : <Markdown>{note.text ?? ""}</Markdown>}
+                  </div>
+                )}
                 {detail && (
                   <>
                     {linkList(t("graph.outgoing"), detail.out)}

@@ -29,6 +29,18 @@ export async function archPatch(root: string, feature: string, data: object, at:
   } catch { return "fail"; }
 }
 
+// 그래프 노드 설명(#1322) — 저장분이 지금 파일과 맞으면 {text}, 아니면 새로 쓸 재료 {hash, snippet}. 실패 null.
+export async function archNode(root: string, id: string, file: string, line?: number): Promise<{ text?: string; hash?: string; snippet?: string } | null> {
+  try { const r = await post({ op: "node", path: root, id, file, line }); return r.ok ? await r.json() : null; } catch { return null; }
+}
+// 흐름 노드 파일들의 실제 코드 발췌(설명·둘러보기 근거). 실패면 빈 문자열.
+export async function archSnippets(root: string, items: { file: string; line?: number }[]): Promise<string> {
+  try { const d = await (await post({ op: "snippets", path: root, data: items })).json(); return typeof d?.text === "string" ? d.text : ""; } catch { return ""; }
+}
+export async function archNodePut(root: string, id: string, hash: string, text: string): Promise<boolean> {
+  try { return (await post({ op: "node-put", path: root, id, hash, text })).ok; } catch { return false; }
+}
+
 // 분석 시작 — 지금 스냅샷을 서버가 잡아 두고 표를 줌(실패하면 undefined → 저장 시점 스냅샷).
 export async function archBegin(root: string): Promise<string | undefined> {
   try { const d = await (await post({ op: "begin", path: root })).json(); return typeof d?.token === "string" ? d.token : undefined; } catch { return undefined; }

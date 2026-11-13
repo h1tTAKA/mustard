@@ -7,9 +7,9 @@ import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import { stripCardBlock } from "@mustard/core";
 import { fetchGraphDigest } from "@/lib/repo/fetchDigest";
-import { archGet, archPut, archSkeleton, archBegin, archPatch } from "@/lib/repo/archClient";
-import { useViewDepth } from "@/lib/repo/viewDepth";
-import { DEPTHS } from "@/lib/repo/graphView";
+import { archGet, archPut, archSkeleton, archBegin, archPatch, archSnippets } from "@/lib/repo/archClient";
+import { useViewDepth, DEPTHS } from "@/lib/repo/viewDepth";
+import { askAgent } from "@/lib/repo/askAgent";
 import { applyFlowDiff, mergeFlow, tourOrder } from "@/lib/repo/flowMerge";
 import type { SnapDiff } from "@/lib/repo/incremental";
 
@@ -18,14 +18,15 @@ import type { SnapDiff } from "@/lib/repo/incremental";
 type FlowNode = { name: string; file?: string; line?: number; role?: string; next?: string[] };
 type FlowSection = { layer: string; nodes: FlowNode[] };
 type Overviews = { dev?: string; expert?: string };
-type Tour = { depth: string; steps: { name: string; text: string }[] }; // #1322 둘러보기 단계(처음 한 번 AI, 저장) // #1322 깊이별 설명글(overview 자체 = 초보용 기본)
-type StreamEvent = { type: string; message?: string; response?: { summary?: string } };
+type Tour = { depth?: string; steps: { name: string; text: string }[] }; // #1322 둘러보기 단계(처음 한 번 AI, 저장) // #1322 깊이별 설명글(overview 자체 = 초보용 기본)
 // 지하철식 직각 배선: 소스 노드 왼쪽에서 나와 → 왼쪽 거터의 전용 레인(세로) → 타깃 왼쪽으로 들어감.
 // 박스는 거터 오른쪽에만 있어 선이 박스를 뚫지 않음. 소스별 레인·색 분리로 스파게티 방지.
 type Line = { key: string; sk: string; tk: string; color: string; laneX: number; xs: number; ys: number; xt: number; yt: number; grounded: boolean };
 
 const basename = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
 const nk = (s: string) => s.trim().toLowerCase(); // 노드 이름 정규화 키(엣지 매칭용)
+// 근거 규칙(#1322) — AI가 파일 이름만 보고 짐작하지 않게 실제 코드 발췌를 주고, 어디서 봤는지 달게 함.
+const EVIDENCE = "설명은 위 [코드 발췌]에서 실제로 읽은 내용을 근거로 해. 코드는 발췌에 있으니 '코드를 보지 못했다'는 말은 하지 마. 발췌에 없어서 짐작한 부분은 '추측'이라고 밝혀.";
 const DIFF_FULL = 30; // #1320 구조가 바뀐 파일이 이보다 많으면 차분 말고 처음부터 다시(부분 수선보다 정확)
 // 출처(source 노드)별 색 — 겹쳐도 어디서 나왔는지 구분되게. 다크 배경서 잘 보이는 톤.
 const EDGE_COLORS = ["#60a5fa", "#f87171", "#34d399", "#fbbf24", "#c084fc", "#f472b6", "#2dd4bf", "#fb923c", "#a3e635", "#38bdf8"];
@@ -108,6 +109,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const atRef = useRef<number | null>(null);                 // 지금 보이는 흐름의 저장 판(at) — 덧붙임이 같은 흐름에 붙는지 서버가 확인
   const [tourIdx, setTourIdx] = useState<number | null>(null); // 지금 단계(null = 둘러보기 안 하는 중)
   const [tourBusy, setTourBusy] = useState(false);           // 단계 설명 만드는 중
+  const [hovered, setHovered] = useState<string | null>(null); // 호버 카드 키(연결 강조)
+  const [focused, setFocused] = useState<string | null>(null); // 클릭 포커스 카드 키(무관 어둡게)
   const [loadFailed, setLoadFailed] = useState(false);
   const loadFailedRef = useRef(false); // load 안에서 보는 미러(확인창이 열린 채 실패해도 재생성이 못 지나가게)       // 저장분 불러오기 실패 — 재생성으로 저장분을 덮어쓰지 않게 잠금(리뷰)
   const secOfRef = useRef<string | null>(null);              // 지금 보이는 흐름이 어느 기능 것인지(전환 중 갱신이 엉뚱한 기능에 저장되지 않게, 리뷰)
@@ -157,25 +160,12 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     return out;
   }, [edges]);
 
-  // 에이전트 한 번 묻기(chat 모드 스트림 → result.summary). 흐름 생성·차분 갱신 공용.
-  const ask = useCallback(async (ctx: string, prompt: string): Promise<{ text: string; err?: string }> => {
-    const res = await fetch("/api/agent/analyze", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ providerId, request: { code: ctx, locale, providerId, mode: "chat", messages: [{ role: "user", content: prompt }], providerSettings } }),
-    });
-    if (!res.ok || !res.body) return { text: "", err: `HTTP ${res.status}` };
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = "", answer = "", streamErr = "";
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const ls = buf.split("\n"); buf = ls.pop() ?? "";
-      for (const l of ls) { if (!l.trim()) continue; let ev: StreamEvent; try { ev = JSON.parse(l) as StreamEvent; } catch { continue; } if (ev.type === "result") answer = ev.response?.summary ?? ""; else if (ev.type === "error") streamErr = ev.message ?? "error"; }
-    }
-    return streamErr ? { text: "", err: streamErr } : { text: answer };
-  }, [providerId, providerSettings, locale]);
+  // #1322 흐름 노드 파일들의 실제 코드 발췌(근거용) + 흐름 줄 목록.
+  const codeOf = useCallback((secs: FlowSection[]) => (root ? archSnippets(root, secs.flatMap((s) => s.nodes.filter((n) => n.file).map((n) => ({ file: n.file!, line: n.line })))) : Promise.resolve("")), [root]);
+  const flowLines = (secs: FlowSection[]) => secs.flatMap((s) => s.nodes.map((n) => `${s.layer} | ${n.name} | ${n.file ?? ""}${n.line ? `:${n.line}` : ""} | ${n.role ?? ""}${n.next?.length ? ` | → ${n.next.join(", ")}` : ""}`));
+
+  // 에이전트 한 번 묻기 — 흐름 생성·차분 갱신·둘러보기·깊이별 설명 공용(lib/repo/askAgent).
+  const ask = useCallback((ctx: string, prompt: string) => askAgent(providerId!, providerSettings!, locale, ctx, prompt), [providerId, providerSettings, locale]);
 
   // mode: "cache"=저장분 우선(자동), "regen"=전체 새로, "update"=저장 뒤 바뀐 파일만 반영(#1320, 차분 정보 없으면 옛 방식: 새 노드만 병합).
   const load = useCallback(async (mode: "cache" | "regen" | "update" = "cache") => {
@@ -263,7 +253,18 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       const clean = stripCardBlock(answer.text); // 튜터가 자동으로 붙이는 nunopi-cards 블록 제거
       const parsed = parseFlow(clean);
       if (!parsed.length) { setErr(`no flow — ${clean.slice(0, 140)}`); return; }
-      const ov = parseOverview(clean) || null;
+      let ov = parseOverview(clean) || null;
+      // #1322 근거 보강 — 첫 답은 파일 목록만 보고 쓴 것. 흐름에 나온 파일의 실제 코드를 보여 주고 설명을 다시 쓰게 함(실패하면 첫 설명 유지).
+      const code = await codeOf(parsed);
+      if (my !== reqRef.current) return;
+      if (code) {
+        const ctx2 = `레포: ${name}\n\n["${feature}" 흐름]\n${flowLines(parsed).join("\n")}\n\n[코드 발췌]\n${code}${ov ? `\n\n[처음 쓴 설명 초안]\n${ov}` : ""}`;
+        const prompt2 = `위 [코드 발췌]를 직접 읽고 "${feature}" 기능 설명을 다시 써줘. 개발 초보도 완전히 이해할 수 있게 친절하고 자세히 — 실제 코드에서 어떤 함수가 무엇을 받아 무엇을 하고 어디로 넘기는지 구체적으로. 형식은 마크다운: 맨 위 \`## 제목\` 한 줄, 흐름을 구간으로 나눠 구간마다 \`### 소제목\` + 3~5문장, 구간 사이는 \`---\`. 각 구간 끝에 "근거:" 한 줄로 실제로 본 위치를 \`파일:줄\` 형식 1~3개. 파일/함수 이름은 백틱, 파이프(|) 기호와 흐름 줄 목록은 쓰지 마. ${EVIDENCE} 설명만.`;
+        const a2 = await ask(ctx2, prompt2);
+        if (my !== reqRef.current) return;
+        const ov2 = a2.err ? "" : parseOverview(stripCardBlock(a2.text));
+        if (ov2) ov = ov2;
+      }
       // 차분 정보 없는 갱신(옛 저장분)=기존 흐름에 새 노드만 병합, 그 외(재생성·구조 변화가 많은 갱신)=교체.
       const base = sectionsRef.current;
       const nextSecs = mode === "update" && base && !d ? mergeFlow(base, parsed) : parsed;
@@ -277,7 +278,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     } finally {
       if (my === reqRef.current) { setLoading(false); setRunning(null); }
     }
-  }, [feature, root, providerId, providerSettings, ask, t]);
+  }, [feature, root, providerId, providerSettings, ask, t, codeOf]);
 
   // 기능이 바뀌면 열려 있던 갱신·재생성 확인창을 닫음(다른 기능에 적용되지 않게, 리뷰).
   // eslint-disable-next-line react-hooks/set-state-in-effect -- 기능 전환 시 확인창 초기화
@@ -304,8 +305,10 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       const byKey = new Map(sectionsRef.current.flatMap((s) => s.nodes.map((n) => [nk(n.name), { ...n, layer: s.layer }] as const)));
       const lines = order.map((name, i) => { const n = byKey.get(nk(name))!; return `${i + 1}. ${n.layer} | ${n.name} | ${n.file ?? ""}${n.line ? `:${n.line}` : ""} | ${n.role ?? ""}`; });
       const who = d === "beginner" ? "개발 초보도 이해하게 쉬운 말로" : d === "dev" ? "개발자 눈높이로 설계 이유와 데이터 흐름 위주로" : "숙련자 눈높이로 짧고 밀도 있게";
-      const ctx = `레포: ${basename(root)}\n\n["${f}" 흐름 — 둘러볼 순서]\n${lines.join("\n")}${overviewRef.current ? `\n\n[설명]\n${overviewRef.current}` : ""}`;
-      const prompt = `위 순서대로 "${f}" 기능을 처음 보는 사람에게 한 단계씩 안내하려고 해. 각 노드마다 ${who} 2~3문장으로, 이 단계에서 무슨 일이 일어나고 앞 단계에서 뭘 받아 다음 단계로 뭘 넘기는지 설명해줘. 형식은 노드마다 한 줄만, 순서 그대로:\n표시이름 | 설명\n(표시이름은 위와 정확히 같게. 설명 안에 파이프(|) 기호 금지. 인사·머리말 없이 줄만.)`;
+      const code = await codeOf(sectionsRef.current);
+      if (my !== reqRef.current) return;
+      const ctx = `레포: ${basename(root)}\n\n["${f}" 흐름 — 둘러볼 순서]\n${lines.join("\n")}${code ? `\n\n[코드 발췌]\n${code}` : ""}${overviewRef.current ? `\n\n[설명]\n${overviewRef.current}` : ""}`;
+      const prompt = `위 순서대로 "${f}" 기능을 처음 보는 사람에게 한 단계씩 안내하려고 해. 각 노드마다 ${who} 2~3문장으로, 이 단계에서 무슨 일이 일어나고 앞 단계에서 뭘 받아 다음 단계로 뭘 넘기는지 실제 코드 기준으로 설명하고, 설명 끝에 (근거: 파일:줄)을 붙여줘. ${EVIDENCE} 형식은 노드마다 한 줄만, 순서 그대로:\n표시이름 | 설명\n(표시이름은 위와 정확히 같게. 설명 안에 파이프(|) 기호 금지. 인사·머리말 없이 줄만.)`;
       const answer = await ask(ctx, prompt);
       if (my !== reqRef.current) return;
       if (answer.err) { setErr(answer.err); return; }
@@ -324,14 +327,15 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       if (my !== reqRef.current) return;
       setTour(next); setTourIdx(0);
     } finally { setTourBusy(false); }
-  }, [feature, root, depth, ask, t, tourSteps.length]);
+  }, [feature, root, depth, ask, t, tourSteps.length, codeOf]);
 
   // 지금 단계 카드 = 포커스 빛 + 화면 안으로.
   const tourName = tourIdx != null ? tourSteps[tourIdx]?.name : undefined;
   useEffect(() => {
     if (!tourName) return;
     const k = nk(tourName);
-    setFocused(k); // 단계 이동 시 그 카드 포커스(기존 포커스 강조 재사용)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 단계 이동 시 그 카드 포커스(기존 포커스 강조 재사용)
+    setFocused(k);
     nodeEls.current.get(k)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [tourName]);
   // 키보드 ←/→/Esc(입력창에 쓰는 중이면 무시).
@@ -356,12 +360,13 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     const f = feature, d = depth, my = reqRef.current, at0 = atRef.current; // 쓰는 사이 재생성·갱신·기능 전환이 있으면(my 바뀜) 버림 — 새 흐름에 옛 설명이 붙지 않게
     setWriting(true); setErr(null);
     try {
-      const cur = sectionsRef.current.flatMap((s) => s.nodes.map((n) => `${s.layer} | ${n.name} | ${n.file ?? ""}${n.line ? `:${n.line}` : ""} | ${n.role ?? ""}${n.next?.length ? ` | → ${n.next.join(", ")}` : ""}`));
-      const ctx = `레포: ${basename(root)}\n\n["${f}" 흐름]\n${cur.join("\n")}${overviewRef.current ? `\n\n[초보용 설명]\n${overviewRef.current}` : ""}`;
+      const code = await codeOf(sectionsRef.current);
+      if (my !== reqRef.current) return;
+      const ctx = `레포: ${basename(root)}\n\n["${f}" 흐름]\n${flowLines(sectionsRef.current).join("\n")}${code ? `\n\n[코드 발췌]\n${code}` : ""}${overviewRef.current ? `\n\n[초보용 설명]\n${overviewRef.current}` : ""}`;
       const who = d === "dev"
         ? "언어·프레임워크 기본은 아는 개발자 눈높이로. 비유는 빼고, 각 조각이 왜 이렇게 나뉘었는지(설계 이유), 데이터가 어떤 모양으로 어디서 어디로 가는지, 고칠 때 조심할 점 위주로"
         : "이 코드를 직접 고칠 숙련자 눈높이로 짧고 밀도 있게. 모듈 경계·지켜야 할 규칙(불변식)·실패하거나 경합이 생길 수 있는 지점·설계 트레이드오프 위주로";
-      const prompt = `위 "${f}" 기능 흐름을 ${who} 설명해줘. 형식은 마크다운: 맨 위 \`## 제목\` 한 줄, 흐름을 구간으로 나눠 구간마다 \`### 소제목\` + 몇 문장, 구간 사이는 \`---\`. 파일/함수 이름은 백틱으로. 파이프(|) 기호와 흐름 줄 목록은 쓰지 마. 설명만.`;
+      const prompt = `위 "${f}" 기능 흐름을 ${who} 설명해줘. 형식은 마크다운: 맨 위 \`## 제목\` 한 줄, 흐름을 구간으로 나눠 구간마다 \`### 소제목\` + 몇 문장, 구간 사이는 \`---\`. 각 구간 끝에 "근거:" 한 줄로 실제로 본 위치를 \`파일:줄\` 형식 1~3개. 파일/함수 이름은 백틱으로. 파이프(|) 기호와 흐름 줄 목록은 쓰지 마. ${EVIDENCE} 설명만.`;
       const answer = await ask(ctx, prompt);
       if (my !== reqRef.current) return;
       if (answer.err) { setErr(answer.err); return; }
@@ -372,7 +377,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       if (saved === "fail") { if (my === reqRef.current) setErr(t("flow.saveFailed")); return; }
       if (my === reqRef.current) setOverviews((o) => ({ ...o, [d]: text }));
     } finally { setWriting(false); }
-  }, [feature, root, depth, ask, t]);
+  }, [feature, root, depth, ask, t, codeOf]);
 
   // 코드그래프 실측 연결 조회 — 플로우 노드 파일들 사이 실제 imports/calls. 곡선 근거화(#842 서브4).
   useEffect(() => {
@@ -442,8 +447,6 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     return () => ro.disconnect();
   }, [measure]);
 
-  const [hovered, setHovered] = useState<string | null>(null); // 호버 카드 키(연결 강조)
-  const [focused, setFocused] = useState<string | null>(null); // 클릭 포커스 카드 키(무관 어둡게)
   const anyEdge = edges.length > 0; // 엣지 있으면 선으로, 없으면 꺾쇠 폴백
 
   // 노드별 인접집합(자기 + 연결 대상, 양방향). edges 기반이라 실측 보강 연결도 호버 강조됨.

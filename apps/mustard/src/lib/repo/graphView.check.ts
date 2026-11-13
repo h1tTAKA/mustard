@@ -1,6 +1,6 @@
 // graphView.ts self-check(#1322) — 앱 미import. 실행: node --experimental-strip-types src/lib/repo/graphView.check.ts
 import assert from "node:assert";
-import { visibleKinds, searchNodes, neighbors, langStats, shortestPath, impactOf } from "./graphView.ts";
+import { searchNodes, neighbors, langStats, shortestPath, impactOf } from "./graphView.ts";
 import type { RepoGraph } from "./types.ts";
 
 const g: RepoGraph = {
@@ -19,9 +19,6 @@ const g: RepoGraph = {
   stats: { files: 2, edges: 3, scanned: 2, capped: false },
 };
 
-assert.deepEqual([...visibleKinds("beginner")], ["file"]);
-assert.ok(visibleKinds("dev").has("component") && !visibleKinds("dev").has("function"));
-assert.ok(visibleKinds("expert").has("function"));
 
 // 이름 시작 > 이름 포함 > 파일 > 시그니처
 assert.deepEqual(searchNodes(g.nodes, "load").map((n) => n.id), ["a.ts#load", "b.tsx#Loader"]);

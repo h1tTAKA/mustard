@@ -917,7 +917,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
           </>
         )}
         {/* 코드그래프 raw 뷰어(#842 서브5) — 헤더 밑 콘텐츠 영역 오버레이(전체화면 아님). 노드 클릭 → 코드 탭. */}
-        {graphOpen && <RepoGraphViewer root={path} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onClose={() => setGraphOpen(false)} />}
+        {graphOpen && <RepoGraphViewer root={path} providerId={providerId} providerSettings={providerSettings} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onClose={() => setGraphOpen(false)} />}
       </div>
     </div>
   );
