@@ -213,7 +213,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
         const prompt = `"${f}" 기능을 처음 보는 사람에게 위 순서대로 한 단계씩 안내하려고 해. 이번에는 다음 노드만 설명해줘: ${chunk.join(", ")}. ${WHO[depth]}. 노드마다 아래 세 가지를 실제 코드 기준으로:\n1) 이 파일 안에 있는 주요 함수·로직(백틱으로 이름)과 각각의 역할\n2) 화살표(→ 다음노드, 실측 연결)로 이어진 파일과 어떤 관계인지(무엇을 받고 무엇을 넘기는지)\n3) 그 함수·로직들이 서로 어떻게 물려서 이 기능을 해내는지\n끝에 "근거:" 한 줄로 실제로 본 위치를 \`파일:줄\` 형식 1~3개. ${EVIDENCE}\n형식: 노드마다 "### 표시이름" 한 줄로 시작하고 그 아래 설명(짧은 문단·목록 가능). 표시이름은 위와 정확히 같게. 인사·머리말 없이.`;
         const answer = await ask(ctx, prompt);
         if (my !== reqRef.current) return;
-        if (answer.err) { lastErr = answer.err; failed.push(chunk); return; }
+        if (answer.err || !answer.text.trim()) { lastErr = answer.err || "empty answer"; failed.push(chunk); return; } // 빈 답도 실패(리뷰)
         // "### 이름"(요청한 제목 단계, ## 로 흘러도 받음)이고 이 묶음에서 아직 안 나온 노드일 때만 나눔 — 소제목·코드 블록 안 제목은 그 노드 설명에 남김(리뷰).
         const left = new Set(chunk.map(nk));
         let fence = false, curName: string | null = null, buf: string[] = [];
