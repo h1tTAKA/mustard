@@ -1,6 +1,6 @@
 // crewMeeting 점검 — node --experimental-strip-types src/lib/crew/crewMeeting.check.ts
 import assert from "node:assert";
-import { callsEveryone, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting.ts";
+import { callsEveryone, courtSeats, juryVote, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting.ts";
 
 const known = new Set(["scope-planner", "screen-designer", "data-architect", "app-builder", "test-engineer", "bug-fixer", "release-checker", "doc-writer"]);
 
@@ -37,4 +37,19 @@ assert.strictEqual(readAnswer('{"intent":"instruction","reply":"앞으로 커밋
 assert.strictEqual(readAnswer('{"intent":"order","reply":"x"}').intent, "question");
 assert.strictEqual(readAnswer('{"intent":"question","audience":"@Test-Engineer","reply":"x"}').audience, "test-engineer", "받는 사람");
 assert.strictEqual(readAnswer('{"intent":"question","reply":"x"}').audience, undefined);
+// #1318 토론 — debate 의도·형식(모르면 회의식), 다른 의도엔 format 없음
+assert.deepStrictEqual(readAnswer('{"intent":"debate","format":"court","reply":"양측 들어 봅시다."}'), { intent: "debate", reply: "양측 들어 봅시다.", format: "court" });
+assert.strictEqual(readAnswer('{"intent":"debate","reply":"x"}').format, "council", "형식 없으면 회의식");
+assert.strictEqual(readAnswer('{"intent":"debate","format":"duel","reply":"x"}').format, "council", "모르는 형식도 회의식");
+assert.strictEqual(readAnswer('{"intent":"question","format":"court","reply":"x"}').format, undefined, "토론 아니면 형식 없음");
+assert.deepStrictEqual(courtSeats(["app-builder", "test-engineer", "bug-fixer", "doc-writer"]), { a: "app-builder", b: "test-engineer", jurors: ["bug-fixer", "doc-writer"] });
+assert.deepStrictEqual(courtSeats(["app-builder", "test-engineer"]), { a: "app-builder", b: "test-engineer", jurors: [] }, "배심 없으면 진행자만 판결");
+assert.strictEqual(courtSeats(["app-builder"]), null, "한 명이면 재판 안 됨");
+assert.strictEqual(juryVote("**A** — 더 설득력 있음"), "A", "마크다운 감싼 표");
+assert.strictEqual(juryVote("B안이 낫다"), "B");
+assert.strictEqual(juryVote("Actually neither"), null, "단어 첫 글자는 표 아님");
+assert.strictEqual(juryVote(null), null, "실패한 배심");
+assert.strictEqual(juryVote("a bit risky, B is better"), null, "소문자 a는 표 아님");
+assert.strictEqual(juryVote("AI tools would help"), null, "대문자 단어 첫 글자도 표 아님");
+assert.strictEqual(juryVote("BEST option"), null);
 console.log("crewMeeting.check ok");

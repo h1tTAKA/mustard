@@ -22,7 +22,7 @@ import { defaultSnaModel } from "@mustard/nunopi/server";
 import { translate } from "@mustard/core/messages";
 import { addGuideline, appendMsg, findMsg, parseMentions, readGuidelines, readMsgs, type CrewMsg } from "./crewChat";
 import { snaClaudeProvider, snaCodexProvider, snaOpenCodeProvider } from "@mustard/nunopi/server";
-import { callsEveryone, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting";
+import { callsEveryone, courtSeats, juryVote, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting";
 import { isFailedNote } from "@/lib/failText";
 import { freshIds, hasTriggers, readTriggers, scheduleDue, writeTriggers, type CrewTrigger } from "./crewTriggers";
 import { emitNarration } from "@/lib/mcpActivity";
@@ -353,7 +353,7 @@ async function wire() {
 }
 
 // 실행 지침에 붙일 최근 팀 대화(사람·역할 말만) — 크루끼리 서로 한 말을 보고 일하게(유저)
-const recentChat = (root: string) => readMsgs(root, 0, 400).filter((m) => ["human", "answer", "meeting", "handoff", "question", "decision"].includes(m.kind)).slice(-12)
+const recentChat = (root: string, skip?: string, card?: string) => readMsgs(root, 0, 400).filter((m) => m.id !== skip && (!card || m.taskId !== card) && ["human", "answer", "meeting", "handoff", "question", "decision"].includes(m.kind)).slice(-12)
   .map((m) => `- ${m.from}${m.taskTitle ? ` [${clip(m.taskTitle, 40)}]` : ""}: ${clip(m.text, 300)}`);
 function buildPrompt(title: string, body: string, role: CrewRole, pipeline: string[], stage: number, note?: string, consult?: { from: string; question: string }, chat: string[] = []): string {
   // #1108 답하기 모드 — 동료 질문에 답만(코드 수정 금지), 답은 봉투 message에
@@ -586,12 +586,11 @@ export function postHuman(root: string, text: string, replyTo?: string, handoff 
       decideCard(root, waiting[0].id, "approve");
       return { msg: m, taskId: waiting[0].id };
     }
+    // 받는 역할 = 최근 카드 담당, 그 카드는 답의 참고로만 — 글·답에 카드를 붙이지 않고 카드 메모에도 안 넣음(예전: 상관없는 잡담에 카드 칩이 달리고 작업 메모에 섞임, 유저). 카드에 남길 말은 그 카드 메시지에 답글로
     const who = pickListener(tasks, (id) => activeFor(root, id)?.role);
-    const card = who.taskId ? tasks.find((t) => t.id === who.taskId) : undefined;
-    const m = appendMsg(root, { from: "human", kind: "human", text: body, ...(replyTo ? { replyTo } : {}), ...(card ? { taskId: card.id, taskTitle: card.title } : {}) });
-    if (card && activeFor(root, card.id)) patchTask(root, card.id, { note: [card.note, body].filter(Boolean).join("\n\n") }); // 실행 중 — 다음 실행에도
-    void answerHuman(root, m, who.role, card?.id, callsEveryone(body)); // @all = 모든 역할(일 요청이면 전원 회의)
-    return { msg: m, ...(card ? { taskId: card.id } : {}) };
+    const m = appendMsg(root, { from: "human", kind: "human", text: body, ...(replyTo ? { replyTo } : {}) });
+    void answerHuman(root, m, who.role, who.taskId, callsEveryone(body)); // @all = 모든 역할(일 요청이면 전원 회의)
+    return { msg: m };
   }
   const msg = appendMsg(root, { from: "human", kind: "human", text: body, ...(mentions.length ? { mentions } : {}), ...(replyTo ? { replyTo } : {}), ...(task ? { taskId: task.id, taskTitle: task.title } : {}) });
   if (task) {
@@ -684,7 +683,7 @@ async function ask(role: CrewRole, prompt: string, deadline = Date.now() + ASK_M
 function factsFor(root: string, human: CrewMsg, taskId?: string): string[] {
   const tasks = readBoard(root).tasks;
   const t = taskId ? tasks.find((x) => x.id === taskId) : undefined;
-  if (!t) return ["No card is active. Board:", ...tasks.slice(-20).map((x) => `- [${x.status}] ${clip(x.title, 120)}`)];
+  if (!t) return ["This message is not tied to a card. Board:", ...tasks.slice(-20).map((x) => `- [${x.status}] ${clip(x.title, 120)}`)];
   const p = pipelineOf(t), run = activeFor(root, t.id);
   const last = [...readRuns(root)].reverse().find((r) => r.taskId === t.id);
   return [`Card: "${clip(t.title, 200)}" — column: ${t.status}${t.gate ? `, waiting for the human: ${t.gate.kind}${t.gate.text ? ` (${clip(t.gate.text, 300)})` : ""}` : ""}`,
@@ -723,45 +722,102 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
   }
   const first = getRole(everyone ? MODERATOR : roleId) ?? getRole(MODERATOR);
   if (!first) { say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.answerFailed", { role: roleId, why: tr("crewchat.why.other") }) }); answerNextIn(root); return; } // 대기열은 계속(리뷰)
-  let who = first, meeting = false;
+  let who = first, meeting = false, debating = false;
   const routing = !everyone && !mentioned.length; // 받는 사람 판단은 @ 없는 글만
   speaking(root, first.id);
   const failed = new Set<string>();
   const askR = (r: CrewRole, prompt: string) => askOrFallback(root, r, prompt, human.id, failed);
   try {
-    const lang = LANG[narrationLocale()] ?? "English";
-    const facts = factsFor(root, human, taskId);
+    // 질문한 말로 답함(일본어로 물으면 일본어) — 판단이 안 서면 앱 언어(유저)
+    const lang = `the same language as the human's message (if unclear, ${LANG[narrationLocale()] ?? "English"})`;
+    // 카드 밖 대화도 보게 — 예전엔 카드 대화만 넣어 바로 위 논의를 모르고 엉뚱한 카드 얘기를 함(유저)
+    const chat = recentChat(root, human.id, taskId); // 카드 대화는 factsFor가 이미 넣음(중복 X, 리뷰)
+    const facts = [...factsFor(root, human, taskId), ...(chat.length ? ["", `Recent team chat (oldest first — the human's message usually continues it):`, ...chat] : [])];
     const t = taskId ? readBoard(root).tasks.find((x) => x.id === taskId) : undefined;
-    const card = t ? { taskId: t.id, taskTitle: t.title } : {};
+    // 칩은 @역할로 부른 글만(그 역할의 실행 중 카드) — @ 없는 글·@all은 카드를 참고로만(상관없는 잡담에 칩, 유저)
+    const card = t && mentioned.length && !routed ? { taskId: t.id, taskTitle: t.title } : {};
     const request = clip(human.text, 2000);
     // ① 첫 답 + 질문/일 요청 판단
     const op = await askR(first, [`You are "${roleLabel(first.id)}" (${first.id}), an agent on a software team board in Mustard.`,
-      everyone ? `The human wrote to the whole team (@all):` : mentioned.length ? `The human wrote to you directly (@${first.id}) in the team chat:` : `The human wrote in the team chat without @mentioning anyone:`, `> ${request}`, "",
+      everyone ? `The human wrote to the whole team (@all):` : mentioned.length && !routed ? `The human wrote to you directly (@${first.id}) in the team chat:` : `The human wrote in the team chat without @mentioning anyone:`, `> ${request}`, "",
       `Facts (use ONLY these; do not invent progress):`, ...facts, "",
       `Decide the intent:`,
       `- "work": the human asks the team to build, change, fix or plan something NEW that needs its own board card.`,
       `- "instruction": a guideline, rule, correction, complaint or notice about HOW the team should work (no new card). It is saved as a team guideline every later run follows.`,
+      `- "debate": the human EXPLICITLY asks the team to debate, argue it out or vote and reach a conclusion (no card). A plain "what do you think?" is "question". Add "format":"court" if it is a choice between two options (A or B), else "format":"council".`,
       `- "question": status, explanation, opinion.`,
       `For "instruction", say concretely what you will do differently from now on — no long apology, no question back.`,
       `Reply as ${first.id} in 1-4 short sentences, in ${lang}. You cannot run tools here.${everyone ? " Other teammates will add their view after you." : ""}`,
-      `If a card waits for the human (spec/schema/merge approval, a question), say what they need to decide — they can reply to that card's message in this chat (a short "ok" approves).`,
-      mentioned.length ? `If intent is "work", a card for ${mentioned.join(" → ")} starts right after your reply (say so briefly).` : `If intent is "work", your reply opens a short team meeting about it (say so briefly).`,
-      ...(routing ? ["", `Team:`, teamList(), "", `Who is the message for? "me" if it is about your card or role, a teammate's role id if it is clearly meant for that role, "all" if it is for the whole team.`] : []),
-      `Answer ONLY with JSON: {"intent":"question"|"work"|"instruction",${routing ? `"audience":"me"|"all"|"<role-id>",` : ""}"reply":"..."}`].join("\n"));
+      ...(routing || routed ? [`Do NOT bring up cards, approvals or merges unless the human asks about them.`] : [`Only if the message is about the board or a card's progress: if a card waits for the human (spec/schema/merge approval, a question), say what they need to decide — they can reply to that card's message in this chat (a short "ok" approves).`]),
+      `If intent is "debate", your reply only opens it in one sentence — the debate runs right after.`,
+      mentioned.length && !routed && !everyone ? `If intent is "work", a card for ${mentioned.join(" → ")} starts right after your reply (say so briefly).` : `If intent is "work", your reply opens a short team meeting about it (say so briefly).`,
+      ...(routing ? ["", `Team:`, teamList(), "", `Who is the message for? "me" if it is about your card or role, a teammate's role id if it is clearly meant for that role, "all" ONLY if the human wants each teammate's own view (e.g. "what do the others think?", "everyone answer"). A request to sum up or pick the best is "me" — you answer it alone from the chat.`] : []),
+      `Answer ONLY with JSON: {"intent":"question"|"work"|"instruction"|"debate","format"?:"council"|"court",${routing ? `"audience":"me"|"all"|"<role-id>",` : ""}"reply":"..."}`].join("\n"));
     const opener = readAnswer(op.text);
     // @ 없는 글 — 다른 역할에게 한 말이면 내 답은 버리고 그 역할이 답하게(대기열 맨 앞), 모두에게면 나머지도 이어서(유저: 회사처럼)
-    if (routing && opener.audience && opener.audience !== "me" && opener.audience !== "all" && opener.audience !== first.id && getRole(opener.audience)) {
-      const to = opener.audience, active = readBoard(root).tasks.find((x) => activeFor(root, x.id)?.role === to);
+    const to = opener.audience;
+    if (routing && to && to !== "me" && to !== "all" && to !== first.id && getRole(to)) {
+      const active = readBoard(root).tasks.find((x) => activeFor(root, x.id)?.role === to);
       queue.set(root, [{ human, roleId: to, taskId: active?.id, mentioned: [to], routed: true }, ...(queue.get(root) ?? [])]);
       return;
     }
-    if (routing && opener.audience === "all") everyone = true;
-    say(root, { from: first.id, provider: op.provider, kind: opener.intent === "work" ? "meeting" : "answer", text: opener.reply.slice(0, 2000), replyTo: human.id, ...card });
+    if (routing && to === "all") everyone = true;
+    say(root, { from: first.id, provider: op.provider, kind: opener.intent === "work" || opener.intent === "debate" ? "meeting" : "answer", text: opener.reply.slice(0, 2000), replyTo: human.id, ...card });
     const transcript = [`${first.id}: ${clip(opener.reply, 600)}`];
     if (opener.intent === "instruction") addGuideline(root, human.text.replace(/@[a-z0-9-]+/gi, "").trim()); // 이후 모든 실행에 붙음
     //  한계: 터미널 CLI 에이전트가 crew_chat(MCP)으로 준 지침도 저장됨 — 유저 요청(리드 에이전트가 지침 전달). 크루 자신은 crew_* 못 씀(작업 폴더에서 거부), 금지 규칙은 정책 훅이 강제
     if (opener.intent === "work" && mentioned.length && !everyone && !routed) { // @역할 작업 요청 — 회의 없이 그 역할(여럿이면 그 순서) 카드, Ready = 바로 시작
       createFor(root, human.text, mentioned);
+      return;
+    }
+    if (opener.intent === "debate") { // #1318 토론 — 카드 없이 대화방에서 끝까지
+      debating = true;
+      const mod = getRole(MODERATOR) ?? first;
+      // 참여자: @all 전원(상한 8) / @ 여러 역할(상한 8) / 2명 미만이면 진행자가 채움(부른 역할은 유지, 최대 5)
+      let members = everyone ? listRoles().map((r) => r.id).filter((id) => id !== mod.id).slice(0, 8) : mentioned.filter((id) => id !== mod.id && getRole(id)).slice(0, 8);
+      if (!everyone && members.length < 2) {
+        who = mod; speaking(root, mod.id);
+        const kick = readJson((await askR(mod, [`You moderate a team debate on a software board. Topic from the human:`, `> ${request}`, "",
+          `Team:`, teamList(), "", `Pick 2-5 roles whose views differ most usefully (not you). Answer ONLY with JSON: {"participants":["role-id",...]}`].join("\n"))).text);
+        members = [...new Set([...members, ...pickParticipants(kick?.participants, new Set(listRoles().map((r) => r.id)), mod.id)])].slice(0, 5); // 부른 역할 유지(리뷰)
+      }
+      const log = [`${first.id}: ${clip(opener.reply, 300)}`];
+      // 한 차례 — 실패한 역할은 건너뛰고 계속(회의와 같음). 성공하면 발언, 실패면 null
+      const turn = async (id: string, task: string): Promise<string | null> => {
+        const r = getRole(id); if (!r) return null;
+        who = r; speaking(root, r.id);
+        try {
+          const { text, provider } = await askR(r, [`You are "${roleLabel(r.id)}" (${r.id}) in a team debate. Topic from the human:`, `> ${request}`, "",
+            `Board facts:`, ...facts, "", `Debate so far:`, ...log, "", `${task} In ${lang}, plain text, no repeating others.`].join("\n"));
+          say(root, { from: r.id, provider, kind: "meeting", text: text.slice(0, 1500), replyTo: human.id, ...card });
+          log.push(`${r.id}: ${clip(text, 500)}`);
+          return text;
+        } catch (e) { say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx("crewchat.skipped", { role: roleLabel(r.id), why: String((e as Error)?.message ?? e) }) }); return null; }
+      };
+      const seats = opener.format === "court" ? courtSeats(members) : null;
+      let closing: string;
+      const council = `You moderate. Conclude in up to 6 short lines: the main points of contention, each role's final position in a few words, and the conclusion with its reason.`;
+      if (seats) { // 재판식 — 양측 주장 → 서로 반박 → 배심 → 판결
+        const a = await turn(seats.a, `You argue side A: the first option the human named (or "yes"). Make the strongest case in 2-3 sentences.`);
+        const b = await turn(seats.b, `You argue side B: the second option the human named (or "no"). Make the strongest case in 2-3 sentences.`);
+        if (a && b) {
+          await turn(seats.a, `Rebut side B's argument (@${seats.b}) in 1-2 sentences.`);
+          await turn(seats.b, `Rebut side A's argument (@${seats.a}) in 1-2 sentences.`);
+          const votes = { A: 0, B: 0 };
+          for (const j of seats.jurors) {
+            const v = juryVote(await turn(j, `You are a juror. Side A = @${seats.a}'s position, side B = @${seats.b}'s position. Your first character must be the side you vote for ("A" or "B"), then why in 1-2 sentences.`));
+            if (v) votes[v]++;
+          }
+          closing = `You are the judge.${votes.A + votes.B ? ` Juror votes: A ${votes.A}, B ${votes.B}.` : ""} Give the verdict in up to 5 short lines: which side wins (A: @${seats.a} / B: @${seats.b}), the decisive reasons, and what to watch out for.`;
+        } else closing = council; // 한쪽 주장이 없으면 재판 대신 남은 발언으로 정리(리뷰)
+      } else { // 회의식 — 각자 입장 → 반박·보완 → 진행자 결론
+        for (const id of members) await turn(id, `State your position and main reason from your role in 2-3 sentences.`);
+        for (const id of members) await turn(id, `Now rebut or refine: where you disagree with a named teammate (@role-id) or what they missed, in 1-3 sentences. Change your mind if convinced.`);
+        closing = council;
+      }
+      who = mod; speaking(root, mod.id);
+      const end = await askR(mod, [`Team debate. Topic from the human:`, `> ${request}`, "", `Debate:`, ...log, "", `${closing} In ${lang}, plain text.`].join("\n"));
+      say(root, { from: mod.id, provider: end.provider, kind: "meeting", text: end.text.slice(0, 2000), replyTo: human.id, ...card });
       return;
     }
     meeting = opener.intent === "work";
@@ -817,7 +873,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     say(root, { from: mod.id, provider: wrapR.provider, kind: "meeting", text: summary.slice(0, 2000), replyTo: human.id, taskId: made.id, taskTitle: made.title, ...(plan.pipeline[0] ? { mentions: [plan.pipeline[0]] } : {}) });
   } catch (e) {
     // 회의 중에 끊기면 카드 없이 멈췄다고(리뷰: 발언만 남고 끝난 것처럼 보임) + 이유(로그인·한도·시간 초과, 유저)
-    say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx(meeting ? "crewchat.meetingStopped" : "crewchat.answerFailed", { role: roleLabel(who.id), why: String((e as Error)?.message ?? e).slice(0, 160) }) });
+    say(root, { from: "board", kind: "blocked", replyTo: human.id, ...tx(debating ? "crewchat.debateStopped" : meeting ? "crewchat.meetingStopped" : "crewchat.answerFailed", { role: roleLabel(who.id), why: String((e as Error)?.message ?? e).slice(0, 160) }) });
   } finally {
     speaking(root);
     answerNextIn(root);

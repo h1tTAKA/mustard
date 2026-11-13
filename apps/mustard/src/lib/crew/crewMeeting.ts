@@ -1,7 +1,8 @@
 // Crew 대화방 팀 회의(#1139) — AI 답(JSON) 읽기·참여 역할 고르기·회의 결과 → 카드 값 다듬기. 순수 모듈(점검 가능).
 // 흐름: @ 없는 글 → 받은 역할이 {intent, reply} → work면 진행자(범위 기획자)가 참여 역할을 고르고, 차례로 발언, 마무리로 카드.
 
-export type Intent = "question" | "work" | "instruction"; // instruction = 지침·지적·공지(카드 아님, 팀 지침으로 저장)
+export type Intent = "question" | "work" | "instruction" | "debate"; // instruction = 지침·지적·공지(카드 아님, 팀 지침으로 저장), debate = 역할들이 토론(#1318)
+export type DebateFormat = "council" | "court"; // council = 의견 → 반박 → 진행자 결론, court = A냐 B냐(양측 주장·반박 → 배심 → 판결)
 export interface MeetingPlan { title: string; body: string; pipeline: string[] }
 
 // AI 답에서 첫 JSON 객체 꺼내기 — 앞뒤 설명·```json 울타리가 붙어도. { 마다 짝 맞는 } 까지(문자열 안 괄호 무시) 잘라 읽어 봄(리뷰: 앞뒤 글의 {} ). 못 읽으면 null.
@@ -24,11 +25,24 @@ export function readJson(text: string): Record<string, unknown> | null {
 }
 
 // 받은 역할의 첫 답 → {intent, reply}. JSON이 아니면 글 전체가 답(질문으로).
-export function readAnswer(text: string): { intent: Intent; reply: string; audience?: string } {
+export function readAnswer(text: string): { intent: Intent; reply: string; audience?: string; format?: DebateFormat } {
   const j = readJson(text);
   const reply = typeof j?.reply === "string" && j.reply.trim() ? j.reply.trim() : text.trim();
   const audience = typeof j?.audience === "string" ? j.audience.replace(/^@/, "").trim().toLowerCase() : undefined; // 받는 사람: me·all·역할 id
-  return { intent: j?.intent === "work" || j?.intent === "instruction" ? j.intent : "question", reply, ...(audience ? { audience } : {}) };
+  const intent: Intent = j?.intent === "work" || j?.intent === "instruction" || j?.intent === "debate" ? j.intent : "question";
+  return { intent, reply, ...(audience ? { audience } : {}), ...(intent === "debate" ? { format: j?.format === "court" ? "court" : "council" } : {}) }; // 형식 모르면 회의식
+}
+
+// #1318 재판식 자리 — 앞 두 명이 양측(A·B), 나머지가 배심. 두 명이 안 되면 null(회의식으로).
+export function courtSeats(members: string[]): { a: string; b: string; jurors: string[] } | null {
+  const [a, b, ...jurors] = members;
+  return a && b ? { a, b, jurors } : null;
+}
+
+// 배심 표 — 첫 글자(마크다운·따옴표 무시)가 A/B면 그 표, 아니면 무효("A안"은 A, "Actually"는 무효)
+export function juryVote(text: string | null): "A" | "B" | null {
+  const m = /^[\s*_"'`(\[]*([AB])(?![A-Za-z])/.exec(text ?? "");
+  return m ? (m[1].toUpperCase() as "A" | "B") : null;
 }
 
 // 참여 역할 — 아는 역할만, 중복 없이, 진행자 빼고, 최대 max. 하나도 없으면 기본(앱 개발자·테스트 엔지니어).
