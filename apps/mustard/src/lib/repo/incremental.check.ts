@@ -1,43 +1,28 @@
-// incremental.ts self-check — 앱 미import. 실행: node --experimental-strip-types src/lib/repo/incremental.check.ts
+// incremental.ts self-check(#1320) — 앱 미import. 실행: node --experimental-strip-types src/lib/repo/incremental.check.ts
 import assert from "node:assert";
-import { reconcile, type FileCache } from "./incremental.ts";
+import { fileHash, fileSig, snapOf, diffSnap, type FileCache } from "./incremental.ts";
+import type { SymbolInfo } from "./symbols.ts";
 
-// 첫 분석: 캐시 비어 전부 재파싱.
-let calls: string[] = [];
-const extract = (rel: string) => { calls.push(rel); return [`spec:${rel}`]; };
+const sym = (name: string, signature?: string): SymbolInfo => ({ id: `a.ts#${name}`, name, kind: "function", signature, startIndex: 0, endIndex: 1, startRow: 0 } as SymbolInfo);
 
-const files1 = [
-  { rel: "a.ts", mtimeMs: 100 },
-  { rel: "b.ts", mtimeMs: 200 },
-  { rel: "c.ts", mtimeMs: 300 },
-];
-const r1 = reconcile(new Map() as FileCache, files1, extract);
-assert.strictEqual(r1.reparsed, 3, "첫 분석 전부 재파싱");
-assert.deepStrictEqual(calls.sort(), ["a.ts", "b.ts", "c.ts"], "extract 3회");
+// 내용 해시 — 한 글자라도 다르면 다름.
+assert.notStrictEqual(fileHash("a"), fileHash("b"));
+assert.strictEqual(fileHash("x"), fileHash("x"));
 
-// 재분석: b만 변경(mtime↑), a·c 그대로 → b만 재파싱.
-calls = [];
-const files2 = [
-  { rel: "a.ts", mtimeMs: 100 },
-  { rel: "b.ts", mtimeMs: 250 },  // 변경
-  { rel: "c.ts", mtimeMs: 300 },
-];
-const r2 = reconcile(r1.cache, files2, extract);
-assert.strictEqual(r2.reparsed, 1, "변경된 1개만 재파싱");
-assert.deepStrictEqual(calls, ["b.ts"], "extract는 b만");
-assert.strictEqual(r2.cache.get("a.ts"), r1.cache.get("a.ts"), "a 엔트리 재사용(동일 참조)");
+// 구조 서명 — 순서·줄번호 무관, 시그니처·import가 바뀌면 다름.
+const s1 = fileSig(["./b", "./c"], [sym("f", "(x)"), sym("g")]);
+assert.strictEqual(s1, fileSig(["./c", "./b"], [sym("g"), { ...sym("f", "(x)"), startRow: 99 }]), "순서·줄 바뀜은 같은 서명");
+assert.notStrictEqual(s1, fileSig(["./b", "./c"], [sym("f", "(x, y)"), sym("g")]), "시그니처 바뀌면 다름");
+assert.notStrictEqual(s1, fileSig(["./b"], [sym("f", "(x)"), sym("g")]), "import 빠지면 다름");
+assert.notStrictEqual(s1, fileSig(["./b", "./c"], [sym("f", "(x)"), sym("g"), sym("h")]), "함수 추가면 다름");
 
-// 삭제 + 신규: c 사라지고 d 추가.
-calls = [];
-const files3 = [
-  { rel: "a.ts", mtimeMs: 100 },
-  { rel: "b.ts", mtimeMs: 250 },
-  { rel: "d.ts", mtimeMs: 400 },  // 신규
-];
-const r3 = reconcile(r2.cache, files3, extract);
-assert.strictEqual(r3.reparsed, 1, "신규 1개만 재파싱");
-assert.deepStrictEqual(calls, ["d.ts"], "extract는 d만");
-assert.strictEqual(r3.cache.has("c.ts"), false, "삭제 파일 드롭");
-assert.strictEqual(r3.cache.size, 3, "현재 목록 기준 3개");
+// 스냅샷 비교 — 주석만(내용만) / 구조 / 추가 / 삭제.
+const old: FileCache = { "a.ts": { hash: "h1", sig: "s1" }, "b.ts": { hash: "h2", sig: "s2" }, "c.ts": { hash: "h3", sig: "s3" } };
+const cur: FileCache = { "a.ts": { hash: "h1x", sig: "s1" }, "b.ts": { hash: "h2x", sig: "s2x" }, "d.ts": { hash: "h4", sig: "s4" } };
+const d = diffSnap(snapOf(old), snapOf(cur));
+assert.deepStrictEqual(d.changed, ["a.ts", "b.ts", "d.ts"]);
+assert.deepStrictEqual(d.structural, ["b.ts", "d.ts"], "a는 내용만 바뀜 → 구조 변화 아님");
+assert.deepStrictEqual(d.removed, ["c.ts"]);
+assert.deepStrictEqual(diffSnap(snapOf(old), snapOf(old)), { changed: [], structural: [], removed: [] }, "같으면 빈 차분");
 
 console.log("incremental.check OK");

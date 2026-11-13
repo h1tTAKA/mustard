@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { scanRepo } from "./scan";
 import { isUnityAsset, underUnityAssets } from "./unityAssets";
 import type { RepoGraph } from "./types";
+import type { FileCache } from "./incremental";
 
 const CACHE_DIR = join(homedir(), ".nunopi", "codegraph");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 32);
@@ -58,4 +59,23 @@ export function writeCachedGraph(root: string, fingerprint: string, graph: RepoG
     writeFileSync(tmp, JSON.stringify({ fingerprint, builtAt, graph } satisfies Cached));
     renameSync(tmp, dest);
   } catch { /* 캐시 실패는 치명적 아님 — 다음 빌드서 재시도 */ }
+}
+
+// #1320 파일별 파싱 캐시(incremental.ts) — 그래프 캐시 옆 <sha>.files.json. 형식 다르거나 없으면 빈 캐시(첫 빌드처럼).
+const FILES_V = 1;
+function filesPath(root: string): string { return join(CACHE_DIR, `${sha(root)}.files.json`); }
+export function readFileCache(root: string): FileCache {
+  try {
+    const c = JSON.parse(readFileSync(filesPath(root), "utf8")) as { v?: number; files?: FileCache };
+    return c?.v === FILES_V && c.files && typeof c.files === "object" ? c.files : {};
+  } catch { return {}; }
+}
+export function writeFileCache(root: string, files: FileCache): void {
+  try {
+    mkdirSync(CACHE_DIR, { recursive: true });
+    const dest = filesPath(root);
+    const tmp = `${dest}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify({ v: FILES_V, files }));
+    renameSync(tmp, dest);
+  } catch { /* 캐시 실패는 치명적 아님 — 다음 빌드가 전부 파싱 */ }
 }

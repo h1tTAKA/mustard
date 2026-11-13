@@ -7,6 +7,8 @@ import { scanRepo, type ScanResult } from "./scan";
 import { detectLang } from "./langs";
 import { extractSymbols, resolveCalls, type SymbolInfo, type RawCall } from "./symbols";
 import type { RepoGraph, RepoNode, RepoEdge, RepoAssetRole } from "./types";
+import { fileHash, fileSig, type FileCache, type ParsedFile } from "./incremental";
+import { readFileCache, writeFileCache } from "./graphStore";
 
 // import 해석(상대 + tsconfig 별칭 + baseUrl)은 경량 모듈 imports.ts로 분리.
 import { resolveImport, resolvePythonBare, loadAliases, dirIndex, resolveJvmImport, resolveGoImport, goModulePath, JVM_RE, GO_RE } from "./imports";
@@ -51,6 +53,9 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
   const unityText = new Map<string, string>(); // #1009 Unity 에셋 YAML(GUID 패스용)
   const godotText = new Map<string, string>(); // #1011 Godot .gd/.tscn/.tres(res:// 패스용)
 
+  // #1320 파일별 파싱 캐시 — 내용 해시가 같으면 지난 import 지정자·심볼 추출을 그대로(tree-sitter 생략).
+  const prev = readFileCache(root);
+  const cache: FileCache = {};
   let reparsed = 0;
   for (const file of scan.files) {
     const role = assetRole(file);
@@ -58,12 +63,17 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
     let text: string;
     try { text = readFileSync(join(root, file), "utf8"); } catch { continue; }
 
+    const hash = fileHash(text);
+    const hit = prev[file]?.hash === hash ? prev[file] : null;
+    const pf: ParsedFile = hit ?? { hash, sig: "" };
+
     // import 엣지(파일→파일). langs.extract가 지정자 목록 반환(TS compiler·Py·Go 등).
     const lang = detectLang(file);
     if (lang) {
       const targets: string[] = [];
       let specs: string[] = [];
-      try { specs = lang.extract(text); } catch { specs = []; }
+      if (hit) specs = hit.specs ?? [];
+      else { try { specs = lang.extract(text); } catch { specs = []; } pf.specs = specs; }
       const isJvm = JVM_RE.test(file), isGo = GO_RE.test(file);
       const seenT = new Set<string>();
       for (const spec of specs) {
@@ -86,11 +96,14 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
     }
 
     if (file.endsWith(".cs")) csText.set(file, text);
+    const skip = isUnityAsset(file) || isGodotFile(file);
+    if (!skip && !hit) pf.ex = await extractSymbols(text, file);
+    if (!hit) { pf.sig = fileSig(pf.specs, pf.ex?.symbols); reparsed++; }
+    cache[file] = pf;
     if (isUnityAsset(file)) { unityText.set(file, text); continue; } // 에셋 YAML — 심볼·import 없음(GUID 패스에서 연결)
     if (isGodotFile(file)) { godotText.set(file, text); continue; } // GDScript 문법 없음 — 파일 단위 연결만(res:// 패스)
     // 심볼 노드 + contains + 원시호출(tree-sitter). 미지원 언어면 빈 결과.
-    const ex = await extractSymbols(text, file);
-    if (ex.symbols.length) reparsed++;
+    const ex = pf.ex ?? { symbols: [], nodes: [], contains: [], calls: [], heritage: [] };
     for (const n of ex.nodes) symbolNodes.push(n);
     for (const c of ex.contains) edges.push(c);
     symbolsByFile.set(file, ex.symbols);
@@ -173,6 +186,7 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
     }
   }
 
+  writeFileCache(root, cache);
   const nodes = [...fileNodes, ...symbolNodes];
   const allEdges = [...importEdges, ...edges];
   return {
