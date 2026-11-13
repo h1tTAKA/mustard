@@ -109,8 +109,8 @@ export default function FileTree({ files, selected, onSelect, status = {}, stora
     const parts = reveal.file.split("/");
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 가리킨 파일의 조상 폴더 펼침(union)
     setOpen((prev) => { const n = new Set(prev); for (let i = 1; i < parts.length; i++) n.add(parts.slice(0, i).join("/")); return n; });
-    const id = requestAnimationFrame(() => boxRef.current?.querySelector(`[data-path="${CSS.escape(reveal.file)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
-    return () => cancelAnimationFrame(id);
+    // 취소 안 함 — 코드 열기로 곧바로 다시 그려져도 스크롤은 끝까지(리뷰). 사라진 뒤면 querySelector가 null이라 무해.
+    requestAnimationFrame(() => boxRef.current?.querySelector(`[data-path="${CSS.escape(reveal.file)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
   }, [reveal]);
   return (
     <div ref={boxRef} className="nunopi-scroll h-full overflow-auto py-1">

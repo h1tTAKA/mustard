@@ -205,13 +205,16 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       if (answer.err) { setErr(answer.err); return false; }
       // "### 이름" 블록으로 나눔(옛 형식 "이름 | 설명" 줄도 받음).
       const got = new Map<string, string>();
-      const names = new Set(order.map(nk)); // 노드 이름인 제목에서만 나눔 — 노드 안 소제목("#### 1) 주요 함수")은 그 노드 설명에 남김(리뷰)
+      // 순서상 아직 안 나온 노드 이름인 제목에서만 나눔 — 노드 안 소제목("#### 1) 주요 함수", 앞 노드 이름 언급)은 그 노드 설명에 남김(리뷰)
+      const keys = order.map(nk);
+      let expect = 0;
       let curName: string | null = null, buf: string[] = [];
       const flush = () => { if (curName) got.set(nk(curName), buf.join("\n").trim()); };
       for (const raw of stripCardBlock(answer.text).split("\n")) {
         const h = raw.match(/^#{2,4}\s+(?:\d+[.)]\s+)?(.+?)\s*$/);
         const hn = h ? h[1].replace(/[`*]/g, "").trim() : "";
-        if (h && names.has(nk(hn))) { flush(); curName = hn; buf = []; continue; }
+        const hit = h ? keys.indexOf(nk(hn), expect) : -1;
+        if (hit >= 0) { flush(); curName = hn; buf = []; expect = hit + 1; continue; }
         if (curName) { buf.push(raw); continue; }
         const line = raw.trim().replace(/^(?:[-*•]\s*|\d+[.)]\s+)/, ""); // 목록 표시만 뗌(숫자로 시작하는 이름 404.tsx 보존, 리뷰)
         const at = line.indexOf("|");
