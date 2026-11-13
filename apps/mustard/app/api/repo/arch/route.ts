@@ -10,12 +10,13 @@
 // POST {op:"begin", path}                               → {token} 분석 시작 시점 스냅샷 표(put에 token으로 넘기면 그 스냅샷으로 저장)
 //   get에 diff:true·token:true면 같은 표도 같이 줌(갱신만 요청 — 낡음 표시용 조회는 표를 안 만들어 보관함을 안 밀어냄)
 import { existsSync, statSync } from "node:fs";
+import { fileHash } from "@/lib/repo/incremental";
 import { crossSite } from "@/lib/crew/crewPolicy";
 import { readArch, writeArch, currentSnap, diffFrom, fileSkeletons, getFlow, setFlow, beginSnap, takeSnap, cleanExtras, getNodeNote, setNodeNote, codeSnippet, codeSnippets, type ArchCategory, type ArchSection } from "@/lib/repo/archStore";
 
 export async function POST(request: Request): Promise<Response> {
   if (crossSite(request)) return Response.json({ error: "cross-site" }, { status: 403 }); // 다른 사이트가 몰래 저장·스캔 못 하게(리뷰)
-  let b: { op?: unknown; path?: unknown; kind?: unknown; feature?: unknown; data?: unknown; diff?: unknown; legacy?: unknown; token?: unknown; wantToken?: unknown; keepExtras?: unknown; id?: unknown; file?: unknown; line?: unknown; hash?: unknown; text?: unknown };
+  let b: { op?: unknown; path?: unknown; kind?: unknown; feature?: unknown; data?: unknown; diff?: unknown; legacy?: unknown; token?: unknown; wantToken?: unknown; keepExtras?: unknown; id?: unknown; file?: unknown; line?: unknown; hash?: unknown; text?: unknown; extra?: unknown };
   try { b = await request.json(); } catch { return Response.json({ error: "invalid body" }, { status: 400 }); }
   if (!b || typeof b !== "object") return Response.json({ error: "invalid body" }, { status: 400 });
   const { op, path, kind, feature } = b;
@@ -39,9 +40,10 @@ export async function POST(request: Request): Promise<Response> {
       if (typeof b.file !== "string" || !b.file) return Response.json({ error: "file required" }, { status: 400 });
       const snip = codeSnippet(path, b.file, typeof b.line === "number" ? b.line : undefined, b.line ? 80 : 150); // 레포 밖·없는 파일은 null
       if (!snip) return Response.json({ error: "cannot read file" }, { status: 400 });
+      const hash = fileHash(`${snip.hash}\n${typeof b.extra === "string" ? b.extra : ""}`); // 파일 내용 + 연결 목록(리뷰: 다른 파일이 바뀌어 연결이 달라지면 다시 씀)
       const saved = getNodeNote(readArch(path), b.id);
-      if (saved && saved.hash === snip.hash) return Response.json({ text: saved.text });
-      return Response.json({ hash: snip.hash, snippet: snip.text.slice(0, 8000) });
+      if (saved && saved.hash === hash) return Response.json({ text: saved.text });
+      return Response.json({ hash, snippet: snip.text.slice(0, 8000) });
     }
     if (op === "snippets") { // 흐름 노드 파일들의 실제 코드 발췌(#1322 설명·둘러보기 근거)
       const items = Array.isArray(b.data) ? (b.data as { file?: unknown; line?: unknown }[]).filter((x) => typeof x?.file === "string").map((x) => ({ file: x.file as string, line: typeof x.line === "number" ? x.line : undefined })) : [];

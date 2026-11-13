@@ -30,8 +30,9 @@ export async function archPatch(root: string, feature: string, data: object, at:
 }
 
 // 그래프 노드 설명(#1322) — 저장분이 지금 파일과 맞으면 {text}, 아니면 새로 쓸 재료 {hash, snippet}. 실패 null.
-export async function archNode(root: string, id: string, file: string, line?: number): Promise<{ text?: string; hash?: string; snippet?: string } | null> {
-  try { const r = await post({ op: "node", path: root, id, file, line }); return r.ok ? await r.json() : null; } catch { return null; }
+// extra = 설명에 같이 쓴 재료(연결 목록) — 이것까지 같아야 저장분을 씀.
+export async function archNode(root: string, id: string, file: string, line?: number, extra = ""): Promise<{ text?: string; hash?: string; snippet?: string } | null> {
+  try { const r = await post({ op: "node", path: root, id, file, line, extra }); return r.ok ? await r.json() : null; } catch { return null; }
 }
 // 흐름 노드 파일들의 실제 코드 발췌(설명·둘러보기 근거). 실패면 빈 문자열.
 export async function archSnippets(root: string, items: { file: string; line?: number }[]): Promise<string> {

@@ -3,7 +3,7 @@
 // 위치: ~/.nunopi/arch/<sha(root)>.json. 원자적 쓰기(tmp → rename).
 // 한계: 흐름마다 스냅샷(파일 수 × 약 40바이트)을 따로 들고 있음 — 3000파일 레포 흐름 20개면 수 MB. 커지면 스냅샷 공유로.
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, mkdirSync, renameSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, renameSync, realpathSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { loadOrBuildGraph } from "./loadGraph";
@@ -100,11 +100,13 @@ export const diffFrom = (saved: { snap?: Snap } | undefined, cur: Snap): SnapDif
   saved?.snap && Object.keys(cur).length ? diffSnap(saved.snap, cur) : null;
 
 // 코드 발췌(#1322) — AI가 파일 이름만 보고 짐작하지 않게 실제 코드를 줄 번호와 함께. 레포 밖(../, 링크)은 못 읽음.
-// line 있으면 그 근처(-3 ~ +span), 없으면 앞에서 span줄. 실패(없음·밖·바이너리)면 null.
+// line 있으면 그 근처(-3 ~ +span), 없으면 앞에서 span줄. 실패(없음·밖·바이너리·너무 큼)면 null.
+// 한계: root는 화면이 준 워크스페이스 경로를 믿음(다른 /api/repo/* 라우트와 같은 신뢰 — 다른 사이트 요청은 crossSite로 막음).
+const MAX_SNIPPET_FILE = 2_000_000; // 이보다 큰 파일(생성물 등)은 통째 읽지 않음 — 서버 멈춤 방지(리뷰)
 export function codeSnippet(root: string, file: string, line?: number, span = 80): { hash: string; text: string } | null {
   try {
     const base = realpathSync(root), real = realpathSync(resolve(base, file));
-    if (!real.startsWith(base + sep)) return null;
+    if (!real.startsWith(base + sep) || statSync(real).size > MAX_SNIPPET_FILE) return null;
     const text = readFileSync(real, "utf8");
     if (text.includes("\0")) return null; // 바이너리
     const lines = text.split("\n"), from = line && line > 0 ? Math.max(0, line - 4) : 0;

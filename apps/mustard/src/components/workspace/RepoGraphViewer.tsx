@@ -42,6 +42,7 @@ export default function RepoGraphViewer({ root, providerId, providerSettings, on
   const t = useT();
   const [graph, setGraph] = useState<RepoGraph | null>(null);
   const [builtAt, setBuiltAt] = useState<number | null>(null);
+  const [graphOf, setGraphOf] = useState<string | null>(null); // 지금 graph가 어느 레포 것인지(레포 전환 직후 옛 그래프로 노드 설명을 부르지 않게)
   // 범례에 넣을 역할 — 그래프 바뀔 때만 1회 계산(#1014 리뷰: 렌더마다 노드 전체 스캔 방지)
   const roles = useMemo(() => (Object.keys(ROLE_COLOR) as RepoAssetRole[]).filter((r) => graph?.nodes.some((n) => n.role === r)), [graph]);
   const [loading, setLoading] = useState(true);
@@ -83,7 +84,7 @@ export default function RepoGraphViewer({ root, providerId, providerSettings, on
         const d = await r.json().catch(() => null);
         if (!alive) return;
         if (!r.ok || !d?.graph) { setErr(d?.error ? String(d.error) : `HTTP ${r.status}`); return; }
-        setGraph(d.graph as RepoGraph); setBuiltAt(typeof d.builtAt === "number" ? d.builtAt : null);
+        setGraph(d.graph as RepoGraph); setGraphOf(root); setBuiltAt(typeof d.builtAt === "number" ? d.builtAt : null);
       } catch (e) { if (alive) setErr(e instanceof Error ? e.message : String(e)); }
       finally { if (alive) setLoading(false); }
     })();
@@ -115,34 +116,39 @@ export default function RepoGraphViewer({ root, providerId, providerSettings, on
   const hit = useMemo(() => (graph && impact ? impactOf(graph, impact.files) : null), [graph, impact]);
   // #1322 노드 설명 — 누르면 저장분(파일 그대로면) 즉시, 없으면 그 노드의 실제 코드 + 연결을 AI에 보여 주고 근거와 함께 씀 → 저장.
   const [note, setNote] = useState<{ id: string; text?: string; busy?: boolean; err?: string } | null>(null);
-  const noteCache = useRef(new Map<string, string>()); // 이 창 안 캐시(같은 노드 다시 누르면 서버도 안 감)
+  // 이 창 안 캐시·진행 중 요청 — 키는 레포+노드(레포를 바꿔도 같은 id가 섞이지 않게), 같은 노드를 다시 눌러도 AI를 두 번 안 부름(리뷰).
+  const noteCache = useRef(new Map<string, Promise<{ text?: string; err?: string }>>());
   useEffect(() => {
-    if (!graph || !selected) { setNote(null); return; } // eslint-disable-line react-hooks/set-state-in-effect -- 선택 해제 시 비움
+    if (!graph || !selected || graphOf !== root) { setNote(null); return; } // eslint-disable-line react-hooks/set-state-in-effect -- 선택 해제·레포 전환 중엔 비움(옛 레포 노드로 부르지 않게)
     const n = graph.nodes.find((x) => x.id === selected);
     if (!n || !providerId || !providerSettings) { setNote(null); return; } // 프로바이더 없으면 설명 없음
-    const hit = noteCache.current.get(n.id);
-    if (hit) { setNote({ id: n.id, text: hit }); return; } // 캐시 즉시
+    const nb = neighbors(graph, n.id);
+    const links = [...nb.out.map((l) => `→ ${l.relation} ${l.node.label} (${l.node.file})`), ...nb.in.map((l) => `← ${l.relation} ${l.node.label} (${l.node.file})`)].slice(0, 20);
+    const key = `${root}\0${n.id}`;
+    let job = noteCache.current.get(key);
+    if (!job) {
+      job = (async () => {
+        // 저장분은 파일 내용 + 연결 목록이 같을 때만 씀(다른 파일이 바뀌어 연결이 달라지면 다시 씀, 리뷰).
+        const got = await archNode(root, n.id, n.file, n.line, links.join("\n"));
+        if (!got) return { err: t("graph.noteFailed") };
+        if (got.text) return { text: got.text };
+        const ctx = `레포: ${root.split("/").filter(Boolean).pop()}\n노드: ${n.label} (${n.kind}) @ ${n.file}${n.line ? `:${n.line}` : ""}${n.signature ? `\n시그니처: ${n.signature}` : ""}${links.length ? `\n\n[연결]\n${links.join("\n")}` : ""}\n\n[코드 발췌 — 줄 번호: 내용]\n${got.snippet ?? ""}`;
+        const prompt = `위 코드의 \`${n.label}\`(${n.kind})가 무슨 일을 하는지 개발 초보도 알게 3~5문장으로 설명해줘. 무엇을 받아서 무엇을 하고 무엇을 돌려주는지, 이 레포에서 누가 쓰고 무엇을 쓰는지([연결] 참고) 실제 코드 기준으로. 마지막 줄에 "근거:" 다음 실제로 본 위치를 \`파일:줄\` 형식 1~3개. 코드는 위 발췌에 있으니 '코드를 보지 못했다'는 말은 하지 마. 제목·목록 없이 문장만.`;
+        const a = await askAgent(providerId, providerSettings, locale, ctx, prompt);
+        const text = a.err ? "" : stripCardBlock(a.text).trim();
+        if (!text) return { err: a.err || t("graph.noteFailed") };
+        if (got.hash) void archNodePut(root, n.id, got.hash, text);
+        return { text };
+      })();
+      const mine = job;
+      noteCache.current.set(key, mine);
+      void mine.then((r) => { if (r.err && noteCache.current.get(key) === mine) noteCache.current.delete(key); }); // 실패는 다음에 다시 시도
+    }
     let alive = true;
     setNote({ id: n.id, busy: true });
-    void (async () => {
-      const got = await archNode(root, n.id, n.file, n.line);
-      if (!alive) return;
-      if (!got) { setNote({ id: n.id, err: t("graph.noteFailed") }); return; }
-      if (got.text) { noteCache.current.set(n.id, got.text); setNote({ id: n.id, text: got.text }); return; }
-      const nb = neighbors(graph, n.id);
-      const links = [...nb.out.map((l) => `→ ${l.relation} ${l.node.label} (${l.node.file})`), ...nb.in.map((l) => `← ${l.relation} ${l.node.label} (${l.node.file})`)].slice(0, 20);
-      const ctx = `레포: ${root.split("/").filter(Boolean).pop()}\n노드: ${n.label} (${n.kind}) @ ${n.file}${n.line ? `:${n.line}` : ""}${n.signature ? `\n시그니처: ${n.signature}` : ""}${links.length ? `\n\n[연결]\n${links.join("\n")}` : ""}\n\n[코드 발췌 — 줄 번호: 내용]\n${got.snippet ?? ""}`;
-      const prompt = `위 코드의 \`${n.label}\`(${n.kind})가 무슨 일을 하는지 개발 초보도 알게 3~5문장으로 설명해줘. 무엇을 받아서 무엇을 하고 무엇을 돌려주는지, 이 레포에서 누가 쓰고 무엇을 쓰는지([연결] 참고) 실제 코드 기준으로. 마지막 줄에 "근거:" 다음 실제로 본 위치를 \`파일:줄\` 형식 1~3개. 코드는 위 발췌에 있으니 '코드를 보지 못했다'는 말은 하지 마. 제목·목록 없이 문장만.`;
-      const a = await askAgent(providerId, providerSettings, locale, ctx, prompt);
-      if (!alive) return;
-      const text = a.err ? "" : stripCardBlock(a.text).trim();
-      if (!text) { setNote({ id: n.id, err: a.err || t("graph.noteFailed") }); return; }
-      noteCache.current.set(n.id, text);
-      setNote({ id: n.id, text });
-      if (got.hash) void archNodePut(root, n.id, got.hash, text);
-    })();
+    void job.then((r) => { if (alive) setNote({ id: n.id, ...r }); });
     return () => { alive = false; };
-  }, [graph, selected, root, providerId, providerSettings, locale, t]);
+  }, [graph, graphOf, selected, root, providerId, providerSettings, locale, t]);
   const detail = useMemo(() => (graph && selected ? neighbors(graph, selected) : null), [graph, selected]);
 
   useEffect(() => {
