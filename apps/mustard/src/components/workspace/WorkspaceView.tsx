@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { IconRefresh, IconFolderOpen, IconFiles, IconFileCode, IconFileText, IconLoader2, IconGitBranch, IconGitCommit, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSettings, IconSitemap, IconTerminal2, IconBrandGithub, IconMessageCircle, IconActivity, IconWorld, IconLayoutKanban, IconMessageChatbot } from "@tabler/icons-react";
 import { isNunopiEnabled } from "@/lib/product";
 import { NunopiGlyph } from "@/components/brand/ModeSwapToggle";
-import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, GKEYS, withModel, BROWSER_KEYS, BROWSER_DEFAULTS, EKEYS, EDITOR_DEFAULTS } from "@mustard/core";
+import { useShortcut, useShortcutHint, withShortcutHint, useT, useLocale, useToast, getSetting, useSetting, WKEYS, WORKSPACE_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, GKEYS, ARCHKEYS, withModel, BROWSER_KEYS, BROWSER_DEFAULTS, EKEYS, EDITOR_DEFAULTS } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
 import FileTree from "@/components/workspace/FileTree";
 import { POLL_MS, pollPlan, sameFiles, sameStatus, treeDue } from "@/lib/repoRefresh";
@@ -109,6 +109,11 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   const chatCards = useSetting<boolean>(CUKEYS.chatCards, CATCHUP_DEFAULTS.chatCards);
   const chatPid = (chatProvider || providerId) as AgentProviderKind;
   const chatPs = useMemo(() => withModel(providerSettings, chatPid, chatModel), [providerSettings, chatPid, chatModel]);
+  // #1322 아키텍처 분석 AI·모델(설정 > 아키텍처). "" = 워크스페이스 기본 AI / 그 AI 기본 모델
+  const archProvider = useSetting<string>(ARCHKEYS.provider, "");
+  const archModel = useSetting<string>(ARCHKEYS.model, "");
+  const archPid = (archProvider || providerId) as AgentProviderKind;
+  const archPs = useMemo(() => withModel(providerSettings, archPid, archModel), [providerSettings, archPid, archModel]);
   // #1127 PR 에이전트 리뷰 AI·모델(설정 > 연동 > GitHub)
   const prReviewProvider = useSetting<string>(GKEYS.prReviewProvider, "");
   const prReviewModel = useSetting<string>(GKEYS.prReviewModel, "");
@@ -697,7 +702,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     // <webview>는 DOM에서 빠지면 페이지가 죽어서(새로고침·기록 유실) 위치만 따라가게 한다.
     browser: browserOpen ? <BrowserSlot anchor={dockRef} onRect={setBrowserRect} /> : null,
     crew: crewOpen ? <CrewBoard root={path} onClose={() => setCrewOpen(false)} /> : null, // 에이전트 팀 보드(#1098)
-    flow: <RepoFlowPane feature={flowFeature} root={path} providerId={providerId} providerSettings={providerSettings} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onAskArch={askArch} onQuoteNode={quoteNode} onClose={() => setFlowFeature(null)} />,
+    flow: <RepoFlowPane feature={flowFeature} root={path} providerId={archPid} providerSettings={archPs} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onAskArch={askArch} onQuoteNode={quoteNode} onClose={() => setFlowFeature(null)} />,
   };
 
   // 4존 셸.
@@ -814,7 +819,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
             <>
               {leftFill !== "analyze" && <div onMouseDown={startDrag("analyzeH", analyzeH)} className="h-1 shrink-0 cursor-row-resize transition hover:bg-mustard-500/40 dark:hover:bg-mustard-400/40" />}
               <div style={leftFill === "analyze" ? undefined : { height: analyzeH }} className={`flex flex-col overflow-hidden border-t border-zinc-200 dark:border-zinc-800 ${leftFill === "analyze" ? "min-h-0 flex-1" : "shrink-0"}`}>
-                <RepoAnalyzeSection root={path} providerId={providerId} providerSettings={providerSettings} onOpenFlow={(f) => { setFlowFeature(f); ensureExpanded("flow"); }} onOpenGraph={() => setGraphOpen(true)} />
+                <RepoAnalyzeSection root={path} providerId={archPid} providerSettings={archPs} onOpenFlow={(f) => { setFlowFeature(f); ensureExpanded("flow"); }} onOpenGraph={() => setGraphOpen(true)} />
               </div>
             </>
           )}
@@ -917,7 +922,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
           </>
         )}
         {/* 코드그래프 raw 뷰어(#842 서브5) — 헤더 밑 콘텐츠 영역 오버레이(전체화면 아님). 노드 클릭 → 코드 탭. */}
-        {graphOpen && <RepoGraphViewer root={path} providerId={providerId} providerSettings={providerSettings} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onClose={() => setGraphOpen(false)} />}
+        {graphOpen && <RepoGraphViewer root={path} providerId={archPid} providerSettings={archPs} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onClose={() => setGraphOpen(false)} />}
       </div>
     </div>
   );

@@ -233,6 +233,18 @@ export const CUKEYS = {
   chatProvider: "catchup.chatProvider", chatModel: "catchup.chatModel", chatCards: "catchup.chatCards",
 } as const;
 
+// #1322 아키텍처 분석(설정 > 아키텍처) — AI·모델("" = 워크스페이스 기본) + 설명 깊이.
+// depths = 흐름 설명 박스에 보일 깊이(쉼표 목록), defaultDepth = 처음 분석(재생성) 때 설명을 쓸 깊이이자 처음 보이는 깊이.
+export type ArchDepth = "beginner" | "dev" | "expert";
+export const ARCH_DEPTHS: ArchDepth[] = ["beginner", "dev", "expert"];
+export const ARCHKEYS = { provider: "arch.provider", model: "arch.model", depths: "arch.depths", defaultDepth: "arch.defaultDepth" } as const;
+export const ARCH_DEFAULTS = { depths: "beginner,dev,expert", defaultDepth: "beginner" as ArchDepth } as const;
+export const isArchDepth = (v: unknown): v is ArchDepth => (ARCH_DEPTHS as unknown[]).includes(v);
+// 보일 깊이 — 비었거나 이상하면 전부(하나도 안 보이는 일 없게).
+export function archDepthsOf(s: string): ArchDepth[] { const on = s.split(","); const l = ARCH_DEPTHS.filter((d) => on.includes(d)); return l.length ? l : [...ARCH_DEPTHS]; }
+// 기본 깊이 — 보일 깊이 안에 없으면 그 첫 번째.
+export function archDefaultOf(def: string, depths: ArchDepth[]): ArchDepth { return isArchDepth(def) && depths.includes(def) ? def : depths[0]; }
+
 // 프로바이더 설정에 모델만 덮어씀(#1062 캐치업 카테고리별 모델). 빈 모델이면 그대로.
 export function withModel<T extends object | undefined>(ps: T, providerId: string, model: string): T {
   if (!model) return ps;

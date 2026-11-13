@@ -57,7 +57,7 @@ export async function POST(request: Request): Promise<Response> {
       const saved = kind === "cats" ? f.cats : getFlow(f, name);
       if (!saved) return Response.json({ data: null, diff: null });
       const fl = getFlow(f, name);
-      const data = kind === "cats" ? f.cats!.items : { sections: fl!.sections, overview: fl!.overview, at: fl!.at, ...cleanExtras(fl) }; // 읽을 때도 모양 검사(옛·손상 파일, 리뷰)
+      const data = kind === "cats" ? f.cats!.items : { sections: fl!.sections, overview: fl!.overview, baseDepth: fl!.baseDepth, at: fl!.at, ...cleanExtras(fl) }; // 읽을 때도 모양 검사(옛·손상 파일, 리뷰)
       if (b.diff !== true) return Response.json({ data, diff: null });
       const cur = await currentSnap(path);
       return Response.json({ data, diff: diffFrom(saved, cur), ...(b.wantToken === true ? { token: beginSnap(cur) } : {}) });
@@ -80,12 +80,13 @@ export async function POST(request: Request): Promise<Response> {
       const snap = b.legacy === true ? undefined : (takeSnap(b.token) ?? await currentSnap(path));
       const at = Date.now();
       if (kind === "cats" && !Array.isArray(b.data)) return Response.json({ error: "data must be an array" }, { status: 400 });
-      const d = b.data as { sections?: unknown; overview?: unknown } | null;
+      const d = b.data as { sections?: unknown; overview?: unknown; baseDepth?: unknown } | null;
       if (kind === "flow" && (!d || !Array.isArray(d.sections))) return Response.json({ error: "data.sections must be an array" }, { status: 400 });
       const f = readArch(path);
       if (kind === "cats") f.cats = { items: b.data as ArchCategory[], snap, at };
       // 덧붙임은 클라가 보낸 게 아니라 지금 파일에 있는 걸 이어 붙임 — 설명 쓰기(patch)와 갱신이 겹쳐도 새 설명이 안 지워지게(리뷰).
       else setFlow(f, name, { sections: d!.sections as ArchSection[], overview: typeof d!.overview === "string" ? d!.overview : null, snap, at,
+        ...(["beginner", "dev", "expert"].includes(d!.baseDepth as string) ? { baseDepth: d!.baseDepth as string } : {}),
         ...(b.keepExtras === true ? cleanExtras(getFlow(f, name)) : {}) });
       writeArch(path, f);
       return Response.json({ ok: true, at });

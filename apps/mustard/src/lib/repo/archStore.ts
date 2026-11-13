@@ -14,14 +14,14 @@ export type ArchFlowNode = { name: string; file?: string; line?: number; role?: 
 export type ArchSection = { layer: string; nodes: ArchFlowNode[] };
 export type ArchCategory = { id: string; title: string; blurb?: string };
 // 흐름의 덧붙임(#1322) — 깊이별 설명글(overview 자체는 초보용 기본), 둘러보기 단계. 흐름(노드)이 바뀌면 같이 버림.
-export type ArchExtras = { overviews?: { dev?: string; expert?: string }; tour?: { depth?: string; steps: { name: string; text: string }[] } };
+export type ArchExtras = { overviews?: { beginner?: string; dev?: string; expert?: string }; tour?: { depth?: string; steps: { name: string; text: string }[] } };
 // snap 없음 = 예전 브라우저 저장분을 옮긴 것(언제 분석했는지 모름) → 차분 없이 옛 방식 갱신.
 // 덧붙임 모양 검사(리뷰) — API로 들어온 값만 골라 담음. 잘못된 모양이 저장돼 읽는 쪽(화면·MCP)이 터지지 않게.
 export function cleanExtras(x: unknown): ArchExtras {
   const o = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
   const out: ArchExtras = {};
   const ov = (o.overviews && typeof o.overviews === "object" ? o.overviews : {}) as Record<string, unknown>;
-  const overviews = Object.fromEntries((["dev", "expert"] as const).filter((k) => typeof ov[k] === "string").map((k) => [k, ov[k] as string]));
+  const overviews = Object.fromEntries((["beginner", "dev", "expert"] as const).filter((k) => typeof ov[k] === "string").map((k) => [k, ov[k] as string]));
   if (Object.keys(overviews).length) out.overviews = overviews;
   const tour = o.tour as { depth?: unknown; steps?: unknown } | undefined;
   if (tour && typeof tour === "object" && Array.isArray(tour.steps)) {
@@ -29,7 +29,8 @@ export function cleanExtras(x: unknown): ArchExtras {
   }
   return out;
 }
-export interface ArchFlow extends ArchExtras { sections: ArchSection[]; overview: string | null; snap?: Snap; at: number }
+// baseDepth(#1322) = overview가 어느 깊이로 쓰였나(설정 > 아키텍처 > 처음 분석할 때 깊이). 없으면 초보(예전 저장분).
+export interface ArchFlow extends ArchExtras { sections: ArchSection[]; overview: string | null; baseDepth?: string; snap?: Snap; at: number }
 export interface ArchCats { items: ArchCategory[]; snap?: Snap; at: number }
 // nodes(#1322) = 그래프 노드 설명(id → 그 파일 내용 해시 + AI 설명). 해시가 지금 파일과 다르면 낡음 → 다시 씀.
 export interface ArchFile { v: 1; cats?: ArchCats; flows: Record<string, ArchFlow>; nodes?: Record<string, { hash: string; text: string }> }

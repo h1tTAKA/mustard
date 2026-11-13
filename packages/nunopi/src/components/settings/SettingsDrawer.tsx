@@ -15,8 +15,8 @@ import GhosttyImportRow from "./GhosttyImportRow";
 import NotifySoundRow from "./NotifySoundRow";
 import TerminalRenderSection from "./TerminalRenderSection";
 import TerminalThemeSection from "./TerminalThemeSection";
-import { IconLayoutKanban, IconKeyboard, IconCode, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus } from "@tabler/icons-react";
-import { useSetting, setSetting, notifSound, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS } from "@mustard/core";
+import { IconLayoutKanban, IconKeyboard, IconCode, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus, IconSitemap } from "@tabler/icons-react";
+import { useSetting, setSetting, notifSound, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, ARCHKEYS, ARCH_DEFAULTS, ARCH_DEPTHS, archDepthsOf, archDefaultOf } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
 import ComputerUseSection from "./ComputerUseSection";
 import QuickCommandsSection from "./QuickCommandsSection";
@@ -233,6 +233,8 @@ export default function SettingsDrawer({
   const gAutoExplain = useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits); // #1054
   // #1062 캐치업 — 카테고리별 [표시][분석]. Diff 분석은 git 자동 설명과 같은 키.
   const cuOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
+  const archDepthsRaw = useSetting<string>(ARCHKEYS.depths, ARCH_DEFAULTS.depths);          // #1322
+  const archDefRaw = useSetting<string>(ARCHKEYS.defaultDepth, ARCH_DEFAULTS.defaultDepth);
   const cu = {
     explainShow: useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow), explainAnalyze: useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze),
     commandsShow: useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow), commandsAnalyze: useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze),
@@ -248,6 +250,7 @@ export default function SettingsDrawer({
     diff: [CUKEYS.diffProvider, useSetting<string>(CUKEYS.diffProvider, ""), CUKEYS.diffModel, useSetting<string>(CUKEYS.diffModel, "")],
     session: [CUKEYS.sessionsProvider, useSetting<string>(CUKEYS.sessionsProvider, ""), CUKEYS.sessionsModel, useSetting<string>(CUKEYS.sessionsModel, "")],
     chat: [CUKEYS.chatProvider, useSetting<string>(CUKEYS.chatProvider, ""), CUKEYS.chatModel, useSetting<string>(CUKEYS.chatModel, "")], // #1081 질문 화면
+    arch: [ARCHKEYS.provider, useSetting<string>(ARCHKEYS.provider, ""), ARCHKEYS.model, useSetting<string>(ARCHKEYS.model, "")], // #1322 아키텍처 분석
     prReview: [GKEYS.prReviewProvider, useSetting<string>(GKEYS.prReviewProvider, ""), GKEYS.prReviewModel, useSetting<string>(GKEYS.prReviewModel, "")], // #1127 PR 에이전트 리뷰(연동 > GitHub에서 고름)
   };
   // AI·모델 고르기 한 줄(캐치업 카테고리·PR 에이전트 리뷰 공용) — "" = 워크스페이스 기본 AI / 그 AI 기본 모델
@@ -483,6 +486,7 @@ export default function SettingsDrawer({
     { id: "set-shortcuts", label: t("settings.shortcutsSection"), Icon: IconKeyboard, show: true, group: t("settings.groupEnvironment") }, // #1027
     { id: "set-agents", label: t("settings.provider"), Icon: IconRobot, show: true, group: t("settings.groupAgents") },
     { id: "set-catchup", label: t("settings.catchupSection"), Icon: IconActivity, show: workspaceSettings, group: t("settings.groupAgents") }, // #1049
+    { id: "set-arch", label: t("settings.archSection"), Icon: IconSitemap, show: workspaceSettings, group: t("settings.groupAgents") }, // #1322
     { id: "set-integrations", label: t("settings.integrations"), Icon: IconPlug, show: workspaceSettings, group: t("settings.groupAgents") },
     { id: "set-crew", label: t("crewPerm.section"), Icon: IconLayoutKanban, show: workspaceSettings, group: t("settings.groupAgents") }, // #1279
     { id: "set-computer", label: t("settings.computer"), Icon: IconDeviceDesktop, show: workspaceSettings && typeof window !== "undefined" && !!window.nunopiDesktop?.computer, group: t("settings.groupAgents") }, // #1175
@@ -1174,6 +1178,51 @@ export default function SettingsDrawer({
             ))}
           </section>
           )}
+
+          {/* #1322 아키텍처 — 분석 AI·모델, 설명 깊이(보일 것 + 처음 분석 기본) */}
+          {activeSection === "set-arch" && (() => {
+            const shown = archDepthsOf(archDepthsRaw), def = archDefaultOf(archDefRaw, shown);
+            return (
+          <section id="set-arch" className="scroll-mt-4 space-y-4 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+            <div>
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.archAi")}</span>
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.archAiDesc")}</p>
+              {aiPick(t("settings.archAi"), ...cuProv.arch, false)}
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+              <div className="min-w-0">
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.archDepths")}</span>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.archDepthsDesc")}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                {ARCH_DEPTHS.map((d) => { const on = shown.includes(d), last = on && shown.length === 1; return (
+                  <div key={d} className="flex flex-col items-center gap-1">
+                    <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">{t(`graph.depth.${d}`)}</span>
+                    <button type="button" role="switch" aria-checked={on} aria-label={`${t("settings.archDepths")} ${t(`graph.depth.${d}`)}`} disabled={last}
+                      onClick={() => setSetting(ARCHKEYS.depths, ARCH_DEPTHS.filter((x) => (x === d ? !on : shown.includes(x))).join(","))}
+                      className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:opacity-60 ${on ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+                      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
+                    </button>
+                  </div>
+                ); })}
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+              <div className="min-w-0">
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.archDefaultDepth")}</span>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.archDefaultDepthDesc")}</p>
+              </div>
+              <div className="relative w-40 shrink-0">
+                <select value={def} onChange={(e) => setSetting(ARCHKEYS.defaultDepth, e.target.value)} aria-label={t("settings.archDefaultDepth")}
+                  className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1 pr-8 text-xs text-zinc-900 outline-none transition focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-500">
+                  {shown.map((d) => <option key={d} value={d}>{t(`graph.depth.${d}`)}</option>)}
+                </select>
+                <IconChevronDown size={14} stroke={2} aria-hidden className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
+              </div>
+            </div>
+          </section>
+            );
+          })()}
 
           {/* 단축키(#1027) */}
           {activeSection === "set-shortcuts" && <ShortcutsSection />}
