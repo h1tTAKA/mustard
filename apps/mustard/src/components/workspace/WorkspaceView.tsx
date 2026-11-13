@@ -642,11 +642,11 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   }
   const activeTab = codeTabs.find((tb) => codeTabKey(tb) === activeCode) ?? null;
   const activeFile = activeTab?.kind === "file" ? activeTab.file : null; // FileTree 선택 하이라이트용
-  // #1322 둘러보기가 가리킨 파일 — 트리 펼침·강조. 코드 탭을 바꾸면(activeFile 변경) 강조는 탭 쪽으로 넘어감.
-  const [treeReveal, setTreeReveal] = useState<{ file: string; n: number; over: string | null } | null>(null);
-  const activeFileRef = useRef(activeFile);
-  useEffect(() => { activeFileRef.current = activeFile; }, [activeFile]);
-  const treeSelected = treeReveal && treeReveal.over === activeFile ? treeReveal.file : activeFile;
+  // #1322 둘러보기가 가리킨 파일 — 트리 펼침·강조. 코드 탭을 바꾸면(activeFile 변경) 강조는 탭 쪽으로 넘어가고 끝(리뷰).
+  const [treeReveal, setTreeReveal] = useState<{ file: string; n: number; at: number } | null>(null);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- 코드 탭이 바뀌면 둘러보기 강조 해제
+  useEffect(() => { setTreeReveal(null); }, [activeFile]);
+  const treeSelected = treeReveal?.file ?? activeFile;
 
   // 웹(비데스크톱): 터미널·폴더접근 불가 → 안내.
   if (mounted && !desktop) {
@@ -707,7 +707,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     // <webview>는 DOM에서 빠지면 페이지가 죽어서(새로고침·기록 유실) 위치만 따라가게 한다.
     browser: browserOpen ? <BrowserSlot anchor={dockRef} onRect={setBrowserRect} /> : null,
     crew: crewOpen ? <CrewBoard root={path} onClose={() => setCrewOpen(false)} /> : null, // 에이전트 팀 보드(#1098)
-    flow: <RepoFlowPane feature={flowFeature} root={path} providerId={archPid} providerSettings={archPs} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onRevealFile={(file) => setTreeReveal((r) => ({ file, n: (r?.n ?? 0) + 1, over: activeFileRef.current }))} onAskArch={askArch} onQuoteNode={quoteNode} onClose={() => setFlowFeature(null)} />,
+    flow: <RepoFlowPane feature={flowFeature} root={path} providerId={archPid} providerSettings={archPs} onOpenFile={(file) => openCodeTab({ kind: "file", file })} onRevealFile={(file) => setTreeReveal((r) => ({ file, n: (r?.n ?? 0) + 1, at: Date.now() }))} onAskArch={askArch} onQuoteNode={quoteNode} onClose={() => setFlowFeature(null)} />,
   };
 
   // 4존 셸.

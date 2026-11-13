@@ -57,7 +57,7 @@ function parseFlow(text: string): FlowSection[] {
       const arrow = p.match(/^(?:→|->|=>|다음\s*[:：]?)\s*(.+)$/);
       if (arrow) { next = arrow[1].split(/\s*[,，/、]\s*/).map((x) => x.trim().replace(/^[→>\-\s]+/, "")).filter(Boolean); continue; }
       // 파일처럼 생김 = 공백 없는 경로, 또는 공백이 있어도 "/"가 있고 확장자로 끝나는 경로("Local Podspecs/x.json", 리뷰 #1322)
-      if (!file && /[/.]/.test(p) && (!/\s/.test(p.replace(/:\d+$/, "")) || (/\//.test(p) && /\.[A-Za-z0-9]{1,10}(:\d+)?$/.test(p)))) {
+      if (!file && /[/.]/.test(p) && (!/\s/.test(p.replace(/:\d+$/, "")) || (/\//.test(p) && /\.[A-Za-z][A-Za-z0-9]{0,9}(:\d+)?$/.test(p)))) {
         const m = p.match(/^(.*?):(\d+)$/);
         file = (m ? m[1] : p).replace(/^\.?\//, ""); lineNo = m ? Number(m[2]) : undefined; continue;
       }
@@ -122,6 +122,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const atRef = useRef<number | null>(null);                 // 지금 보이는 흐름의 저장 판(at) — 덧붙임이 같은 흐름에 붙는지 서버가 확인
   const [tourIdx, setTourIdx] = useState<number | null>(null); // 지금 단계(null = 둘러보기 안 하는 중)
   const [tourBusy, setTourBusy] = useState(false);           // 단계 설명 만드는 중
+  const busyN = useRef(0);                                   // 진행 중인 단계 만들기 수
   const [hovered, setHovered] = useState<string | null>(null); // 호버 카드 키(연결 강조)
   const [focused, setFocused] = useState<string | null>(null); // 클릭 포커스 카드 키(무관 어둡게)
   const [loadFailed, setLoadFailed] = useState(false);
@@ -184,7 +185,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   // 실제 코드 발췌 + 실측 연결(그래프)을 근거로. ▶(없을 때)·재생성·구조 갱신 뒤 자동으로 부름. 성공하면 저장하고 true.
   const buildTour = useCallback(async (secs: FlowSection[], f: string, my: number, at0: number | null): Promise<boolean> => {
     if (!root) return false;
-    setTourBusy(true);
+    busyN.current++; setTourBusy(true); // 여러 개가 겹쳐 돌아도 마지막 것이 끝날 때만 풀림(리뷰)
     try {
       const order = tourOrder(secs);
       const byKey = new Map(secs.flatMap((s) => s.nodes.map((n) => [nk(n.name), { ...n, layer: s.layer }] as const)));
@@ -204,11 +205,13 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       if (answer.err) { setErr(answer.err); return false; }
       // "### 이름" 블록으로 나눔(옛 형식 "이름 | 설명" 줄도 받음).
       const got = new Map<string, string>();
+      const names = new Set(order.map(nk)); // 노드 이름인 제목에서만 나눔 — 노드 안 소제목("#### 1) 주요 함수")은 그 노드 설명에 남김(리뷰)
       let curName: string | null = null, buf: string[] = [];
       const flush = () => { if (curName) got.set(nk(curName), buf.join("\n").trim()); };
       for (const raw of stripCardBlock(answer.text).split("\n")) {
         const h = raw.match(/^#{2,4}\s+(?:\d+[.)]\s+)?(.+?)\s*$/);
-        if (h) { flush(); curName = h[1].replace(/[`*]/g, "").trim(); buf = []; continue; }
+        const hn = h ? h[1].replace(/[`*]/g, "").trim() : "";
+        if (h && names.has(nk(hn))) { flush(); curName = hn; buf = []; continue; }
         if (curName) { buf.push(raw); continue; }
         const line = raw.trim().replace(/^(?:[-*•]\s*|\d+[.)]\s+)/, ""); // 목록 표시만 뗌(숫자로 시작하는 이름 404.tsx 보존, 리뷰)
         const at = line.indexOf("|");
@@ -224,7 +227,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       if (my !== reqRef.current) return false;
       setTour(next);
       return true;
-    } finally { setTourBusy(false); }
+    } finally { busyN.current--; setTourBusy(busyN.current > 0); }
   }, [root, depth, ask, t, codeOf]);
 
   // mode: "cache"=저장분 우선(자동), "regen"=전체 새로, "update"=저장 뒤 바뀐 파일만 반영(#1320, 차분 정보 없으면 옛 방식: 새 노드만 병합).

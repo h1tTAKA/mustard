@@ -67,7 +67,7 @@ function Node({ node, depth, open, toggle, selected, onSelect, status, folderSta
 }
 
 // reveal(#1322) = 바깥(둘러보기)에서 가리킨 파일 — 조상 폴더를 펼치고 그 줄로 스크롤. n은 같은 파일을 다시 가리킬 때도 동작하게.
-export default function FileTree({ files, selected, onSelect, status = {}, storageKey, reveal }: { files: string[]; selected: string | null; onSelect: (path: string) => void; status?: Record<string, "added" | "modified">; storageKey?: string; reveal?: { file: string; n: number } | null }) {
+export default function FileTree({ files, selected, onSelect, status = {}, storageKey, reveal }: { files: string[]; selected: string | null; onSelect: (path: string) => void; status?: Record<string, "added" | "modified">; storageKey?: string; reveal?: { file: string; n: number; at?: number } | null }) {
   const tree = useMemo(() => buildTree(files), [files]);
   // 변경 파일의 조상 폴더별 집계(modified 우선) + 변경 포함 폴더 경로 집합(자동 펼침용).
   const { folderStatus, changedAncestors } = useMemo(() => {
@@ -104,7 +104,8 @@ export default function FileTree({ files, selected, onSelect, status = {}, stora
   useEffect(() => { if (!restoredRef.current || !storageKey) return; try { localStorage.setItem(storageKey, JSON.stringify([...open])); } catch { /* ignore */ } }, [open, storageKey]);
   const boxRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (!reveal) return;
+    // 방금 가리킨 것만(트리를 접었다 다시 열어 새로 붙을 때 옛 가리킴으로 펼치고 스크롤하지 않게, 리뷰)
+    if (!reveal || (reveal.at && Date.now() - reveal.at > 3000)) return;
     const parts = reveal.file.split("/");
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 가리킨 파일의 조상 폴더 펼침(union)
     setOpen((prev) => { const n = new Set(prev); for (let i = 1; i < parts.length; i++) n.add(parts.slice(0, i).join("/")); return n; });
