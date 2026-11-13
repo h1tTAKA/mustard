@@ -1,6 +1,7 @@
 // 흐름 차분 갱신 병합(#1320) — 순수 함수(점검 쉬움). RepoFlowPane이 씀.
 // 원칙: 지운 파일 노드는 빼고, LLM이 새로 준 노드가 있는 파일은 그 파일 노드를 통째 교체, LLM이 아무것도 안 준 파일은 그대로 둠
 // (관련 없는 변경 때문에 노드가 사라지지 않게). 다른 파일의 새 노드는 이름이 새로울 때만 추가.
+// 한계: 노드는 이름이 키(화면 연결선·강조가 이름으로 이음) — 바뀐 파일의 새 노드가 다른 파일 노드와 이름이 같으면 추가 안 됨.
 import type { ArchSection as FlowSection } from "./archStore";
 
 const nk = (s: string) => s.trim().toLowerCase();

@@ -15,7 +15,7 @@ export interface RepoNode {
   file: string;      // 상대경로(파일)
   kind: RepoNodeKind;
   role?: RepoAssetRole; // 게임 에셋 파일(.unity/.tscn=scene, .prefab, .asset/.tres=asset)만
-  owner?: string;    // 메서드/멤버가 속한 클래스 이름(#843 scope-aware 해석용, Graft owner 기법)
+  owner?: string;    // 메서드/멤버가 속한 클래스 이름(#843 scope-aware 해석용)
   signature?: string; // 함수/메서드 시그니처(파라미터+반환타입) — 표시·검색용(#843)
   line?: number;     // 심볼 정의 시작 줄(1-based) — MCP find_code 등 위치용(#853)
   group?: string;    // 군집(자식3은 최상위 폴더 기준 임시)

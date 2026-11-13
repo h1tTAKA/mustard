@@ -61,7 +61,8 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
     const role = assetRole(file);
     fileNodes.push({ id: file, label: baseName(file), file, kind: "file", ...(role ? { role } : {}) });
     let text: string;
-    try { text = readFileSync(join(root, file), "utf8"); } catch { continue; }
+    // 못 읽은 파일(삭제 레이스 등)은 지난 캐시를 그대로 넘김 — 스냅샷에서 "지워짐"으로 오판해 흐름 노드가 빠지지 않게(리뷰).
+    try { text = readFileSync(join(root, file), "utf8"); } catch { if (prev[file]) cache[file] = prev[file]; continue; }
 
     const hash = fileHash(text);
     const hit = prev[file]?.hash === hash ? prev[file] : null;
@@ -98,7 +99,8 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
     if (file.endsWith(".cs")) csText.set(file, text);
     const skip = isUnityAsset(file) || isGodotFile(file);
     if (!skip && !hit) pf.ex = await extractSymbols(text, file);
-    if (!hit) { pf.sig = fileSig(pf.specs, pf.ex?.symbols); reparsed++; }
+    // 에셋(Unity·Godot)은 심볼이 없어 서명이 늘 같음 → 내용 해시를 서명으로(씬·프리팹 편집 = 연결 변화, 리뷰).
+    if (!hit) { pf.sig = skip ? hash : fileSig(pf.specs, pf.ex?.symbols); reparsed++; }
     cache[file] = pf;
     if (isUnityAsset(file)) { unityText.set(file, text); continue; } // 에셋 YAML — 심볼·import 없음(GUID 패스에서 연결)
     if (isGodotFile(file)) { godotText.set(file, text); continue; } // GDScript 문법 없음 — 파일 단위 연결만(res:// 패스)

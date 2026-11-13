@@ -1,4 +1,4 @@
-// 코드그래프 MCP 툴셋(#853) — 에이전트가 그래프로 코드베이스 즉시 탐색(READ). Graft 6툴 + search(PageRank).
+// 코드그래프 MCP 툴셋(#853) — 에이전트가 그래프로 코드베이스 즉시 탐색(READ). 찾기·호출·참조·파일 API·구조 요약 + search(PageRank).
 // lib 재사용(loadOrBuildGraph/graphDigest/graphRank). 결과는 텍스트(MCP content).
 import { loadOrBuildGraph, currentFingerprint } from "../loadGraph";
 import { readCachedGraph } from "../graphStore";

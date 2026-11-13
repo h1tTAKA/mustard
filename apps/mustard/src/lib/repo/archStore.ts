@@ -3,7 +3,7 @@
 // 위치: ~/.nunopi/arch/<sha(root)>.json. 원자적 쓰기(tmp → rename).
 // 한계: 흐름마다 스냅샷(파일 수 × 약 40바이트)을 따로 들고 있음 — 3000파일 레포 흐름 20개면 수 MB. 커지면 스냅샷 공유로.
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, renameSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { loadOrBuildGraph } from "./loadGraph";
@@ -13,12 +13,21 @@ import { snapOf, diffSnap, type Snap, type SnapDiff } from "./incremental";
 export type ArchFlowNode = { name: string; file?: string; line?: number; role?: string; next?: string[] };
 export type ArchSection = { layer: string; nodes: ArchFlowNode[] };
 export type ArchCategory = { id: string; title: string; blurb?: string };
-export interface ArchFlow { sections: ArchSection[]; overview: string | null; snap: Snap; at: number }
-export interface ArchCats { items: ArchCategory[]; snap: Snap; at: number }
+// snap 없음 = 예전 브라우저 저장분을 옮긴 것(언제 분석했는지 모름) → 차분 없이 옛 방식 갱신.
+export interface ArchFlow { sections: ArchSection[]; overview: string | null; snap?: Snap; at: number }
+export interface ArchCats { items: ArchCategory[]; snap?: Snap; at: number }
 export interface ArchFile { v: 1; cats?: ArchCats; flows: Record<string, ArchFlow> }
 
 const DIR = join(homedir(), ".nunopi", "arch");
-const pathOf = (root: string) => join(DIR, `${createHash("sha256").update(root).digest("hex").slice(0, 32)}.json`);
+// 레포 경로 정규화(심볼릭 링크·끝 슬래시) — 화면(작업공간 경로)과 MCP(cwd에서 찾은 루트)가 같은 파일을 보게(리뷰).
+const canon = (root: string) => { try { return realpathSync(root); } catch { return root.replace(/\/+$/, ""); } };
+const pathOf = (root: string) => join(DIR, `${createHash("sha256").update(canon(root)).digest("hex").slice(0, 32)}.json`);
+
+// flows는 사용자 문자열(기능 이름)이 키 — "constructor"·"__proto__" 같은 이름이 프로토타입과 섞이지 않게(리뷰).
+export const getFlow = (f: ArchFile, name: string): ArchFlow | undefined => (Object.hasOwn(f.flows, name) ? f.flows[name] : undefined);
+export function setFlow(f: ArchFile, name: string, v: ArchFlow): void {
+  Object.defineProperty(f.flows, name, { value: v, enumerable: true, writable: true, configurable: true });
+}
 
 export function readArch(root: string): ArchFile {
   try {
@@ -43,7 +52,9 @@ export async function currentSnap(root: string): Promise<Snap> {
 }
 
 // 저장분이 있으면 지금과 비교한 차분, 없으면 null.
-export const diffFrom = (saved: { snap?: Snap } | undefined, cur: Snap): SnapDiff | null => (saved?.snap ? diffSnap(saved.snap, cur) : null);
+// 지금 스냅샷이 비었으면(파싱 캐시 없음·손상) 비교 불가 → null(전부 "지워짐"으로 오판해 흐름을 비우지 않게, 리뷰).
+export const diffFrom = (saved: { snap?: Snap } | undefined, cur: Snap): SnapDiff | null =>
+  saved?.snap && Object.keys(cur).length ? diffSnap(saved.snap, cur) : null;
 
 // 차분 갱신 프롬프트용 파일 뼈대 — 파일별 심볼(줄·종류·이름·시그니처). 파일 30개·파일당 40개 상한(토큰 방어).
 export async function fileSkeletons(root: string, files: string[]): Promise<string> {

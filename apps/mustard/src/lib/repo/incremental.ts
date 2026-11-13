@@ -15,7 +15,9 @@ export interface ParsedFile {
 export type FileCache = Record<string, ParsedFile>; // rel 경로 → 파싱 결과
 
 const h16 = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 16);
-export const fileHash = (text: string) => h16(text);
+// 추출기(언어 파서·심볼 규칙·서명 규칙)를 고치면 이 값을 올림 → 모든 파일 해시가 달라져 한 번 전부 다시 파싱(리뷰).
+export const PARSE_V = "1";
+export const fileHash = (text: string) => h16(`${PARSE_V}\n${text}`);
 
 // 구조 서명 — 줄 번호·본문은 빼고 "밖에서 보이는 모양"만. 이게 같으면 흐름·기능 목록을 LLM에 다시 물을 이유 없음.
 export function fileSig(specs: string[] | undefined, symbols: SymbolInfo[] | undefined): string {
@@ -34,13 +36,15 @@ export function snapOf(cache: FileCache): Snap {
 
 // 두 스냅샷 비교. changed=내용이 다르거나 새 파일, structural=구조 서명이 다르거나 새 파일, removed=없어진 파일.
 export interface SnapDiff { changed: string[]; structural: string[]; removed: string[] }
+// 새 파일이라도 import·심볼이 하나도 없으면(문서 등) 구조 변화로 안 침 — "구조 0이면 AI 안 부름"을 지키려고(리뷰).
+const EMPTY_SIG = fileSig(undefined, undefined);
 export function diffSnap(old: Snap, cur: Snap): SnapDiff {
   const changed: string[] = [], structural: string[] = [], removed: string[] = [];
   for (const [rel, [h, s]] of Object.entries(cur)) {
-    const o = old[rel];
+    const o = Object.hasOwn(old, rel) ? old[rel] : undefined;
     if (!o || o[0] !== h) changed.push(rel);
-    if (!o || o[1] !== s) structural.push(rel);
+    if (o ? o[1] !== s : s !== EMPTY_SIG) structural.push(rel);
   }
-  for (const rel of Object.keys(old)) if (!(rel in cur)) removed.push(rel);
+  for (const rel of Object.keys(old)) if (!Object.hasOwn(cur, rel)) removed.push(rel);
   return { changed: changed.sort(), structural: structural.sort(), removed: removed.sort() };
 }

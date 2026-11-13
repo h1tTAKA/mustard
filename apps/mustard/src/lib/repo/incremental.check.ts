@@ -26,3 +26,8 @@ assert.deepStrictEqual(d.removed, ["c.ts"]);
 assert.deepStrictEqual(diffSnap(snapOf(old), snapOf(old)), { changed: [], structural: [], removed: [] }, "같으면 빈 차분");
 
 console.log("incremental.check OK");
+// 새 파일이라도 import·심볼 없으면 구조 변화 아님(리뷰).
+const d2 = diffSnap({}, { "README.md": ["h", fileSig(undefined, undefined)], "x.ts": ["h", "s"] });
+assert.deepStrictEqual(d2.structural, ["x.ts"]);
+assert.deepStrictEqual(diffSnap({}, { constructor: ["h", "s"] }).structural, ["constructor"], "프로토타입 이름 파일도 새 파일로");
+console.log("incremental.check OK (2)");

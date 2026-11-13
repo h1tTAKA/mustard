@@ -7,7 +7,7 @@ import { homedir } from "node:os";
 import { scanRepo } from "./scan";
 import { isUnityAsset, underUnityAssets } from "./unityAssets";
 import type { RepoGraph } from "./types";
-import type { FileCache } from "./incremental";
+import { PARSE_V, type FileCache } from "./incremental";
 
 const CACHE_DIR = join(homedir(), ".nunopi", "codegraph");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 32);
@@ -30,6 +30,7 @@ export function fingerprintFromScan(root: string, files: string[]): string {
     }
   }
   parts.sort();
+  parts.push(`parse:${PARSE_V}`); // 추출기 버전이 바뀌면 파일이 그대로여도 다시 빌드(#1320 리뷰)
   return sha(parts.join("\n"));
 }
 // 독립 호출용(스캔 포함).

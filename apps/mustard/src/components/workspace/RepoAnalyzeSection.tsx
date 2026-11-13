@@ -101,7 +101,7 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
     const fail = (d: string) => { setErr(t("repo.analyzeError")); setDetail(d); };
     try {
       // #1320 차분 갱신 — 저장 뒤 구조가 바뀐 파일이 없으면 AI 없이 끝(스냅샷만 새로), 있으면 그 파일들만 보여 주고 새 기능만 받음.
-      const d = merge && cats ? (await archGet<RepoCategory[]>(root, "cats")).diff : null;
+      const d = merge && cats ? (await archGet<RepoCategory[]>(root, "cats", undefined, true)).diff : null;
       if (d && !d.structural.length) { await archPut(root, "cats", cats); return; }
       if (d) {
         const name = root.split("/").filter(Boolean).pop() ?? root;
@@ -114,7 +114,11 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
         if (!res.ok || !res.body) { fail(`analyze HTTP ${res.status}`); return; }
         const { answer, streamErr } = await readStream(res.body);
         if (streamErr) { fail(`agent: ${streamErr}`); return; }
-        const next = mergeCats(cats!, parseCategories(stripCardBlock(answer)));
+        const text = stripCardBlock(answer);
+        const found = parseCategories(text);
+        // 목록 줄이 없으면 "없음"일 때만 정상 — 빈 답·엉뚱한 답이면 스냅샷 안 앞당기고 오류(리뷰).
+        if (!found.length && !/^[\s"'`*.。-]*(없음|none|なし)[\s"'`*.。-]*$/i.test(text)) { fail(`no list — ${text.slice(0, 160)}`); return; }
+        const next = mergeCats(cats!, found);
         setCats(next);
         await archPut(root, "cats", next);
         return;
