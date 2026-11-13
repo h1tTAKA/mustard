@@ -18,11 +18,11 @@ export async function archBegin(root: string): Promise<string | undefined> {
   try { const d = await (await post({ op: "begin", path: root })).json(); return typeof d?.token === "string" ? d.token : undefined; } catch { return undefined; }
 }
 
-// diff=true면 저장 뒤 바뀐 파일도 계산(그래프 맞추느라 느릴 수 있어 갱신·낡음 표시에만).
+// diff=true면 저장 뒤 바뀐 파일도 계산(그래프 맞추느라 느릴 수 있어 갱신·낡음 표시에만). "token"이면 분석 시작 표도(갱신 전용).
 type Got<T> = { data: T | null; diff: SnapDiff | null; token?: string; error?: boolean };
-export async function archGet<T>(root: string, kind: Kind, feature?: string, diff = false): Promise<Got<T>> {
+export async function archGet<T>(root: string, kind: Kind, feature?: string, diff: boolean | "token" = false): Promise<Got<T>> {
   let r: Response, d: { data?: unknown; diff?: unknown; token?: unknown } | null;
-  try { r = await post({ op: "get", path: root, kind, feature, diff }); d = await r.json().catch(() => null); }
+  try { r = await post({ op: "get", path: root, kind, feature, diff: !!diff, wantToken: diff === "token" }); d = await r.json().catch(() => null); }
   catch { return { data: null, diff: null, error: true }; }
   // 서버 오류 = error(호출부가 새로 분석해 덮어쓰지 않게) — 옮기기는 "서버에 확실히 없음"일 때만(리뷰)
   if (!r.ok || !d) return { data: null, diff: null, error: true };

@@ -84,16 +84,21 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
   const [detail, setDetail] = useState<string | null>(null); // 실패 원인 상세(디버깅·안내)
   const [confirm, setConfirm] = useState<null | "reanalyze" | "update">(null); // 확인 모달(내용 바뀜·추가 경고)
   const [running, setRunning] = useState<null | "reanalyze" | "update">(null); // 지금 도는 액션(그 버튼만 스핀)
+  const [restored, setRestored] = useState(false); // 저장분 확인 끝(전엔 "분석하기"를 잠가 저장분을 덮어쓰지 않게, 리뷰)
   // 저장된 카테고리 복원 — 새로고침/재시작/레포 재진입 시 재분석 없이 바로 목록 표시. 저장소=서버 파일(#1320).
   useEffect(() => {
     if (!root) return;
     let alive = true;
     // 레포가 바뀌면 이전 레포 목록을 먼저 비움 — 불러오는 사이 갱신이 다른 레포 목록을 섞어 저장하지 않게(리뷰).
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 레포 전환 시 초기화
-    setCats(null);
-    void archGet<RepoCategory[]>(root, "cats").then(({ data }) => { if (alive) setCats(data?.length ? data : null); });
+    setCats(null); setRestored(false);
+    void archGet<RepoCategory[]>(root, "cats").then(({ data, error }) => {
+      if (!alive) return;
+      if (error) { setErr(t("repo.loadFailed")); return; } // 서버 오류 — 분석하기를 잠가 둔 채(저장분 덮어쓰기 방지)
+      setCats(data?.length ? data : null); setRestored(true);
+    });
     return () => { alive = false; };
-  }, [root]);
+  }, [root, t]);
 
   // merge=true(갱신): 기존 목록에 새 항목만 추가. false(분석/재분석): 전체 교체.
   const analyze = useCallback(async (merge = false) => {
@@ -104,7 +109,7 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
     const fail = (d: string) => { setErr(t("repo.analyzeError")); setDetail(d); };
     try {
       // #1320 차분 갱신 — 저장 뒤 구조가 바뀐 파일이 없으면 AI 없이 끝(스냅샷만 새로), 있으면 그 파일들만 보여 주고 새 기능만 받음.
-      const g = merge && cats ? await archGet<RepoCategory[]>(root, "cats", undefined, true) : null;
+      const g = merge && cats ? await archGet<RepoCategory[]>(root, "cats", undefined, "token") : null;
       if (g?.error) { fail("load failed"); return; }
       const d = g?.diff ?? null;
       const token = g?.token ?? await archBegin(root); // 분석 시작 시점 스냅샷(AI가 도는 사이 고친 파일은 다음 갱신 대상으로)
@@ -192,7 +197,7 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
           </>
         ) : (
           // 최초 분석 — 덮을 게 없어 바로 실행.
-          <button type="button" onClick={() => void analyze(false)} disabled={loading}
+          <button type="button" onClick={() => void analyze(false)} disabled={loading || !restored}
             className="inline-flex shrink-0 items-center gap-1 rounded bg-mustard-500/12 px-1.5 py-0.5 text-[10px] font-semibold text-mustard-700 ring-1 ring-inset ring-mustard-500/35 transition hover:bg-mustard-500/20 disabled:opacity-50 dark:bg-mustard-400/12 dark:text-mustard-400 dark:ring-mustard-400/30 dark:hover:bg-mustard-400/20">
             {loading ? <IconLoader2 size={11} stroke={2} className="animate-spin" aria-hidden /> : <IconSparkles size={11} stroke={2} aria-hidden />} {t("repo.analyzeRun")}
           </button>

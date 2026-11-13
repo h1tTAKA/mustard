@@ -191,7 +191,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       let inc: SnapDiff | null = null, d: SnapDiff | null = null, token: string | undefined;
       const saveFailed = () => { if (my === reqRef.current) setErr(t("flow.saveFailed")); };
       if (mode === "update") {
-        const g = await archGet(root, "flow", feature, true);
+        const g = await archGet(root, "flow", feature, "token");
         if (g.error) { if (my === reqRef.current) setErr(t("flow.loadFailed")); return; }
         d = g.diff; token = g.token;
         if (my !== reqRef.current) return;

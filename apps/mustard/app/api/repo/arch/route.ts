@@ -3,14 +3,14 @@
 // POST {op:"put", path, kind, feature?, data, legacy?}    → 지금 파일 스냅샷과 함께 저장(legacy=옛 브라우저 저장분 이전 → 스냅샷 없이)
 // POST {op:"skeleton", path, data: files[]}              → 파일별 심볼 뼈대 텍스트(차분 갱신 프롬프트용)
 // POST {op:"begin", path}                               → {token} 분석 시작 시점 스냅샷 표(put에 token으로 넘기면 그 스냅샷으로 저장)
-//   get에 diff:true면 같은 표(token)도 같이 줌(갱신은 그 시점 기준으로 저장)
+//   get에 diff:true·token:true면 같은 표도 같이 줌(갱신만 요청 — 낡음 표시용 조회는 표를 안 만들어 보관함을 안 밀어냄)
 import { existsSync, statSync } from "node:fs";
 import { crossSite } from "@/lib/crew/crewPolicy";
 import { readArch, writeArch, currentSnap, diffFrom, fileSkeletons, getFlow, setFlow, beginSnap, takeSnap, type ArchCategory, type ArchSection } from "@/lib/repo/archStore";
 
 export async function POST(request: Request): Promise<Response> {
   if (crossSite(request)) return Response.json({ error: "cross-site" }, { status: 403 }); // 다른 사이트가 몰래 저장·스캔 못 하게(리뷰)
-  let b: { op?: unknown; path?: unknown; kind?: unknown; feature?: unknown; data?: unknown; diff?: unknown; legacy?: unknown; token?: unknown };
+  let b: { op?: unknown; path?: unknown; kind?: unknown; feature?: unknown; data?: unknown; diff?: unknown; legacy?: unknown; token?: unknown; wantToken?: unknown };
   try { b = await request.json(); } catch { return Response.json({ error: "invalid body" }, { status: 400 }); }
   if (!b || typeof b !== "object") return Response.json({ error: "invalid body" }, { status: 400 });
   const { op, path, kind, feature } = b;
@@ -34,7 +34,7 @@ export async function POST(request: Request): Promise<Response> {
       const data = kind === "cats" ? f.cats!.items : { sections: getFlow(f, name)!.sections, overview: getFlow(f, name)!.overview };
       if (b.diff !== true) return Response.json({ data, diff: null });
       const cur = await currentSnap(path);
-      return Response.json({ data, diff: diffFrom(saved, cur), token: beginSnap(cur) });
+      return Response.json({ data, diff: diffFrom(saved, cur), ...(b.wantToken === true ? { token: beginSnap(cur) } : {}) });
     }
     if (op === "put") {
       // 스냅샷(그래프 맞추기, await)을 먼저 — 읽고-고치고-쓰기 사이에 await가 없어야 동시 저장끼리 서로 안 지움(리뷰).

@@ -84,8 +84,9 @@ export function writeFileCache(root: string, files: FileCache): void {
     renameSync(tmp, dest);
   } catch {
     // 캐시 실패는 치명적 아님 — 다만 그래프 캐시만 저장되면 다음에 빌드를 건너뛰고 옛 파일 캐시(스냅샷)를 믿게 됨(리뷰)
-    // → 옛 파일 캐시는 지우고, 이번 그래프 캐시 저장도 건너뛰게 표시(writeCachedGraph).
+    // → 옛 파일 캐시·옛 그래프 캐시를 지우고(다음 호출이 지문 불일치로 다시 빌드), 이번 그래프 캐시 저장도 건너뛰게 표시.
     try { unlinkSync(filesPath(root)); } catch { /* 없음 */ }
+    try { unlinkSync(cachePath(root)); } catch { /* 없음 */ }
     filesFailed.add(canonRoot(root));
   }
 }
