@@ -17,6 +17,9 @@ const EXT = new Set(("ts tsx js jsx mjs cjs json jsonc md mdx dart swift kt kts 
 
 // "console.log"·"process.env"처럼 흔한 객체의 멤버 접근 — 확장자처럼 보여도 파일 아님
 const OBJ = new Set(["console", "process", "window", "document", "this", "self", "super", "os", "sys", "fs", "path", "math", "json", "object", "array", "string", "navigator", "location", "event", "e", "req", "res", "app", "module", "exports", "require"]);
+// 파일처럼 생겼지만 아닌 것 — 라이브러리 이름(Node.js), 확장자가 애매할 때(log·env)의 흔한 객체 멤버(console.log·process.env). app.tsx·App.js 같은 진짜 파일은 그대로(리뷰).
+const LIBJS = new Set(["node", "vue", "next", "nuxt", "express", "chart", "three", "d3", "react", "angular", "ember", "backbone", "moment", "p5", "socket", "alpine", "nest", "deno", "bun"]);
+const notFile = (s: string, ext: string) => { const base = s.split(".")[0].toLowerCase(); return (ext === "js" && LIBJS.has(base)) || ((ext === "log" || ext === "env") && OBJ.has(base)); };
 // "and/or", "GET/POST", "on/off" — 슬래시가 있어도 경로가 아닌 짝말(한 번 나뉘고 양쪽이 대문자 약어거나 흔한 짝말)
 const PAIR = new Set(["and", "or", "on", "off", "yes", "no", "true", "false", "read", "write", "input", "output", "get", "set", "in", "out", "open", "close", "start", "stop", "show", "hide", "enable", "disable"]);
 const SLASH_WORDS = (s: string) => { const p = s.split("/"); return p.length === 2 && p.every((x) => /^[A-Z]+$/.test(x) || PAIR.has(x.toLowerCase())); };
@@ -31,7 +34,7 @@ export function codeKind(raw: string): CodeKind {
   if (!/\s/.test(s) && !s.includes("(") && !s.startsWith("<")) { // "<true/>" 같은 태그는 경로 아님
     if (/[\\/]/.test(s) && /[\w.-]/.test(s) && !SLASH_WORDS(s)) return "path";
     const m = s.match(/^[\w@.-]*[\w-]\.([a-z][a-z0-9]{0,9})(:\d+(-\d+)?)?$/i);
-    if (m && (EXT.has(m[1].toLowerCase()) || m[2]) && !/^[A-Z][a-z]+\.js$/.test(s) && !OBJ.has(s.split(".")[0].toLowerCase())) return "path"; // Node.js·Vue.js 같은 이름 제외 // 이름.확장자 — 아는 확장자이거나 줄 번호가 붙을 때만("catchup.enabled" 같은 키와 구분)
+    if (m && (EXT.has(m[1].toLowerCase()) || m[2]) && !notFile(s, m[1].toLowerCase())) return "path"; // Node.js·Vue.js 같은 이름 제외 // 이름.확장자 — 아는 확장자이거나 줄 번호가 붙을 때만("catchup.enabled" 같은 키와 구분)
   }
   // 함수·메서드 — 이름 뒤 괄호(인자 포함 가능)
   if (/^[\w$.@:<>]+\s*\(.*\)$/.test(s) || /^[\w$]+(\.[\w$]+)*\(_?:?.*\)$/.test(s)) return "fn";

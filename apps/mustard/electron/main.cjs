@@ -2011,6 +2011,7 @@ function installAppMenu() {
       { role: "undo" }, { role: "redo" }, { type: "separator" },
       { role: "cut" }, { role: "copy" }, { role: "paste" }, ...(mac ? [{ role: "pasteAndMatchStyle" }] : []), { role: "delete" },
       { label: "Select All", accelerator: "CmdOrCtrl+A", click: () => selectAllScoped() },
+      ...(mac ? [{ type: "separator" }, { label: "Speech", submenu: [{ role: "startSpeaking" }, { role: "stopSpeaking" }] }] : []), // editMenu 역할에 있던 말하기 유지
     ] },
     { label: "View", submenu: [{ role: "toggleDevTools" }] }, // ⌥⌘I — 단축키 충돌 없음, 디버깅용
     { label: "Window", submenu: [{ role: "minimize" }, ...(mac ? [{ role: "zoom" }, { type: "separator" }, { role: "front" }] : [])] },

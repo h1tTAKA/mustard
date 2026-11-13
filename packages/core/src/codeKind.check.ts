@@ -4,7 +4,7 @@ import { codeKind } from "./codeKind.ts";
 
 const cases: [string, string][] = [
   // 경로·파일
-  ["ios/Runner/Info.plist:9", "path"], ["ios/Runner/Info.plist:29-36", "path"], ["lib/", "path"], ["Info.plist", "path"], ["main.dart", "path"], ["src/a.ts", "path"],
+  ["ios/Runner/Info.plist:9", "path"], ["ios/Runner/Info.plist:29-36", "path"], ["lib/", "path"], ["Info.plist", "path"], ["main.dart", "path"], ["src/a.ts", "path"], ["app.tsx", "path"], ["App.js", "path"], ["path.ts", "path"], ["Button.js", "path"],
   // 함수
   ["application(_:didFinishLaunchingWithOptions:)", "fn"], ["testExample()", "fn"], ["GeneratedPluginRegistrant.register(with:)", "fn"], ["super.application(...)", "fn"], ["AppState.load()", "fn"],
   // 타입
@@ -16,7 +16,7 @@ const cases: [string, string][] = [
   // 키워드
   ["static", "kw"], ["const", "kw"], ["await", "kw"], ["@main", "kw"],
   // 모르는 것
-  ["fieldLine", "plain"], ["Node.js", "plain"], ["API", "plain"], ["JSON", "plain"], ["console.log", "plain"], ["catchup.enabled", "plain"], ["and/or", "plain"], ["GET/POST", "plain"], ["src/lib", "path"], ["https://x.com/a", "path"], ["static const fieldLine", "plain"], ["", "plain"],
+  ["fieldLine", "plain"], ["Node.js", "plain"], ["Vue.js", "plain"], ["process.env", "plain"], ["API", "plain"], ["JSON", "plain"], ["console.log", "plain"], ["catchup.enabled", "plain"], ["and/or", "plain"], ["GET/POST", "plain"], ["src/lib", "path"], ["https://x.com/a", "path"], ["static const fieldLine", "plain"], ["", "plain"],
 ];
 for (const [s, k] of cases) assert.equal(codeKind(s), k, s);
 console.log("codeKind ok");
