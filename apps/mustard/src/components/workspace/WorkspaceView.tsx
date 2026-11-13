@@ -617,24 +617,22 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     setActiveDoc((cur) => { if (cur !== id) return cur; const rest = docTabs.filter((x) => x !== id); return rest.length ? rest[rest.length - 1] : null; });
   }
 
-  // 코드/diff 탭(#714) — 문서 탭과 동형. 그 탭 컨텍스트로 챗 포커스도 맞춘다.
-  const focusForTab = (tb: CodeTab) => {
-    const name = tb.file.split("/").pop() ?? tb.file;
-    // #1078 diff 질문은 캐치업 diff 카드에서 — 탭 연결은 파일만(diff·커밋 전 변경 탭은 질문 대상을 안 바꿈, 유저 결정)
-    if (tb.kind === "file") focusChat(`file:${tb.file}`, "file", name);
+  // 코드/diff 탭(#714) — 문서 탭과 동형.
+  // #1322 유저 결정: 탭을 열거나 바꿔도 질문 세션을 자동으로 만들지 않음(둘러보기로 파일이 여러 개 열리면 질문 목록이 쌓였음).
+  // 파일 탭 오른쪽 위 "이 파일에 대해 질문" 버튼을 눌러야만 그 파일 질문 세션을 엶(diff 질문은 캐치업 diff 카드에서, #1078).
+  const askFile = (file: string) => {
+    askChat(`file:${file}`, "file", file.split("/").pop() ?? file);
+    setChatOpen(true); try { localStorage.setItem("nunopi:ws-chat-open", "1"); } catch { /* ignore */ }
   };
   function openCodeTab(tb: CodeTab) {
     const key = codeTabKey(tb);
     setCodeTabs((prev) => (prev.some((x) => codeTabKey(x) === key) ? prev : [...prev, tb])); // 있으면 그대로(활성만 바꿈), 없으면 추가
     setActiveCode(key);
-    focusForTab(tb);
     ensureExpanded("code");
   }
   useEffect(() => { openCodeTabRef.current = openCodeTab; }); // 링크 처리기가 최신 openCodeTab을 쓰게(#1193)
   function activateCode(key: string) {
     setActiveCode(key);
-    const tb = codeTabs.find((x) => codeTabKey(x) === key);
-    if (tb) focusForTab(tb);
   }
   function closeCodeTab(key: string) {
     setCodeTabs((prev) => prev.filter((x) => codeTabKey(x) !== key));
@@ -683,6 +681,13 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
             );
           })}
         </div>
+        {/* #1322 이 파일에 대해 질문 — 눌러야만 질문 세션이 생김(흐름 패널 질문 버튼과 같은 모양) */}
+        {activeTab?.kind === "file" && (
+          <button type="button" onClick={() => askFile(activeTab.file)} title={t("code.ask")} aria-label={t("code.ask")}
+            className="mx-1 shrink-0 self-center rounded p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-mustard-600 dark:hover:bg-zinc-700 dark:hover:text-mustard-400">
+            <IconMessageCircle size={13} stroke={2} aria-hidden />
+          </button>
+        )}
       </div>
       <div className="min-h-0 flex-1">
         {activeTab?.kind === "diff"

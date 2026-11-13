@@ -13,18 +13,21 @@ export type DockNode =
   | { t: "split"; dir: "row" | "col"; a: DockNode; b: DockNode; ratio: number }; // row=좌우, col=상하. ratio=a 자식 비율(0~1)
 
 // 현재 존재하는 패널만으로 기본 트리 — 지금 화면과 동일하게(터미널 좌 | 코드 우, 문서는 코드 아래).
+// 접힌 터미널(has.terminal=false)은 넣지 않음(#1322) — 전엔 항상 넣어서, 터미널을 접어 둔 채 코드 탭이 처음 열리면 터미널이 도로 펴졌음.
+// 아무 패널도 없으면 터미널 하나(빈 dock 방지).
 export function defaultTree(has: Record<PanelId, boolean>): DockNode {
-  const term: DockNode = { t: "leaf", panel: "terminal" };
+  const term: DockNode | null = has.terminal ? { t: "leaf", panel: "terminal" } : null;
   let right: DockNode | null = null;
   if (has.code && has.doc) right = { t: "split", dir: "col", a: { t: "leaf", panel: "code" }, b: { t: "leaf", panel: "doc" }, ratio: 0.62 };
   else if (has.code) right = { t: "leaf", panel: "code" };
   else if (has.doc) right = { t: "leaf", panel: "doc" };
-  let base: DockNode = right ? { t: "split", dir: "row", a: term, b: right, ratio: 0.58 } : term;
+  let base: DockNode | null = term && right ? { t: "split", dir: "row", a: term, b: right, ratio: 0.58 } : term ?? right;
+  const add = (b: DockNode | null, panel: PanelId, ratio: number): DockNode => (b ? { t: "split", dir: "row", a: b, b: { t: "leaf", panel }, ratio } : { t: "leaf", panel });
   // 플로우 패널(#743)은 열려 있을 때 오른쪽 컬럼으로. 기본 3패널엔 미포함.
-  if (has.flow) base = { t: "split", dir: "row", a: base, b: { t: "leaf", panel: "flow" }, ratio: 0.66 };
-  if (has.browser) base = { t: "split", dir: "row", a: base, b: { t: "leaf", panel: "browser" }, ratio: 0.5 }; // 인앱 브라우저(#1034) 오른쪽 절반
-  if (has.crew) base = { t: "split", dir: "row", a: base, b: { t: "leaf", panel: "crew" }, ratio: 0.5 }; // 에이전트 팀 보드(#1098) 오른쪽 절반
-  return base;
+  if (has.flow) base = add(base, "flow", 0.66);
+  if (has.browser) base = add(base, "browser", 0.5); // 인앱 브라우저(#1034) 오른쪽 절반
+  if (has.crew) base = add(base, "crew", 0.5); // 에이전트 팀 보드(#1098) 오른쪽 절반
+  return base ?? { t: "leaf", panel: "terminal" };
 }
 
 // 저장된 JSON이 유효한 DockNode인지 검증(영속 복원 방어, #716).
