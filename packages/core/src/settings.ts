@@ -237,8 +237,9 @@ export const CUKEYS = {
 // depths = 흐름 설명 박스에 보일 깊이(쉼표 목록), defaultDepth = 처음 분석(재생성) 때 설명을 쓸 깊이이자 처음 보이는 깊이.
 export type ArchDepth = "beginner" | "dev" | "expert";
 export const ARCH_DEPTHS: ArchDepth[] = ["beginner", "dev", "expert"];
-export const ARCHKEYS = { provider: "arch.provider", model: "arch.model", depths: "arch.depths", defaultDepth: "arch.defaultDepth" } as const;
-export const ARCH_DEFAULTS = { depths: "beginner,dev,expert", defaultDepth: "beginner" as ArchDepth } as const;
+// tourOpenCode = 둘러보기 단계마다 그 파일 코드 탭도 열기(기본 꺼짐 — 워크스페이스가 탭으로 붐비는 게 싫은 사람도 있어서). 파일 트리 펼침·강조는 항상.
+export const ARCHKEYS = { provider: "arch.provider", model: "arch.model", depths: "arch.depths", defaultDepth: "arch.defaultDepth", tourOpenCode: "arch.tourOpenCode" } as const;
+export const ARCH_DEFAULTS = { depths: "beginner,dev,expert", defaultDepth: "beginner" as ArchDepth, tourOpenCode: false } as const;
 export const isArchDepth = (v: unknown): v is ArchDepth => (ARCH_DEPTHS as unknown[]).includes(v);
 // 보일 깊이 — 비었거나 이상하면 전부(하나도 안 보이는 일 없게).
 export function archDepthsOf(s: string): ArchDepth[] { const on = s.split(","); const l = ARCH_DEPTHS.filter((d) => on.includes(d)); return l.length ? l : [...ARCH_DEPTHS]; }

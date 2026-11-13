@@ -57,7 +57,7 @@ function Node({ node, depth, open, toggle, selected, onSelect, status, folderSta
   const on = selected === node.path;
   const dot = status[node.path];
   return (
-    <button type="button" onClick={() => onSelect(node.path)} style={pad}
+    <button type="button" onClick={() => onSelect(node.path)} style={pad} data-path={node.path}
       className={`flex w-full items-center gap-1 py-0.5 pr-1.5 text-left text-[12px] transition ${on ? "bg-mustard-500/15 text-mustard-700 dark:bg-mustard-400/15 dark:text-mustard-400" : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"}`}>
       <span className="ml-[13px] flex shrink-0">{fileGlyph(node.name)}</span>
       <span className="truncate">{node.name}</span>
@@ -66,7 +66,8 @@ function Node({ node, depth, open, toggle, selected, onSelect, status, folderSta
   );
 }
 
-export default function FileTree({ files, selected, onSelect, status = {}, storageKey }: { files: string[]; selected: string | null; onSelect: (path: string) => void; status?: Record<string, "added" | "modified">; storageKey?: string }) {
+// reveal(#1322) = 바깥(둘러보기)에서 가리킨 파일 — 조상 폴더를 펼치고 그 줄로 스크롤. n은 같은 파일을 다시 가리킬 때도 동작하게.
+export default function FileTree({ files, selected, onSelect, status = {}, storageKey, reveal }: { files: string[]; selected: string | null; onSelect: (path: string) => void; status?: Record<string, "added" | "modified">; storageKey?: string; reveal?: { file: string; n: number } | null }) {
   const tree = useMemo(() => buildTree(files), [files]);
   // 변경 파일의 조상 폴더별 집계(modified 우선) + 변경 포함 폴더 경로 집합(자동 펼침용).
   const { folderStatus, changedAncestors } = useMemo(() => {
@@ -101,8 +102,17 @@ export default function FileTree({ files, selected, onSelect, status = {}, stora
     restoredRef.current = true;
   }, [storageKey]);
   useEffect(() => { if (!restoredRef.current || !storageKey) return; try { localStorage.setItem(storageKey, JSON.stringify([...open])); } catch { /* ignore */ } }, [open, storageKey]);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!reveal) return;
+    const parts = reveal.file.split("/");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 가리킨 파일의 조상 폴더 펼침(union)
+    setOpen((prev) => { const n = new Set(prev); for (let i = 1; i < parts.length; i++) n.add(parts.slice(0, i).join("/")); return n; });
+    const id = requestAnimationFrame(() => boxRef.current?.querySelector(`[data-path="${CSS.escape(reveal.file)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+    return () => cancelAnimationFrame(id);
+  }, [reveal]);
   return (
-    <div className="nunopi-scroll h-full overflow-auto py-1">
+    <div ref={boxRef} className="nunopi-scroll h-full overflow-auto py-1">
       {tree.map((n) => <Node key={n.path} node={n} depth={0} open={open} toggle={toggle} selected={selected} onSelect={onSelect} status={status} folderStatus={folderStatus} />)}
     </div>
   );

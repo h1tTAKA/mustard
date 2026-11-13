@@ -235,6 +235,7 @@ export default function SettingsDrawer({
   const cuOn = useSetting<boolean>(CUKEYS.enabled, CATCHUP_DEFAULTS.enabled);
   const archDepthsRaw = useSetting<string>(ARCHKEYS.depths, ARCH_DEFAULTS.depths);          // #1322
   const archDefRaw = useSetting<string>(ARCHKEYS.defaultDepth, ARCH_DEFAULTS.defaultDepth);
+  const archTourCode = useSetting<boolean>(ARCHKEYS.tourOpenCode, ARCH_DEFAULTS.tourOpenCode);
   const cu = {
     explainShow: useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow), explainAnalyze: useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze),
     commandsShow: useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow), commandsAnalyze: useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze),
@@ -283,7 +284,7 @@ export default function SettingsDrawer({
   // 캐치업 카테고리 모델 목록(#1062) — 캐치업 섹션 열 때 쓰이는 프로바이더만 같은 캐시로 조회.
   const cuProviders = [...new Set(Object.values(cuProv).map(([, v]) => (v || resolveModeProvider(modeProviders, "default")) as AgentProviderKind))].sort().join(",");
   useEffect(() => {
-    if (activeSection !== "set-catchup" && activeSection !== "set-integrations") return;
+    if (activeSection !== "set-catchup" && activeSection !== "set-integrations" && activeSection !== "set-arch") return; // #1322 아키텍처 칸도 모델 목록 필요
     for (const p of cuProviders.split(",") as AgentProviderKind[]) {
       if (modelLists[p]) continue;
       setModelLists((prev) => ({ ...prev, [p]: "loading" }));
@@ -1219,6 +1220,17 @@ export default function SettingsDrawer({
                 </select>
                 <IconChevronDown size={14} stroke={2} aria-hidden className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
               </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+              <div className="min-w-0">
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.archTourOpenCode")}</span>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.archTourOpenCodeDesc")}</p>
+              </div>
+              <button type="button" role="switch" aria-checked={archTourCode} aria-label={t("settings.archTourOpenCode")}
+                onClick={() => setSetting(ARCHKEYS.tourOpenCode, !archTourCode)}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition ${archTourCode ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${archTourCode ? "left-[22px]" : "left-0.5"}`} />
+              </button>
             </div>
           </section>
             );
