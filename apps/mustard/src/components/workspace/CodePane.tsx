@@ -54,7 +54,7 @@ export default function CodePane({ root, file }: { root: string; file: string })
   useEffect(() => {
     if (status !== "ok" || bin) return;
     let cancelled = false;
-    codeToHtml(raw, { lang: langOf(file), theme: isDark ? "github-dark" : "github-light", transformers: ws ? [wsTransformer] : [] })
+    codeToHtml(raw, { lang: langOf(file, raw), theme: isDark ? "github-dark" : "github-light", transformers: ws ? [wsTransformer] : [] })
       .then((out) => { if (!cancelled) setHtml(out); })
       .catch(() => { if (!cancelled) setHtml(""); });
     return () => { cancelled = true; };

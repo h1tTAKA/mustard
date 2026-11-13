@@ -126,8 +126,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const [tourIdx, setTourIdx] = useState<number | null>(null); // 지금 단계(null = 둘러보기 안 하는 중)
   const [tourBusy, setTourBusy] = useState(false);           // 단계 설명 만드는 중
   const scrollRef = useRef<HTMLDivElement | null>(null);    // 흐름 스크롤 영역(둘러보기 카드 위치 맞춤)
-  const stepBoxRef = useRef<HTMLDivElement | null>(null);
-  const scrollRaf = useRef(0);   // 둘러보기 단계 박스(높이만큼 카드를 아래로)
+  const stepBoxRef = useRef<HTMLDivElement | null>(null);   // 둘러보기 단계 박스(높이만큼 카드를 아래로)
+  const scrollRaf = useRef(0);                               // 대기 중인 카드 스크롤 프레임(다음 단계로 넘기면 취소)
   const busyN = useRef(0);                                   // 진행 중인 단계 만들기 수
   const [treeMiss, setTreeMiss] = useState(false);           // 지금 단계 파일이 왼쪽 트리에 없음(.gitignore 등)
   const [hovered, setHovered] = useState<string | null>(null); // 호버 카드 키(연결 강조)
@@ -182,7 +182,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   }, [edges]);
 
   // #1322 흐름 노드 파일들의 실제 코드 발췌(근거용) + 흐름 줄 목록.
-  // 흐름 설명용 — 파일을 앞에서 통째로(400줄까지, 전체 12만 자) + 이웃 뼈대. 줄 수가 모자라 AI가 짐작으로 채우지 않게(리뷰 #1322). 한계: 10만 자 넘는 흐름은 뒤 파일이 빠짐(앞=진입부터).
+  // 흐름 설명용 — 파일을 앞에서 통째로(400줄까지, 전체 10만 자) + 이웃 뼈대. 줄 수가 모자라 AI가 짐작으로 채우지 않게(리뷰 #1322). 한계: 10만 자 넘는 흐름은 뒤 파일이 빠짐(앞=진입부터).
   const codeOf = useCallback((secs: FlowSection[]) => (root ? archSnippets(root, secs.flatMap((s) => s.nodes.filter((n) => n.file).map((n) => ({ file: n.file!, line: n.line }))), { whole: true, span: 400, maxChars: 100000, neighbors: true }) : Promise.resolve("")), [root]);
   const flowLines = (secs: FlowSection[]) => secs.flatMap((s) => s.nodes.map((n) => `${s.layer} | ${n.name} | ${n.file ?? ""}${n.line ? `:${n.line}` : ""} | ${n.role ?? ""}${n.next?.length ? ` | → ${n.next.join(", ")}` : ""}`));
 

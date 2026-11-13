@@ -16,4 +16,18 @@ assert.equal(langOf("CMakeLists.txt"), "cmake");
 assert.equal(langOf(".env.local"), "dotenv");
 // 모르는 것·기본 속성 이름·확장자 없음은 text
 for (const f of ["a.zzz", "a.constructor", "README", ".gitignore", "a.txt"]) assert.equal(langOf(f), "text", f);
+// #1322 내용은 XML인데 낯선 확장자·확장자 없는 빌드 파일
+for (const f of ["ios/Runner/Base.lproj/LaunchScreen.storyboard", "a.xib", "x/Runner.xcscheme", "a.csproj", "a.entitlements"]) assert.equal(langOf(f), "xml", f);
+assert.equal(langOf("ios/Podfile"), "ruby");
+assert.equal(langOf("a.podspec"), "ruby");
+assert.equal(langOf("ios/Podfile.lock"), "yaml");
+assert.equal(langOf("Cargo.lock"), "toml");
+assert.equal(langOf("composer.lock"), "json");
+// 확장자로 모르면 내용으로
+assert.equal(langOf("a.zzz", '<?xml version="1.0"?>\n<a/>'), "xml");
+assert.equal(langOf(".flutter-plugins-dependencies", '{"info":"x","plugins":{}}'), "json");
+assert.equal(langOf("tool", "#!/usr/bin/env python3\nprint(1)"), "python");
+assert.equal(langOf("run", "#!/bin/bash\necho"), "bash");
+assert.equal(langOf("a.zzz", "hello"), "text");
+assert.equal(langOf("a.ts", "<?xml"), "ts"); // 확장자로 알면 내용 무시
 console.log("codeLang ok");

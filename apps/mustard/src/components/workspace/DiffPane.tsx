@@ -211,7 +211,7 @@ export default function DiffPane({ root, hash, file, worktree, pr, providerId, p
         // 코드줄만 모아 한 번에 하이라이트 → 줄별 토큰.
         const codeText = parsed.filter((l) => l.kind === "add" || l.kind === "del" || l.kind === "ctx").map((l) => l.text).join("\n");
         let toks: ThemedToken[][] = [];
-        try { toks = (await codeToTokens(codeText, { lang: langOf(file) as BundledLanguage, theme: isDark ? "github-dark" : "github-light" })).tokens; } catch { toks = []; }
+        try { toks = (await codeToTokens(codeText, { lang: langOf(file, codeText) as BundledLanguage, theme: isDark ? "github-dark" : "github-light" })).tokens; } catch { toks = []; }
         if (cancelled) return;
         setLines(parsed); setTokens(toks); setStatus("ok");
       } catch { if (!cancelled) setStatus("error"); }
