@@ -6,7 +6,7 @@ import { useT, useLocale } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { stripCardBlock } from "@mustard/core";
 import { fetchGraphDigest } from "@/lib/repo/fetchDigest";
-import { archGet, archPut } from "@/lib/repo/archClient";
+import { archGet, archPut, archBegin } from "@/lib/repo/archClient";
 
 // 레포 기능 카테고리(#743) — 에이전트가 파일 목록 보고 나눔.
 export type RepoCategory = { id: string; title: string; blurb?: string };
@@ -88,6 +88,9 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
   useEffect(() => {
     if (!root) return;
     let alive = true;
+    // 레포가 바뀌면 이전 레포 목록을 먼저 비움 — 불러오는 사이 갱신이 다른 레포 목록을 섞어 저장하지 않게(리뷰).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 레포 전환 시 초기화
+    setCats(null);
     void archGet<RepoCategory[]>(root, "cats").then(({ data }) => { if (alive) setCats(data?.length ? data : null); });
     return () => { alive = false; };
   }, [root]);
@@ -101,8 +104,12 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
     const fail = (d: string) => { setErr(t("repo.analyzeError")); setDetail(d); };
     try {
       // #1320 차분 갱신 — 저장 뒤 구조가 바뀐 파일이 없으면 AI 없이 끝(스냅샷만 새로), 있으면 그 파일들만 보여 주고 새 기능만 받음.
-      const d = merge && cats ? (await archGet<RepoCategory[]>(root, "cats", undefined, true)).diff : null;
-      if (d && !d.structural.length) { await archPut(root, "cats", cats); return; }
+      const g = merge && cats ? await archGet<RepoCategory[]>(root, "cats", undefined, true) : null;
+      if (g?.error) { fail("load failed"); return; }
+      const d = g?.diff ?? null;
+      const token = g?.token ?? await archBegin(root); // 분석 시작 시점 스냅샷(AI가 도는 사이 고친 파일은 다음 갱신 대상으로)
+      const save = async (items: RepoCategory[]) => { if (!await archPut(root, "cats", items, undefined, { token })) fail("save failed"); };
+      if (d && !d.structural.length) { await save(cats!); return; }
       if (d) {
         const name = root.split("/").filter(Boolean).pop() ?? root;
         const ctx = `레포: ${name}\n\n[지금 기능 목록]\n${cats!.map((c) => `\`${c.id}\` · ${c.title}${c.blurb ? ` · ${c.blurb}` : ""}`).join("\n")}\n\n[분석 뒤 구조가 바뀌었거나 새로 생긴 파일]\n${d.structural.slice(0, 200).join("\n")}`;
@@ -120,7 +127,7 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
         if (!found.length && !/^[\s"'`*.。-]*(없음|none|なし)[\s"'`*.。-]*$/i.test(text)) { fail(`no list — ${text.slice(0, 160)}`); return; }
         const next = mergeCats(cats!, found);
         setCats(next);
-        await archPut(root, "cats", next);
+        await save(next);
         return;
       }
       // 1) 레포 파일 목록(컨텍스트) — 노이즈 제외 + 상한(토큰 방어).
@@ -148,7 +155,7 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
       if (!parsed.length) { fail(`no JSON array — ${answer.slice(0, 160)}`); return; }
       const next = merge && cats ? mergeCats(cats, parsed) : parsed;
       setCats(next);
-      await archPut(root, "cats", next); // 영속(#743 → #1320 서버)
+      await save(next); // 영속(#743 → #1320 서버)
     } catch (e) {
       fail(e instanceof Error ? e.message : String(e));
     } finally {

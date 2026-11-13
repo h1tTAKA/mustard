@@ -36,7 +36,8 @@ export function snapOf(cache: FileCache): Snap {
 
 // 두 스냅샷 비교. changed=내용이 다르거나 새 파일, structural=구조 서명이 다르거나 새 파일, removed=없어진 파일.
 export interface SnapDiff { changed: string[]; structural: string[]; removed: string[] }
-// 새 파일이라도 import·심볼이 하나도 없으면(문서 등) 구조 변화로 안 침 — "구조 0이면 AI 안 부름"을 지키려고(리뷰).
+// 새 파일이라도 import·심볼이 하나도 없으면(빈 파일·상수만 등) 구조 변화로 안 침 — "구조 0이면 AI 안 부름"을 지키려고(리뷰).
+// 스캔은 추출기가 있는 언어 + 엔진 에셋(서명=내용 해시)만 담아서, 추출기 없는 언어 파일이 여기서 빠지는 일은 없음.
 const EMPTY_SIG = fileSig(undefined, undefined);
 export function diffSnap(old: Snap, cur: Snap): SnapDiff {
   const changed: string[] = [], structural: string[] = [], removed: string[] = [];

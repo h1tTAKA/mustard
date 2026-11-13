@@ -7,7 +7,7 @@ import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import { stripCardBlock } from "@mustard/core";
 import { fetchGraphDigest } from "@/lib/repo/fetchDigest";
-import { archGet, archPut, archSkeleton } from "@/lib/repo/archClient";
+import { archGet, archPut, archSkeleton, archBegin } from "@/lib/repo/archClient";
 import { applyFlowDiff, mergeFlow } from "@/lib/repo/flowMerge";
 import type { SnapDiff } from "@/lib/repo/incremental";
 
@@ -95,6 +95,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const [diff, setDiff] = useState<SnapDiff | null>(null); // #1320 저장 뒤 바뀐 파일(서버 저장분 기준)
   const [note, setNote] = useState<string | null>(null);    // #1320 방금 갱신이 한 일(AI 안 부름 / N개 파일 살펴봄)
   const overviewRef = useRef<string | null>(null);           // 최신 overview 미러(차분 갱신은 설명 유지)
+  const secOfRef = useRef<string | null>(null);              // 지금 보이는 흐름이 어느 기능 것인지(전환 중 갱신이 엉뚱한 기능에 저장되지 않게, 리뷰)
   const [connKeys, setConnKeys] = useState<Set<string>>(new Set()); // 실측 연결 "fileA|fileB"(방향 보존, 조회는 양방향). #842 서브4
 
   // 이름-레벨 엣지 = LLM next + 실측 뒷받침(grounded) + LLM이 놓친 실측 연결 보강. 곡선·레인·인접의 단일 소스.
@@ -168,31 +169,37 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     if (mode !== "update") { nodeEls.current.clear(); setLines([]); setDiff(null); setNote(null); }
     // 자동(cache)일 때만 저장분 먼저 — 에이전트 재호출 없이 즉시 복원. 저장소=서버 파일(#1320, 옛 localStorage는 1회 이전).
     if (mode === "cache") {
-      // 서버 왕복 동안 이전 기능 흐름이 새 제목 아래 남아 갱신이 엉뚱한 흐름을 저장하지 않게 먼저 비움(리뷰).
-      setSections(null); setOverview(null); setLoading(true); setErr(null);
-      const { data } = await archGet<{ sections: FlowSection[]; overview: string | null }>(root, "flow", feature);
+      // 서버 왕복 동안은 이전 흐름을 그대로 두되(깜빡임 없음) 로딩 중이라 갱신·재생성 버튼은 잠김, 갱신은 secOfRef로 한 번 더 막음.
+      setLoading(true); setErr(null);
+      const { data, error } = await archGet<{ sections: FlowSection[]; overview: string | null }>(root, "flow", feature);
       if (my !== reqRef.current) return;
+      // 서버 오류면 새로 분석해 저장분을 덮어쓰지 않음(리뷰) — 오류만 보여 줌.
+      if (error) { setSections(null); setOverview(null); secOfRef.current = null; setErr(t("flow.loadFailed")); setLoading(false); return; }
       if (data?.sections?.length) {
-        setSections(data.sections); setOverview(data.overview ?? null); setLoading(false);
+        setSections(data.sections); setOverview(data.overview ?? null); secOfRef.current = feature; setLoading(false);
         // 낡음 표시용 차분은 따로(그래프 맞추느라 느릴 수 있음) — 흐름은 먼저 보여 줌(리뷰).
         void archGet(root, "flow", feature, true).then(({ diff: d }) => { if (my === reqRef.current) setDiff(d); });
         return;
       }
     }
+    if (mode === "update" && (secOfRef.current !== feature || !sectionsRef.current)) return; // 다른 기능 흐름이 보이는 중엔 갱신 안 함(리뷰)
     setLoading(true); setRunning(mode === "update" ? "update" : "regen"); setErr(null); setNote(null);
-    if (mode !== "update") { setSections(null); setOverview(null); } // 갱신은 기존 유지
+    if (mode !== "update") { setSections(null); setOverview(null); secOfRef.current = null; } // 갱신은 기존 유지
     try {
       // #1320 차분 갱신 — 저장 뒤 바뀐 파일을 서버에서 받아: 구조 변화 0이면 AI 없이 지운 파일 노드만 정리,
       // 너무 많으면 처음부터, 그 외엔 바뀐 파일만 AI에 보여 줌.
-      let inc: SnapDiff | null = null, d: SnapDiff | null = null;
+      let inc: SnapDiff | null = null, d: SnapDiff | null = null, token: string | undefined;
+      const saveFailed = () => { if (my === reqRef.current) setErr(t("flow.saveFailed")); };
       if (mode === "update") {
-        d = (await archGet(root, "flow", feature, true)).diff;
+        const g = await archGet(root, "flow", feature, true);
+        if (g.error) { if (my === reqRef.current) setErr(t("flow.loadFailed")); return; }
+        d = g.diff; token = g.token;
         if (my !== reqRef.current) return;
         // 한계: 이 길은 노드 줄 번호를 안 고침(본문만 바뀌어 줄이 밀리면 코드 열기가 조금 어긋남). 연결선은 실측 연결 조회로 따로 갱신됨.
         if (d && !d.structural.length) {
           const next = applyFlowDiff(sectionsRef.current ?? [], [], d.removed, []);
           setSections(next);
-          await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature);
+          if (!await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature, { token })) return saveFailed();
           if (my === reqRef.current) { setDiff(null); setNote(t("flow.noStructural", { n: d.changed.length + d.removed.length })); }
           return;
         }
@@ -212,10 +219,11 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
         if (!parsed.length && !/^[\s"'`*.。-]*(없음|none|なし)[\s"'`*.。-]*$/i.test(text)) { setErr(`no flow — ${text.slice(0, 140)}`); return; }
         const next = applyFlowDiff(sectionsRef.current ?? [], parsed, inc.removed, inc.structural);
         setSections(next);
-        await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature);
+        if (!await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature, { token })) return saveFailed();
         if (my === reqRef.current) { setDiff(null); setNote(t("flow.diffUpdated", { n: inc.structural.length })); }
         return;
       }
+      token ??= await archBegin(root); // 분석 시작 시점 스냅샷(AI가 도는 사이 고친 파일은 다음 갱신 대상으로 남게)
       const tr = await fetch("/api/repo/tree", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root }) });
       const td = await tr.json().catch(() => null);
       const files: string[] = td && Array.isArray(td.files) ? td.files : [];
@@ -235,8 +243,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       // 차분 정보 없는 갱신(옛 저장분)=기존 흐름에 새 노드만 병합, 그 외(재생성·구조 변화가 많은 갱신)=교체.
       const base = sectionsRef.current;
       const nextSecs = mode === "update" && base && !d ? mergeFlow(base, parsed) : parsed;
-      setSections(nextSecs); setOverview(ov);
-      await archPut(root, "flow", { sections: nextSecs, overview: ov }, feature); // 영속(#743 → #1320 서버)
+      setSections(nextSecs); setOverview(ov); secOfRef.current = feature;
+      if (!await archPut(root, "flow", { sections: nextSecs, overview: ov }, feature, { token })) return saveFailed(); // 영속(#743 → #1320 서버)
       if (my === reqRef.current) setDiff(null); // 방금 저장 = 최신
     } catch (e) {
       if (my === reqRef.current) setErr(e instanceof Error ? e.message : String(e));
@@ -244,6 +252,10 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       if (my === reqRef.current) { setLoading(false); setRunning(null); }
     }
   }, [feature, root, providerId, providerSettings, ask, t]);
+
+  // 기능이 바뀌면 열려 있던 갱신·재생성 확인창을 닫음(다른 기능에 적용되지 않게, 리뷰).
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- 기능 전환 시 확인창 초기화
+  useEffect(() => { setConfirm(null); }, [feature]);
 
   // 최신 sections·overview 미러(갱신 병합 기준).
   useEffect(() => { sectionsRef.current = sections; }, [sections]);

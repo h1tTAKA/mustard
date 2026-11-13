@@ -3,11 +3,11 @@
 // 위치: ~/.nunopi/arch/<sha(root)>.json. 원자적 쓰기(tmp → rename).
 // 한계: 흐름마다 스냅샷(파일 수 × 약 40바이트)을 따로 들고 있음 — 3000파일 레포 흐름 20개면 수 MB. 커지면 스냅샷 공유로.
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, mkdirSync, renameSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { loadOrBuildGraph } from "./loadGraph";
-import { readFileCache } from "./graphStore";
+import { readFileCache, canonRoot } from "./graphStore";
 import { snapOf, diffSnap, type Snap, type SnapDiff } from "./incremental";
 
 export type ArchFlowNode = { name: string; file?: string; line?: number; role?: string; next?: string[] };
@@ -19,9 +19,8 @@ export interface ArchCats { items: ArchCategory[]; snap?: Snap; at: number }
 export interface ArchFile { v: 1; cats?: ArchCats; flows: Record<string, ArchFlow> }
 
 const DIR = join(homedir(), ".nunopi", "arch");
-// 레포 경로 정규화(심볼릭 링크·끝 슬래시) — 화면(작업공간 경로)과 MCP(cwd에서 찾은 루트)가 같은 파일을 보게(리뷰).
-const canon = (root: string) => { try { return realpathSync(root); } catch { return root.replace(/\/+$/, ""); } };
-const pathOf = (root: string) => join(DIR, `${createHash("sha256").update(canon(root)).digest("hex").slice(0, 32)}.json`);
+// 레포 경로 정규화 — 화면(작업공간 경로)과 MCP(cwd에서 찾은 루트)가 같은 파일을 보게(리뷰).
+const pathOf = (root: string) => join(DIR, `${createHash("sha256").update(canonRoot(root)).digest("hex").slice(0, 32)}.json`);
 
 // flows는 사용자 문자열(기능 이름)이 키 — "constructor"·"__proto__" 같은 이름이 프로토타입과 섞이지 않게(리뷰).
 export const getFlow = (f: ArchFile, name: string): ArchFlow | undefined => (Object.hasOwn(f.flows, name) ? f.flows[name] : undefined);
@@ -49,6 +48,20 @@ export function writeArch(root: string, f: ArchFile): void {
 export async function currentSnap(root: string): Promise<Snap> {
   await loadOrBuildGraph(root);
   return snapOf(readFileCache(root));
+}
+
+// 분석 시작 시점 스냅샷 보관(#1320 리뷰) — AI가 몇 분 도는 사이 고친 파일이 "분석함"으로 찍히지 않게, 저장 때 시작 시점 것을 씀.
+// 서버 메모리라 재시작하면 사라짐 → 그땐 저장 시점 스냅샷으로(예전과 같음). 최근 20개만.
+const begun = new Map<string, Snap>();
+export function beginSnap(snap: Snap): string {
+  const token = createHash("sha256").update(`${Date.now()}:${Math.random()}`).digest("hex").slice(0, 16);
+  begun.set(token, snap);
+  while (begun.size > 20) begun.delete(begun.keys().next().value as string);
+  return token;
+}
+export function takeSnap(token: unknown): Snap | undefined {
+  if (typeof token !== "string") return undefined;
+  const s = begun.get(token); begun.delete(token); return s;
 }
 
 // 저장분이 있으면 지금과 비교한 차분, 없으면 null.

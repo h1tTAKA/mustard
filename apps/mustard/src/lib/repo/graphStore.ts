@@ -1,7 +1,7 @@
 // 코드 그래프 저장·freshness(#842 서브2) — 서버(Node) 전용. graph.json을 레포별 중앙 캐시에 저장.
 // fingerprint(스캔 파일 mtime 해시)로 변경 감지 → 안 바뀌면 캐시 재사용(빌드 스킵). 레포에 파일 안 남김(중앙 캐시).
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, mkdirSync, statSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, statSync, renameSync, realpathSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { scanRepo } from "./scan";
@@ -11,7 +11,9 @@ import { PARSE_V, type FileCache } from "./incremental";
 
 const CACHE_DIR = join(homedir(), ".nunopi", "codegraph");
 const sha = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 32);
-function cachePath(root: string): string { return join(CACHE_DIR, `${sha(root)}.json`); }
+// 레포 경로 정규화(심볼릭 링크·끝 슬래시) — 같은 레포를 다른 표기로 불러도 같은 캐시(#1320 리뷰). archStore도 씀.
+export const canonRoot = (root: string) => { try { return realpathSync(root); } catch { return root.replace(/\/+$/, ""); } };
+function cachePath(root: string): string { return join(CACHE_DIR, `${sha(canonRoot(root))}.json`); }
 
 // 지문 — 파일들의 "rel:mtime" 정렬 해시. 파싱 없이 빠름(stat). 어떤 파일이라도 바뀌면 달라짐.
 // 이미 스캔한 files를 재사용(라우트서 스캔 1회 → build와 공유, #845 🟡). 독립 사용은 fingerprintRepo.
@@ -52,6 +54,7 @@ export function readCachedGraph(root: string): Cached | null {
 
 /** 그래프+지문 저장(중앙 캐시). builtAt=저장 시각(호출부가 stamp — Date.now 금지 환경 대비 인자). */
 export function writeCachedGraph(root: string, fingerprint: string, graph: RepoGraph, builtAt: number): void {
+  if (filesFailed.delete(canonRoot(root))) return; // 파일 캐시 저장 실패한 빌드 — 그래프 캐시도 안 남김(다음에 다시 빌드)
   try {
     mkdirSync(CACHE_DIR, { recursive: true });
     // 원자적 쓰기(🟡) — temp에 쓰고 rename. 동시 read가 잘린 JSON을 읽는 일 방지.
@@ -64,12 +67,13 @@ export function writeCachedGraph(root: string, fingerprint: string, graph: RepoG
 
 // #1320 파일별 파싱 캐시(incremental.ts) — 그래프 캐시 옆 <sha>.files.json. 형식 다르거나 없으면 빈 캐시(첫 빌드처럼).
 const FILES_V = 1;
-function filesPath(root: string): string { return join(CACHE_DIR, `${sha(root)}.files.json`); }
+const filesFailed = new Set<string>(); // 파일 캐시 저장에 실패한 레포(정규화 경로)
+function filesPath(root: string): string { return join(CACHE_DIR, `${sha(canonRoot(root))}.files.json`); }
 export function readFileCache(root: string): FileCache {
   try {
     const c = JSON.parse(readFileSync(filesPath(root), "utf8")) as { v?: number; files?: FileCache };
-    return c?.v === FILES_V && c.files && typeof c.files === "object" ? c.files : {};
-  } catch { return {}; }
+    return c?.v === FILES_V && c.files && typeof c.files === "object" ? Object.assign(Object.create(null) as FileCache, c.files) : Object.create(null);
+  } catch { return Object.create(null); }
 }
 export function writeFileCache(root: string, files: FileCache): void {
   try {
@@ -78,5 +82,10 @@ export function writeFileCache(root: string, files: FileCache): void {
     const tmp = `${dest}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify({ v: FILES_V, files }));
     renameSync(tmp, dest);
-  } catch { /* 캐시 실패는 치명적 아님 — 다음 빌드가 전부 파싱 */ }
+  } catch {
+    // 캐시 실패는 치명적 아님 — 다만 그래프 캐시만 저장되면 다음에 빌드를 건너뛰고 옛 파일 캐시(스냅샷)를 믿게 됨(리뷰)
+    // → 옛 파일 캐시는 지우고, 이번 그래프 캐시 저장도 건너뛰게 표시(writeCachedGraph).
+    try { unlinkSync(filesPath(root)); } catch { /* 없음 */ }
+    filesFailed.add(canonRoot(root));
+  }
 }

@@ -55,7 +55,7 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
 
   // #1320 파일별 파싱 캐시 — 내용 해시가 같으면 지난 import 지정자·심볼 추출을 그대로(tree-sitter 생략).
   const prev = readFileCache(root);
-  const cache: FileCache = {};
+  const cache: FileCache = Object.create(null); // 파일 이름이 "constructor"여도 프로토타입과 안 섞이게(리뷰)
   let reparsed = 0;
   for (const file of scan.files) {
     const role = assetRole(file);
