@@ -104,6 +104,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const [overviews, setOverviews] = useState<Overviews>({}); // #1322 개발자·숙련자용 설명(없으면 초보용 기본을 보여 줌)
   const [writing, setWriting] = useState(false);             // 깊이별 설명 쓰는 중
   const [tour, setTour] = useState<Tour | null>(null);       // #1322 저장된 둘러보기
+  const unsavedRef = useRef(false);                          // 화면 흐름이 저장 실패 상태 — 서버 흐름과 다를 수 있어 덧붙임(설명·단계) 안 함(리뷰)
   const atRef = useRef<number | null>(null);                 // 지금 보이는 흐름의 저장 판(at) — 덧붙임이 같은 흐름에 붙는지 서버가 확인
   const [tourIdx, setTourIdx] = useState<number | null>(null); // 지금 단계(null = 둘러보기 안 하는 중)
   const [tourBusy, setTourBusy] = useState(false);           // 단계 설명 만드는 중
@@ -191,7 +192,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       // 서버 오류면 새로 분석해 저장분을 덮어쓰지 않음(리뷰) — 오류만 보여 줌.
       if (error) { setSections(null); setOverview(null); secOfRef.current = null; setErr(t("flow.loadFailed")); setLoadFailed(true); loadFailedRef.current = true; setConfirm(null); setLoading(false); return; } // 열려 있던 재생성 확인창도 닫음(잠금 우회 방지, 리뷰)
       if (data?.sections?.length) {
-        setSections(data.sections); setOverview(data.overview ?? null); setOverviews(data.overviews ?? {}); setTour(Array.isArray(data.tour?.steps) ? data.tour! : null); atRef.current = data.at ?? null; secOfRef.current = feature; setLoading(false);
+        setSections(data.sections); setOverview(data.overview ?? null); setOverviews(data.overviews ?? {}); setTour(Array.isArray(data.tour?.steps) ? data.tour! : null); atRef.current = data.at ?? null; unsavedRef.current = false; secOfRef.current = feature; setLoading(false);
         // 낡음 표시용 차분은 따로(그래프 맞추느라 느릴 수 있음) — 흐름은 먼저 보여 줌(리뷰).
         void archGet(root, "flow", feature, true).then(({ diff: d }) => { if (my === reqRef.current) setDiff(d); });
         return;
@@ -206,7 +207,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       // 너무 많으면 처음부터, 그 외엔 바뀐 파일만 AI에 보여 줌.
       let inc: SnapDiff | null = null, d: SnapDiff | null = null, token: string | undefined;
       // 저장 실패(서버는 썼는데 응답만 못 받았을 수도) → 판을 모름으로. 다음 덧붙임이 판 불일치로 계속 버려지지 않게(리뷰).
-      const saveFailed = () => { atRef.current = null; if (my === reqRef.current) setErr(t("flow.saveFailed")); };
+      const saveFailed = () => { atRef.current = null; unsavedRef.current = true; if (my === reqRef.current) setErr(t("flow.saveFailed")); };
       if (mode === "update") {
         const g = await archGet(root, "flow", feature, "token");
         if (g.error) { if (my === reqRef.current) setErr(t("flow.loadFailed")); return; }
@@ -219,7 +220,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
           // 구조 변화 없음 = 노드 의미 그대로 → 깊이별 설명도 유지(#1322).
           const at = await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature, { token, keepExtras: true });
           if (!at) return saveFailed();
-          atRef.current = at;
+          atRef.current = at; unsavedRef.current = false;
           if (my === reqRef.current) { setDiff(null); setNote(t("flow.noStructural", { n: d.changed.length + d.removed.length })); }
           return;
         }
@@ -241,7 +242,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
         setSections(next); setOverviews({}); setTour(null); // 노드가 바뀜 → 깊이별 설명은 버림(저장도 안 넘김)
         const at = await archPut(root, "flow", { sections: next, overview: overviewRef.current }, feature, { token });
         if (!at) return saveFailed();
-        atRef.current = at;
+        atRef.current = at; unsavedRef.current = false;
         if (my === reqRef.current) { setDiff(null); setNote(t("flow.diffUpdated", { n: inc.structural.length })); }
         return;
       }
@@ -268,7 +269,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       setSections(nextSecs); setOverview(ov); setOverviews({}); setTour(null); secOfRef.current = feature;
       const at = await archPut(root, "flow", { sections: nextSecs, overview: ov }, feature, { token }); // 영속(#743 → #1320 서버)
       if (!at) return saveFailed();
-      atRef.current = at;
+      atRef.current = at; unsavedRef.current = false;
       if (my === reqRef.current) setDiff(null); // 방금 저장 = 최신
     } catch (e) {
       if (my === reqRef.current) setErr(e instanceof Error ? e.message : String(e));
@@ -293,7 +294,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   }, [tour, sections]);
   const startTour = useCallback(async () => {
     if (!feature || !root || !sectionsRef.current) return;
-    if (tourSteps.length) { setTourIdx(0); return; } // 지금 흐름에 남은 단계가 없으면(노드가 다 지워짐) 새로 만듦(리뷰)
+    if (tourSteps.length) { setTourIdx(0); return; }
+    if (unsavedRef.current) { setErr(t("flow.saveFailed")); return; } // 저장 안 된 흐름엔 단계를 안 만듦 // 지금 흐름에 남은 단계가 없으면(노드가 다 지워짐) 새로 만듦(리뷰)
     const f = feature, d = depth, my = reqRef.current, at0 = atRef.current;
     setTourBusy(true); setErr(null);
     try {
@@ -308,7 +310,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       if (answer.err) { setErr(answer.err); return; }
       const got = new Map<string, string>();
       for (const raw of stripCardBlock(answer.text).split("\n")) {
-        const line = raw.trim().replace(/^[-*•\d.)\s]+/, "");
+        const line = raw.trim().replace(/^(?:[-*•]\s*|\d+[.)]\s+)/, ""); // 목록 표시만 뗌(숫자로 시작하는 이름 404.tsx 보존, 리뷰)
         const at = line.indexOf("|");
         if (at > 0) got.set(nk(line.slice(0, at)), line.slice(at + 1).trim());
       }
@@ -349,6 +351,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   // #1322 지금 깊이(개발자·숙련자)로 설명글만 다시 쓰기 — 흐름(노드)은 그대로, 덧붙임으로만 저장(스냅샷 안 건드림).
   const writeDepth = useCallback(async () => {
     if (!feature || !root || depth === "beginner" || !sectionsRef.current) return;
+    if (unsavedRef.current) { setErr(t("flow.saveFailed")); return; } // 저장 안 된 흐름엔 설명을 안 붙임
     const f = feature, d = depth, my = reqRef.current, at0 = atRef.current; // 쓰는 사이 재생성·갱신·기능 전환이 있으면(my 바뀜) 버림 — 새 흐름에 옛 설명이 붙지 않게
     setWriting(true); setErr(null);
     try {
@@ -481,12 +484,12 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
               {tourBusy ? <IconLoader2 size={13} stroke={2} className="animate-spin" aria-hidden /> : <IconPlayerPlay size={13} stroke={2} aria-hidden />}
             </button>
             {/* 갱신 — 새 노드만 병합 추가(모달 확인). 흐름 없으면 비활성. */}
-            <button type="button" onClick={() => setConfirm("update")} disabled={loading || !sections} title={t("flow.updateTitle")} aria-label={t("flow.updateTitle")}
+            <button type="button" onClick={() => setConfirm("update")} disabled={loading || !sections || writing || tourBusy} title={t("flow.updateTitle")} aria-label={t("flow.updateTitle")}
               className="shrink-0 rounded p-1 text-amber-500 transition hover:bg-zinc-100 disabled:opacity-40 dark:hover:bg-zinc-800">
               {running === "update" ? <IconLoader2 size={13} stroke={2} className="animate-spin" aria-hidden /> : <IconRefresh size={13} stroke={2} aria-hidden />}
             </button>
             {/* 재생성 — 전체 새로(모달 확인). */}
-            <button type="button" onClick={() => setConfirm("regen")} disabled={loading || loadFailed} title={t("flow.regenerateTitle")} aria-label={t("flow.regenerateTitle")}
+            <button type="button" onClick={() => setConfirm("regen")} disabled={loading || loadFailed || writing || tourBusy} title={t("flow.regenerateTitle")} aria-label={t("flow.regenerateTitle")}
               className="shrink-0 rounded p-1 text-mustard-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:text-mustard-400 dark:hover:bg-zinc-800">
               {running === "regen" ? <IconLoader2 size={13} stroke={2} className="animate-spin" aria-hidden /> : <IconSparkles size={13} stroke={2} aria-hidden />}
             </button>
@@ -529,7 +532,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
               <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
                 {note ?? t("flow.stale", { n: diff!.changed.length + diff!.removed.length, m: diff!.structural.length + diff!.removed.length })}
                 {!note && (
-                  <button type="button" onClick={() => setConfirm("update")} disabled={loading}
+                  <button type="button" onClick={() => setConfirm("update")} disabled={loading || writing || tourBusy}
                     className="ml-1.5 font-medium text-mustard-700 hover:underline disabled:opacity-50 dark:text-mustard-400">{t("flow.updateTitle")}</button>
                 )}
               </p>
