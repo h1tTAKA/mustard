@@ -40,10 +40,11 @@ export async function POST(request: Request): Promise<Response> {
       if (typeof b.file !== "string" || !b.file) return Response.json({ error: "file required" }, { status: 400 });
       const snip = codeSnippet(path, b.file, typeof b.line === "number" ? b.line : undefined, b.line ? 80 : 150); // 레포 밖·없는 파일은 null
       if (!snip) return Response.json({ error: "cannot read file" }, { status: 400 });
-      const hash = fileHash(`${snip.hash}\n${typeof b.extra === "string" ? b.extra : ""}`); // 파일 내용 + 연결 목록(리뷰: 다른 파일이 바뀌어 연결이 달라지면 다시 씀)
+      const skel = await neighborSkeletons(path, [b.file], 15); // 이 노드가 쓰는·이 노드를 쓰는 파일의 함수 목록(추측 대신 근거)
+      // 파일 내용 + 연결 목록 + 이웃 뼈대가 다 같아야 저장분을 씀(리뷰: 이웃 파일 함수가 바뀌면 다시 씀)
+      const hash = fileHash(`${snip.hash}\n${typeof b.extra === "string" ? b.extra : ""}\n${skel}`);
       const saved = getNodeNote(readArch(path), b.id);
       if (saved && saved.hash === hash) return Response.json({ text: saved.text });
-      const skel = await neighborSkeletons(path, [b.file], 15); // 이 노드가 쓰는·이 노드를 쓰는 파일의 함수 목록(추측 대신 근거)
       return Response.json({ hash, snippet: `${snip.text.slice(0, 12000)}${skel ? `\n\n[연결된 파일 뼈대 — 함수·클래스 목록]\n${skel.slice(0, 6000)}` : ""}` });
     }
     if (op === "snippets") { // 흐름 노드 파일들의 실제 코드 발췌(#1322 설명·둘러보기 근거)

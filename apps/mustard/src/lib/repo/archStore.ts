@@ -144,12 +144,14 @@ export async function neighborSkeletons(root: string, files: string[], limit = 2
     const other = mine.has(a) && !mine.has(b) ? b : mine.has(b) && !mine.has(a) ? a : null;
     if (other && !seen.has(other)) { seen.add(other); near.push(other); if (near.length >= limit) break; }
   }
-  return near.length ? fileSkeletons(root, near) : "";
+  return near.length ? skeletonsOf(graph, near) : ""; // 그래프 한 번만 읽음(리뷰)
 }
 
 // 차분 갱신 프롬프트용 파일 뼈대 — 파일별 심볼(줄·종류·이름·시그니처). 파일 30개·파일당 40개 상한(토큰 방어).
 export async function fileSkeletons(root: string, files: string[]): Promise<string> {
-  const { graph } = await loadOrBuildGraph(root);
+  return skeletonsOf((await loadOrBuildGraph(root)).graph, files);
+}
+function skeletonsOf(graph: Awaited<ReturnType<typeof loadOrBuildGraph>>["graph"], files: string[]): string {
   const want = new Set(files.slice(0, 30));
   const by = new Map<string, string[]>();
   for (const n of graph.nodes) {

@@ -204,6 +204,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       for (let i = 0; i < order.length; i += TOUR_CHUNK) chunks.push(order.slice(i, i + TOUR_CHUNK));
       const got = new Map<string, string>();
       let lastErr = "";
+      const failed: string[][] = [];
       const runChunk = async (chunk: string[]) => {
         const items = chunk.map((nm) => byKey.get(nk(nm))).filter((n) => n?.file).map((n) => ({ file: n!.file!, line: n!.line }));
         const code = items.length ? await archSnippets(root, items, { whole: true, span: 400, maxChars: 60000, neighbors: true }) : "";
@@ -212,7 +213,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
         const prompt = `"${f}" 기능을 처음 보는 사람에게 위 순서대로 한 단계씩 안내하려고 해. 이번에는 다음 노드만 설명해줘: ${chunk.join(", ")}. ${WHO[depth]}. 노드마다 아래 세 가지를 실제 코드 기준으로:\n1) 이 파일 안에 있는 주요 함수·로직(백틱으로 이름)과 각각의 역할\n2) 화살표(→ 다음노드, 실측 연결)로 이어진 파일과 어떤 관계인지(무엇을 받고 무엇을 넘기는지)\n3) 그 함수·로직들이 서로 어떻게 물려서 이 기능을 해내는지\n끝에 "근거:" 한 줄로 실제로 본 위치를 \`파일:줄\` 형식 1~3개. ${EVIDENCE}\n형식: 노드마다 "### 표시이름" 한 줄로 시작하고 그 아래 설명(짧은 문단·목록 가능). 표시이름은 위와 정확히 같게. 인사·머리말 없이.`;
         const answer = await ask(ctx, prompt);
         if (my !== reqRef.current) return;
-        if (answer.err) { lastErr = answer.err; return; }
+        if (answer.err) { lastErr = answer.err; failed.push(chunk); return; }
         // "### 이름"(요청한 제목 단계, ## 로 흘러도 받음)이고 이 묶음에서 아직 안 나온 노드일 때만 나눔 — 소제목·코드 블록 안 제목은 그 노드 설명에 남김(리뷰).
         const left = new Set(chunk.map(nk));
         let fence = false, curName: string | null = null, buf: string[] = [];
@@ -229,9 +230,17 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
         }
         flush();
       };
-      for (let i = 0; i < chunks.length; i += TOUR_PAR) await Promise.all(chunks.slice(i, i + TOUR_PAR).map(runChunk));
+      const runAll = async (list: string[][]) => {
+        for (let i = 0; i < list.length; i += TOUR_PAR) {
+          if (my !== reqRef.current) return; // 흐름이 바뀌었으면 남은 묶음은 시작도 안 함(리뷰)
+          await Promise.all(list.slice(i, i + TOUR_PAR).map(runChunk));
+        }
+      };
+      await runAll(chunks);
+      if (failed.length && my === reqRef.current) { const again = failed.splice(0); await runAll(again); } // 실패한 묶음은 한 번 더
       if (my !== reqRef.current) return false;
-      if (!got.size && lastErr) { setErr(lastErr); return false; }
+      // 일부라도 실패하면 저장 안 함 — 역할 한 줄로 채운 반쪽 둘러보기가 저장돼 다시 안 만들어지는 일 없게(리뷰). ▶로 다시.
+      if (failed.length) { setErr(lastErr || "tour failed"); return false; }
       // AI가 빠뜨린 노드는 한줄역할로 채움(단계가 비지 않게). 하나도 못 받으면 오류.
       if (![...got.values()].some(Boolean)) { setErr("no tour"); return false; }
       const next: Tour = { depth, steps: order.map((name) => ({ name, text: got.get(nk(name)) || byKey.get(nk(name))?.role || "" })) };
