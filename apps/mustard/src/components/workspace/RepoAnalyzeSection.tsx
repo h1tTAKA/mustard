@@ -6,6 +6,7 @@ import { useT, useLocale } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { stripCardBlock } from "@mustard/core";
 import { fetchGraphDigest } from "@/lib/repo/fetchDigest";
+import { archGet, archPut } from "@/lib/repo/archClient";
 
 // 레포 기능 카테고리(#743) — 에이전트가 파일 목록 보고 나눔.
 export type RepoCategory = { id: string; title: string; blurb?: string };
@@ -63,16 +64,13 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
   const [detail, setDetail] = useState<string | null>(null); // 실패 원인 상세(디버깅·안내)
   const [confirm, setConfirm] = useState<null | "reanalyze" | "update">(null); // 확인 모달(내용 바뀜·추가 경고)
   const [running, setRunning] = useState<null | "reanalyze" | "update">(null); // 지금 도는 액션(그 버튼만 스핀)
-  const catsKey = root ? `nunopi:ws:${root}:analyze-cats` : null; // 레포별 카테고리 영속 키(#743)
-
-  // 저장된 카테고리 복원 — 새로고침/재시작/레포 재진입 시 재분석 없이 바로 목록 표시.
+  // 저장된 카테고리 복원 — 새로고침/재시작/레포 재진입 시 재분석 없이 바로 목록 표시. 저장소=서버 파일(#1320).
   useEffect(() => {
-    if (!catsKey) return;
-    let saved: RepoCategory[] | null = null;
-    try { const raw = localStorage.getItem(catsKey); if (raw) { const j = JSON.parse(raw); if (Array.isArray(j) && j.length) saved = j; } } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 레포별 저장 카테고리 1회 복원
-    setCats(saved);
-  }, [catsKey]);
+    if (!root) return;
+    let alive = true;
+    void archGet<RepoCategory[]>(root, "cats").then(({ data }) => { if (alive) setCats(data?.length ? data : null); });
+    return () => { alive = false; };
+  }, [root]);
 
   // merge=true(갱신): 기존 목록에 새 항목만 추가. false(분석/재분석): 전체 교체.
   const analyze = useCallback(async (merge = false) => {
@@ -119,18 +117,16 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
       if (!answer.trim()) { fail(t("repo.emptyResponseDetail")); return; }
       const parsed = parseCategories(stripCardBlock(answer)); // 튜터 자동 카드 블록 제거 후 파싱
       if (!parsed.length) { fail(`no JSON array — ${answer.slice(0, 160)}`); return; }
-      setCats((prev) => {
-        const next = merge && prev ? mergeCats(prev, parsed) : parsed;
-        if (catsKey) { try { localStorage.setItem(catsKey, JSON.stringify(next)); } catch { /* ignore */ } } // 영속(#743)
-        return next;
-      });
+      const next = merge && cats ? mergeCats(cats, parsed) : parsed;
+      setCats(next);
+      await archPut(root, "cats", next); // 영속(#743 → #1320 서버)
     } catch (e) {
       fail(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
       setRunning(null);
     }
-  }, [root, providerId, providerSettings, locale, t, catsKey]);
+  }, [root, providerId, providerSettings, locale, t, cats]);
 
   const hasCats = !!(cats && cats.length);
   return (

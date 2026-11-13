@@ -7,6 +7,8 @@ import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
 import { stripCardBlock } from "@mustard/core";
 import { fetchGraphDigest } from "@/lib/repo/fetchDigest";
+import { archGet, archPut } from "@/lib/repo/archClient";
+import type { SnapDiff } from "@/lib/repo/incremental";
 
 // 기능별 아키텍처 플로우(#743) — Manyfast 유저플로우식: 레이어=밴드(위→아래), 알약 노드, 노드→코드 점프.
 // next(다음 노드)를 받아 SVG 곡선으로 연결해 흐름을 직관적으로.
@@ -103,7 +105,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const flowRef = useRef<HTMLDivElement | null>(null); // 연결선 좌표 기준 컨테이너
   const nodeEls = useRef(new Map<string, HTMLElement>()); // 이름키 → 노드 DOM(엣지 끝점 측정)
 
-  const flowKey = feature && root ? `nunopi:ws:${root}:flow:${encodeURIComponent(feature)}` : null; // 레포+기능별 flow 영속 키(#743)
+  const [diff, setDiff] = useState<SnapDiff | null>(null); // #1320 저장 뒤 바뀐 파일(서버 저장분 기준)
   const [connKeys, setConnKeys] = useState<Set<string>>(new Set()); // 실측 연결 "fileA|fileB"(방향 보존, 조회는 양방향). #842 서브4
 
   // 이름-레벨 엣지 = LLM next + 실측 뒷받침(grounded) + LLM이 놓친 실측 연결 보강. 곡선·레인·인접의 단일 소스.
@@ -155,16 +157,11 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     if (!feature || !root || !providerId || !providerSettings) return;
     const my = ++reqRef.current;
     if (mode !== "update") { nodeEls.current.clear(); setLines([]); }
-    // 자동(cache)일 때만 저장분 먼저 — 에이전트 재호출 없이 즉시 복원. (구 캐시=배열, 신 캐시={sections,overview})
-    if (mode === "cache" && flowKey) {
-      try {
-        const raw = localStorage.getItem(flowKey);
-        if (raw) {
-          const j = JSON.parse(raw);
-          const secs: FlowSection[] | undefined = Array.isArray(j) ? j : j?.sections;
-          if (Array.isArray(secs) && secs.length) { setSections(secs); setOverview(Array.isArray(j) ? null : (j?.overview ?? null)); setLoading(false); setErr(null); return; }
-        }
-      } catch { /* 캐시 손상 → 재생성 */ }
+    // 자동(cache)일 때만 저장분 먼저 — 에이전트 재호출 없이 즉시 복원. 저장소=서버 파일(#1320, 옛 localStorage는 1회 이전).
+    if (mode === "cache") {
+      const { data, diff: d } = await archGet<{ sections: FlowSection[]; overview: string | null }>(root, "flow", feature);
+      if (my !== reqRef.current) return;
+      if (data?.sections?.length) { setSections(data.sections); setOverview(data.overview ?? null); setDiff(d); setLoading(false); setErr(null); return; }
     }
     setLoading(true); setRunning(mode === "update" ? "update" : "regen"); setErr(null);
     if (mode !== "update") { setSections(null); setOverview(null); } // 갱신은 기존 유지
@@ -203,13 +200,14 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       const base = sectionsRef.current;
       const nextSecs = mode === "update" && base ? mergeFlow(base, parsed) : parsed;
       setSections(nextSecs); setOverview(ov);
-      if (flowKey) { try { localStorage.setItem(flowKey, JSON.stringify({ sections: nextSecs, overview: ov })); } catch { /* ignore */ } } // 영속(#743)
+      await archPut(root, "flow", { sections: nextSecs, overview: ov }, feature); // 영속(#743 → #1320 서버)
+      if (my === reqRef.current) setDiff(null); // 방금 저장 = 최신
     } catch (e) {
       if (my === reqRef.current) setErr(e instanceof Error ? e.message : String(e));
     } finally {
       if (my === reqRef.current) { setLoading(false); setRunning(null); }
     }
-  }, [feature, root, providerId, providerSettings, locale, flowKey]);
+  }, [feature, root, providerId, providerSettings, locale]);
 
   // 최신 sections 미러(갱신 병합 기준).
   useEffect(() => { sectionsRef.current = sections; }, [sections]);
