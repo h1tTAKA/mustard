@@ -91,14 +91,15 @@ export default function RepoAnalyzeSection({ root, providerId, providerSettings,
     let alive = true;
     // 레포가 바뀌면 이전 레포 목록을 먼저 비움 — 불러오는 사이 갱신이 다른 레포 목록을 섞어 저장하지 않게(리뷰).
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 레포 전환 시 초기화
-    setCats(null); setRestored(false);
+    setCats(null); setRestored(false); setErr(null); setDetail(null);
     void archGet<RepoCategory[]>(root, "cats").then(({ data, error }) => {
       if (!alive) return;
       if (error) { setErr(t("repo.loadFailed")); return; } // 서버 오류 — 분석하기를 잠가 둔 채(저장분 덮어쓰기 방지)
       setCats(data?.length ? data : null); setRestored(true);
     });
     return () => { alive = false; };
-  }, [root, t]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 레포가 바뀔 때만 다시 불러옴(언어 전환으로 목록이 비거나 저장과 경합하지 않게, 리뷰)
+  }, [root]);
 
   // merge=true(갱신): 기존 목록에 새 항목만 추가. false(분석/재분석): 전체 교체.
   const analyze = useCallback(async (merge = false) => {

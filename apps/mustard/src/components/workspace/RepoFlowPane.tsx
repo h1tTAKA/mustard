@@ -95,6 +95,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const [diff, setDiff] = useState<SnapDiff | null>(null); // #1320 저장 뒤 바뀐 파일(서버 저장분 기준)
   const [note, setNote] = useState<string | null>(null);    // #1320 방금 갱신이 한 일(AI 안 부름 / N개 파일 살펴봄)
   const overviewRef = useRef<string | null>(null);           // 최신 overview 미러(차분 갱신은 설명 유지)
+  const [loadFailed, setLoadFailed] = useState(false);       // 저장분 불러오기 실패 — 재생성으로 저장분을 덮어쓰지 않게 잠금(리뷰)
   const secOfRef = useRef<string | null>(null);              // 지금 보이는 흐름이 어느 기능 것인지(전환 중 갱신이 엉뚱한 기능에 저장되지 않게, 리뷰)
   const [connKeys, setConnKeys] = useState<Set<string>>(new Set()); // 실측 연결 "fileA|fileB"(방향 보존, 조회는 양방향). #842 서브4
 
@@ -170,11 +171,11 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     // 자동(cache)일 때만 저장분 먼저 — 에이전트 재호출 없이 즉시 복원. 저장소=서버 파일(#1320, 옛 localStorage는 1회 이전).
     if (mode === "cache") {
       // 서버 왕복 동안은 이전 흐름을 그대로 두되(깜빡임 없음) 로딩 중이라 갱신·재생성 버튼은 잠김, 갱신은 secOfRef로 한 번 더 막음.
-      setLoading(true); setErr(null);
+      setLoading(true); setErr(null); setLoadFailed(false);
       const { data, error } = await archGet<{ sections: FlowSection[]; overview: string | null }>(root, "flow", feature);
       if (my !== reqRef.current) return;
       // 서버 오류면 새로 분석해 저장분을 덮어쓰지 않음(리뷰) — 오류만 보여 줌.
-      if (error) { setSections(null); setOverview(null); secOfRef.current = null; setErr(t("flow.loadFailed")); setLoading(false); return; }
+      if (error) { setSections(null); setOverview(null); secOfRef.current = null; setErr(t("flow.loadFailed")); setLoadFailed(true); setLoading(false); return; }
       if (data?.sections?.length) {
         setSections(data.sections); setOverview(data.overview ?? null); secOfRef.current = feature; setLoading(false);
         // 낡음 표시용 차분은 따로(그래프 맞추느라 느릴 수 있음) — 흐름은 먼저 보여 줌(리뷰).
@@ -372,7 +373,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
               {running === "update" ? <IconLoader2 size={13} stroke={2} className="animate-spin" aria-hidden /> : <IconRefresh size={13} stroke={2} aria-hidden />}
             </button>
             {/* 재생성 — 전체 새로(모달 확인). */}
-            <button type="button" onClick={() => setConfirm("regen")} disabled={loading} title={t("flow.regenerateTitle")} aria-label={t("flow.regenerateTitle")}
+            <button type="button" onClick={() => setConfirm("regen")} disabled={loading || loadFailed} title={t("flow.regenerateTitle")} aria-label={t("flow.regenerateTitle")}
               className="shrink-0 rounded p-1 text-mustard-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:text-mustard-400 dark:hover:bg-zinc-800">
               {running === "regen" ? <IconLoader2 size={13} stroke={2} className="animate-spin" aria-hidden /> : <IconSparkles size={13} stroke={2} aria-hidden />}
             </button>

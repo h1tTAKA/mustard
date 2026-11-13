@@ -67,7 +67,8 @@ export function writeCachedGraph(root: string, fingerprint: string, graph: RepoG
 
 // #1320 파일별 파싱 캐시(incremental.ts) — 그래프 캐시 옆 <sha>.files.json. 형식 다르거나 없으면 빈 캐시(첫 빌드처럼).
 const FILES_V = 1;
-const filesFailed = new Set<string>(); // 파일 캐시 저장에 실패한 레포(정규화 경로)
+const filesFailed = new Set<string>();
+const filesWarned = new Set<string>(); // 실패 로그를 레포당 한 번만 // 파일 캐시 저장에 실패한 레포(정규화 경로)
 function filesPath(root: string): string { return join(CACHE_DIR, `${sha(canonRoot(root))}.files.json`); }
 export function readFileCache(root: string): FileCache {
   try {
@@ -88,5 +89,7 @@ export function writeFileCache(root: string, files: FileCache): void {
     try { unlinkSync(filesPath(root)); } catch { /* 없음 */ }
     try { unlinkSync(cachePath(root)); } catch { /* 없음 */ }
     filesFailed.add(canonRoot(root));
+    // 한계: 계속 실패하면(디스크 가득·읽기 전용) 매 호출 다시 빌드 — 정확성 우선. 레포당 한 번 로그로 알림.
+    if (!filesWarned.has(canonRoot(root))) { filesWarned.add(canonRoot(root)); console.warn(`[codegraph] file cache write failed: ${root}`); }
   }
 }
