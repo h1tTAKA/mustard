@@ -205,7 +205,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       // #1320 차분 갱신 — 저장 뒤 바뀐 파일을 서버에서 받아: 구조 변화 0이면 AI 없이 지운 파일 노드만 정리,
       // 너무 많으면 처음부터, 그 외엔 바뀐 파일만 AI에 보여 줌.
       let inc: SnapDiff | null = null, d: SnapDiff | null = null, token: string | undefined;
-      const saveFailed = () => { if (my === reqRef.current) setErr(t("flow.saveFailed")); };
+      // 저장 실패(서버는 썼는데 응답만 못 받았을 수도) → 판을 모름으로. 다음 덧붙임이 판 불일치로 계속 버려지지 않게(리뷰).
+      const saveFailed = () => { atRef.current = null; if (my === reqRef.current) setErr(t("flow.saveFailed")); };
       if (mode === "update") {
         const g = await archGet(root, "flow", feature, "token");
         if (g.error) { if (my === reqRef.current) setErr(t("flow.loadFailed")); return; }

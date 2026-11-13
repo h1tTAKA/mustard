@@ -49,8 +49,8 @@ export async function archGet<T>(root: string, kind: Kind, feature?: string, dif
   if (kind === "flow" && Array.isArray(old)) old = { sections: old, overview: null };
   const ok = kind === "cats" ? Array.isArray(old) && old.length > 0 : Array.isArray((old as { sections?: unknown } | null)?.sections);
   if (!ok) return { data: null, diff: null };
-  await archPut(root, kind, old, feature, { legacy: true });
-  return { data: old as T, diff: null };
+  const at = await archPut(root, kind, old, feature, { legacy: true });
+  return { data: (kind === "flow" && at ? { ...(old as object), at } : old) as T, diff: null }; // 옮긴 흐름도 판(at)을 알게(리뷰)
 }
 
 // 차분 갱신 프롬프트용 파일 심볼 뼈대. 실패면 빈 문자열(파일 이름만으로 진행).
