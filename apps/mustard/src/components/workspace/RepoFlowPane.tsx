@@ -207,10 +207,12 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       const got = new Map<string, string>();
       // "### 노드이름"(요청한 제목 단계)이고 아직 안 나온 노드일 때만 나눔 — 순서가 섞여도 받고, 노드 안 소제목(####·이미 나온 이름)은 그 노드 설명에 남김(리뷰)
       const left = new Set(order.map(nk));
+      let fence = false;
       let curName: string | null = null, buf: string[] = [];
       const flush = () => { if (curName) got.set(nk(curName), buf.join("\n").trim()); };
       for (const raw of stripCardBlock(answer.text).split("\n")) {
-        const h = raw.match(/^###\s+(?:\d+[.)]\s+)?(.+?)\s*$/);
+        if (/^\s*```/.test(raw)) fence = !fence; // 코드 블록 안 "###"은 제목 아님(리뷰)
+        const h = fence ? null : raw.match(/^#{2,3}\s+(?:\d+[.)]\s+)?(.+?)\s*$/); // ## 로 흘러도 받음(소제목 ####는 그 노드 설명)
         const hn = h ? h[1].replace(/[`*]/g, "").trim() : "";
         if (h && left.has(nk(hn))) { flush(); curName = hn; buf = []; left.delete(nk(hn)); continue; }
         if (curName) { buf.push(raw); continue; }
