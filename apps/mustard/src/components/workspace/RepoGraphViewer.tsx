@@ -124,12 +124,12 @@ export default function RepoGraphViewer({ root, providerId, providerSettings, on
     if (!n || !providerId || !providerSettings) { setNote(null); return; } // 프로바이더 없으면 설명 없음
     const nb = neighbors(graph, n.id);
     const links = [...nb.out.map((l) => `→ ${l.relation} ${l.node.label} (${l.node.file})`), ...nb.in.map((l) => `← ${l.relation} ${l.node.label} (${l.node.file})`)].slice(0, 20);
-    const key = `${root}\0${n.id}\0${links.join("\n")}`; // 연결이 바뀌면(그래프 다시 빌드) 다른 키 → 다시 씀(리뷰)
+    const key = `${root}\0${n.id}\0${locale}\0${links.join("\n")}`; // 연결이 바뀌면(그래프 다시 빌드) 다른 키 → 다시 씀(리뷰)
     let job = noteCache.current.get(key);
     if (!job) {
       job = (async () => { try {
         // 저장분은 파일 내용 + 연결 목록이 같을 때만 씀(다른 파일이 바뀌어 연결이 달라지면 다시 씀, 리뷰).
-        const got = await archNode(root, n.id, n.file, n.line, links.join("\n"));
+        const got = await archNode(root, n.id, n.file, n.line, `${locale}\n${links.join("\n")}`); // 언어가 바뀌면 그 언어로 다시 씀
         if (!got) return { err: t("graph.noteFailed") };
         if (got.text) return { text: got.text };
         const ctx = `레포: ${root.split("/").filter(Boolean).pop()}\n노드: ${n.label} (${n.kind}) @ ${n.file}${n.line ? `:${n.line}` : ""}${n.signature ? `\n시그니처: ${n.signature}` : ""}${links.length ? `\n\n[연결]\n${links.join("\n")}` : ""}\n\n[코드 발췌 — 줄 번호: 내용]\n${got.snippet ?? ""}`;
