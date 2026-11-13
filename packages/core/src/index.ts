@@ -12,6 +12,7 @@ export * from "./lib/bookmarkDetails";
 export * from "./lib/cardSuggestion";
 export * from "./lib/chatCard";
 export { default as Markdown } from "./components/Markdown";
+export * from "./codeKind";
 export * from "./viewMode";
 export * from "./theme";
 export * from "./settings";

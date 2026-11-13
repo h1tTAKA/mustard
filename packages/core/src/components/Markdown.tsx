@@ -1,6 +1,8 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useMemo, type ComponentProps } from "react";
+import { codeKind } from "../codeKind";
+import { useT } from "../i18n/I18nProvider";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -50,11 +52,23 @@ const keepAppLinks = (url: string) => (/^catchup:/i.test(url) ? url : defaultUrl
 const EXTRA = { dart, dockerfile, scala, elixir, haskell, groovy, gradle, protobuf, powershell, ocaml, clojure, erlang, julia, nix, cmake, nginx, fsharp, properties };
 let highlight: ReturnType<typeof rehypeHighlight> | undefined;
 const highlightOnce = () => (highlight ??= rehypeHighlight({ detect: true, languages: { ...common, ...EXTRA }, subset: Object.keys(common), aliases: { xml: ["vue", "svelte"] } }));
+// #1325 인라인 코드 역할별 색 — `백틱` 조각을 모양으로 분류해 data-k를 붙임(색은 globals.css, 블록 코드 안은 CSS에서 제외).
+// 마우스를 올리면 무슨 종류인지(파일·경로/함수/타입/설정 키/값/키워드) 툴팁.
+function InlineCode({ node: _node, className, children, ...rest }: ComponentProps<"code"> & { node?: unknown }) {
+  const t = useT();
+  const text = typeof children === "string" ? children : Array.isArray(children) && children.every((c) => typeof c === "string") ? children.join("") : null;
+  const k = !className && text !== null && !text.includes("\n") ? codeKind(text) : "plain"; // 언어 클래스가 붙은 건 펜스 코드 → 분류 안 함
+  return k === "plain" ? <code className={className} {...rest}>{children}</code> : <code data-k={k} title={t(`code.kind.${k}`)} {...rest}>{children}</code>;
+}
 export default memo(function Markdown({ children, className, onLink }: { children: string; className?: string; onLink?: (href: string) => boolean }) {
+  const components = useMemo(() => ({
+    code: InlineCode,
+    ...(onLink ? { a: ({ href, children: c, node: _n, ...rest }: ComponentProps<"a"> & { node?: unknown }) => <a {...rest} href={href} onClick={(e) => { if (!href || onLink(href)) e.preventDefault(); }}>{c}</a> } : {}),
+  }), [onLink]);
   return (
     <div className={className ? `nunopi-md ${className}` : "nunopi-md"}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[highlightOnce]} urlTransform={keepAppLinks}
-        components={onLink ? { a: ({ href, children: c, ...rest }) => <a {...rest} href={href} onClick={(e) => { if (!href || onLink(href)) e.preventDefault(); }}>{c}</a> } : undefined}>
+        components={components}>
         {fixCjkEmphasis(children)}
       </ReactMarkdown>
     </div>
