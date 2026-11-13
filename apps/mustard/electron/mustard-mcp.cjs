@@ -81,7 +81,7 @@ async function callMustard(name, args) {
 async function handle(msg) {
   const { id, method, params } = msg;
   if (method === "initialize") return reply(id, { protocolVersion: params?.protocolVersion || "2025-06-18", capabilities: { tools: {} }, serverInfo: SERVER,
-    instructions: "Mustard tools. Code graph: before grepping files, use katchup_repo_map for structure, then katchup_find_code/trace_calls/find_all/file_api/search. In-app browser: browser_* to open, read, screenshot and click pages of the app you are building. Desktop apps (only when the user asks): computer_*. Crew (when the user asks to hand work to the role agents): crew_*." });
+    instructions: "Mustard tools. Code graph: before grepping files, use katchup_repo_map for structure, then katchup_find_code/trace_calls/find_all/file_api/search. Feature-level architecture already analyzed in Mustard (features, flows): katchup_features. In-app browser: browser_* to open, read, screenshot and click pages of the app you are building. Desktop apps (only when the user asks): computer_*. Crew (when the user asks to hand work to the role agents): crew_*." });
   if (method === "ping") return reply(id, {});
   if (method === "tools/list") return reply(id, { tools: [...await graphTools(), ...TOOLS] });
   if (method === "tools/call") {
