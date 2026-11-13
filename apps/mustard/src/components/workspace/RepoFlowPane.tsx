@@ -400,12 +400,12 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 단계 이동 시 그 카드 포커스(기존 포커스 강조 재사용)
     setFocused(k);
     // 카드를 단계 박스 바로 아래로 — 박스가 길어도 안 가리게(박스 높이는 그려진 뒤 잼, 리뷰 #1322).
-    requestAnimationFrame(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => { // 두 프레임 뒤 — "트리에 없음" 줄 등 박스 내용이 다 그려진 다음 높이를 잼(리뷰)
       const el = nodeEls.current.get(k), box = scrollRef.current;
       if (!el || !box) return;
       const boxH = stepBoxRef.current?.offsetHeight ?? 0;
       box.scrollBy({ top: el.getBoundingClientRect().top - box.getBoundingClientRect().top - boxH - 16, behavior: "smooth" });
-    });
+    }));
     const node = sections?.flatMap((s) => s.nodes).find((n) => nk(n.name) === k);
     // 왼쪽 파일 트리 펼침·강조(+설정 시 코드 열기). 트리에 없는 파일(숨김)이면 단계 박스에 알림.
     setTreeMiss(node?.file && onRevealFile ? !onRevealFile(node.file) : false);
