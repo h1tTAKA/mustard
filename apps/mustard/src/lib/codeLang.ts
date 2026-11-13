@@ -20,7 +20,7 @@ const NAME_LANG: Record<string, string> = {
   // #1322 확장자 없는 빌드·설정 파일
   podfile: "ruby", gemfile: "ruby", rakefile: "ruby", fastfile: "ruby", appfile: "ruby", brewfile: "ruby", vagrantfile: "ruby", dangerfile: "ruby", matchfile: "ruby",
   // .lock은 도구마다 형식이 달라 이름으로(Cargo·poetry=TOML, composer=JSON, 나머지 YAML 계열)
-  "podfile.lock": "yaml", "pubspec.lock": "yaml", "yarn.lock": "yaml", "pnpm-lock.yaml": "yaml", "cargo.lock": "toml", "poetry.lock": "toml", "uv.lock": "toml", "composer.lock": "json", "flake.lock": "json", "gemfile.lock": "text", cartfile: "text", jenkinsfile: "groovy", procfile: "yaml", "build": "python", workspace: "python",
+  "podfile.lock": "yaml", "pubspec.lock": "yaml", "yarn.lock": "yaml", "pnpm-lock.yaml": "yaml", "cargo.lock": "toml", "poetry.lock": "toml", "uv.lock": "toml", "composer.lock": "json", "flake.lock": "json", "gemfile.lock": "text", cartfile: "text", jenkinsfile: "groovy", procfile: "yaml",
   ".gitignore": "text", ".editorconfig": "ini", ".npmrc": "ini", ".gitconfig": "ini", ".gitattributes": "text",
 };
 
@@ -36,11 +36,12 @@ function sniff(head: string): string {
     const k = prog.replace(/[\d.]+$/, "");
     if (Object.hasOwn(m, k)) return m[k];
   }
-  if (/^[{[]/.test(t)) { try { JSON.parse(head); return "json"; } catch { /* 잘림·JSON 아님 */ } if (/^\{\s*"/.test(t)) return "json"; }
+  // JSON — 4000자까지만 보므로 통째 파싱 대신 첫 모양으로: {"키" / [ 뒤에 값 시작({ [ " 숫자 ] true false null)
+  if (/^\{\s*("|\})/.test(t) || /^\[\s*([{["\d\]-]|true|false|null)/.test(t)) return "json";
   return "text";
 }
 
-// head = 파일 내용 앞부분(있으면 확장자로 모를 때 내용으로 판정).
+// head = 파일 내용 앞부분(있으면 확장자로 모를 때 내용으로 판정). diff처럼 파일 중간 조각이면 넘기지 말 것.
 export const langOf = (file: string, head?: string) => {
   const name = file.split("/").pop()?.toLowerCase() ?? "";
   if (Object.hasOwn(NAME_LANG, name)) return NAME_LANG[name];
