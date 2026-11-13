@@ -16,7 +16,7 @@ const cases: [string, string][] = [
   // 키워드
   ["static", "kw"], ["const", "kw"], ["await", "kw"], ["@main", "kw"],
   // 모르는 것
-  ["fieldLine", "plain"], ["Node.js", "plain"], ["Vue.js", "plain"], ["process.env", "plain"], ["API", "plain"], ["JSON", "plain"], ["console.log", "plain"], ["catchup.enabled", "plain"], ["and/or", "plain"], ["GET/POST", "plain"], ["src/lib", "path"], ["https://x.com/a", "path"], ["static const fieldLine", "plain"], ["", "plain"],
+  ["fieldLine", "plain"], ["Node.js", "plain"], ["Vue.js", "plain"], ["process.env", "plain"], ["this.log", "plain"], ["req.log", "plain"], ["window.env", "plain"], ["API", "plain"], ["JSON", "plain"], ["console.log", "plain"], ["catchup.enabled", "plain"], ["and/or", "plain"], ["GET/POST", "plain"], ["src/lib", "path"], ["https://x.com/a", "path"], ["static const fieldLine", "plain"], ["", "plain"],
 ];
 for (const [s, k] of cases) assert.equal(codeKind(s), k, s);
 console.log("codeKind ok");

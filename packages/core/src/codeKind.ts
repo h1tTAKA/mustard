@@ -18,11 +18,13 @@ const EXT = new Set(("ts tsx js jsx mjs cjs json jsonc md mdx dart swift kt kts 
 // 파일처럼 생겼지만 아닌 것 — 라이브러리 이름(Node.js), 객체 멤버(console.log·process.env). app.tsx·App.js 같은 진짜 파일은 그대로(리뷰).
 const LIBJS = new Set(["node", "vue", "next", "nuxt", "express", "chart", "three", "d3", "react", "angular", "ember", "backbone", "moment", "p5", "socket", "alpine", "nest", "deno", "bun"]);
 // 딱 두 조각일 때만: "Node.js"(대문자 시작 라이브러리 이름)·"console.log"/"process.env". next.config.js·express.js·app.log 같은 파일은 경로(리뷰).
+const MEMBER = new Set(["console", "process", "this", "self", "window", "document", "req", "res", "ctx", "logger"]); // .log·.env가 붙는 흔한 객체(app은 파일로 둠)
+// 한계: 소문자 "chart.js"는 라이브러리 이름인지 파일인지 모양으로 못 가려 경로로 둠.
 const notFile = (s: string, ext: string) => {
   const parts = s.split(".");
   if (parts.length !== 2) return false;
   const [base] = parts;
-  return (ext === "js" && /^[A-Z]/.test(base) && LIBJS.has(base.toLowerCase())) || ((ext === "log" || ext === "env") && (base === "console" || base === "process"));
+  return (ext === "js" && /^[A-Z]/.test(base) && LIBJS.has(base.toLowerCase())) || ((ext === "log" || ext === "env") && MEMBER.has(base));
 };
 // "and/or", "GET/POST", "on/off" — 슬래시가 있어도 경로가 아닌 짝말(한 번 나뉘고 양쪽이 대문자 약어거나 흔한 짝말)
 const PAIR = new Set(["and", "or", "on", "off", "yes", "no", "true", "false", "read", "write", "input", "output", "get", "set", "in", "out", "open", "close", "start", "stop", "show", "hide", "enable", "disable"]);
