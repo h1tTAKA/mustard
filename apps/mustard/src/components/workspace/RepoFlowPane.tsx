@@ -135,15 +135,17 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const dragOff = useRef<(() => void) | null>(null); // 끄는 중 붙인 창 리스너 떼기(언마운트 때도, 리뷰)
   useEffect(() => () => dragOff.current?.(), []);
   const startStepResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return; // 왼쪽 버튼(터치·펜 포함)만
+    dragOff.current?.(); // 이미 끄는 중이면 먼저 정리(두 번째 터치가 선택 막기를 영영 못 풀게 하지 않게, 리뷰)
     e.preventDefault();
     const text = e.currentTarget.previousElementSibling as HTMLElement | null;
     const y0 = e.clientY, h0 = text?.offsetHeight ?? 200;
-    let last = h0;
+    let last = h0, moved = false;
     const prevSel = document.body.style.userSelect;
     document.body.style.userSelect = "none"; // 끄는 동안 설명 글이 선택되지 않게
-    const move = (ev: PointerEvent) => { last = clampStep(h0 + ev.clientY - y0); setStepH(last); };
+    const move = (ev: PointerEvent) => { moved = true; last = clampStep(h0 + ev.clientY - y0); setStepH(last); };
     const off = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); document.body.style.userSelect = prevSel; dragOff.current = null; };
-    const up = () => { off(); saveStep(last); };
+    const up = () => { off(); if (moved) saveStep(last); }; // 그냥 클릭이면 기본(45vh)을 고정값으로 저장하지 않음
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up);
     dragOff.current = off;
   };
@@ -631,7 +633,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
                 {treeMiss && <p className="mt-1 text-[10.5px] text-zinc-400 dark:text-zinc-500">{t("flow.tourTreeMiss")}</p>}
                 <div style={stepH ? { height: stepH } : { maxHeight: "45vh" }} className="nunopi-scroll mt-1 overflow-auto text-[11.5px] leading-relaxed text-zinc-600 dark:text-zinc-300"><Markdown>{tourSteps[tourIdx].text}</Markdown></div>
                 {/* 아래 가장자리를 끌어 설명 높이 조절(120px~화면 70%, 저장) */}
-                <div role="separator" tabIndex={0} aria-orientation="horizontal" aria-label={t("flow.tourResize")} aria-valuenow={stepH ?? undefined} aria-valuemin={120} title={t("flow.tourResize")} onPointerDown={startStepResize} onKeyDown={keyStepResize}
+                <div role="separator" tabIndex={0} aria-orientation="horizontal" aria-label={t("flow.tourResize")} aria-valuenow={stepH ?? undefined} aria-valuemin={120} aria-valuemax={typeof window === "undefined" ? undefined : Math.round(window.innerHeight * 0.7)} title={t("flow.tourResize")} onPointerDown={startStepResize} onKeyDown={keyStepResize}
                   className="mx-auto mt-1 h-1.5 w-10 cursor-row-resize touch-none rounded-full outline-none focus-visible:ring-2 focus-visible:ring-mustard-500 bg-zinc-300 transition hover:bg-mustard-500 dark:bg-zinc-600 dark:hover:bg-mustard-400" />
               </div>
             )}
