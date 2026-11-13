@@ -127,7 +127,18 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const [tourBusy, setTourBusy] = useState(false);           // 단계 설명 만드는 중
   const scrollRef = useRef<HTMLDivElement | null>(null);    // 흐름 스크롤 영역(둘러보기 카드 위치 맞춤)
   const stepBoxRef = useRef<HTMLDivElement | null>(null);   // 둘러보기 단계 박스(높이만큼 카드를 아래로)
-  const scrollRaf = useRef(0);                               // 대기 중인 카드 스크롤 프레임(다음 단계로 넘기면 취소)
+  const scrollRaf = useRef(0);
+  // 둘러보기 설명 높이(px) — 유저가 끌어서 정함(null = 기본 45vh). 보는 사람 각자 설정이라 localStorage.
+  const [stepH, setStepH] = useState<number | null>(() => { try { const v = Number(localStorage.getItem("mustard:tourStepH")); return v > 0 ? v : null; } catch { return null; } });
+  const startStepResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const text = e.currentTarget.previousElementSibling as HTMLElement | null;
+    const y0 = e.clientY, h0 = text?.offsetHeight ?? 200, max = window.innerHeight * 0.7;
+    let last = h0;
+    const move = (ev: PointerEvent) => { last = Math.round(Math.min(max, Math.max(120, h0 + ev.clientY - y0))); setStepH(last); };
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); try { localStorage.setItem("mustard:tourStepH", String(last)); } catch { /* 저장 못 해도 이번엔 적용 */ } };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+  };                               // 대기 중인 카드 스크롤 프레임(다음 단계로 넘기면 취소)
   const busyN = useRef(0);                                   // 진행 중인 단계 만들기 수
   const [treeMiss, setTreeMiss] = useState(false);           // 지금 단계 파일이 왼쪽 트리에 없음(.gitignore 등)
   const [hovered, setHovered] = useState<string | null>(null); // 호버 카드 키(연결 강조)
@@ -407,7 +418,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       const el = nodeEls.current.get(k), box = scrollRef.current;
       if (!el || !box) return;
       const boxH = stepBoxRef.current?.offsetHeight ?? 0;
-      box.scrollBy({ top: el.getBoundingClientRect().top - box.getBoundingClientRect().top - boxH - 16, behavior: "smooth" });
+      box.scrollBy({ top: el.getBoundingClientRect().top - box.getBoundingClientRect().top - boxH - 40, behavior: "smooth" }); // 박스와 카드 사이 여유(딱 붙지 않게)
     }); });
     const node = sections?.flatMap((s) => s.nodes).find((n) => nk(n.name) === k);
     // 왼쪽 파일 트리 펼침·강조(+설정 시 코드 열기). 트리에 없는 파일(숨김)이면 단계 박스에 알림.
@@ -603,7 +614,10 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
                     className="shrink-0 rounded p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconX size={13} stroke={2} aria-hidden /></button>
                 </div>
                 {treeMiss && <p className="mt-1 text-[10.5px] text-zinc-400 dark:text-zinc-500">{t("flow.tourTreeMiss")}</p>}
-                <div className="nunopi-scroll mt-1 max-h-[30vh] overflow-auto text-[11.5px] leading-relaxed text-zinc-600 dark:text-zinc-300"><Markdown>{tourSteps[tourIdx].text}</Markdown></div>
+                <div style={stepH ? { height: stepH } : { maxHeight: "45vh" }} className="nunopi-scroll mt-1 overflow-auto text-[11.5px] leading-relaxed text-zinc-600 dark:text-zinc-300"><Markdown>{tourSteps[tourIdx].text}</Markdown></div>
+                {/* 아래 가장자리를 끌어 설명 높이 조절(120px~화면 70%, 저장) */}
+                <div role="separator" aria-orientation="horizontal" aria-label={t("flow.tourResize")} title={t("flow.tourResize")} onPointerDown={startStepResize}
+                  className="mx-auto mt-1 h-1.5 w-10 cursor-row-resize rounded-full bg-zinc-300 transition hover:bg-mustard-500 dark:bg-zinc-600 dark:hover:bg-mustard-400" />
               </div>
             )}
             {/* #1320 낡음 표시 — 저장 뒤 바뀐 파일 수 + 갱신, 또는 방금 갱신이 한 일. 기존 보조 문구 톤 한 줄(새 패널 없음). */}
