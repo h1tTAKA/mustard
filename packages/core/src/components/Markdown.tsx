@@ -60,8 +60,8 @@ let tipReady = false;
 function installCodeTip() {
   if (tipReady || typeof document === "undefined") return;
   tipReady = true;
-  let timer = 0, cur: Element | null = null, box: HTMLDivElement | null = null;
-  const hide = () => { clearTimeout(timer); cur = null; if (box) box.style.display = "none"; };
+  let timer = 0, watch = 0, cur: Element | null = null, box: HTMLDivElement | null = null;
+  const hide = () => { clearTimeout(timer); clearInterval(watch); cur = null; if (box) box.style.display = "none"; };
   const show = (c: Element) => {
     if (!c.isConnected) return;
     if (!box) { box = document.createElement("div"); box.className = "nunopi-code-tip"; box.setAttribute("role", "tooltip"); document.body.appendChild(box); }
@@ -70,6 +70,7 @@ function installCodeTip() {
     const r = c.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight;
     box.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
     box.style.top = `${r.top - h - 6 >= 8 ? r.top - h - 6 : r.bottom + 6}px`; // 위에 공간 없으면 아래
+    watch = window.setInterval(() => { if (!c.isConnected) hide(); }, 400); // 다시 그려져 코드가 사라지면 툴팁도(리뷰)
   };
   document.addEventListener("mouseover", (e) => {
     const c = (e.target as Element | null)?.closest?.("code[data-tip]") ?? null;
@@ -80,6 +81,7 @@ function installCodeTip() {
     timer = window.setTimeout(() => { if (cur === c) show(c); }, TIP_MS);
   }, true);
   for (const ev of ["scroll", "mousedown", "keydown"]) document.addEventListener(ev, hide, true);
+  document.addEventListener("mouseout", (e) => { if (!e.relatedTarget) hide(); }, true); // 창 밖으로 나가면(리뷰)
   window.addEventListener("blur", hide);
 }
 const InPre = createContext(false); // 펜스 코드(<pre> 안)는 한 줄이라도 분류 안 함(리뷰)
@@ -94,7 +96,7 @@ function InlineCode({ node: _node, className, children, ...rest }: ComponentProp
   if (k === "plain") return <code className={className} {...rest}>{children}</code>;
   const sub = codeSub(text as string, k); // 툴팁은 세부 종류("메서드 호출"·"명령어 옵션"…), 없으면 색 묶음 이름
   const tip = sub ? t(`code.sub.${sub}`) : t(`code.kind.${k}`);
-  return <code data-k={k} data-tip={tip} aria-label={`${text} — ${tip}`} {...rest}>{children}</code>;
+  return <code data-k={k} data-tip={tip} aria-description={tip} {...rest}>{children}</code>;
 }
 export default memo(function Markdown({ children, className, onLink }: { children: string; className?: string; onLink?: (href: string) => boolean }) {
   const components = useMemo(() => ({
