@@ -167,10 +167,9 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     return () => { alive = false; window.clearInterval(iv); window.removeEventListener("focus", check); };
   }, [root, graphOf]);
 
-  // #1338 큰 그래프는 처음엔 파일 노드만 — 심볼 칩으로 다 펼치거나, 덩어리 칩을 고르면 그 덩어리 심볼만. 고른 노드는 늘 보임.
-  const [symPick, setSymPick] = useState<boolean | null>(null); // null = 자동(노드 수로)
-  const symOn = symPick ?? (graph?.nodes.length ?? 0) <= FILE_ONLY_AT;
-  const symCount = useMemo(() => graph?.nodes.filter((n) => n.kind !== "file").length ?? 0, [graph]);
+  // #1338 큰 그래프는 처음엔 파일 노드만 — 범례에서 종류를 고르거나 덩어리 칩을 고르면 그 심볼만. 고른 노드는 늘 보임.
+  // 칩 대신 범례로(유저 피드백) — 큰 그래프에서 범례로 function·class 등을 고르면 그 종류 심볼이 보임
+  const symOn = (graph?.nodes.length ?? 0) <= FILE_ONLY_AT;
   const byId = useMemo(() => new Map(graph?.nodes.map((n) => [n.id, n]) ?? []), [graph]);
   const matches = useMemo(() => searchNodes(graph?.nodes ?? [], query), [graph, query]); // 숨긴 심볼도 찾음 — 고르면 그 노드가 보이게(리뷰)
   const communities = useMemo(() => [...(graph?.communities ?? [])].sort((a, b) => b.count - a.count).slice(0, MAX_CHIPS), [graph]);
@@ -199,8 +198,8 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     const all = graph?.nodes ?? [];
     if (symOn) return all;
     const extra = new Set<string>([...(path ?? []), ...(hit ? [...hit.changed].slice(0, 500) : [])]); // 영향은 바뀐 노드만·500개까지 — 넓은 기준이 심볼 수천 개를 다 펼치지 않게(리뷰). 이웃(affected)은 파일 노드로 보임
-    return all.filter((n) => n.kind === "file" || n.id === selSym || extra.has(n.id) || (n.community != null && picked.has(n.community)));
-  }, [graph, symOn, selSym, picked, path, hit]);
+    return all.filter((n) => n.kind === "file" || n.id === selSym || extra.has(n.id) || kindPick.has(n.kind) || (n.community != null && picked.has(n.community)));
+  }, [graph, symOn, selSym, picked, path, hit, kindPick]);
   // #1322 노드 설명 — 누르면 저장분(파일 그대로면) 즉시, 없으면 그 노드의 실제 코드 + 연결을 AI에 보여 주고 근거와 함께 씀 → 저장.
   const [note, setNote] = useState<{ id: string; text?: string; busy?: boolean; err?: string } | null>(null);
   // 이 창 안 캐시·진행 중 요청 — 키는 레포+노드(레포를 바꿔도 같은 id가 섞이지 않게), 같은 노드를 다시 눌러도 AI를 두 번 안 부름(리뷰).
@@ -574,12 +573,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
               </div>
             )}
           </div>
-            {/* #1338 심볼(함수·클래스…) 보이기 — 큰 그래프는 처음엔 파일만 */}
-            {symCount > 0 && (
-              <button type="button" onClick={() => setSymPick(!symOn)} aria-pressed={symOn} title={t("graph.symbolsTitle")} className={chip(symOn)}>
-                {t("graph.symbols")} <span className="text-zinc-400 dark:text-zinc-500">{symCount}</span>
-              </button>
-            )}
+            
             {/* 경로 찾기 — 누르면 시작·끝 노드 고르기(캔버스 클릭 또는 검색), 켜진 상태에서 다시 누르면 지움 */}
             <button type="button" onClick={() => (pathActive ? clearPath() : (setPathPick("from"), setPanelOpen(true)))} aria-pressed={pathActive} title={t("graph.pathTitle")}
               className={`flex items-center gap-1 ${chip(pathActive)}`}>

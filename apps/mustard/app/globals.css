@@ -219,6 +219,10 @@ samp {
 .dark .nunopi-md :not(pre) > code[data-k="path"] { color: #f0c75e; background: rgba(232,185,58,0.14); }
 .dark .nunopi-md :not(pre) > code[data-k="cmd"] { color: #fca5a5; background: rgba(248,113,113,0.14); }
 .dark .nunopi-md :not(pre) > code[data-k="sym"] { color: #93c5fd; background: rgba(96,165,250,0.14); }
+/* 코드 보기 행 번호(CodePane, 유저 요청) — shiki .line마다 CSS 카운터. 가상 요소라 복사·⌘A 선택에 안 섞임. 폭 = 줄 수 자릿수(--ln-w) */
+.code-ln pre code { counter-reset: ln; }
+.code-ln .line::before { counter-increment: ln; content: counter(ln); display: inline-block; width: var(--ln-w, 3ch); margin-right: 1.5ch; text-align: right; color: #a1a1aa; opacity: 0.7; }
+.dark .code-ln .line::before { color: #71717a; }
 /* #1326 코드 보기에서 고른 줄(CodePane line) — 머스타드 옅은 띠 */
 .code-line-focus { display: inline-block; min-width: 100%; background: rgba(232,185,58,0.18); }
 /* 코드블록 배경 투명 — 감싸는 컨테이너(추가설명 패널 / 챗 버블)색과 통일한다. 테두리만 남겨 박스 구분.
