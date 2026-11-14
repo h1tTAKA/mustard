@@ -35,6 +35,12 @@ const HL = "#e8b93a";                  // 강조색(머스타드)
 const CHANGED = "#f97316", AFFECTED = "#facc15"; // 영향 강조: 바뀐 노드(주황)·한 칸 이웃(노랑)
 type ImpactBase = "off" | "analysis" | "worktree" | "branch";
 
+// 닫았다 다시 열 때 보던 그대로(#1326 후속, 유저 요청) — 레포별로 고른 노드·덩어리·검색·경로·영향 기준·패널 펼침·코드 칸·화면 이동/확대·노드 자리.
+// 앱 메모리에만(앱을 끄면 처음부터). 그래프가 다시 빌드돼 노드가 바뀌면 없는 노드는 무시.
+type Saved = { selected: string | null; picked: number[]; query: string; panelOpen: boolean; treeOpen: boolean; askOpen: boolean; codeAt: { file: string; line?: number } | null;
+  pathFrom: string | null; pathTo: string | null; impactBase: ImpactBase; view: { x: number; y: number; k: number }; pos: Record<string, [number, number]> };
+const kept = new Map<string, Saved>();
+
 export default function RepoGraphViewer({ root, files, providerId, providerSettings, onOpenFile, onClose }: {
   root: string;
   files?: string[];                     // #1326 왼쪽 파일 트리(레포 파일 목록)
@@ -45,6 +51,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
 }) {
   const t = useT();
   const [graph, setGraph] = useState<RepoGraph | null>(null);
+  const restoreRef = useRef<Saved | undefined>(kept.get(root)); // 시뮬이 한 번 꺼내 씀(노드 자리·화면)
   const [builtAt, setBuiltAt] = useState<number | null>(null);
   const [graphOf, setGraphOf] = useState<string | null>(null); // 지금 graph가 어느 레포 것인지(레포 전환 직후 옛 그래프로 노드 설명을 부르지 않게)
   // 범례에 넣을 역할 — 그래프 바뀔 때만 1회 계산(#1014 리뷰: 렌더마다 노드 전체 스캔 방지)
@@ -56,10 +63,10 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   const [picked, setPicked] = useState<Set<number>>(new Set());     // 고른 덩어리(비면 전부)
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);    // 누른 노드 id → 오른쪽 상세
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(() => kept.get(root)?.panelOpen ?? true);
   // #1326 왼쪽 파일 트리(좁은 창이면 처음엔 접힘) + 가운데 아래 코드 보기(노드·트리 클릭한 파일, 노드 줄 근처)
-  const [treeOpen, setTreeOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 1200);
-  const [askOpen, setAskOpen] = useState(false); // #1326 노드 질문 칸 펼침(노드를 바꿔도 유지)
+  const [treeOpen, setTreeOpen] = useState(() => kept.get(root)?.treeOpen ?? (typeof window === "undefined" || window.innerWidth >= 1200));
+  const [askOpen, setAskOpen] = useState(() => kept.get(root)?.askOpen ?? false); // #1326 노드 질문 칸 펼침(노드를 바꿔도 유지)
   const [codeAt, setCodeAt] = useState<{ file: string; line?: number } | null>(null);
   // 코드 칸 높이(px) — 위 가장자리를 끌거나 ↑↓로(null = 기본 42%). 보는 사람 설정이라 localStorage. 120px ~ 그래프 칸의 85%.
   const colRef = useRef<HTMLDivElement>(null);
@@ -113,8 +120,10 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   // 1) 그래프 로드 — 서브2 캐시 라우트 재사용.
   useEffect(() => {
     let alive = true;
+    const k = kept.get(root); // 닫기 전 상태가 있으면 그대로, 없으면 처음
+    restoreRef.current = k;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 로드 시작 초기화(비동기 fetch 준비)
-    setLoading(true); setErr(null); setSelected(null); setPicked(new Set()); setQuery(""); setPathPick(null); setPathFrom(null); setPathTo(null); setImpactBase("off");
+    setLoading(true); setErr(null); setSelected(k?.selected ?? null); setPicked(new Set(k?.picked ?? [])); setQuery(k?.query ?? ""); setPathPick(null); setPathFrom(k?.pathFrom ?? null); setPathTo(k?.pathTo ?? null); setImpactBase(k?.impactBase ?? "off");
     void (async () => {
       try {
         const r = await fetch("/api/repo/codegraph", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root }) });
@@ -274,7 +283,8 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   // 2) 그래프(보이는 노드) 생겼을 때 시뮬 구성 + rAF 루프.
   useEffect(() => {
     if (!graph) return;
-    const nodes: SimNode[] = shown.map((n) => ({ id: n.id, label: n.label, file: n.file, kind: n.kind, role: n.role, community: n.community }));
+    const back = restoreRef.current; restoreRef.current = undefined; // 다시 열었으면 노드 자리·화면을 닫기 전대로(한 번만)
+    const nodes: SimNode[] = shown.map((n) => { const p = back?.pos[n.id]; return { id: n.id, label: n.label, file: n.file, kind: n.kind, role: n.role, community: n.community, ...(p ? { x: p[0], y: p[1] } : {}) }; });
     const ids = new Map(nodes.map((n) => [n.id, n]));
     const links: SimLink[] = graph.edges
       .filter((e) => ids.has(e.source) && ids.has(e.target))
@@ -289,7 +299,8 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
       .force("collide", forceCollide(NODE_R + 1))
       .on("tick", () => { dirtyRef.current = true; });
     simRef.current = sim;
-    viewRef.current = { x: 0, y: 0, k: 1 };
+    if (back && nodes.some((n) => back.pos[n.id])) sim.alpha(0.05); // 자리가 있으면 거의 안 움직이게
+    viewRef.current = back ? { ...back.view } : { x: 0, y: 0, k: 1 };
     dirtyRef.current = true;
     const loop = () => { if (dirtyRef.current) { dirtyRef.current = false; draw(); } rafRef.current = requestAnimationFrame(loop); };
     rafRef.current = requestAnimationFrame(loop);
@@ -404,7 +415,17 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   const nodeCount = graph?.nodes.length ?? 0;
   const symbolCount = graph ? nodeCount - graph.stats.files : 0;
   const sel = selected ? byId.get(selected) : undefined;
-  useEffect(() => { setCodeAt(null); }, [root]); // eslint-disable-line react-hooks/set-state-in-effect -- 레포 바뀌면 옛 레포 파일 코드 비움(리뷰)
+  useEffect(() => { setCodeAt(kept.get(root)?.codeAt ?? null); }, [root]); // eslint-disable-line react-hooks/set-state-in-effect -- 레포 바뀌면 그 레포의 닫기 전 코드 칸(없으면 비움, 리뷰)
+  // 닫거나 레포를 바꿀 때 지금 상태를 남김(다음에 열면 그대로)
+  const snapRef = useRef<Omit<Saved, "view" | "pos"> | null>(null);
+  useEffect(() => { snapRef.current = { selected, picked: [...picked], query, panelOpen, treeOpen, askOpen, codeAt, pathFrom, pathTo, impactBase }; });
+  useEffect(() => () => {
+    const sn = snapRef.current;
+    if (!sn || !nodesRef.current.length) return;
+    const pos: Record<string, [number, number]> = {};
+    for (const n of nodesRef.current) if (n.x != null && n.y != null) pos[n.id] = [n.x, n.y];
+    kept.set(root, { ...sn, view: { ...viewRef.current }, pos });
+  }, [root]);
   // 노드를 고르면 그 파일 코드(그 줄) + 트리에서 펼침·강조
   const selFile = sel?.file, selLine = sel?.line;
   useEffect(() => {
