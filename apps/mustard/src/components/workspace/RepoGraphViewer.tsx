@@ -5,7 +5,9 @@
 // 레이아웃 엔진 d3-force(ISC). 팬/줌은 손수(의존성 최소).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, type Simulation, type SimulationNodeDatum } from "d3-force";
-import { IconX, IconLoader2, IconFocus2, IconSearch, IconCode, IconLayoutSidebarRight, IconRoute } from "@tabler/icons-react";
+import { IconX, IconLoader2, IconFocus2, IconSearch, IconCode, IconLayoutSidebar, IconLayoutSidebarRight, IconRoute } from "@tabler/icons-react";
+import FileTree from "@/components/workspace/FileTree";
+import CodePane from "@/components/workspace/CodePane";
 import { useT, useLocale, stripCardBlock, Markdown } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import type { RepoAssetRole, RepoGraph, RepoNode, RepoNodeKind } from "@/lib/repo/types";
@@ -32,8 +34,9 @@ const HL = "#e8b93a";                  // 강조색(머스타드)
 const CHANGED = "#f97316", AFFECTED = "#facc15"; // 영향 강조: 바뀐 노드(주황)·한 칸 이웃(노랑)
 type ImpactBase = "off" | "analysis" | "worktree" | "branch";
 
-export default function RepoGraphViewer({ root, providerId, providerSettings, onOpenFile, onClose }: {
+export default function RepoGraphViewer({ root, files, providerId, providerSettings, onOpenFile, onClose }: {
   root: string;
+  files?: string[];                     // #1326 왼쪽 파일 트리(레포 파일 목록)
   providerId?: AgentProviderKind;       // #1322 노드 설명(AI)용 — 없으면 설명 없이 구조만
   providerSettings?: ProviderSettings;
   onOpenFile?: (file: string, line?: number) => void;
@@ -53,6 +56,10 @@ export default function RepoGraphViewer({ root, providerId, providerSettings, on
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);    // 누른 노드 id → 오른쪽 상세
   const [panelOpen, setPanelOpen] = useState(true);
+  // #1326 왼쪽 파일 트리(좁은 창이면 처음엔 접힘) + 가운데 아래 코드 보기(노드·트리 클릭한 파일, 노드 줄 근처)
+  const [treeOpen, setTreeOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 1200);
+  const [codeAt, setCodeAt] = useState<{ file: string; line?: number } | null>(null);
+  const [reveal, setReveal] = useState<{ file: string; n: number; at: number } | null>(null);
   // 경로 찾기 — pathPick: 지금 고르는 끝("from"=시작, "to"=끝, null=안 고르는 중). 둘 다 정해지면 최단 경로.
   const [pathPick, setPathPick] = useState<null | "from" | "to">(null);
   const [pathFrom, setPathFrom] = useState<string | null>(null);
@@ -367,6 +374,18 @@ export default function RepoGraphViewer({ root, providerId, providerSettings, on
   const nodeCount = graph?.nodes.length ?? 0;
   const symbolCount = graph ? nodeCount - graph.stats.files : 0;
   const sel = selected ? byId.get(selected) : undefined;
+  // 노드를 고르면 그 파일 코드(그 줄) + 트리에서 펼침·강조
+  const selFile = sel?.file, selLine = sel?.line;
+  useEffect(() => {
+    if (!selFile) return;
+    setCodeAt({ file: selFile, line: selLine }); // eslint-disable-line react-hooks/set-state-in-effect -- 고른 노드 따라 코드 보기·트리 강조
+    setReveal((r) => ({ file: selFile, n: (r?.n ?? 0) + 1, at: Date.now() }));
+  }, [selFile, selLine]);
+  // 트리에서 파일 클릭 → 그 파일 노드가 그래프에 있으면 고르고, 없으면 코드만 보임
+  const pickFile = (f: string) => {
+    const n = graph?.nodes.find((x) => x.kind === "file" && x.file === f);
+    if (n) pick(n.id); else setCodeAt({ file: f });
+  };
   const commName = (c?: number) => graph?.communities?.find((x) => x.id === c)?.label;
   const btn = "shrink-0 rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200";
   const chip = (on: boolean) => `shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium transition ${on ? "bg-mustard-500/15 text-mustard-700 ring-1 ring-inset ring-mustard-500/35 dark:bg-mustard-400/15 dark:text-mustard-400 dark:ring-mustard-400/30" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`;
@@ -393,6 +412,7 @@ export default function RepoGraphViewer({ root, providerId, providerSettings, on
         {nodeCount > 0 && <span className="shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500">{t("graph.stats", { nodes: nodeCount, edges: graph?.edges.length ?? 0 })}</span>}
         {nodeCount > BIG_GRAPH && <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">{t("graph.big")}</span>}
         <button type="button" onClick={reset} title={t("graph.reset")} aria-label={t("graph.reset")} className={btn}><IconFocus2 size={15} stroke={2} aria-hidden /></button>
+        {files && <button type="button" onClick={() => setTreeOpen((v) => !v)} title={t("graph.tree")} aria-label={t("graph.tree")} aria-pressed={treeOpen} className={btn}><IconLayoutSidebar size={15} stroke={2} aria-hidden /></button>}
         <button type="button" onClick={() => setPanelOpen((v) => !v)} title={t("graph.panel")} aria-label={t("graph.panel")} aria-pressed={panelOpen} className={btn}><IconLayoutSidebarRight size={15} stroke={2} aria-hidden /></button>
         <button type="button" onClick={onClose} title={t("mem.close")} aria-label={t("mem.close")} className={btn}><IconX size={16} stroke={2} aria-hidden /></button>
       </div>
@@ -436,7 +456,14 @@ export default function RepoGraphViewer({ root, providerId, providerSettings, on
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        <div ref={wrapRef} className="relative min-w-0 flex-1 overflow-hidden">
+        {/* #1326 왼쪽 파일 트리 — 고른 노드 파일까지 펼치고 강조 */}
+        {treeOpen && files && (
+          <aside className="w-56 shrink-0 border-r border-zinc-200 dark:border-zinc-800">
+            <FileTree files={files} selected={codeAt?.file ?? null} reveal={reveal} onSelect={pickFile} />
+          </aside>
+        )}
+        <div className="flex min-w-0 flex-1 flex-col">
+        <div ref={wrapRef} className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
           {loading ? (
             <div className="flex h-full items-center justify-center gap-2 text-[12px] text-zinc-400 dark:text-zinc-500"><IconLoader2 size={16} stroke={2} className="animate-spin" aria-hidden /> {t("graph.loading")}</div>
           ) : err ? (
@@ -460,6 +487,18 @@ export default function RepoGraphViewer({ root, providerId, providerSettings, on
               </div>
             </>
           )}
+        </div>
+        {/* #1326 가운데 아래 코드 보기 — 그래프를 가리지 않게 아래 칸, 닫기 가능 */}
+        {codeAt && (
+          <div className="flex h-[42%] min-h-[160px] shrink-0 flex-col border-t border-zinc-200 dark:border-zinc-800">
+            <div className="flex shrink-0 items-center gap-1.5 border-b border-zinc-200 px-3 py-1 dark:border-zinc-800">
+              <span className="mr-auto truncate font-mono text-[11px] text-zinc-600 dark:text-zinc-300" title={codeAt.file}>{codeAt.file}{codeAt.line ? `:${codeAt.line}` : ""}</span>
+              {onOpenFile && <button type="button" onClick={() => onOpenFile(codeAt.file, codeAt.line)} title={t("flow.openCode")} aria-label={t("flow.openCode")} className={btn}><IconCode size={13} stroke={2} aria-hidden /></button>}
+              <button type="button" onClick={() => setCodeAt(null)} title={t("mem.close")} aria-label={t("mem.close")} className={btn}><IconX size={13} stroke={2} aria-hidden /></button>
+            </div>
+            <div className="min-h-0 flex-1"><CodePane key={codeAt.file} root={root} file={codeAt.file} line={codeAt.line} /></div>
+          </div>
+        )}
         </div>
         {/* 오른쪽 패널 — 고른 노드 없으면 요약, 있으면 상세 */}
         {panelOpen && graph && (
