@@ -536,7 +536,8 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
         </div>
         {/* 오른쪽 패널 — 고른 노드 없으면 요약, 있으면 상세 */}
         {panelOpen && graph && (
-          <aside className="nunopi-scroll flex w-72 shrink-0 flex-col gap-3 overflow-auto border-l border-zinc-200 p-3 dark:border-zinc-800">
+          <aside className="flex w-72 shrink-0 flex-col border-l border-zinc-200 dark:border-zinc-800">
+          <div className="nunopi-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3">
             {pathActive ? (
               <div className="flex flex-col gap-1.5">
                 <p className="text-[12px] font-semibold text-zinc-700 dark:text-zinc-200">{t("graph.path")}</p>
@@ -610,12 +611,6 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
                       : <Markdown>{note.text ?? ""}</Markdown>}
                   </div>
                 )}
-                {/* #1326 이 노드에 대해 질문 — 접이식, 질문 이력(그 파일 세션)에 남음 */}
-                {providerId && providerSettings && (
-                  <GraphNodeAsk key={sel.file} root={root} file={sel.file} label={sel.label} kind={sel.kind} line={sel.line}
-                    note={note?.id === sel.id ? note.text : undefined} providerId={providerId} providerSettings={providerSettings}
-                    open={askOpen} onToggle={() => setAskOpen((v) => !v)} />
-                )}
                 {detail && (
                   <>
                     {linkList(t("graph.outgoing"), detail.out)}
@@ -625,6 +620,13 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
                 )}
               </>
             )}
+          </div>
+          {/* #1326 이 노드에 대해 질문 — 오른쪽 패널 아래 접이식(캐치업 카드 질문과 같은 모양), 질문 이력(그 파일 세션)에 남음 */}
+          {sel && !pathActive && providerId && providerSettings && (
+            <GraphNodeAsk key={sel.file} root={root} file={sel.file} label={sel.label} kind={sel.kind} line={sel.line}
+              note={note?.id === sel.id ? note.text : undefined} providerId={providerId} providerSettings={providerSettings}
+              open={askOpen} onToggle={() => setAskOpen((v) => !v)} />
+          )}
           </aside>
         )}
       </div>
