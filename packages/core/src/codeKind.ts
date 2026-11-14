@@ -94,7 +94,7 @@ export type CodeSub =
   | "method" | "fn" | "type" | "const" | "keyword" | "annotation" | "tag" | "member" | "logic" | "snippet" | "name"
   | "color" | "number" | "string" | "bool" | "buildVar";
 const HAN = /[가-힣ぁ-んァ-ン一-龥]/;
-const FS_ROOT = new Set("Users home tmp private dev usr etc opt var bin sbin Applications Library System Volumes mnt proc root srv".split(" "));
+const FS_ROOT = new Set("Users tmp private dev usr etc opt var bin sbin Applications Library System Volumes mnt proc root srv".split(" "));
 export function codeSub(raw: string, kind: CodeKind = codeKind(raw)): CodeSub | null {
   const s = raw.trim();
   if (kind === "path") {
@@ -103,7 +103,7 @@ export function codeSub(raw: string, kind: CodeKind = codeKind(raw)): CodeSub | 
     if (/\/$/.test(s)) return "dir";
     const last = s.split(/[\\/]/).pop() ?? s;
     if (/\.[A-Za-z][\w]*$/.test(last) || /^\.[A-Za-z]/.test(last)) return "file";
-    if (s.startsWith("/") && !(FS_ROOT.has(s.split("/")[1] ?? "") && s.split("/").filter(Boolean).length > 1)) return "route"; // /api/tasks 같은 주소 경로(파일 시스템 루트는 제외 — 리뷰)
+    if (s.startsWith("/") && !(FS_ROOT.has(s.split("/")[1] ?? "") || /^\/home\/./.test(s))) return "route"; // /home 혼자는 웹 라우트, /home/x는 리눅스 홈 // /api/tasks 같은 주소 경로(파일 시스템 루트는 제외 — 리뷰)
     return "path";
   }
   if (kind === "cmd") return /^-/.test(s) ? "flag" : /^\d?>/.test(s) ? "redirect" : "command";
