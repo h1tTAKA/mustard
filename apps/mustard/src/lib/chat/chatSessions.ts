@@ -15,6 +15,7 @@ import { decide, fromAgentRequest } from "@/lib/crew/crewPolicy";
 import { readPerms } from "@/lib/crew/crewPermStore";
 import { HOOK_SRC } from "@/lib/crew/crewRunner";
 import { applyEvent, type ChatItem, type Timeline } from "./chatTimeline";
+import { observeChat } from "./chatNarrate";
 
 export type ChatProvider = "claude-code" | "codex";
 export interface ChatMeta { id: string; title: string; provider: ChatProvider; createdAt: number; busy: boolean }
@@ -143,6 +144,7 @@ async function wire() {
     if (c.stopping && ev.type === "error") ev = { type: "interrupted" };
     if (ev.type === "complete" || ev.type === "interrupted" || ev.type === "error") c.stopping = false;
     const r = applyEvent(c.tl, ev, saveImage);
+    observeChat(c.id, c.cwd, c.provider === "codex" ? "codex" : "claude", ev); // 캐치업 실시간 해설(터미널과 같은 narrate)
     for (const i of r.changed) emit(c.id, { type: "item", i, item: c.tl.items[i] });
     if (r.delta) emit(c.id, { type: "delta", streaming: c.tl.streaming });
     if (wasBusy !== c.tl.busy) emit(c.id, { type: "busy", busy: c.tl.busy });
