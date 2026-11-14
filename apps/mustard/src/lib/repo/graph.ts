@@ -9,6 +9,7 @@ import { extractSymbols, resolveCalls, type SymbolInfo, type RawCall } from "./s
 import type { RepoGraph, RepoNode, RepoEdge, RepoAssetRole } from "./types";
 import { fileHash, fileSig, type FileCache, type ParsedFile } from "./incremental";
 import { readFileCache, writeFileCache } from "./graphStore";
+import { isConfigFile } from "./configFiles";
 import { detectCommunities } from "./communities";
 
 // import 해석(상대 + tsconfig 별칭 + baseUrl)은 경량 모듈 imports.ts로 분리.
@@ -25,6 +26,7 @@ const baseName = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 /** 레포 루트 → RepoGraph. 파일 노드 + import 엣지 + 심볼 노드 + contains + calls. */
 // 게임 에셋 역할(#1013) — Godot .tscn은 프리팹 역할도 하지만 형식상 씬.
 function assetRole(file: string): RepoAssetRole | undefined {
+  if (isConfigFile(file)) return "config"; // #1335
   const f = file.toLowerCase();
   if (f.endsWith(".unity") || f.endsWith(".tscn")) return "scene";
   if (f.endsWith(".prefab")) return "prefab";
@@ -105,7 +107,7 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
     }
 
     if (file.endsWith(".cs")) csText.set(file, text);
-    const skip = isUnityAsset(file) || isGodotFile(file);
+    const skip = isUnityAsset(file) || isGodotFile(file) || isConfigFile(file); // 설정 파일은 심볼 없음(#1335 — build.gradle.kts 등 코드 문법이어도)
     if (!skip && !hit) { try { pf.ex = await extractSymbols(text, file); } catch { pf.ex = undefined; } } // #1331 한 파일 실패가 그래프 전체를 죽이지 않게(심볼 없이 파일·import만)
     // 에셋(Unity·Godot)은 심볼이 없어 서명이 늘 같음 → 내용 해시를 서명으로(씬·프리팹 편집 = 연결 변화, 리뷰).
     if (!hit) { pf.sig = skip ? hash : fileSig(pf.specs, pf.ex?.symbols); reparsed++; }

@@ -1,6 +1,7 @@
 // 레포 파일 스캐너 — 서버(Node) 전용. 폴더를 훑어 지원 소스 파일 경로를 모은다.
 // 무시 디렉터리 제외 + 파일 수 상한(폭주 방지). import 파싱은 graph.ts에서.
-import { readdirSync, existsSync, type Dirent } from "node:fs";
+import { readdirSync, existsSync, statSync, type Dirent } from "node:fs";
+import { isConfigFile, CONFIG_MAX_BYTES } from "./configFiles.ts";
 import { execFileSync } from "node:child_process";
 import { join, relative, sep } from "node:path";
 import { SUPPORTED_EXTS } from "./langs.ts"; // .ts 명시 — scan.check(strip-types)가 직접 로드(symbols.ts 관례)
@@ -85,6 +86,9 @@ export interface ScanResult {
 // #1331 코드 생성기 산출물(사람이 안 쓰는 파일) — 그래프에서 뺌. Dart build_runner·freezed·mockito, protobuf.
 const GENERATED_RE = /\.(g|freezed|mocks|gr|config)\.dart$|\.pb(json|enum|server)?\.dart$|_pb2(_grpc)?\.py$|\.pb\.go$/i;
 
+// #1335 설정 파일 — 이름 목록에 있고 1MiB 이하
+const isConfigOk = (full: string, rel: string) => { if (!isConfigFile(rel)) return false; try { return statSync(full).size <= CONFIG_MAX_BYTES; } catch { return false; } };
+
 export function scanRepo(root: string): ScanResult {
   const files: string[] = [];
   const engines = new Set<Engine>();
@@ -122,7 +126,7 @@ export function scanRepo(root: string): ScanResult {
           else if (!vis.dirs.has(rel)) continue; // git이 안 보는 폴더(무시됨) — 통째로 건너뜀
         }
         walk(full, inUnityAssets || (engine === "unity" && name.toLowerCase() === "assets"), godot);
-      } else if (e.isFile() && (!vis || vis.files.has(relative(root, full).split(sep).join("/")) || inSub(relative(root, full).split(sep).join("/"))) && !GENERATED_RE.test(name) && (SUPPORTED.has(ext(name)) || (inUnityAssets && UNITY_ASSETS.has(ext(name))) || (godot && GODOT_FILES.has(ext(name))))) {
+      } else if (e.isFile() && (!vis || vis.files.has(relative(root, full).split(sep).join("/")) || inSub(relative(root, full).split(sep).join("/"))) && !GENERATED_RE.test(name) && (SUPPORTED.has(ext(name)) || isConfigOk(full, relative(root, full).split(sep).join("/")) || (inUnityAssets && UNITY_ASSETS.has(ext(name))) || (godot && GODOT_FILES.has(ext(name))))) {
         files.push(relative(root, full).split(sep).join("/"));
         if (files.length >= MAX_FILES) { capped = true; return; }
       }
