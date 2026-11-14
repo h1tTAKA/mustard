@@ -219,6 +219,8 @@ samp {
 .dark .nunopi-md :not(pre) > code[data-k="cmd"] { color: #6ee7b7; background: rgba(52,211,153,0.13); }
 .dark .nunopi-md :not(pre) > code[data-k="sym"] { color: #93c5fd; background: rgba(96,165,250,0.14); }
 .dark .nunopi-md :not(pre) > code[data-k="val"] { color: #f9a8d4; background: rgba(244,114,182,0.13); }
+/* #1326 코드 보기에서 고른 줄(CodePane line) — 머스타드 옅은 띠 */
+.code-line-focus { display: inline-block; min-width: 100%; background: rgba(232,185,58,0.18); }
 /* 코드블록 배경 투명 — 감싸는 컨테이너(추가설명 패널 / 챗 버블)색과 통일한다. 테두리만 남겨 박스 구분.
    code.hljs 는 github-dark가 background(#0d1117)를 깔므로 명시적으로 투명 덮어쓰기. */
 .nunopi-md pre { margin: 0.5em 0; padding: 0.7em 0.85em; border-radius: 0.6em; overflow-x: auto; background: transparent; border: 1px solid rgba(0,0,0,0.1); }

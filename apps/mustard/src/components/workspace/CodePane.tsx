@@ -14,7 +14,8 @@ const fmtSize = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1
 type BinaryInfo = { kind: "image" | "binary" | "non-utf8"; size: number; dataUrl?: string };
 
 
-export default function CodePane({ root, file }: { root: string; file: string }) {
+// line(#1326): 주면 하이라이트가 그려진 뒤 그 줄로 스크롤 + 옅게 강조(코드 그래프 노드 코드 보기).
+export default function CodePane({ root, file, line }: { root: string; file: string; line?: number }) {
   const [html, setHtml] = useState<string>("");
   const [raw, setRaw] = useState<string>("");
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
@@ -62,6 +63,15 @@ export default function CodePane({ root, file }: { root: string; file: string })
 
   // #1324 React 19는 렌더마다 새 {__html} 객체면 innerHTML을 다시 넣음 → 워크스페이스가 1초마다 다시 그려질 때 코드 DOM이 갈려 ⌘A·드래그 선택이 풀림. 같은 html이면 같은 객체.
   const inner = useMemo(() => ({ __html: html }), [html]);
+  const boxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!html || !line || line < 1) return;
+    const el = boxRef.current?.querySelectorAll<HTMLElement>(".line")[line - 1];
+    if (!el) return;
+    el.scrollIntoView({ block: "center" });
+    el.classList.add("code-line-focus");
+    return () => el.classList.remove("code-line-focus");
+  }, [html, line]);
   if (status === "loading") return <div className="flex h-full items-center justify-center text-zinc-400"><IconLoader2 size={16} stroke={2} className="animate-spin" aria-hidden /></div>;
   if (status === "error") return <div className="flex h-full items-center justify-center gap-1.5 text-[12px] text-amber-600 dark:text-amber-500"><IconAlertTriangle size={14} stroke={2} aria-hidden /> {file}</div>;
 
@@ -75,7 +85,7 @@ export default function CodePane({ root, file }: { root: string; file: string })
   return (
     // #1324 ⌘A/Ctrl+A — 코드 탭에 포커스가 있으면 이 파일 코드만 전부 선택(앱 화면 전체 선택 대신). tabIndex로 클릭하면 포커스가 옴.
     // data-select-all: 앱 메뉴 "전체 선택"(⌘A)이 포커스가 여기 있으면 코드만 선택(electron/main.cjs selectAllScoped). onKeyDown은 메뉴가 없는 환경용.
-    <div style={font} tabIndex={0} data-select-all="" onKeyDown={(e) => {
+    <div ref={boxRef} style={font} tabIndex={0} data-select-all="" onKeyDown={(e) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "a") return;
       e.preventDefault(); e.stopPropagation();
       const sel = window.getSelection(), body = e.currentTarget.firstElementChild;
