@@ -13,11 +13,14 @@ const SUPPORTED = SUPPORTED_EXTS;
 const IGNORE_DIRS = new Set([
   "node_modules", ".git", ".next", "dist", "dist_electron", "build", "out", "coverage", // dist_electron = electron-builder 출력(.app 안 소스 사본, #1155)
   ".turbo", ".vercel", ".cache", "graphify-out", ".idea", ".vscode",
-  // #1331 의존성·생성물(git이 없는 레포용 — git 레포는 .gitignore로 거름). 실측: Flutter ios/Pods의 .h가 그래프를 차지
-  "Pods", "Carthage", "DerivedData", ".dart_tool", ".pub-cache", ".gradle", "vendor", "target", "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache",
+  // #1331 의존성·생성물(이름이 확실한 것 — 커밋돼 있어도 남의 코드). 실측: Flutter ios/Pods의 .h가 그래프를 차지
+  "Pods", "Carthage", "DerivedData", ".dart_tool", ".pub-cache", ".gradle", "__pycache__", ".mypy_cache", ".pytest_cache",
 ]);
+// git이 없는 레포에서만 거르는 이름 — 진짜 소스 폴더 이름일 수도 있어 git 레포는 .gitignore에 맡김(리뷰)
+const NOGIT_IGNORE = new Set(["vendor", "target", "venv", ".venv"]);
 // #1331 git 레포면 git이 보는 파일(추적 + 무시 안 된 새 파일)만 — 폴더마다 .gitignore·info/exclude를 그대로 따름.
 // 반환: 허용 파일 집합 + 그 파일들이 든 폴더 집합(폴더째 건너뛰기용). git이 없거나 실패하면 null(기존 걷기 그대로).
+// 한계: 요청 경로에서 동기 실행(기존 걷기도 동기) — 초대형 레포는 목록 받는 동안 서버가 잠깐 멈춤. 경로는 UTF-8로 읽음.
 function gitVisible(root: string): { files: Set<string>; dirs: Set<string> } | null {
   if (!existsSync(join(root, ".git"))) return null;
   try {
@@ -88,6 +91,8 @@ export function scanRepo(root: string): ScanResult {
   const godotRoots: string[] = [];
   let capped = false;
   const vis = gitVisible(root);
+  const subs: string[] = [];
+  const inSub = (rel: string) => subs.some((s) => rel === s || rel.startsWith(`${s}/`));
 
   const walk = (dir: string, inUnityAssets = false, inGodot = false) => {
     if (capped) return;
@@ -110,9 +115,14 @@ export function scanRepo(root: string): ScanResult {
         if (IGNORE_DIRS.has(name) || name.startsWith(".")) continue; // 숨김·무시 폴더 스킵
         if (engine && ENGINE_IGNORE[engine].has(name.toLowerCase())) continue; // 엔진 자동 생성 폴더(#1003)
         if (dotnet && DOTNET_IGNORE.has(name.toLowerCase())) continue; // .NET obj/bin(#1007)
-        if (vis && !vis.dirs.has(relative(root, full).split(sep).join("/"))) continue; // git이 안 보는 폴더(무시됨) — 통째로 건너뜀
+        const rel = relative(root, full).split(sep).join("/");
+        if (!vis && NOGIT_IGNORE.has(name)) continue;
+        if (vis && !inSub(rel)) {
+          if (vis.files.has(rel)) subs.push(rel); // 서브모듈(git은 폴더 하나로만 보여 줌) — 그 안은 거르지 않고 걸음(리뷰)
+          else if (!vis.dirs.has(rel)) continue; // git이 안 보는 폴더(무시됨) — 통째로 건너뜀
+        }
         walk(full, inUnityAssets || (engine === "unity" && name.toLowerCase() === "assets"), godot);
-      } else if (e.isFile() && (!vis || vis.files.has(relative(root, full).split(sep).join("/"))) && !GENERATED_RE.test(name) && (SUPPORTED.has(ext(name)) || (inUnityAssets && UNITY_ASSETS.has(ext(name))) || (godot && GODOT_FILES.has(ext(name))))) {
+      } else if (e.isFile() && (!vis || vis.files.has(relative(root, full).split(sep).join("/")) || inSub(relative(root, full).split(sep).join("/"))) && !GENERATED_RE.test(name) && (SUPPORTED.has(ext(name)) || (inUnityAssets && UNITY_ASSETS.has(ext(name))) || (godot && GODOT_FILES.has(ext(name))))) {
         files.push(relative(root, full).split(sep).join("/"));
         if (files.length >= MAX_FILES) { capped = true; return; }
       }

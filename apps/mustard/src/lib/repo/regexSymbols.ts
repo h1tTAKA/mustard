@@ -10,12 +10,36 @@ const EMPTY = (): Out => ({ symbols: [], nodes: [], contains: [], calls: [], her
 
 const KW = new Set(["if", "for", "while", "switch", "catch", "return", "super", "this", "new", "throw", "assert", "await", "print", "sizeof", "typeof", "else", "do", "try", "case", "when", "elsif", "unless", "until", "yield", "puts", "require", "require_relative", "include", "extend", "raise"]);
 
-// 문자열·주석을 같은 길이의 공백으로 — 위치는 그대로 두고 중괄호·선언 오인 줄이기.
+// 문자열·주석을 같은 길이의 공백으로 — 위치는 그대로 두고 중괄호·선언 오인 줄이기. 한 번 훑는 상태 기계
+// (주석 안 따옴표·문자열 안 // 나 /* 를 서로 헷갈리지 않게, 리뷰). 문자열은 따옴표만 남기고 속을 비움.
 function blank(text: string, hashComments: boolean): string {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
-    .replace(hashComments ? /#[^\n{]*$/gm : /\/\/[^\n]*/g, (m) => " ".repeat(m.length))
-    .replace(/'''[\s\S]*?'''|"""[\s\S]*?"""|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"/g, (m) => m[0] + " ".repeat(Math.max(0, m.length - 2)) + m[m.length - 1]);
+  const out = text.split("");
+  const n = text.length;
+  const wipe = (a: number, b: number) => { for (let k = a; k < b; k++) if (out[k] !== "\n") out[k] = " "; };
+  let i = 0;
+  while (i < n) {
+    const c = text[i], d = text[i + 1];
+    if (!hashComments && c === "/" && d === "/") { const e = text.indexOf("\n", i); const end = e < 0 ? n : e; wipe(i, end); i = end; continue; }
+    if (hashComments && c === "#" && d !== "{") { const e = text.indexOf("\n", i); const end = e < 0 ? n : e; wipe(i, end); i = end; continue; }
+    if (!hashComments && c === "/" && d === "*") { const e = text.indexOf("*/", i + 2); const end = e < 0 ? n : e + 2; wipe(i, end); i = end; continue; }
+    if (c === "'" || c === '"') {
+      const triple = text.startsWith(c.repeat(3), i);
+      const q = triple ? c.repeat(3) : c;
+      const raw = i > 0 && text[i - 1] === "r"; // Dart r'..' — 이스케이프 없음
+      let k = i + q.length;
+      while (k < n) {
+        if (!raw && text[k] === "\\") { k += 2; continue; }
+        if (text.startsWith(q, k)) break;
+        if (!triple && text[k] === "\n") break; // 닫히지 않은 한 줄 문자열 — 줄 끝까지만
+        k++;
+      }
+      wipe(i + q.length, Math.min(k, n));
+      i = Math.min(k + q.length, n);
+      continue;
+    }
+    i++;
+  }
+  return out.join("");
 }
 
 // 여는 중괄호부터 짝 맞는 닫는 중괄호 끝(없으면 텍스트 끝).
@@ -33,18 +57,22 @@ export function regexSymbols(text: string, file: string): Out {
 }
 
 function finish(file: string, src: string, symbols: SymbolInfo[], heritage: RawHeritage[]): Out {
-  const byRange = [...symbols].sort((a, b) => (b.endIndex - b.startIndex) - (a.endIndex - a.startIndex));
-  for (const s of symbols) { let hit: string | undefined; for (const c of byRange) if (c.id !== s.id && c.kind === "class" && s.startIndex >= c.startIndex && s.endIndex <= c.endIndex) hit = c.name; s.owner = hit; }
+  // 시작 순서로 훑으며 열린 심볼 스택 — 최내곽 소속·호출자를 한 번에(전엔 호출마다 전체 심볼을 훑어 큰 파일에서 느렸음, 리뷰)
+  const byStart = [...symbols].sort((a, b) => a.startIndex - b.startIndex || b.endIndex - a.endIndex);
+  const starts = new Set(symbols.map((s) => s.startIndex));
+  { const stack: SymbolInfo[] = []; for (const s of byStart) { while (stack.length && stack[stack.length - 1].endIndex <= s.startIndex) stack.pop(); for (let k = stack.length - 1; k >= 0; k--) if (stack[k].kind === "class") { s.owner = stack[k].name; break; } stack.push(s); } }
   // 호출 — 함수·메서드 본문 안 `이름(`. 최내곽 심볼이 호출한 것으로.
   const calls: RawCall[] = [], seen = new Set<string>();
   const re = /\b([A-Za-z_]\w*)\s*\(/g;
+  const stack: SymbolInfo[] = [];
+  let si = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src))) {
-    const name = m[1];
-    if (KW.has(name)) continue;
-    if (symbols.some((s) => s.startIndex === m!.index)) continue; // 선언 자리의 자기 이름(함수 머리)은 호출 아님
-    let caller: string | null = null;
-    for (const s of byRange) if (m.index > s.startIndex && m.index < s.endIndex) caller = s.id; // 좁은 게 뒤 → 최내곽
+    const at = m.index, name = m[1];
+    while (si < byStart.length && byStart[si].startIndex < at) { const s = byStart[si++]; while (stack.length && stack[stack.length - 1].endIndex <= s.startIndex) stack.pop(); stack.push(s); }
+    while (stack.length && stack[stack.length - 1].endIndex <= at) stack.pop();
+    if (KW.has(name) || starts.has(at)) continue; // 선언 자리의 자기 이름(함수 머리)은 호출 아님
+    const caller = stack[stack.length - 1]?.id;
     if (!caller) continue;
     const k = `${caller}|${name}`;
     if (!seen.has(k)) { seen.add(k); calls.push({ callerId: caller, calleeName: name, member: false }); }
@@ -73,7 +101,7 @@ function dart(text: string, file: string): Out {
   const { symbols, add } = adder(file, src);
   const heritage: RawHeritage[] = [];
   // 타입 선언
-  const typeRe = /^[ \t]*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:abstract|sealed|base|final|interface|mixin)\s+)*(class|mixin|enum|extension(?:\s+type)?)\s+(\w+)?([^{;]*)\{/gm;
+  const typeRe = /^[ \t]*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:abstract|sealed|base|final|interface|mixin)\s+)*(class|mixin|enum|extension(?:\s+type)?)\s+(?:(?!on\b)(\w+))?([^{;]*)\{/gm; // 이름 없는 extension on X는 이름 자리에 on이 잡히지 않게(리뷰)
   let m: RegExpExecArray | null;
   while ((m = typeRe.exec(src))) {
     const open = m.index + m[0].length - 1;

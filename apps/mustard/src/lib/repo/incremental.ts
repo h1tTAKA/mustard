@@ -16,7 +16,7 @@ export type FileCache = Record<string, ParsedFile>; // rel 경로 → 파싱 결
 
 const h16 = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 16);
 // 추출기(언어 파서·심볼 규칙·서명 규칙)를 고치면 이 값을 올림 → 모든 파일 해시가 달라져 한 번 전부 다시 파싱(리뷰).
-export const PARSE_V = "4"; // 4: #1331 언어 확장 // 2: #1331 Dart·Ruby 정규식 심볼, Dart import
+export const PARSE_V = "5"; // 2~5: #1331 Dart·Ruby 정규식 심볼·Dart import·언어 확장·문자열/주석 처리 수정
 export const fileHash = (text: string) => h16(`${PARSE_V}\n${text}`);
 
 // 구조 서명 — 줄 번호·본문은 빼고 "밖에서 보이는 모양"만. 이게 같으면 흐름·기능 목록을 LLM에 다시 물을 이유 없음.

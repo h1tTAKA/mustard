@@ -77,6 +77,8 @@ function readCo(root: string, relCfg: string, depth = 0): { co: Co; dir: string 
   if (ext && depth < 5 && ext.startsWith(".")) { const p = posix.normalize(posix.join(dir, ext.endsWith(".json") ? ext : `${ext}.json`)); if (!p.startsWith("..")) base = readCo(root, p, depth + 1); }
   const co = cfg.compilerOptions ?? {};
   // baseUrl·paths는 그것을 적은 설정 파일 폴더 기준 — 자식에 없으면 부모 것을(부모 폴더 기준) 물려받음
+  // paths만 있고 baseUrl은 부모에 있으면 — TS는 그 paths를 부모 baseUrl 기준으로 풂(리뷰)
+  if (co.paths && !co.baseUrl && base?.co.baseUrl) return { co: { paths: co.paths, baseUrl: posix.relative(dir, posix.join(base.dir, base.co.baseUrl)) || "." }, dir };
   if (co.paths || co.baseUrl) return { co, dir };
   return base ?? { co: {}, dir };
 }
@@ -225,16 +227,13 @@ export function resolveDartPackage(spec: string, pkgs: Map<string, string>, file
   return fileSet.has(p) ? p : null;
 }
 
-// #1331 Elixir `My.App.User` → 경로가 my/app/user.ex(s)로 끝나는 파일(lib/ 등 루트 무관). 못 찾으면 앞 조각을 떼며 재시도.
+// #1331 Elixir `My.App.User` → 경로가 my/app/user.ex(s)로 끝나는 파일(lib/ 등 루트 무관).
 export function resolveElixir(spec: string, files: string[]): string | null {
   const snake = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
   const segs = spec.replace(/^ex:/, "").split(".").map(snake);
-  for (let i = 0; i < segs.length; i++) {
-    const tail = segs.slice(i).join("/");
-    const hit = files.find((f) => /\.exs?$/.test(f) && (noExt(f) === tail || noExt(f).endsWith(`/${tail}`)));
-    if (hit) return hit;
-  }
-  return null;
+  // 전체 모듈 경로로만(앞 조각을 떼면 Ecto.Repo가 앱의 repo.ex에 붙는 등 엉뚱한 연결, 리뷰)
+  const tail = segs.join("/");
+  return files.find((f) => /\.exs?$/.test(f) && (noExt(f) === tail || noExt(f).endsWith(`/${tail}`))) ?? null;
 }
 
 // go.mod `module github.com/x/y` → 모듈 경로.

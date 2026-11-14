@@ -32,7 +32,11 @@ export function fingerprintFromScan(root: string, files: string[]): string {
     }
   }
   // #1331 import 해석을 바꾸는 설정 파일 — 소스가 그대로여도 이게 바뀌면 다시 빌드(별칭·패키지 이름·무시 규칙)
-  for (const rel of ["tsconfig.json", "jsconfig.json", "package.json", "pnpm-workspace.yaml", "pubspec.yaml", "go.mod", "composer.json", ".gitignore"]) {
+  // 루트만이 아니라 소스가 든 폴더와 그 위 폴더들의 것도(모노레포 앱별 tsconfig·패키지별 pubspec·폴더별 .gitignore, 리뷰)
+  const dirs = new Set<string>([""]);
+  for (const rel of files) { let i = rel.lastIndexOf("/"); while (i > 0) { const d = rel.slice(0, i); if (dirs.has(d)) break; dirs.add(d); i = d.lastIndexOf("/"); } }
+  for (const d of dirs) for (const name of ["tsconfig.json", "jsconfig.json", "package.json", "pnpm-workspace.yaml", "pubspec.yaml", "go.mod", "composer.json", ".gitignore"]) {
+    const rel = d ? `${d}/${name}` : name;
     try { parts.push(`cfg:${rel}:${statSync(join(root, rel)).mtimeMs}`); } catch { /* 없음 */ }
   }
   parts.sort();

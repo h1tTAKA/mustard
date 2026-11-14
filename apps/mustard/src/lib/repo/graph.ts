@@ -17,6 +17,8 @@ import { godotEdges, isGodotFile } from "./godotAssets";
 import { isUnityAsset, underUnityAssets, unityGuidRefs, unityMetaGuid, unityRelation } from "./unityAssets";
 import { csharpNamespaceAt, csharpTypeRefs, isEngineStub, stripCsharp, type TypeDef } from "./typeRefs";
 
+// bare import 위로 찾기는 같은 언어 파일만(ruby require "x"가 x.py에 붙지 않게, 리뷰)
+const sameLang = (from: string, hit: string | null) => (hit && hit.slice(hit.lastIndexOf(".")) === from.slice(from.lastIndexOf(".")) ? hit : null);
 // 파일명(경로 마지막) — 노드 label용.
 const baseName = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
@@ -84,7 +86,7 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
       for (const spec of specs) {
         const one = spec.startsWith("package:") ? resolveDartPackage(spec, dartPkgs, fileSet)
           : spec.startsWith("ex:") ? resolveElixir(spec, scan.files)
-          : resolveImport(spec, file, fileSet, aliasOf(file) ?? undefined) ?? (/\.(py|lua|rb)$/.test(file) ? resolvePythonBare(spec, file, fileSet) : null) ?? (wsPkgs.size ? resolveWorkspace(spec, wsPkgs, fileSet) : null);
+          : resolveImport(spec, file, fileSet, aliasOf(file) ?? undefined) ?? (/\.(py|lua|rb)$/.test(file) ? sameLang(file, resolvePythonBare(spec, file, fileSet)) : null) ?? (wsPkgs.size ? resolveWorkspace(spec, wsPkgs, fileSet) : null);
         // #1023 상대·별칭으로 못 풀면 JVM FQN / Go 모듈 경로(패키지=폴더 → 여러 파일)
         const ts = one ? [one] : isJvm ? resolveJvmImport(spec, jvmDirs) : isGo ? resolveGoImport(spec, goModule, goDirs) : [];
         for (const target of ts) {

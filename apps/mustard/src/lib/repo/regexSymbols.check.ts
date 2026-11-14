@@ -45,4 +45,10 @@ assert.deepEqual(ex("a.ex", "alias MyApp.Accounts.User\nalias MyApp.{A, B}\n"), 
 assert.deepEqual(ex("a.zig", 'const std = @import("std");\nconst m = @import("m.zig");\n'), ["./m.zig"]);
 assert.deepEqual(ex("a.vue", '<script setup lang="ts">\nimport { a } from "./a"\n</script>'), ["./a"]);
 assert.deepEqual(ex("a.scala", "import a.b.C\n"), ["a/b/C"]);
+// 리뷰: 문자열 속 /* · // 가 주석으로 오인돼 다음 선언을 지우던 것, 이름 없는 extension on
+const tricky = `const g = '**/*.dart';\nclass B {}\nvoid f() { final u = 'https://x.y'; g2(); }\nextension on String { int get n => 1; }\n// it's a comment\nclass C {}\n`;
+const tr = regexSymbols(tricky, "lib/t.dart").symbols.map((x) => x.name);
+assert.ok(tr.includes("B") && tr.includes("f") && tr.includes("C"), tr.join());
+assert.ok(!tr.includes("on"), tr.join());
+assert.ok(regexSymbols(tricky, "lib/t.dart").calls.some((c) => c.calleeName === "g2")); // URL 뒤 같은 줄 호출도 살아 있음
 console.log("regexSymbols ok");
