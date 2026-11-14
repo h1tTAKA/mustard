@@ -1,6 +1,6 @@
 // codeKind 점검 — node --experimental-strip-types packages/core/src/codeKind.check.ts
 import assert from "node:assert/strict";
-import { codeKind, codeSub } from "./codeKind.ts";
+import { codeKind } from "./codeKind.ts";
 
 const cases: [string, string][] = [
   // 경로·파일
@@ -19,15 +19,4 @@ const cases: [string, string][] = [
   ["API", "plain"], ["JSON", "plain"], ["FF", "plain"], ["and/or", "plain"], ["GET/POST", "plain"], ["try/catch", "plain"], ["0/5", "plain"], ["|", "plain"], ["키: 값", "plain"], ["\\n", "plain"], ["ci:0", "plain"], ["/// ...", "plain"], ["", "plain"],
 ];
 for (const [s, k] of cases) assert.equal(codeKind(s), k, s);
-// 툴팁 세부 종류
-const subs: [string, string | null][] = [
-  ["AppState.load()", "method"], ["super.application(...)", "method"], [".map(...)", "method"], ["Color(0xFFD1D6DB)", "fn"], ["testExample()", "fn"],
-  ["AppDelegate", "type"], ["List<String>", "type"], ["MAX_FILES", "const"], ["static", "keyword"], ["@main", "annotation"], ["<Text>", "tag"],
-  ["console.log", "member"], [".ex1", "member"], ["fieldLine", "name"], ["static const fieldLine", "snippet"], ["b === 0", "logic"], ["?.", "logic"], ["{ ko, ja, hl }", "logic"],
-  ["gh run watch", "command"], ["--merge", "flag"], ["2>&1", "redirect"],
-  ["src/a.ts", "file"], ["Info.plist:9", "fileLine"], ["lib/", "dir"], ["https://x.com/a", "url"], ["/api/tasks", "route"], ["src/lib", "path"], [".gitignore", "file"],
-  ["#D1D6DB", "color"], ["D1D6DB", "color"], ["16px", "number"], ["\"玄関\"", "string"], ["false", "bool"], ["$(X)", "buildVar"], ["API", null],
-  ["100000", "number"], ["/usr/local/bin", "path"], ["/etc/hosts", "path"], ["if (x)", "snippet"], ["catch (e)", "snippet"], ["setState(obj.run())", "fn"], ["Text(user.name.toUpperCase())", "fn"], ["obj?.run()", "method"], ["/home", "route"], ["/home/x", "path"], ["/tmp", "path"], ["/usr", "path"], ["/Users", "path"], ["await api.get(x)", "method"], ["await fetchUser()", "fn"], ["return x", "snippet"],
-];
-for (const [s, k] of subs) assert.equal(codeSub(s), k, s);
 console.log("codeKind ok");

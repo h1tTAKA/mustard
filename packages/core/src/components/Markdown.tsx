@@ -1,8 +1,7 @@
 "use client";
 
-import { createContext, memo, useContext, useEffect, useMemo, type ComponentProps } from "react";
-import { codeKind, codeSub } from "../codeKind";
-import { useT } from "../i18n/I18nProvider";
+import { createContext, memo, useContext, useMemo, type ComponentProps } from "react";
+import { codeKind } from "../codeKind";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -53,57 +52,21 @@ const EXTRA = { dart, dockerfile, scala, elixir, haskell, groovy, gradle, protob
 let highlight: ReturnType<typeof rehypeHighlight> | undefined;
 const highlightOnce = () => (highlight ??= rehypeHighlight({ detect: true, languages: { ...common, ...EXTRA }, subset: Object.keys(common), aliases: { xml: ["vue", "svelte"] } }));
 // #1325 인라인 코드 역할별 색 — `백틱` 조각을 모양으로 분류해 data-k를 붙임(색은 globals.css, 블록 코드 안은 CSS에서 제외).
-// 마우스를 올리면 0.75초 뒤 세부 종류 툴팁 — 메서드 호출·함수 호출·명령어 옵션·폴더·색상 값 등(codeSub).
-// 브라우저 기본 title은 지연(1초+)을 못 바꾸고 캐치업 등에서 안 뜨는 일이 많아(유저 피드백) 문서에 리스너 하나로 직접 띄움.
-const TIP_MS = 750;
-let tipReady = false;
-function installCodeTip() {
-  if (tipReady || typeof document === "undefined") return;
-  tipReady = true;
-  let timer = 0, watch = 0, cur: Element | null = null, box: HTMLDivElement | null = null;
-  const hide = () => { clearTimeout(timer); clearInterval(watch); cur = null; if (box) box.style.display = "none"; };
-  const show = (c: Element) => {
-    if (!c.isConnected) return;
-    if (!box) { box = document.createElement("div"); box.className = "nunopi-code-tip"; box.setAttribute("role", "tooltip"); document.body.appendChild(box); }
-    box.textContent = c.getAttribute("data-tip");
-    box.style.display = "block";
-    const r = c.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight;
-    box.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
-    box.style.top = `${r.top - h - 6 >= 8 ? r.top - h - 6 : r.bottom + 6}px`; // 위에 공간 없으면 아래
-    watch = window.setInterval(() => { if (!c.isConnected) hide(); }, 400); // 다시 그려져 코드가 사라지면 툴팁도(리뷰)
-  };
-  document.addEventListener("mouseover", (e) => {
-    const c = (e.target as Element | null)?.closest?.("code[data-tip]") ?? null;
-    if (c === cur) return;
-    hide();
-    if (!c) return;
-    cur = c;
-    timer = window.setTimeout(() => { if (cur === c) show(c); }, TIP_MS);
-  }, true);
-  for (const ev of ["scroll", "mousedown", "keydown"]) document.addEventListener(ev, hide, true);
-  document.addEventListener("mouseout", (e) => { if (!e.relatedTarget) hide(); }, true); // 창 밖으로 나가면(리뷰)
-  window.addEventListener("blur", hide);
-}
 const InPre = createContext(false); // 펜스 코드(<pre> 안)는 한 줄이라도 분류 안 함(리뷰)
 function Pre({ node: _node, ...rest }: ComponentProps<"pre"> & { node?: unknown }) {
   return <InPre.Provider value><pre {...rest} /></InPre.Provider>;
 }
 function InlineCode({ node: _node, className, children, ...rest }: ComponentProps<"code"> & { node?: unknown }) {
-  const t = useT();
   const inPre = useContext(InPre);
   const text = typeof children === "string" ? children : Array.isArray(children) && children.every((c) => typeof c === "string") ? children.join("") : null;
   const k = !inPre && !className && text !== null && !text.includes("\n") ? codeKind(text) : "plain"; // 언어 클래스가 붙은 건 펜스 코드 → 분류 안 함
-  if (k === "plain") return <code className={className} {...rest}>{children}</code>;
-  const sub = codeSub(text as string, k); // 툴팁은 세부 종류("메서드 호출"·"명령어 옵션"…), 없으면 색 묶음 이름
-  const tip = sub ? t(`code.sub.${sub}`) : t(`code.kind.${k}`);
-  return <code data-k={k} data-tip={tip} aria-description={tip} {...rest}>{children}</code>;
+  return k === "plain" ? <code className={className} {...rest}>{children}</code> : <code data-k={k} {...rest}>{children}</code>;
 }
 export default memo(function Markdown({ children, className, onLink }: { children: string; className?: string; onLink?: (href: string) => boolean }) {
   const components = useMemo(() => ({
     code: InlineCode, pre: Pre,
     ...(onLink ? { a: ({ href, children: c, node: _n, ...rest }: ComponentProps<"a"> & { node?: unknown }) => <a {...rest} href={href} onClick={(e) => { if (!href || onLink(href)) e.preventDefault(); }}>{c}</a> } : {}),
   }), [onLink]);
-  useEffect(installCodeTip, []);
   return (
     <div className={className ? `nunopi-md ${className}` : "nunopi-md"}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[highlightOnce]} urlTransform={keepAppLinks}
