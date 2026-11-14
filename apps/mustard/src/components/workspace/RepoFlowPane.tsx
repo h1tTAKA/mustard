@@ -338,7 +338,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     if (mode === "cache" && jobOf(fk)?.status === "stopped") { setLoading(false); return; }
     const h = startJob(fk, mode === "update" ? "update" : "regen");
     if (!h) { setLoading(false); return; }
-    { const tk = archJobKey(root, "tour", feature); stopJob(tk); clearJob(tk); } // 옛 흐름 둘러보기는 끊음 — 새 흐름 뒤 둘러보기가 막히지 않게(리뷰)
+    const killTour = () => { const tk = archJobKey(root, "tour", feature); stopJob(tk); clearJob(tk); }; // 새 흐름 둘러보기 직전 옛 것을 끊음 — 막히지 않게(리뷰). 구조 변화 없는 갱신은 안 건드림
     const sig = h.signal;
     let ok = false;
     setLoading(true); setRunning(mode === "update" ? "update" : "regen"); setErr(null); setNote(null);
@@ -388,7 +388,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
         if (!at) return saveFailed();
         ok = true;
         if (my === reqRef.current) { atRef.current = at; unsavedRef.current = false; }
-        if (my === reqRef.current) { setDiff(null); setNote(t("flow.diffUpdated", { n: inc.structural.length })); void buildTour(next, feature, my, at); } // 둘러보기도 새로(#1322)
+        if (my === reqRef.current) { setDiff(null); setNote(t("flow.diffUpdated", { n: inc.structural.length })); killTour(); void buildTour(next, feature, my, at); } // 둘러보기도 새로(#1322)
         return;
       }
       token ??= await archBegin(root); // 분석 시작 시점 스냅샷(AI가 도는 사이 고친 파일은 다음 갱신 대상으로 남게)
@@ -429,7 +429,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       if (!at) return saveFailed();
       ok = true;
       if (my === reqRef.current) { atRef.current = at; unsavedRef.current = false; }
-      if (my === reqRef.current) { setDiff(null); void buildTour(nextSecs, feature, my, at); } // 방금 저장 = 최신 + 둘러보기도 같이(#1322)
+      if (my === reqRef.current) { setDiff(null); killTour(); void buildTour(nextSecs, feature, my, at); } // 방금 저장 = 최신 + 둘러보기도 같이(#1322)
     } catch (e) {
       if (!sig.aborted && my === reqRef.current) setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -582,13 +582,17 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   }, [edges, laneKeys]);
 
   // #1329 다른 화면(떠나기 전 이 패널)에서 시작해 끝난 작업 — 저장분 다시 읽기
-  const doneSeq = Math.max(...[flowJob, depthJob, tourJob].map((j) => (j?.status === "done" ? j.seq : 0)));
   const ownOn = on(flowJob) || on(depthJob) || on(tourJob);
+  const fSeq = flowJob?.seq, dSeq = depthJob?.seq, tSeq = tourJob?.seq;
   useEffect(() => {
-    if (!doneSeq || ownSeq.current.has(doneSeq) || ownOn) return; // 이 기능 작업이 아직 돌면 끝날 때까지 미룸(돌던 화면을 갈아엎지 않게, 리뷰)
-    ownSeq.current.add(doneSeq);
+    if (ownOn) return; // 이 기능 작업이 아직 돌면 끝날 때까지 미룸(돌던 화면을 갈아엎지 않게, 리뷰)
+    // 종류마다 따로 — 미뤄 둔 다른 화면의 끝남이 내 작업의 끝남에 가려 버려지지 않게(리뷰)
+    const todo = [flowJob, depthJob, tourJob].filter((j): j is ArchJob => j?.status === "done" && !ownSeq.current.has(j.seq));
+    if (!todo.length) return;
+    for (const j of todo) ownSeq.current.add(j.seq);
     void load("cache");
-  }, [doneSeq, ownOn, load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 잡 객체 대신 seq로(진행 갱신마다 다시 돌지 않게)
+  }, [fSeq, dSeq, tSeq, ownOn, load]);
   // 멈춤 — 이 기능에서 도는 작업 전부. 이어하기 — 멈춘 것만 같은 동작으로 다시.
   const stopAll = () => { for (const k of ["flow", "depth", "tour"] as const) stopJob(keyOf(k)); };
   const anyOn = ownOn;
