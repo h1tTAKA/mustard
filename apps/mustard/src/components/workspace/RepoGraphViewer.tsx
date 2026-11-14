@@ -61,6 +61,34 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   const [treeOpen, setTreeOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 1200);
   const [askOpen, setAskOpen] = useState(false); // #1326 노드 질문 칸 펼침(노드를 바꿔도 유지)
   const [codeAt, setCodeAt] = useState<{ file: string; line?: number } | null>(null);
+  // 코드 칸 높이(px) — 위 가장자리를 끌거나 ↑↓로(null = 기본 42%). 보는 사람 설정이라 localStorage. 120px ~ 그래프 칸의 85%.
+  const colRef = useRef<HTMLDivElement>(null);
+  const clampCode = (h: number) => Math.round(Math.min((colRef.current?.clientHeight ?? window.innerHeight) * 0.85, Math.max(120, h)));
+  const [codeH, setCodeH] = useState<number | null>(() => { try { const v = Number(localStorage.getItem("mustard:graphCodeH")); return v > 0 ? v : null; } catch { return null; } });
+  const saveCodeH = (h: number) => { try { localStorage.setItem("mustard:graphCodeH", String(h)); } catch { /* 이번만 적용 */ } };
+  const dragOff = useRef<(() => void) | null>(null); // 끄는 중 붙인 창 리스너(언마운트 때도 뗌)
+  useEffect(() => () => dragOff.current?.(), []);
+  const startCodeResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    dragOff.current?.();
+    e.preventDefault();
+    const box = e.currentTarget.parentElement;
+    const y0 = e.clientY, h0 = box?.offsetHeight ?? 240;
+    let last = h0, moved = false;
+    const prevSel = document.body.style.userSelect;
+    document.body.style.userSelect = "none";
+    const move = (ev: PointerEvent) => { if (Math.abs(ev.clientY - y0) > 3) moved = true; last = clampCode(h0 - (ev.clientY - y0)); setCodeH(last); }; // 위로 끌면 커짐
+    const off = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); document.body.style.userSelect = prevSel; dragOff.current = null; };
+    const up = () => { off(); if (moved) saveCodeH(last); };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up);
+    dragOff.current = off;
+  };
+  const keyCodeResize = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    const h = clampCode((codeH ?? (e.currentTarget.parentElement?.offsetHeight ?? 240)) + (e.key === "ArrowUp" ? 16 : -16));
+    setCodeH(h); saveCodeH(h);
+  };
   const [reveal, setReveal] = useState<{ file: string; n: number; at: number } | null>(null);
   // 경로 찾기 — pathPick: 지금 고르는 끝("from"=시작, "to"=끝, null=안 고르는 중). 둘 다 정해지면 최단 경로.
   const [pathPick, setPathPick] = useState<null | "from" | "to">(null);
@@ -465,7 +493,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
             <FileTree files={files} selected={codeAt?.file ?? null} reveal={reveal} onSelect={pickFile} />
           </aside>
         )}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div ref={colRef} className="flex min-w-0 flex-1 flex-col">
         <div ref={wrapRef} className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
           {loading ? (
             <div className="flex h-full items-center justify-center gap-2 text-[12px] text-zinc-400 dark:text-zinc-500"><IconLoader2 size={16} stroke={2} className="animate-spin" aria-hidden /> {t("graph.loading")}</div>
@@ -493,7 +521,10 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
         </div>
         {/* #1326 가운데 아래 코드 보기 — 그래프를 가리지 않게 아래 칸, 닫기 가능 */}
         {codeAt && (
-          <div className="flex h-[42%] min-h-[160px] shrink-0 flex-col border-t border-zinc-200 dark:border-zinc-800">
+          <div style={codeH ? { height: codeH } : undefined} className={`relative flex ${codeH ? "" : "h-[42%]"} min-h-[120px] shrink-0 flex-col border-t border-zinc-200 dark:border-zinc-800`}>
+            {/* 위 가장자리를 끌어 코드 칸 높이 조절(저장) */}
+            <div role="separator" tabIndex={0} aria-orientation="horizontal" aria-label={t("graph.codeResize")} aria-valuenow={codeH ?? undefined} aria-valuemin={120} title={t("graph.codeResize")} onPointerDown={startCodeResize} onKeyDown={keyCodeResize}
+              className="absolute -top-1 left-0 right-0 z-10 h-2 cursor-row-resize touch-none outline-none focus-visible:bg-mustard-500/40 transition hover:bg-mustard-500/40 dark:hover:bg-mustard-400/30" />
             <div className="flex shrink-0 items-center gap-1.5 border-b border-zinc-200 px-3 py-1 dark:border-zinc-800">
               <span className="mr-auto truncate font-mono text-[11px] text-zinc-600 dark:text-zinc-300" title={codeAt.file}>{codeAt.file}{codeAt.line ? `:${codeAt.line}` : ""}</span>
               {onOpenFile && <button type="button" onClick={() => onOpenFile(codeAt.file, codeAt.line)} title={t("flow.openCode")} aria-label={t("flow.openCode")} className={btn}><IconCode size={13} stroke={2} aria-hidden /></button>}
