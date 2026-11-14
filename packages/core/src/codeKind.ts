@@ -15,6 +15,8 @@ const KW = new Set([
 ]);
 
 // 터미널 명령 — 첫 단어가 흔한 CLI면 명령어(뒤에 인자가 붙어도). 한계: 목록에 없는 도구는 코드 이름으로 보임.
+// 변수·메서드 이름으로도 흔한 것(env·open·find…)은 뒤에 인자가 있을 때만 명령어(리뷰) — 혼자면 코드 이름.
+const CLI_AMBIG = new Set("open find head tail sort diff patch make source env which say tee echo cat kill touch go uv bundle gem".split(" "));
 const CLI = new Set(("git gh npm npx pnpm yarn bun node deno python python3 pip pip3 uv grep rg sed awk cat ls cd mkdir rm cp mv touch curl wget open echo "
   + "find head tail wc sort chmod chown kill pkill ps lsof brew flutter dart pod xcodebuild xcrun swift cargo rustc go docker kubectl tsc eslint jest vitest "
   + "playwright make expo rtk claude codex ssh scp tar zip unzip source sudo jq tee diff patch which env say ffmpeg gradle mvn rails bundle gem").split(" "));
@@ -72,7 +74,7 @@ export function codeKind(raw: string): CodeKind {
     || /^(["'`]).*\1$/.test(s) || /^(true|false|null|nil|undefined|None|True|False|NaN)$/.test(s) || /^\$\(.+\)$/.test(s)) return "val";
   // 명령어·옵션 — 흔한 CLI로 시작, --플래그·-q, 셸 리다이렉트(2>&1, 2>/dev/null)
   const first = s.split(/\s+/)[0];
-  if (CLI.has(first) || /^--?[a-z][\w-]*(=\S+|\s+\S+)?$/i.test(s) || /^(\d?>&?(\d|\/dev\/null)\s*)+$/.test(s) || /^s\/.+\/.*\/g?$/.test(s)) return "cmd"; // 마지막은 sed 치환식(s/옛/새/)
+  if ((CLI.has(first) && (first !== s || !CLI_AMBIG.has(s))) || /^--?[a-z][\w-]*(=\S+|\s+\S+)?$/i.test(s) || /^(\d?>&?(\d|\/dev\/null)\s*)+$/.test(s) || /^s\/.+\/.*\/g?$/.test(s)) return "cmd"; // 마지막은 sed 치환식(s/옛/새/)
   // 점으로 시작 — .gitignore·.tsx(파일·확장자)는 경로, .map·.ex1(멤버)은 코드 이름
   if (/^\.[A-Za-z][\w-]*$/.test(s)) return EXT.has(s.slice(1).toLowerCase()) || /^\.(git|env|npm|prettier|eslint|editor|docker|nvm|vscode|claude)/.test(s) ? "path" : "sym";
   // 파일·경로 — 슬래시가 있고 공백 없음, 또는 이름.확장자(+줄 번호)
