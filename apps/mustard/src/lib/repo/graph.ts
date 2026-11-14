@@ -11,7 +11,7 @@ import { fileHash, fileSig, type FileCache, type ParsedFile } from "./incrementa
 import { readFileCache, writeFileCache } from "./graphStore";
 
 // import 해석(상대 + tsconfig 별칭 + baseUrl)은 경량 모듈 imports.ts로 분리.
-import { resolveImport, resolvePythonBare, loadAliases, dirIndex, resolveJvmImport, resolveGoImport, goModulePath, dartPackages, resolveDartPackage, JVM_RE, GO_RE } from "./imports";
+import { resolveImport, resolvePythonBare, aliasFinder, workspacePackages, resolveWorkspace, dirIndex, resolveJvmImport, resolveGoImport, goModulePath, dartPackages, resolveDartPackage, JVM_RE, GO_RE } from "./imports";
 import { godotEdges, isGodotFile } from "./godotAssets";
 import { isUnityAsset, underUnityAssets, unityGuidRefs, unityMetaGuid, unityRelation } from "./unityAssets";
 import { csharpNamespaceAt, csharpTypeRefs, isEngineStub, stripCsharp, type TypeDef } from "./typeRefs";
@@ -32,7 +32,8 @@ function assetRole(file: string): RepoAssetRole | undefined {
 export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<RepoGraph> {
   const scan = pre ?? scanRepo(root); // 라우트가 이미 스캔했으면 재사용(이중 스캔 방지, #845 🟡)
   const fileSet = new Set(scan.files);
-  const alias = loadAliases(root); // tsconfig paths(@/* 등) 별칭 해석 — Next 앱 엣지 확보
+  const aliasOf = aliasFinder(root); // #1331 파일마다 가장 가까운 tsconfig(+extends) paths 별칭 — 모노레포 앱별 @/
+  const wsPkgs = workspacePackages(root); // #1331 워크스페이스 패키지 이름(@scope/pkg) → 폴더
   // #1023 JVM·Go — 패키지 경로 import 해석용 폴더 인덱스 + go.mod 모듈 경로(루트). 같은 폴더 = 같은 패키지.
   const jvmDirs = dirIndex(scan.files, JVM_RE);
   const goDirs = dirIndex(scan.files, GO_RE);
@@ -80,7 +81,7 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
       const seenT = new Set<string>();
       for (const spec of specs) {
         const one = spec.startsWith("package:") ? resolveDartPackage(spec, dartPkgs, fileSet)
-          : resolveImport(spec, file, fileSet, alias ?? undefined) ?? (file.endsWith(".py") ? resolvePythonBare(spec, file, fileSet) : null);
+          : resolveImport(spec, file, fileSet, aliasOf(file) ?? undefined) ?? (file.endsWith(".py") ? resolvePythonBare(spec, file, fileSet) : null) ?? (wsPkgs.size ? resolveWorkspace(spec, wsPkgs, fileSet) : null);
         // #1023 상대·별칭으로 못 풀면 JVM FQN / Go 모듈 경로(패키지=폴더 → 여러 파일)
         const ts = one ? [one] : isJvm ? resolveJvmImport(spec, jvmDirs) : isGo ? resolveGoImport(spec, goModule, goDirs) : [];
         for (const target of ts) {
