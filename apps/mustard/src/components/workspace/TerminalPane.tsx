@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconPlus, IconX, IconTerminal2, IconMessageCircle } from "@tabler/icons-react";
 import { useShortcut, useT, isCurrentTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
 import Terminal from "@/components/workspace/Terminal";
-import ChatPane from "@/components/workspace/ChatPane";
+import ChatPane, { CHAT_HANDOFF_EVENT } from "@/components/workspace/ChatPane";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
 import { clearUnread, isUnread, sessionState, useAgentSessionStates } from "@/lib/agentSessionStates";
@@ -213,6 +213,21 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
     };
     window.addEventListener("mustard:crew-takeover", on);
     return () => window.removeEventListener("mustard:crew-takeover", on);
+  }, [cwd, t]);
+  // #1341 채팅 → 터미널 넘기기 — 채팅 에이전트는 서버가 이미 끔. 터미널 모드로 바꾸고 새 탭에서 같은 대화 resume
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ root: string; agent: string; args: string }>).detail;
+      if (!d || d.root !== cwd) return;
+      const id = genId();
+      setModeState({ key: `nunopi:ws-termmode:${cwd}`, mode: "term" }); try { localStorage.setItem(`nunopi:ws-termmode:${cwd}`, "term"); } catch { /* 저장 못 해도 동작 */ }
+      setTabs((prev) => [...prev, { id, title: t("workspace.terminalTab", { n: nextNum(prev) }) }]);
+      setActiveId(id);
+      markAgentUsed(d.agent);
+      void window.nunopiDesktop?.terminal?.launchAgent?.({ id, agent: d.agent, dark: isCurrentTerminalDark(), ...launchOpts(d.agent, d.args) });
+    };
+    window.addEventListener(CHAT_HANDOFF_EVENT, on);
+    return () => window.removeEventListener(CHAT_HANDOFF_EVENT, on);
   }, [cwd, t]);
   const launchInNewTab = (agent: string) => {
     setMenuOpen(false);

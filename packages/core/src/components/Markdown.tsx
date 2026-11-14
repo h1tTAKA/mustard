@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, memo, useContext, useMemo, type ComponentProps } from "react";
+import { createContext, memo, useContext, useMemo, useRef, useState, type ComponentProps } from "react";
 import { codeKind } from "../codeKind";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -56,17 +56,29 @@ const InPre = createContext(false); // 펜스 코드(<pre> 안)는 한 줄이라
 function Pre({ node: _node, ...rest }: ComponentProps<"pre"> & { node?: unknown }) {
   return <InPre.Provider value><pre {...rest} /></InPre.Provider>;
 }
+// #1341 채팅 — 코드 블록에 마우스를 올리면 복사(copyCode 켠 곳만, 다른 화면 모양은 그대로)
+function CopyPre({ node: _node, children, ...rest }: ComponentProps<"pre"> & { node?: unknown }) {
+  const ref = useRef<HTMLPreElement>(null);
+  const [done, setDone] = useState(false);
+  const copy = () => { void navigator.clipboard?.writeText(ref.current?.innerText ?? "").then(() => { setDone(true); setTimeout(() => setDone(false), 1200); }).catch(() => {}); };
+  return (
+    <div className="group/code relative">
+      <InPre.Provider value><pre ref={ref} {...rest}>{children}</pre></InPre.Provider>
+      <button type="button" onClick={copy} aria-label="Copy" className="absolute right-1.5 top-1.5 rounded-md bg-white/80 px-1.5 py-0.5 text-[11px] text-zinc-500 opacity-0 shadow-sm transition hover:text-zinc-800 group-hover/code:opacity-100 dark:bg-zinc-800/90 dark:text-zinc-400 dark:hover:text-zinc-100">{done ? "✓" : "Copy"}</button>
+    </div>
+  );
+}
 function InlineCode({ node: _node, className, children, ...rest }: ComponentProps<"code"> & { node?: unknown }) {
   const inPre = useContext(InPre);
   const text = typeof children === "string" ? children : Array.isArray(children) && children.every((c) => typeof c === "string") ? children.join("") : null;
   const k = !inPre && !className && text !== null && !text.includes("\n") ? codeKind(text) : "plain"; // 언어 클래스가 붙은 건 펜스 코드 → 분류 안 함
   return k === "plain" ? <code className={className} {...rest}>{children}</code> : <code data-k={k} {...rest}>{children}</code>;
 }
-export default memo(function Markdown({ children, className, onLink }: { children: string; className?: string; onLink?: (href: string) => boolean }) {
+export default memo(function Markdown({ children, className, onLink, copyCode }: { children: string; className?: string; onLink?: (href: string) => boolean; copyCode?: boolean }) {
   const components = useMemo(() => ({
-    code: InlineCode, pre: Pre,
+    code: InlineCode, pre: copyCode ? CopyPre : Pre,
     ...(onLink ? { a: ({ href, children: c, node: _n, ...rest }: ComponentProps<"a"> & { node?: unknown }) => <a {...rest} href={href} onClick={(e) => { if (!href || onLink(href)) e.preventDefault(); }}>{c}</a> } : {}),
-  }), [onLink]);
+  }), [onLink, copyCode]);
   return (
     <div className={className ? `nunopi-md ${className}` : "nunopi-md"}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[highlightOnce]} urlTransform={keepAppLinks}
