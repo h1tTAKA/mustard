@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, type Simulation, type SimulationNodeDatum } from "d3-force";
 import { IconX, IconLoader2, IconFocus2, IconSearch, IconCode, IconLayoutSidebar, IconLayoutSidebarRight, IconRoute } from "@tabler/icons-react";
 import FileTree from "@/components/workspace/FileTree";
+import GraphNodeAsk from "@/components/workspace/GraphNodeAsk";
 import CodePane from "@/components/workspace/CodePane";
 import { useT, useLocale, stripCardBlock, Markdown } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
@@ -58,6 +59,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   const [panelOpen, setPanelOpen] = useState(true);
   // #1326 왼쪽 파일 트리(좁은 창이면 처음엔 접힘) + 가운데 아래 코드 보기(노드·트리 클릭한 파일, 노드 줄 근처)
   const [treeOpen, setTreeOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 1200);
+  const [askOpen, setAskOpen] = useState(false); // #1326 노드 질문 칸 펼침(노드를 바꿔도 유지)
   const [codeAt, setCodeAt] = useState<{ file: string; line?: number } | null>(null);
   const [reveal, setReveal] = useState<{ file: string; n: number; at: number } | null>(null);
   // 경로 찾기 — pathPick: 지금 고르는 끝("from"=시작, "to"=끝, null=안 고르는 중). 둘 다 정해지면 최단 경로.
@@ -575,6 +577,12 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
                       : note.err ? <span className="break-words text-rose-500">{note.err}</span>
                       : <Markdown>{note.text ?? ""}</Markdown>}
                   </div>
+                )}
+                {/* #1326 이 노드에 대해 질문 — 접이식, 질문 이력(그 파일 세션)에 남음 */}
+                {providerId && providerSettings && (
+                  <GraphNodeAsk key={sel.file} root={root} file={sel.file} label={sel.label} kind={sel.kind} line={sel.line}
+                    note={note?.id === sel.id ? note.text : undefined} providerId={providerId} providerSettings={providerSettings}
+                    open={askOpen} onToggle={() => setAskOpen((v) => !v)} />
                 )}
                 {detail && (
                   <>
