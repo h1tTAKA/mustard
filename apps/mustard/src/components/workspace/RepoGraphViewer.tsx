@@ -51,7 +51,9 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
 }) {
   const t = useT();
   const [graph, setGraph] = useState<RepoGraph | null>(null);
-  const restoreRef = useRef<Saved | undefined>(kept.get(root)); // 시뮬이 한 번 꺼내 씀(노드 자리·화면)
+  const restoreRef = useRef<Saved | undefined>(kept.get(root)); // 시뮬이 꺼내 씀(노드 자리·화면) — 그 그래프에만(restoreFor)
+  const restoreFor = useRef<RepoGraph | null>(null);
+  const skipSelSync = useRef(!!kept.get(root)?.selected); // 되살린 선택은 코드 칸을 다시 열지 않음(닫아 둔 코드 칸 유지, 리뷰)
   const [builtAt, setBuiltAt] = useState<number | null>(null);
   const [graphOf, setGraphOf] = useState<string | null>(null); // 지금 graph가 어느 레포 것인지(레포 전환 직후 옛 그래프로 노드 설명을 부르지 않게)
   // 범례에 넣을 역할 — 그래프 바뀔 때만 1회 계산(#1014 리뷰: 렌더마다 노드 전체 스캔 방지)
@@ -121,7 +123,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   useEffect(() => {
     let alive = true;
     const k = kept.get(root); // 닫기 전 상태가 있으면 그대로, 없으면 처음
-    restoreRef.current = k;
+    restoreRef.current = k; restoreFor.current = null; skipSelSync.current = !!k?.selected;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 로드 시작 초기화(비동기 fetch 준비)
     setLoading(true); setErr(null); setSelected(k?.selected ?? null); setPicked(new Set(k?.picked ?? [])); setQuery(k?.query ?? ""); setPathPick(null); setPathFrom(k?.pathFrom ?? null); setPathTo(k?.pathTo ?? null); setImpactBase(k?.impactBase ?? "off");
     void (async () => {
@@ -283,7 +285,9 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   // 2) 그래프(보이는 노드) 생겼을 때 시뮬 구성 + rAF 루프.
   useEffect(() => {
     if (!graph) return;
-    const back = restoreRef.current; restoreRef.current = undefined; // 다시 열었으면 노드 자리·화면을 닫기 전대로(한 번만)
+    // 다시 열었으면 노드 자리·화면을 닫기 전대로 — 처음 받은 그래프에만(다시 빌드되면 안 씀). 같은 그래프로 이펙트가 두 번 돌아도 그대로(리뷰)
+    if (restoreRef.current && !restoreFor.current) restoreFor.current = graph;
+    const back = restoreFor.current === graph ? restoreRef.current : undefined;
     const nodes: SimNode[] = shown.map((n) => { const p = back?.pos[n.id]; return { id: n.id, label: n.label, file: n.file, kind: n.kind, role: n.role, community: n.community, ...(p ? { x: p[0], y: p[1] } : {}) }; });
     const ids = new Map(nodes.map((n) => [n.id, n]));
     const links: SimLink[] = graph.edges
@@ -414,23 +418,24 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   const togglePick = (id: number) => setPicked((prev) => { const s = new Set(prev); if (s.has(id)) s.delete(id); else s.add(id); return s; });
   const nodeCount = graph?.nodes.length ?? 0;
   const symbolCount = graph ? nodeCount - graph.stats.files : 0;
-  const sel = selected ? byId.get(selected) : undefined;
+  const sel = selected && graphOf === root ? byId.get(selected) : undefined; // 레포 바뀐 직후 옛 그래프로 찾지 않게(리뷰)
   useEffect(() => { setCodeAt(kept.get(root)?.codeAt ?? null); }, [root]); // eslint-disable-line react-hooks/set-state-in-effect -- 레포 바뀌면 그 레포의 닫기 전 코드 칸(없으면 비움, 리뷰)
   // 닫거나 레포를 바꿀 때 지금 상태를 남김(다음에 열면 그대로)
-  const snapRef = useRef<Omit<Saved, "view" | "pos"> | null>(null);
-  useEffect(() => { snapRef.current = { selected, picked: [...picked], query, panelOpen, treeOpen, askOpen, codeAt, pathFrom, pathTo, impactBase }; });
+  const snapRef = useRef<(Omit<Saved, "view" | "pos"> & { ready: boolean }) | null>(null);
+  useEffect(() => { snapRef.current = { ready: graphOf === root, selected, picked: [...picked], query, panelOpen, treeOpen, askOpen, codeAt, pathFrom, pathTo, impactBase }; });
   useEffect(() => () => {
-    const sn = snapRef.current;
-    if (!sn || !nodesRef.current.length) return;
+    const { ready, ...sn } = snapRef.current ?? { ready: false };
+    if (!ready || !nodesRef.current.length) return; // 이 레포 그래프가 아직 안 떴으면(옛 레포 시뮬) 남기지 않음(리뷰)
     const pos: Record<string, [number, number]> = {};
     for (const n of nodesRef.current) if (n.x != null && n.y != null) pos[n.id] = [n.x, n.y];
-    kept.set(root, { ...sn, view: { ...viewRef.current }, pos });
+    kept.set(root, { ...(sn as Omit<Saved, "view" | "pos">), view: { ...viewRef.current }, pos });
   }, [root]);
   // 노드를 고르면 그 파일 코드(그 줄) + 트리에서 펼침·강조
   const selFile = sel?.file, selLine = sel?.line;
   useEffect(() => {
     if (!selFile) return;
-    setCodeAt({ file: selFile, line: selLine }); // eslint-disable-line react-hooks/set-state-in-effect -- 고른 노드 따라 코드 보기·트리 강조
+    if (skipSelSync.current) { skipSelSync.current = false; return; } // 되살린 선택 — 코드 칸은 닫기 전대로
+    setCodeAt({ file: selFile, line: selLine }); // 고른 노드 따라 코드 보기·트리 강조
     setReveal((r) => ({ file: selFile, n: (r?.n ?? 0) + 1, at: Date.now() }));
   }, [selFile, selLine]);
   // 트리에서 파일 클릭 → 그 파일 노드가 그래프에 있으면 고르고, 없으면 코드만 보임
@@ -542,7 +547,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
         </div>
         {/* #1326 가운데 아래 코드 보기 — 그래프를 가리지 않게 아래 칸, 닫기 가능 */}
         {codeAt && (
-          <div style={codeH ? { height: codeH } : undefined} className={`relative flex ${codeH ? "" : "h-[42%]"} min-h-[120px] shrink-0 flex-col border-t border-zinc-200 dark:border-zinc-800`}>
+          <div style={codeH ? { height: codeH, maxHeight: "85%" } : undefined} className={`relative flex ${codeH ? "" : "h-[42%]"} min-h-[120px] shrink-0 flex-col border-t border-zinc-200 dark:border-zinc-800`}>
             {/* 위 가장자리를 끌어 코드 칸 높이 조절(저장) */}
             <div role="separator" tabIndex={0} aria-orientation="horizontal" aria-label={t("graph.codeResize")} aria-valuenow={codeH ?? undefined} aria-valuemin={120} title={t("graph.codeResize")} onPointerDown={startCodeResize} onKeyDown={keyCodeResize}
               className="absolute -top-1 left-0 right-0 z-10 h-2 cursor-row-resize touch-none outline-none focus-visible:bg-mustard-500/40 transition hover:bg-mustard-500/40 dark:hover:bg-mustard-400/30" />
