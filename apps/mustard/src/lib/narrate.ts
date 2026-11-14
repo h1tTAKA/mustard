@@ -105,7 +105,7 @@ function splitNarration(summary: string): { title: string; note: string } {
   if (/^#{2,6}\s/.test(lines[i] ?? "")) {
     const body = lines.slice(i).find((l) => l.trim() && !/^#{1,6}\s/.test(l.trim())) ?? "";
     const t = body.replace(/^[-*]\s*/, "").replace(/[`*]/g, "").split(/[.。!?]/)[0].trim();
-    return { title: t.length > 42 ? `${t.slice(0, 41)}…` : t, note: lines.slice(i).join("\n").trim() };
+    return { title: (t.length > 42 ? `${t.slice(0, 41)}…` : t) || translate(narrationLocale(), "stream.liveWork"), note: lines.slice(i).join("\n").trim() };
   }
   let title = (lines[i] || "").trim()
     .replace(/^#{1,6}\s*/, "")            // # heading
