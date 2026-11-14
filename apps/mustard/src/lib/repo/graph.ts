@@ -9,6 +9,8 @@ import { extractSymbols, resolveCalls, type SymbolInfo, type RawCall } from "./s
 import type { RepoGraph, RepoNode, RepoEdge, RepoAssetRole } from "./types";
 import { fileHash, fileSig, type FileCache, type ParsedFile } from "./incremental";
 import { readFileCache, writeFileCache } from "./graphStore";
+import { isConfigFile } from "./configFiles";
+import { configEdges } from "./configEdges";
 import { detectCommunities } from "./communities";
 
 // import 해석(상대 + tsconfig 별칭 + baseUrl)은 경량 모듈 imports.ts로 분리.
@@ -25,6 +27,7 @@ const baseName = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 /** 레포 루트 → RepoGraph. 파일 노드 + import 엣지 + 심볼 노드 + contains + calls. */
 // 게임 에셋 역할(#1013) — Godot .tscn은 프리팹 역할도 하지만 형식상 씬.
 function assetRole(file: string): RepoAssetRole | undefined {
+  if (isConfigFile(file)) return "config"; // #1335
   const f = file.toLowerCase();
   if (f.endsWith(".unity") || f.endsWith(".tscn")) return "scene";
   if (f.endsWith(".prefab")) return "prefab";
@@ -105,7 +108,7 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
     }
 
     if (file.endsWith(".cs")) csText.set(file, text);
-    const skip = isUnityAsset(file) || isGodotFile(file);
+    const skip = isUnityAsset(file) || isGodotFile(file) || (isConfigFile(file) && !lang); // 코드 문법 아닌 설정(json·yaml·xml·plist)은 심볼 없음(#1335). next.config.ts·build.gradle.kts 같은 코드 설정은 전처럼 심볼(리뷰)
     if (!skip && !hit) { try { pf.ex = await extractSymbols(text, file); } catch { pf.ex = undefined; } } // #1331 한 파일 실패가 그래프 전체를 죽이지 않게(심볼 없이 파일·import만)
     // 에셋(Unity·Godot)은 심볼이 없어 서명이 늘 같음 → 내용 해시를 서명으로(씬·프리팹 편집 = 연결 변화, 리뷰).
     if (!hit) { pf.sig = skip ? hash : fileSig(pf.specs, pf.ex?.symbols); reparsed++; }
@@ -197,8 +200,8 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
   }
 
   writeFileCache(root, cache);
-  const allEdges = [...importEdges, ...edges];
-  // #1331 덩어리 — 파일 사이 실제 연결로 라벨 전파, 심볼은 자기 파일 덩어리
+  const allEdges = [...importEdges, ...edges, ...configEdges(root, scan.files, fileSet, wsPkgs, dartPkgs)]; // #1335 설정 파일 연결
+  // #1331 덩어리 — 파일 사이 실제 연결로 모듈성 최적화(Louvain 1단계, communities.ts), 심볼은 자기 파일 덩어리
   const { communities, byFile } = detectCommunities([...fileNodes, ...symbolNodes], allEdges);
   const nodes = [...fileNodes, ...symbolNodes].map((n) => { const c = byFile.get(n.file); return c == null ? n : { ...n, community: c }; });
   return {

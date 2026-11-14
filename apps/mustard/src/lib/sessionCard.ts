@@ -19,6 +19,17 @@ const PROMPT = "아래는 AI 코딩 에이전트와 사용자의 대화 기록�
   + "### 확인\n테스트·검사를 실제로 돌렸는지와 결과(기록에 보인 것만, 안 보이면 \"기록에 없음\").\n"
   + "소제목 이름도 답하는 언어로 옮겨 쓰세요. 사람 이름·감정 묘사·메타 발언·칭찬 금지. 큰 제목(#·##) 쓰지 말고(### 소제목만), 카드는 만들지 마세요. 전체 300~600자.";
 
+// 소제목을 답 언어로 바꿔 넣음 — 지시가 한국어라 그대로 두면 ja/en 답에도 한국어 칸 이름이 남음(실시간 해설과 같은 이유)
+const SESSION_HEADS: Record<string, [string, string, string, string]> = {
+  ja: ["変わったこと", "AIが決めたこと", "詰まった点と解決", "確認"],
+  en: ["What changed", "What the AI decided", "Where it got stuck", "Verification"],
+};
+export function sessionPrompt(locale: string): string {
+  const h = SESSION_HEADS[locale];
+  if (!h) return PROMPT;
+  return PROMPT.replace("### 바뀐 것", `### ${h[0]}`).replace("### AI가 정한 것", `### ${h[1]}`).replace("### 막힌 곳과 해결", `### ${h[2]}`).replace("### 확인", `### ${h[3]}`);
+}
+
 // #1135 Crew 커밋 — 역할끼리 주고받은 대화방 글이 앞에. "누가 누구에게 무엇을 지시했나"부터 쓰게.
 const CREW_PROMPT = "앞부분 [Crew 대화]는 역할 에이전트(@역할)끼리 주고받은 지시·인계·질문이고, [실행] 줄은 역할별 실행(시각·결과·요약)입니다. 첫 줄 다음에 \"@역할이 @역할에게 무엇을 지시·질문했고 어떻게 이어졌는지\" 흐름을 1~3줄로 먼저 쓰세요.\n";
 export interface CrewTalk { from: string; kind: string; to: string[]; text: string }
@@ -47,7 +58,7 @@ export async function buildSessionItem(root: string, hash: string, ts: number, s
   if (!s?.messages?.length && !s?.crew?.length && !s?.crewRuns?.length) return "none" as const;
   if (s.closed === false && !force) return "wait" as const;
   let expl: string;
-  try { expl = await askAgent(sessionDigest(s.messages, s.crew, s.crewRuns), s.crew?.length || s.crewRuns?.length ? CREW_PROMPT + PROMPT : PROMPT, providerId, providerSettings, locale); }
+  try { expl = await askAgent(sessionDigest(s.messages, s.crew, s.crewRuns), (s.crew?.length || s.crewRuns?.length ? CREW_PROMPT : "") + sessionPrompt(locale), providerId, providerSettings, locale); }
   catch {
     if (!force || noFallback) return "wait" as const; // #1093 요약 실패(런타임 상한 등) — 다음 주기에 다시. #1260 먼저 보여 주는 카드는 원문 대체 문구로 만들지 않음
     expl = s.messages.find((m) => m.role === "user")?.text.slice(0, 400) || translate(locale, "fallback.summaryFailed"); // 20분 넘게 실패 — 원본이라도 볼 수 있게 카드는 만듦

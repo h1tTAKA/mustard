@@ -7,7 +7,7 @@ export type RepoRelation = "imports" | "calls" | "contains" | "extends" | "imple
 // uses·instantiates(#1009): Unity 씬/프리팹/에셋 → 스크립트·데이터 에셋(uses), → 프리팹·씬(instantiates). 에셋 GUID로 연결.
 
 // 게임 에셋 파일의 역할(#1013) — kind는 file 유지(MCP가 kind!=="file"을 심볼로 봄), 뷰어 색·digest 게임 구조용.
-export type RepoAssetRole = "scene" | "prefab" | "asset";
+export type RepoAssetRole = "scene" | "prefab" | "asset" | "config"; // config(#1335) = 매니페스트·도구 설정 파일
 
 export interface RepoNode {
   id: string;        // 레포 루트 기준 상대경로(파일 노드) — 고유 키

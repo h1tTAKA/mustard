@@ -8,7 +8,7 @@ const cases: [string, string][] = [
   ["src/lib", "path"], ["https://x.com/a", "path"], ["/api/tasks", "path"], [".gitignore", "path"], [".tsx", "path"], ["src\\a.ts", "path"],
   // 명령어·옵션
   ["gh run watch", "cmd"], ["gh pr merge 65 --merge --delete-branch", "cmd"], ["--exit-status", "cmd"], ["--merge", "cmd"], ["-q", "cmd"], ["-i ''", "cmd"], ["grep", "cmd"], ["npm test", "cmd"], ["2>&1", "cmd"], [">/dev/null 2>&1", "cmd"], ["s/old/new/g", "cmd"], ["find . -name x", "cmd"], ["open", "sym"], ["env", "sym"], ["head", "sym"], ["node", "sym"], ["cp", "sym"], ["node --test", "cmd"],
-  // 함수·메서드 호출·로직 식은 fn(빨강), 이름 하나(변수·타입·멤버·키워드)는 sym(파랑)
+  // 함수·메서드 호출·로직 식은 fn(초록 형광펜), 이름 하나(변수·타입·멤버·키워드)는 sym(파랑)
   ["application(_:didFinishLaunchingWithOptions:)", "fn"], ["testExample()", "fn"], ["GeneratedPluginRegistrant.register(with:)", "fn"], ["super.application(...)", "fn"], ["AppState.load()", "fn"], ["Color(0xFFD1D6DB)", "fn"], [".map(...)", "fn"],
   ["AppDelegate", "sym"], ["XCTestCase", "sym"], ["List<String>", "sym"], ["Record<string, string>", "sym"], ["MAX_FILES", "sym"], ["<key>", "sym"], ["<true/>", "sym"], ["<Text>", "sym"],
   ["fieldLine", "sym"], ["line", "sym"], ["useEffect", "sym"], ["static", "sym"], ["const", "sym"], ["@main", "sym"], ["static const fieldLine", "fn"], ["import { a } from 'b'", "fn"], ["as const", "fn"],
