@@ -114,7 +114,14 @@ function setItem(c: Chat, i: number, item: ChatItem) { c.tl.items[i] = item; emi
 function setBusy(c: Chat, busy: boolean) { if (c.tl.busy !== busy) { c.tl.busy = busy; emit(c.id, { type: "busy", busy }); } }
 
 // ── 목록·만들기·닫기 ────────────────────────────────────────────────
+// Claude 최신 모델 — SNA 고정 목록은 옛 버전(Opus 4.7 등)이라 앞에 직접 둠(실측 11-14: CLI 2.1.325에서 이 id로 실행됨, opus 별칭 = claude-opus-5-5).
+// 한계: 새 모델이 나오면 여기 갱신.
+const CLAUDE_LATEST = [
+  { id: "claude-opus-5-5", label: "Claude Opus 5.5" }, { id: "claude-fable-5-2", label: "Claude Fable 5.2" },
+  { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5" }, { id: "claude-haiku-5-5", label: "Claude Haiku 5.5" },
+];
 export function defaultModel(p: ChatProvider): string {
+  if (p === "claude-code") return CLAUDE_LATEST[0].id;
   return p === "grok" ? "grok-build" : p === "cursor" ? "auto" : defaultSnaModel(p); // 비우면 SNA가 Claude 모델을 넣어 다른 AI가 바로 실패(Crew와 같은 이유)
 }
 const metaOf = (c: Chat): ChatMeta => ({ id: c.id, title: c.title, provider: c.provider, model: c.model || defaultModel(c.provider), ...(c.effort !== undefined ? { effort: c.effort } : {}), mode: c.mode, createdAt: c.createdAt, updatedAt: c.updatedAt, busy: c.tl.busy, archived: !!c.archived, count: c.tl.items.filter((i) => i.k === "user").length, ...(c.cc ? { cc: c.cc } : {}) });
@@ -254,7 +261,9 @@ export async function listModels(p: ChatProvider): Promise<{ id: string; label: 
   const hit = modelCache.get(p);
   if (hit && Date.now() - hit.at < 10 * 60_000) return hit.models;
   const r = await (await getSnaClient()).agent.listModels(p, {}).catch(() => null);
-  const models = (r?.models ?? []).filter((m) => !m.deprecated).map((m) => ({ id: m.id, label: m.label || m.id }));
+  let models = (r?.models ?? []).filter((m) => !m.deprecated).map((m) => ({ id: m.id, label: m.label || m.id }));
+  // Claude: 최신을 앞에, SNA 목록의 별칭(opus·sonnet·haiku — 이름이 옛 버전으로 붙어 헷갈림)은 빼고 나머지는 옛 모델로 뒤에
+  if (p === "claude-code") models = [...CLAUDE_LATEST, ...models.filter((m) => !/^(opus|sonnet|haiku)$/.test(m.id) && !CLAUDE_LATEST.some((x) => x.id === m.id))];
   if (!models.some((m) => m.id === defaultModel(p))) models.unshift({ id: defaultModel(p), label: defaultModel(p) });
   modelCache.set(p, { at: Date.now(), models });
   return models;

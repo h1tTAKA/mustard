@@ -21,7 +21,9 @@ export type Img = { base64: string; mime: string; url: string };
 // 앱이 직접 처리하는 명령(에이전트에 안 보냄)
 export const APP_COMMANDS = ["new", "model", "mode", "history", "terminal", "find"] as const;
 export type AppCommand = (typeof APP_COMMANDS)[number];
-const EFFORTS: { v: number | undefined; key: string }[] = [{ v: undefined, key: "achat.effort.auto" }, { v: 1, key: "achat.effort.low" }, { v: 2, key: "achat.effort.mid" }, { v: 3, key: "achat.effort.high" }, { v: 5, key: "achat.effort.max" }];
+// 생각 강도·권한 모드 이름은 어느 언어든 영어 그대로(CLI 용어와 같게, 유저 결정 11-14). SNA reasoningLevel 1~5 = low·medium·high·xhigh·max
+const EFFORTS: { v: number | undefined; label: string }[] = [{ v: undefined, label: "Auto" }, { v: 1, label: "Low" }, { v: 2, label: "Medium" }, { v: 3, label: "High" }, { v: 4, label: "XHigh" }, { v: 5, label: "Max" }];
+const MODE_LABEL: Record<Mode, string> = { default: "Default", plan: "Plan", full: "Full access" };
 const MODE_ICON = { plan: IconListCheck, default: IconShield, full: IconShieldCheck };
 
 type Menu = { kind: "slash"; q: string } | { kind: "file"; q: string; at: number } | null;
@@ -133,7 +135,7 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
   const pop = "absolute z-50 rounded-2xl bg-white p-1 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_8px_24px_rgba(0,0,0,0.12)] dark:bg-zinc-800 dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_8px_24px_rgba(0,0,0,0.4)]";
   const where = empty ? "top-full mt-1.5" : "bottom-full mb-1.5";
   const modelLabel = models?.find((m) => m.id === meta.model)?.label ?? meta.model;
-  const effortKey = EFFORTS.find((e) => e.v === meta.effort)?.key ?? "achat.effort.auto";
+  const effortLabel = EFFORTS.find((e) => e.v === meta.effort)?.label ?? "Auto";
   const ModeIcon = MODE_ICON[meta.mode];
   const pct = ctx && ctx.win ? Math.min(100, Math.round((ctx.used / ctx.win) * 100)) : null;
 
@@ -171,8 +173,8 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
           onChange={(e) => onChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
           onPaste={(e) => { const fs = [...e.clipboardData.files]; if (fs.some((f) => f.type.startsWith("image/"))) { e.preventDefault(); addFiles(fs); } }}
           onKeyDown={onKey} onBlur={() => setTimeout(() => setMenu(null), 150)}
-          className={`block max-h-[max(160px,40vh)] w-full resize-none bg-transparent px-4 pt-3 text-[14px] leading-5 text-zinc-800 outline-none [field-sizing:content] placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500 ${empty ? "min-h-[64px]" : "min-h-[40px]"}`} />
-        <div className="flex items-center gap-0.5 px-2 pb-2">
+          className={`block max-h-[max(160px,40vh)] w-full resize-none bg-transparent px-4 pt-3.5 text-[14px] leading-5 text-zinc-800 outline-none [field-sizing:content] placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500 ${empty ? "min-h-[64px]" : "min-h-[40px]"}`} />
+        <div className="flex items-center gap-0.5 pb-2.5 pl-2 pr-3">
           <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
           <button type="button" onClick={() => fileRef.current?.click()} aria-label={t("achat.attach")} title={t("achat.attach")} className={`${ghost} w-7 justify-center px-0`}>
             <IconPlus size={16} stroke={1.8} aria-hidden />
@@ -182,7 +184,7 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
             <button type="button" onClick={() => setPicker((v) => !v)} className={`${ghost} min-w-0`} data-chat-picker>
               <AgentLogo agent={cur.agent} size={13} />
               <span className="min-w-0 truncate">{modelLabel}</span>
-              {meta.effort !== undefined && <span className="shrink-0 text-zinc-400 dark:text-zinc-500">· {t(effortKey)}</span>}
+              {meta.effort !== undefined && <span className="shrink-0 text-zinc-400 dark:text-zinc-500">· {effortLabel}</span>}
               <IconChevronDown size={12} stroke={2} className="shrink-0" aria-hidden />
             </button>
             {picker && (
@@ -210,8 +212,8 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
                   <p className="px-3 pb-1 pt-1 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">{t("achat.pickEffort")}</p>
                   <div className="flex gap-1 px-2 pb-1.5">
                     {EFFORTS.map((e) => (
-                      <button key={e.key} type="button" onClick={() => onOptions({ effort: e.v })}
-                        className={`flex-1 rounded-full px-1.5 py-1 text-[12px] transition ${meta.effort === e.v ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 hover:bg-black/[.05] dark:text-zinc-300 dark:hover:bg-white/[.08]"}`}>{t(e.key)}</button>
+                      <button key={e.label} type="button" onClick={() => onOptions({ effort: e.v })}
+                        className={`flex-1 rounded-full px-1 py-1 text-[11.5px] transition ${meta.effort === e.v ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 hover:bg-black/[.05] dark:text-zinc-300 dark:hover:bg-white/[.08]"}`}>{e.label}</button>
                     ))}
                   </div>
                 </div>
@@ -221,7 +223,7 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
           {/* 권한 모드 — 누르거나 Shift+Tab으로 바꿈 */}
           <button type="button" onClick={cycleMode} title={`${t(`achat.modeHint.${meta.mode}`)} (Shift+Tab)`}
             className={`${ghost} shrink-0 ${meta.mode === "full" ? "text-amber-600 dark:text-amber-400" : meta.mode === "plan" ? "text-sky-600 dark:text-sky-400" : ""}`}>
-            <ModeIcon size={14} stroke={1.8} aria-hidden />{t(`achat.mode.${meta.mode}`)}
+            <ModeIcon size={14} stroke={1.8} aria-hidden />{MODE_LABEL[meta.mode]}
           </button>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             {pct !== null && (
