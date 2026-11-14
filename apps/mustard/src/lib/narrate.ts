@@ -104,7 +104,7 @@ function splitNarration(summary: string): { title: string; note: string } {
   // #1333 제목 줄을 빼먹고 바로 "### 지금 하는 일"로 시작하면 — 그 소제목을 제목으로 먹지 않고 첫 문장에서 제목을 만듦(리뷰)
   if (/^#{2,6}\s/.test(lines[i] ?? "")) {
     const body = lines.slice(i).find((l) => l.trim() && !/^#{1,6}\s/.test(l.trim())) ?? "";
-    const t = body.replace(/^[-*]\s*/, "").replace(/[`*]/g, "").split(/[.。!?]/)[0].trim();
+    const t = body.replace(/^[-*]\s*/, "").replace(/[`*]/g, "").split(/[。!?]|\.(?=\s|$)/)[0].trim(); // 문장 끝 마침표만(narrate.ts 같은 파일 이름에서 자르지 않게)
     return { title: (t.length > 42 ? `${t.slice(0, 41)}…` : t) || translate(narrationLocale(), "stream.liveWork"), note: lines.slice(i).join("\n").trim() };
   }
   let title = (lines[i] || "").trim()

@@ -201,7 +201,7 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
 
   writeFileCache(root, cache);
   const allEdges = [...importEdges, ...edges, ...configEdges(root, scan.files, fileSet, wsPkgs, dartPkgs)]; // #1335 설정 파일 연결
-  // #1331 덩어리 — 파일 사이 실제 연결로 라벨 전파, 심볼은 자기 파일 덩어리
+  // #1331 덩어리 — 파일 사이 실제 연결로 모듈성 최적화(Louvain 1단계, communities.ts), 심볼은 자기 파일 덩어리
   const { communities, byFile } = detectCommunities([...fileNodes, ...symbolNodes], allEdges);
   const nodes = [...fileNodes, ...symbolNodes].map((n) => { const c = byFile.get(n.file); return c == null ? n : { ...n, community: c }; });
   return {
