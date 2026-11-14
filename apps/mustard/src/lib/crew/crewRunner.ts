@@ -76,7 +76,7 @@ const g = ((globalThis as unknown as { __mustardCrew?: G }).__mustardCrew ??= { 
 // SNA가 자동으로 넣는 PreToolUse 훅은 인증 없이 SNA에 물어 전부 거부됨(+ 읽기마다 사람에게 물음) → Claude 역할은
 // bypassPermissions(SNA 훅 안 넣음) + Mustard 훅: 도구마다 Mustard 서버(/api/crew/permission)에 묻고 crewPolicy가 결정.
 // 훅 파일은 실행 때 ~/.nunopi/crew/claude-hook.cjs에 씀(패키지 경로에 안 기댐). 실패하면 거부(안전 쪽).
-const HOOK_SRC = `// Mustard Crew PreToolUse 훅(#1100) — 자동 생성. 도구 실행 전에 Mustard에 물어 allow/deny.
+export const HOOK_SRC = `// Mustard Crew PreToolUse 훅(#1100) — 자동 생성. 도구 실행 전에 Mustard에 물어 allow/deny.
 const arg = (k) => (process.argv.find((a) => a.startsWith("--" + k + "=")) || "").slice(k.length + 3);
 let raw = ""; process.stdin.on("data", (c) => (raw += c));
 process.stdin.on("end", async () => {
