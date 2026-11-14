@@ -9,6 +9,7 @@ import { extractSymbols, resolveCalls, type SymbolInfo, type RawCall } from "./s
 import type { RepoGraph, RepoNode, RepoEdge, RepoAssetRole } from "./types";
 import { fileHash, fileSig, type FileCache, type ParsedFile } from "./incremental";
 import { readFileCache, writeFileCache } from "./graphStore";
+import { detectCommunities } from "./communities";
 
 // import 해석(상대 + tsconfig 별칭 + baseUrl)은 경량 모듈 imports.ts로 분리.
 import { resolveImport, resolvePythonBare, aliasFinder, workspacePackages, resolveWorkspace, dirIndex, resolveJvmImport, resolveGoImport, goModulePath, dartPackages, resolveDartPackage, resolveElixir, JVM_RE, GO_RE, SWIFT_RE } from "./imports";
@@ -194,12 +195,15 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
   }
 
   writeFileCache(root, cache);
-  const nodes = [...fileNodes, ...symbolNodes];
   const allEdges = [...importEdges, ...edges];
+  // #1331 덩어리 — 파일 사이 실제 연결로 라벨 전파, 심볼은 자기 파일 덩어리
+  const { communities, byFile } = detectCommunities([...fileNodes, ...symbolNodes], allEdges);
+  const nodes = [...fileNodes, ...symbolNodes].map((n) => { const c = byFile.get(n.file); return c == null ? n : { ...n, community: c }; });
   return {
     root,
     nodes,
     edges: allEdges,
+    communities,
     stats: {
       files: fileNodes.length,
       edges: allEdges.length,

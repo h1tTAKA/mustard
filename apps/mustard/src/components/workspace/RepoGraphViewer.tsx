@@ -140,6 +140,30 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     return () => { alive = false; };
   }, [root]);
 
+  // #1331 작업 중 갱신 — 창에 돌아올 때·30초마다 다시 물음(서버는 지문이 같으면 캐시를 바로 돌려줌). 새로 빌드됐으면
+  // 지금 노드 자리·화면을 그대로 이어받아 바꿈(배치가 튀지 않게, 새 노드만 자리 잡음).
+  const builtRef = useRef<number | null>(null);
+  useEffect(() => { builtRef.current = builtAt; }, [builtAt]);
+  useEffect(() => {
+    let busy = false;
+    const check = async () => {
+      if (busy || document.hidden || graphOf !== root) return;
+      busy = true;
+      try {
+        const d = await fetch("/api/repo/codegraph", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root }) }).then((r) => r.json()).catch(() => null);
+        if (!d?.graph || typeof d.builtAt !== "number" || d.builtAt === builtRef.current) return;
+        const pos: Record<string, [number, number]> = {};
+        for (const n of nodesRef.current) if (n.x != null && n.y != null) pos[n.id] = [n.x, n.y];
+        restoreRef.current = { selected: null, picked: [], query: "", panelOpen: true, treeOpen: true, askOpen: false, codeAt: null, pathFrom: null, pathTo: null, impactBase: "off", view: { ...viewRef.current }, pos }; // 시뮬은 pos·view만 씀
+        restoreFor.current = null;
+        setGraph(d.graph as RepoGraph); setBuiltAt(d.builtAt);
+      } finally { busy = false; }
+    };
+    const iv = window.setInterval(() => void check(), 30000);
+    window.addEventListener("focus", check);
+    return () => { window.clearInterval(iv); window.removeEventListener("focus", check); };
+  }, [root, graphOf]);
+
   const shown = useMemo(() => graph?.nodes ?? [], [graph]);
   const byId = useMemo(() => new Map(graph?.nodes.map((n) => [n.id, n]) ?? []), [graph]);
   const matches = useMemo(() => searchNodes(shown, query), [shown, query]);
@@ -304,7 +328,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
       .force("collide", forceCollide(NODE_R + 1))
       .on("tick", () => { dirtyRef.current = true; });
     simRef.current = sim;
-    if (back && nodes.some((n) => back.pos[n.id])) sim.alpha(0.05); // 자리가 있으면 거의 안 움직이게
+    if (back && nodes.some((n) => back.pos[n.id])) sim.alpha(nodes.every((n) => back.pos[n.id]) ? 0.05 : 0.3); // 자리가 있으면 거의 안 움직이게(새 노드가 있으면 그것만 자리 잡을 만큼)
     viewRef.current = back ? { ...back.view } : { x: 0, y: 0, k: 1 };
     dirtyRef.current = true;
     const loop = () => { if (dirtyRef.current) { dirtyRef.current = false; draw(); } rafRef.current = requestAnimationFrame(loop); };

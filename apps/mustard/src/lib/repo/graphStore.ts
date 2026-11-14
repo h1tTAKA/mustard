@@ -31,6 +31,10 @@ export function fingerprintFromScan(root: string, files: string[]): string {
       try { parts.push(`${rel}.meta:${statSync(join(root, `${rel}.meta`)).mtimeMs}`); } catch { /* meta 없음 */ }
     }
   }
+  // #1331 import 해석을 바꾸는 설정 파일 — 소스가 그대로여도 이게 바뀌면 다시 빌드(별칭·패키지 이름·무시 규칙)
+  for (const rel of ["tsconfig.json", "jsconfig.json", "package.json", "pnpm-workspace.yaml", "pubspec.yaml", "go.mod", "composer.json", ".gitignore"]) {
+    try { parts.push(`cfg:${rel}:${statSync(join(root, rel)).mtimeMs}`); } catch { /* 없음 */ }
+  }
   parts.sort();
   parts.push(`parse:${PARSE_V}`); // 추출기 버전이 바뀌면 파일이 그대로여도 다시 빌드(#1320 리뷰)
   return sha(parts.join("\n"));
