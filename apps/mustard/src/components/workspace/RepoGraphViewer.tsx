@@ -198,7 +198,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   const shown = useMemo(() => {
     const all = graph?.nodes ?? [];
     if (symOn) return all;
-    const extra = new Set<string>([...(path ?? []), ...(hit ? [...hit.changed, ...hit.affected] : [])]);
+    const extra = new Set<string>([...(path ?? []), ...(hit ? [...hit.changed].slice(0, 500) : [])]); // 영향은 바뀐 노드만·500개까지 — 넓은 기준이 심볼 수천 개를 다 펼치지 않게(리뷰). 이웃(affected)은 파일 노드로 보임
     return all.filter((n) => n.kind === "file" || n.id === selSym || extra.has(n.id) || (n.community != null && picked.has(n.community)));
   }, [graph, symOn, selSym, picked, path, hit]);
   // #1322 노드 설명 — 누르면 저장분(파일 그대로면) 즉시, 없으면 그 노드의 실제 코드 + 연결을 AI에 보여 주고 근거와 함께 씀 → 저장.
