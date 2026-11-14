@@ -219,6 +219,10 @@ samp {
 .dark .nunopi-md :not(pre) > code[data-k="cmd"] { color: #6ee7b7; background: rgba(52,211,153,0.13); }
 .dark .nunopi-md :not(pre) > code[data-k="sym"] { color: #7dd3fc; background: rgba(56,189,248,0.13); }
 .dark .nunopi-md :not(pre) > code[data-k="val"] { color: #fdba74; background: rgba(251,146,60,0.13); }
+/* 인라인 코드 세부 종류 툴팁(Markdown installCodeTip) — 깃 그래프 호버 카드와 같은 모양 */
+.nunopi-code-tip { display: none; position: fixed; z-index: 60; max-width: 320px; pointer-events: none; padding: 4px 8px; border-radius: 6px; font-size: 11px; line-height: 1.5;
+  color: #27272a; background: #fff; border: 1px solid #e4e4e7; box-shadow: 0 10px 25px rgba(0,0,0,0.15); }
+.dark .nunopi-code-tip { color: #f4f4f5; background: #27272a; border-color: #3f3f46; }
 /* 코드블록 배경 투명 — 감싸는 컨테이너(추가설명 패널 / 챗 버블)색과 통일한다. 테두리만 남겨 박스 구분.
    code.hljs 는 github-dark가 background(#0d1117)를 깔므로 명시적으로 투명 덮어쓰기. */
 .nunopi-md pre { margin: 0.5em 0; padding: 0.7em 0.85em; border-radius: 0.6em; overflow-x: auto; background: transparent; border: 1px solid rgba(0,0,0,0.1); }
