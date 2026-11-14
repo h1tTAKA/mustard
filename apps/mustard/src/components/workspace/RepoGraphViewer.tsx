@@ -4,7 +4,7 @@
 // #1322: 위 툴바(보기 깊이·덩어리 칩·검색) + 오른쪽 패널(요약 / 누른 노드 상세). 순수 계산은 lib/repo/graphView.ts.
 // 레이아웃 엔진 d3-force(ISC). 팬/줌은 손수(의존성 최소).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, type Simulation, type SimulationNodeDatum } from "d3-force";
+import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, forceX, forceY, type Simulation, type SimulationNodeDatum } from "d3-force";
 import { IconX, IconLoader2, IconFocus2, IconSearch, IconCode, IconLayoutSidebar, IconLayoutSidebarRight, IconRoute } from "@tabler/icons-react";
 import FileTree from "@/components/workspace/FileTree";
 import GraphNodeAsk from "@/components/workspace/GraphNodeAsk";
@@ -322,12 +322,25 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     const wrap = wrapRef.current;
     const w = wrap?.clientWidth ?? 800, h = wrap?.clientHeight ?? 600;
     const sim = forceSimulation(nodes)
-      .force("charge", forceManyBody().strength(-24))
+      .force("charge", forceManyBody().strength(-24).distanceMax(240)) // 멀리 있는 덩어리끼리는 안 밀어냄(외딴 노드가 화면 밖으로 날아가던 것, 유저 피드백)
       .force("link", forceLink<SimNode, SimLink>(links).id((d) => d.id).distance(26).strength(0.4))
       .force("center", forceCenter(w / 2, h / 2))
+      .force("x", forceX(w / 2).strength(0.06)).force("y", forceY(h / 2).strength(0.06)) // 연결 없는 덩어리도 가운데로 살짝 당김
       .force("collide", forceCollide(NODE_R + 1))
       .on("tick", () => { dirtyRef.current = true; });
     simRef.current = sim;
+    // 처음 펼칠 때(되살린 화면이 없을 때) 자리가 잡히면 전체가 보이게 맞춤 — 축소해야 보이던 것(유저 피드백)
+    if (!back) sim.on("end.fit", () => {
+      sim.on("end.fit", null);
+      const wr = wrapRef.current;
+      if (!wr || !nodes.length || viewRef.current.x || viewRef.current.y || viewRef.current.k !== 1) return; // 그사이 유저가 움직였으면 그대로
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const n of nodes) { x0 = Math.min(x0, n.x ?? 0); y0 = Math.min(y0, n.y ?? 0); x1 = Math.max(x1, n.x ?? 0); y1 = Math.max(y1, n.y ?? 0); }
+      const pad = 40, W = wr.clientWidth, H = wr.clientHeight;
+      const k = Math.min(2, Math.max(0.1, Math.min((W - pad * 2) / Math.max(1, x1 - x0), (H - pad * 2) / Math.max(1, y1 - y0))));
+      viewRef.current = { k, x: W / 2 - k * (x0 + x1) / 2, y: H / 2 - k * (y0 + y1) / 2 };
+      dirtyRef.current = true;
+    });
     let unpin: number | undefined;
     if (back && nodes.some((n) => back.pos[n.id])) {
       if (nodes.every((n) => back.pos[n.id])) sim.alpha(0.05); // 자리가 다 있으면 거의 안 움직이게
