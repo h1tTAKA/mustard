@@ -1,6 +1,6 @@
-// 채팅 탭 목록(#1341) — GET ?root= 목록 / POST {root, op:"create", provider} 새 탭 · {root, op:"close", id} 닫기(에이전트도 끔).
+// 채팅 탭 목록(#1341) — GET ?root= 목록 / POST {root, op:"create", provider} 새 탭 · {root, op:"close", id} 닫기(에이전트도 끔) · {root, op:"provider", id, provider} 첫 메시지 전 실행 AI 바꾸기.
 import { isAbsolute } from "node:path";
-import { closeChat, createChat, listChats } from "@/lib/chat/chatSessions";
+import { closeChat, createChat, listChats, setProvider } from "@/lib/chat/chatSessions";
 
 export const runtime = "nodejs";
 
@@ -16,6 +16,7 @@ export async function POST(request: Request): Promise<Response> {
   const root = typeof b.root === "string" ? b.root : "";
   if (!isAbsolute(root)) return Response.json({ ok: false, error: "absolute root required" }, { status: 400 });
   if (b.op === "create") return Response.json({ ok: true, chat: createChat(root, b.provider === "codex" ? "codex" : "claude-code") });
+  if (b.op === "provider" && typeof b.id === "string") return Response.json({ ok: setProvider(root, b.id, b.provider === "codex" ? "codex" : "claude-code") });
   if (b.op === "close" && typeof b.id === "string") return Response.json({ ok: await closeChat(root, b.id) });
   return Response.json({ ok: false, error: "bad op" }, { status: 400 });
 }

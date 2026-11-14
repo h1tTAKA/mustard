@@ -118,6 +118,14 @@ export function createChat(root: string, provider: ChatProvider): ChatMeta {
   persist(c, true);
   return { id: c.id, title: "", provider, createdAt: c.createdAt, busy: false };
 }
+// 첫 메시지 전에만 실행 AI 바꾸기(입력 카드의 에이전트 칩) — 이미 시작했으면 그대로
+export function setProvider(root: string, id: string, provider: ChatProvider): boolean {
+  load(root);
+  const c = g.chats.get(id);
+  if (!c || c.root !== root || c.sid || c.tl.items.length) return false;
+  c.provider = provider; persist(c, true);
+  return true;
+}
 export async function closeChat(root: string, id: string): Promise<boolean> {
   load(root);
   const c = g.chats.get(id);
