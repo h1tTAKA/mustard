@@ -8,11 +8,11 @@ const cases: [string, string][] = [
   ["src/lib", "path"], ["https://x.com/a", "path"], ["/api/tasks", "path"], [".gitignore", "path"], [".tsx", "path"], ["src\\a.ts", "path"],
   // 명령어·옵션
   ["gh run watch", "cmd"], ["gh pr merge 65 --merge --delete-branch", "cmd"], ["--exit-status", "cmd"], ["--merge", "cmd"], ["-q", "cmd"], ["-i ''", "cmd"], ["grep", "cmd"], ["npm test", "cmd"], ["2>&1", "cmd"], [">/dev/null 2>&1", "cmd"], ["s/old/new/g", "cmd"], ["find . -name x", "cmd"], ["open", "sym"], ["env", "sym"], ["head", "sym"], ["node", "sym"], ["cp", "sym"], ["node --test", "cmd"],
-  // 코드 이름 — 함수·변수·타입·키워드·상수는 한 색(유저 피드백: 같은 코드 이름이 제각각 색이던 것)
-  ["application(_:didFinishLaunchingWithOptions:)", "sym"], ["testExample()", "sym"], ["GeneratedPluginRegistrant.register(with:)", "sym"], ["super.application(...)", "sym"], ["AppState.load()", "sym"], ["Color(0xFFD1D6DB)", "sym"], [".map(...)", "sym"],
+  // 함수·메서드 호출·로직 식은 fn(빨강), 이름 하나(변수·타입·멤버·키워드)는 sym(파랑)
+  ["application(_:didFinishLaunchingWithOptions:)", "fn"], ["testExample()", "fn"], ["GeneratedPluginRegistrant.register(with:)", "fn"], ["super.application(...)", "fn"], ["AppState.load()", "fn"], ["Color(0xFFD1D6DB)", "fn"], [".map(...)", "fn"],
   ["AppDelegate", "sym"], ["XCTestCase", "sym"], ["List<String>", "sym"], ["Record<string, string>", "sym"], ["MAX_FILES", "sym"], ["<key>", "sym"], ["<true/>", "sym"], ["<Text>", "sym"],
-  ["fieldLine", "sym"], ["line", "sym"], ["useEffect", "sym"], ["static", "sym"], ["const", "sym"], ["@main", "sym"], ["static const fieldLine", "sym"], ["import { a } from 'b'", "sym"], ["as const", "sym"],
-  ["console.log", "sym"], ["process.env", "sym"], ["catchup.enabled", "sym"], ["this.log", "sym"], [".ex1", "sym"], ["...ex1", "sym"], ["{ ko, ja, hl }", "sym"], ["?.", "sym"], ["??", "sym"], ["b === 0", "sym"], ["flex: 1", "sym"], ["Node.js", "sym"],
+  ["fieldLine", "sym"], ["line", "sym"], ["useEffect", "sym"], ["static", "sym"], ["const", "sym"], ["@main", "sym"], ["static const fieldLine", "fn"], ["import { a } from 'b'", "fn"], ["as const", "fn"],
+  ["console.log", "sym"], ["process.env", "sym"], ["catchup.enabled", "sym"], ["this.log", "sym"], [".ex1", "sym"], ["...ex1", "fn"], ["{ ko, ja, hl }", "fn"], ["?.", "fn"], ["??", "fn"], ["b === 0", "fn"], ["flex: 1", "fn"], ["Node.js", "sym"],
   // 값
   ["#D1D6DB", "val"], ["D1D6DB", "val"], ["0xFFD1D6DB", "val"], ["false", "val"], ["42", "val"], ["\"玄関\"", "val"], ["$(FLUTTER_BUILD_NAME)", "val"], ["16px", "val"],
   // 모르는 것(회색) — 약어·기호·한글·짝말·분수

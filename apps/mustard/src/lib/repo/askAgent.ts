@@ -4,21 +4,23 @@ import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 
 type StreamEvent = { type: string; message?: string; response?: { summary?: string } };
 
-export async function askAgent(providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string, ctx: string, prompt: string): Promise<{ text: string; err?: string }> {
+// signal(#1329): 멈춤 — fetch를 끊으면 서버가 request.signal로 에이전트도 끊음. 끊기면 err "aborted".
+export async function askAgent(providerId: AgentProviderKind, providerSettings: ProviderSettings, locale: string, ctx: string, prompt: string, signal?: AbortSignal): Promise<{ text: string; err?: string }> {
   let res: Response;
   try {
     res = await fetch("/api/agent/analyze", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ providerId, request: { code: ctx, locale, providerId, mode: "chat", messages: [{ role: "user", content: prompt }], providerSettings } }),
+      signal,
     });
-  } catch (e) { return { text: "", err: e instanceof Error ? e.message : String(e) }; } // 네트워크 끊김도 오류 값으로(던지지 않음, 리뷰)
+  } catch (e) { return { text: "", err: signal?.aborted ? "aborted" : e instanceof Error ? e.message : String(e) }; } // 네트워크 끊김도 오류 값으로(던지지 않음, 리뷰)
   if (!res.ok || !res.body) return { text: "", err: `HTTP ${res.status}` };
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = "", answer = "", streamErr = "";
   for (;;) {
     let r: ReadableStreamReadResult<Uint8Array>;
-    try { r = await reader.read(); } catch (e) { return { text: "", err: e instanceof Error ? e.message : String(e) }; }
+    try { r = await reader.read(); } catch (e) { return { text: "", err: signal?.aborted ? "aborted" : e instanceof Error ? e.message : String(e) }; }
     const { done, value } = r;
     if (done) break;
     buf += dec.decode(value, { stream: true });

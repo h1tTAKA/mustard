@@ -5,7 +5,7 @@
 // 파일마다 key로 새로 붙임(부모) — 답을 기다리는 중 다른 노드로 가도 답은 원래 파일 세션에 저장되고 화면은 섞이지 않음. 접힘 상태는 부모가 들고 있음.
 // 한계: 질문 화면에서 같은 파일 세션에 동시에 답을 기다리면 늦게 끝난 쪽 대화가 남음.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { IconChevronRight, IconArrowUp, IconLoader2 } from "@tabler/icons-react";
+import { IconChevronUp, IconArrowUp, IconLoader2, IconMessageCircle } from "@tabler/icons-react";
 import { useT, useLocale, Markdown, stripCardBlock, relocalizeFailure } from "@mustard/core";
 import type { AgentProviderKind, ChatMessage, ProviderSettings } from "@mustard/core";
 import { readSessionThread, appendSessionMessages, WS_CHAT_EVENT } from "@/lib/wsChatStore";
@@ -79,25 +79,28 @@ export default function GraphNodeAsk({ root, file, label, kind, line, note, prov
 
   const asked = msgs.filter((m) => m.role === "user").length;
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className={`flex shrink-0 flex-col border-t border-zinc-200 dark:border-zinc-800 ${open ? "h-[58%] min-h-[240px]" : ""}`}>
       <button type="button" onClick={onToggle} aria-expanded={open}
-        className="flex items-center gap-1 self-start text-[10px] font-semibold uppercase tracking-wide text-zinc-400 transition hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300">
-        <IconChevronRight size={12} stroke={2.5} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} aria-hidden />
-        {t("graph.ask")}{asked > 0 && ` (${asked})`}
+        className="flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
+        <IconMessageCircle size={13} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
+        <span className="mr-auto truncate text-[11px] font-medium text-zinc-600 dark:text-zinc-300">{t("graph.ask")}{asked > 0 && ` (${asked})`}</span>
+        <IconChevronUp size={13} stroke={2} className={`shrink-0 text-zinc-400 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
       </button>
       {open && (
-        <div className="flex flex-col gap-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
-          {!msgs.length && streaming == null && <p className="text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">{t("graph.askEmpty")}</p>}
-          {msgs.map((m, i) => m.role === "user"
-            ? <div key={i} className="self-end max-w-[90%] whitespace-pre-wrap rounded-2xl bg-zinc-100 px-3 py-1.5 text-[12px] leading-relaxed text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100">{m.content}</div>
-            : <div key={i} className="max-w-full text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-200"><Markdown>{stripCardBlock(relocalizeFailure(m.content, t))}</Markdown></div>)}
-          {busy && streaming != null && (
-            <div className="max-w-full text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-200">
-              {streaming ? <Markdown>{stripCardBlock(streaming)}</Markdown> : <span className="flex items-center gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500"><IconLoader2 size={13} stroke={2} className="animate-spin" aria-hidden /> {t("chat.replying")}</span>}
-            </div>
-          )}
-          <div ref={bottomRef} />
-          <form onSubmit={(e) => { e.preventDefault(); void send(); }} className="flex items-end gap-1.5">
+        <>
+          <div className="nunopi-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto border-t border-zinc-200 px-3 py-2 dark:border-zinc-800">
+            {!msgs.length && streaming == null && <p className="py-3 text-center text-[11px] text-zinc-400 dark:text-zinc-500">{t("graph.askEmpty")}</p>}
+            {msgs.map((m, i) => m.role === "user"
+              ? <div key={i} className="self-end max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-100 px-3 py-1.5 text-[12px] leading-relaxed text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100">{m.content}</div>
+              : <div key={i} className="max-w-full text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-200"><Markdown>{stripCardBlock(relocalizeFailure(m.content, t))}</Markdown></div>)}
+            {busy && streaming != null && (
+              <div className="max-w-full text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-200">
+                {streaming ? <Markdown>{stripCardBlock(streaming)}</Markdown> : <span className="flex items-center gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500"><IconLoader2 size={13} stroke={2} className="animate-spin" aria-hidden /> {t("chat.replying")}</span>}
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+          <form onSubmit={(e) => { e.preventDefault(); void send(); }} className="flex shrink-0 items-end gap-1.5 border-t border-zinc-200 p-2 dark:border-zinc-800">
             <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1} placeholder={t("graph.askPlaceholder")}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }}
               className="max-h-28 min-h-[32px] flex-1 resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-[12px] text-zinc-800 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-500" />
@@ -106,7 +109,7 @@ export default function GraphNodeAsk({ root, file, label, kind, line, note, prov
               {busy ? <IconLoader2 size={14} stroke={2} className="animate-spin" aria-hidden /> : <IconArrowUp size={14} stroke={2.5} aria-hidden />}
             </button>
           </form>
-        </div>
+        </>
       )}
     </div>
   );

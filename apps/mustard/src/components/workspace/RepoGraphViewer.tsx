@@ -35,6 +35,12 @@ const HL = "#e8b93a";                  // 강조색(머스타드)
 const CHANGED = "#f97316", AFFECTED = "#facc15"; // 영향 강조: 바뀐 노드(주황)·한 칸 이웃(노랑)
 type ImpactBase = "off" | "analysis" | "worktree" | "branch";
 
+// 닫았다 다시 열 때 보던 그대로(#1326 후속, 유저 요청) — 레포별로 고른 노드·덩어리·검색·경로·영향 기준·패널 펼침·코드 칸·화면 이동/확대·노드 자리.
+// 앱 메모리에만(앱을 끄면 처음부터). 그래프가 다시 빌드돼 노드가 바뀌면 없는 노드는 무시.
+type Saved = { selected: string | null; picked: number[]; query: string; panelOpen: boolean; treeOpen: boolean; askOpen: boolean; codeAt: { file: string; line?: number } | null;
+  pathFrom: string | null; pathTo: string | null; impactBase: ImpactBase; view: { x: number; y: number; k: number }; pos: Record<string, [number, number]> };
+const kept = new Map<string, Saved>();
+
 export default function RepoGraphViewer({ root, files, providerId, providerSettings, onOpenFile, onClose }: {
   root: string;
   files?: string[];                     // #1326 왼쪽 파일 트리(레포 파일 목록)
@@ -45,6 +51,9 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
 }) {
   const t = useT();
   const [graph, setGraph] = useState<RepoGraph | null>(null);
+  const restoreRef = useRef<Saved | undefined>(kept.get(root)); // 시뮬이 꺼내 씀(노드 자리·화면) — 그 그래프에만(restoreFor)
+  const restoreFor = useRef<RepoGraph | null>(null);
+  const skipSelSync = useRef(!!kept.get(root)?.selected); // 되살린 선택은 코드 칸을 다시 열지 않음(닫아 둔 코드 칸 유지, 리뷰)
   const [builtAt, setBuiltAt] = useState<number | null>(null);
   const [graphOf, setGraphOf] = useState<string | null>(null); // 지금 graph가 어느 레포 것인지(레포 전환 직후 옛 그래프로 노드 설명을 부르지 않게)
   // 범례에 넣을 역할 — 그래프 바뀔 때만 1회 계산(#1014 리뷰: 렌더마다 노드 전체 스캔 방지)
@@ -56,11 +65,39 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   const [picked, setPicked] = useState<Set<number>>(new Set());     // 고른 덩어리(비면 전부)
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);    // 누른 노드 id → 오른쪽 상세
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(() => kept.get(root)?.panelOpen ?? true);
   // #1326 왼쪽 파일 트리(좁은 창이면 처음엔 접힘) + 가운데 아래 코드 보기(노드·트리 클릭한 파일, 노드 줄 근처)
-  const [treeOpen, setTreeOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 1200);
-  const [askOpen, setAskOpen] = useState(false); // #1326 노드 질문 칸 펼침(노드를 바꿔도 유지)
+  const [treeOpen, setTreeOpen] = useState(() => kept.get(root)?.treeOpen ?? (typeof window === "undefined" || window.innerWidth >= 1200));
+  const [askOpen, setAskOpen] = useState(() => kept.get(root)?.askOpen ?? false); // #1326 노드 질문 칸 펼침(노드를 바꿔도 유지)
   const [codeAt, setCodeAt] = useState<{ file: string; line?: number } | null>(null);
+  // 코드 칸 높이(px) — 위 가장자리를 끌거나 ↑↓로(null = 기본 42%). 보는 사람 설정이라 localStorage. 120px ~ 그래프 칸의 85%.
+  const colRef = useRef<HTMLDivElement>(null);
+  const clampCode = (h: number) => Math.round(Math.min((colRef.current?.clientHeight ?? window.innerHeight) * 0.85, Math.max(120, h)));
+  const [codeH, setCodeH] = useState<number | null>(() => { try { const v = Number(localStorage.getItem("mustard:graphCodeH")); return v > 0 ? v : null; } catch { return null; } });
+  const saveCodeH = (h: number) => { try { localStorage.setItem("mustard:graphCodeH", String(h)); } catch { /* 이번만 적용 */ } };
+  const dragOff = useRef<(() => void) | null>(null); // 끄는 중 붙인 창 리스너(언마운트 때도 뗌)
+  useEffect(() => () => dragOff.current?.(), []);
+  const startCodeResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    dragOff.current?.();
+    e.preventDefault();
+    const box = e.currentTarget.parentElement;
+    const y0 = e.clientY, h0 = box?.offsetHeight ?? 240;
+    let last = h0, moved = false;
+    const prevSel = document.body.style.userSelect;
+    document.body.style.userSelect = "none";
+    const move = (ev: PointerEvent) => { if (Math.abs(ev.clientY - y0) > 3) moved = true; last = clampCode(h0 - (ev.clientY - y0)); setCodeH(last); }; // 위로 끌면 커짐
+    const off = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); document.body.style.userSelect = prevSel; dragOff.current = null; };
+    const up = () => { off(); if (moved) saveCodeH(last); };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up);
+    dragOff.current = off;
+  };
+  const keyCodeResize = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    const h = clampCode((codeH ?? (e.currentTarget.parentElement?.offsetHeight ?? 240)) + (e.key === "ArrowUp" ? 16 : -16));
+    setCodeH(h); saveCodeH(h);
+  };
   const [reveal, setReveal] = useState<{ file: string; n: number; at: number } | null>(null);
   // 경로 찾기 — pathPick: 지금 고르는 끝("from"=시작, "to"=끝, null=안 고르는 중). 둘 다 정해지면 최단 경로.
   const [pathPick, setPathPick] = useState<null | "from" | "to">(null);
@@ -85,14 +122,17 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   // 1) 그래프 로드 — 서브2 캐시 라우트 재사용.
   useEffect(() => {
     let alive = true;
+    const k = kept.get(root); // 닫기 전 상태가 있으면 그대로, 없으면 처음
+    restoreRef.current = k; restoreFor.current = null; skipSelSync.current = !!k?.selected;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 로드 시작 초기화(비동기 fetch 준비)
-    setLoading(true); setErr(null); setSelected(null); setPicked(new Set()); setQuery(""); setPathPick(null); setPathFrom(null); setPathTo(null); setImpactBase("off");
+    setLoading(true); setErr(null); setSelected(k?.selected ?? null); setPicked(new Set(k?.picked ?? [])); setQuery(k?.query ?? ""); setPathPick(null); setPathFrom(k?.pathFrom ?? null); setPathTo(k?.pathTo ?? null); setImpactBase(k?.impactBase ?? "off");
     void (async () => {
       try {
         const r = await fetch("/api/repo/codegraph", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root }) });
         const d = await r.json().catch(() => null);
         if (!alive) return;
         if (!r.ok || !d?.graph) { setErr(d?.error ? String(d.error) : `HTTP ${r.status}`); return; }
+        if (!(d.graph as RepoGraph).nodes.some((n) => n.id === k?.selected)) skipSelSync.current = false; // 되살릴 노드가 다시 빌드돼 없어졌으면 다음 클릭을 삼키지 않게(리뷰)
         setGraph(d.graph as RepoGraph); setGraphOf(root); setBuiltAt(typeof d.builtAt === "number" ? d.builtAt : null);
       } catch (e) { if (alive) setErr(e instanceof Error ? e.message : String(e)); }
       finally { if (alive) setLoading(false); }
@@ -246,7 +286,10 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   // 2) 그래프(보이는 노드) 생겼을 때 시뮬 구성 + rAF 루프.
   useEffect(() => {
     if (!graph) return;
-    const nodes: SimNode[] = shown.map((n) => ({ id: n.id, label: n.label, file: n.file, kind: n.kind, role: n.role, community: n.community }));
+    // 다시 열었으면 노드 자리·화면을 닫기 전대로 — 처음 받은 그래프에만(다시 빌드되면 안 씀). 같은 그래프로 이펙트가 두 번 돌아도 그대로(리뷰)
+    if (restoreRef.current && !restoreFor.current) restoreFor.current = graph;
+    const back = restoreFor.current === graph ? restoreRef.current : undefined;
+    const nodes: SimNode[] = shown.map((n) => { const p = back?.pos[n.id]; return { id: n.id, label: n.label, file: n.file, kind: n.kind, role: n.role, community: n.community, ...(p ? { x: p[0], y: p[1] } : {}) }; });
     const ids = new Map(nodes.map((n) => [n.id, n]));
     const links: SimLink[] = graph.edges
       .filter((e) => ids.has(e.source) && ids.has(e.target))
@@ -261,7 +304,8 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
       .force("collide", forceCollide(NODE_R + 1))
       .on("tick", () => { dirtyRef.current = true; });
     simRef.current = sim;
-    viewRef.current = { x: 0, y: 0, k: 1 };
+    if (back && nodes.some((n) => back.pos[n.id])) sim.alpha(0.05); // 자리가 있으면 거의 안 움직이게
+    viewRef.current = back ? { ...back.view } : { x: 0, y: 0, k: 1 };
     dirtyRef.current = true;
     const loop = () => { if (dirtyRef.current) { dirtyRef.current = false; draw(); } rafRef.current = requestAnimationFrame(loop); };
     rafRef.current = requestAnimationFrame(loop);
@@ -375,13 +419,24 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   const togglePick = (id: number) => setPicked((prev) => { const s = new Set(prev); if (s.has(id)) s.delete(id); else s.add(id); return s; });
   const nodeCount = graph?.nodes.length ?? 0;
   const symbolCount = graph ? nodeCount - graph.stats.files : 0;
-  const sel = selected ? byId.get(selected) : undefined;
-  useEffect(() => { setCodeAt(null); }, [root]); // eslint-disable-line react-hooks/set-state-in-effect -- 레포 바뀌면 옛 레포 파일 코드 비움(리뷰)
+  const sel = selected && graphOf === root ? byId.get(selected) : undefined; // 레포 바뀐 직후 옛 그래프로 찾지 않게(리뷰)
+  useEffect(() => { setCodeAt(kept.get(root)?.codeAt ?? null); }, [root]); // eslint-disable-line react-hooks/set-state-in-effect -- 레포 바뀌면 그 레포의 닫기 전 코드 칸(없으면 비움, 리뷰)
+  // 닫거나 레포를 바꿀 때 지금 상태를 남김(다음에 열면 그대로)
+  const snapRef = useRef<(Omit<Saved, "view" | "pos"> & { ready: boolean }) | null>(null);
+  useEffect(() => { snapRef.current = { ready: graphOf === root, selected, picked: [...picked], query, panelOpen, treeOpen, askOpen, codeAt, pathFrom, pathTo, impactBase }; });
+  useEffect(() => () => {
+    const { ready, ...sn } = snapRef.current ?? { ready: false };
+    if (!ready || !nodesRef.current.length) return; // 이 레포 그래프가 아직 안 떴으면(옛 레포 시뮬) 남기지 않음(리뷰)
+    const pos: Record<string, [number, number]> = {};
+    for (const n of nodesRef.current) if (n.x != null && n.y != null) pos[n.id] = [n.x, n.y];
+    kept.set(root, { ...(sn as Omit<Saved, "view" | "pos">), view: { ...viewRef.current }, pos });
+  }, [root]);
   // 노드를 고르면 그 파일 코드(그 줄) + 트리에서 펼침·강조
   const selFile = sel?.file, selLine = sel?.line;
   useEffect(() => {
     if (!selFile) return;
-    setCodeAt({ file: selFile, line: selLine }); // eslint-disable-line react-hooks/set-state-in-effect -- 고른 노드 따라 코드 보기·트리 강조
+    if (skipSelSync.current) { skipSelSync.current = false; return; } // 되살린 선택 — 코드 칸은 닫기 전대로
+    setCodeAt({ file: selFile, line: selLine }); // 고른 노드 따라 코드 보기·트리 강조
     setReveal((r) => ({ file: selFile, n: (r?.n ?? 0) + 1, at: Date.now() }));
   }, [selFile, selLine]);
   // 트리에서 파일 클릭 → 그 파일 노드가 그래프에 있으면 고르고, 없으면 코드만 보임
@@ -465,7 +520,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
             <FileTree files={files} selected={codeAt?.file ?? null} reveal={reveal} onSelect={pickFile} />
           </aside>
         )}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div ref={colRef} className="flex min-w-0 flex-1 flex-col">
         <div ref={wrapRef} className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
           {loading ? (
             <div className="flex h-full items-center justify-center gap-2 text-[12px] text-zinc-400 dark:text-zinc-500"><IconLoader2 size={16} stroke={2} className="animate-spin" aria-hidden /> {t("graph.loading")}</div>
@@ -493,7 +548,10 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
         </div>
         {/* #1326 가운데 아래 코드 보기 — 그래프를 가리지 않게 아래 칸, 닫기 가능 */}
         {codeAt && (
-          <div className="flex h-[42%] min-h-[160px] shrink-0 flex-col border-t border-zinc-200 dark:border-zinc-800">
+          <div style={codeH ? { height: codeH, maxHeight: "85%" } : undefined} className={`relative flex ${codeH ? "" : "h-[42%]"} min-h-[120px] shrink-0 flex-col border-t border-zinc-200 dark:border-zinc-800`}>
+            {/* 위 가장자리를 끌어 코드 칸 높이 조절(저장) */}
+            <div role="separator" tabIndex={0} aria-orientation="horizontal" aria-label={t("graph.codeResize")} aria-valuenow={codeH ?? undefined} aria-valuemin={120} title={t("graph.codeResize")} onPointerDown={startCodeResize} onKeyDown={keyCodeResize}
+              className="absolute -top-1 left-0 right-0 z-10 h-2 cursor-row-resize touch-none outline-none focus-visible:bg-mustard-500/40 transition hover:bg-mustard-500/40 dark:hover:bg-mustard-400/30" />
             <div className="flex shrink-0 items-center gap-1.5 border-b border-zinc-200 px-3 py-1 dark:border-zinc-800">
               <span className="mr-auto truncate font-mono text-[11px] text-zinc-600 dark:text-zinc-300" title={codeAt.file}>{codeAt.file}{codeAt.line ? `:${codeAt.line}` : ""}</span>
               {onOpenFile && <button type="button" onClick={() => onOpenFile(codeAt.file, codeAt.line)} title={t("flow.openCode")} aria-label={t("flow.openCode")} className={btn}><IconCode size={13} stroke={2} aria-hidden /></button>}
@@ -505,7 +563,8 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
         </div>
         {/* 오른쪽 패널 — 고른 노드 없으면 요약, 있으면 상세 */}
         {panelOpen && graph && (
-          <aside className="nunopi-scroll flex w-72 shrink-0 flex-col gap-3 overflow-auto border-l border-zinc-200 p-3 dark:border-zinc-800">
+          <aside className="flex w-72 shrink-0 flex-col border-l border-zinc-200 dark:border-zinc-800">
+          <div className="nunopi-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3">
             {pathActive ? (
               <div className="flex flex-col gap-1.5">
                 <p className="text-[12px] font-semibold text-zinc-700 dark:text-zinc-200">{t("graph.path")}</p>
@@ -579,12 +638,6 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
                       : <Markdown>{note.text ?? ""}</Markdown>}
                   </div>
                 )}
-                {/* #1326 이 노드에 대해 질문 — 접이식, 질문 이력(그 파일 세션)에 남음 */}
-                {providerId && providerSettings && (
-                  <GraphNodeAsk key={sel.file} root={root} file={sel.file} label={sel.label} kind={sel.kind} line={sel.line}
-                    note={note?.id === sel.id ? note.text : undefined} providerId={providerId} providerSettings={providerSettings}
-                    open={askOpen} onToggle={() => setAskOpen((v) => !v)} />
-                )}
                 {detail && (
                   <>
                     {linkList(t("graph.outgoing"), detail.out)}
@@ -594,6 +647,13 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
                 )}
               </>
             )}
+          </div>
+          {/* #1326 이 노드에 대해 질문 — 오른쪽 패널 아래 접이식(캐치업 카드 질문과 같은 모양), 질문 이력(그 파일 세션)에 남음 */}
+          {sel && !pathActive && providerId && providerSettings && (
+            <GraphNodeAsk key={sel.file} root={root} file={sel.file} label={sel.label} kind={sel.kind} line={sel.line}
+              note={note?.id === sel.id ? note.text : undefined} providerId={providerId} providerSettings={providerSettings}
+              open={askOpen} onToggle={() => setAskOpen((v) => !v)} />
+          )}
           </aside>
         )}
       </div>
