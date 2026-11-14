@@ -4,7 +4,7 @@
 // #1322: 위 툴바(보기 깊이·덩어리 칩·검색) + 오른쪽 패널(요약 / 누른 노드 상세). 순수 계산은 lib/repo/graphView.ts.
 // 레이아웃 엔진 d3-force(ISC). 팬/줌은 손수(의존성 최소).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, type Simulation, type SimulationNodeDatum } from "d3-force";
+import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, forceX, forceY, type Simulation, type SimulationNodeDatum } from "d3-force";
 import { IconX, IconLoader2, IconFocus2, IconSearch, IconCode, IconLayoutSidebar, IconLayoutSidebarRight, IconRoute } from "@tabler/icons-react";
 import FileTree from "@/components/workspace/FileTree";
 import GraphNodeAsk from "@/components/workspace/GraphNodeAsk";
@@ -62,7 +62,8 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   const [err, setErr] = useState<string | null>(null);
 
   const { locale } = useLocale();
-  const [picked, setPicked] = useState<Set<number>>(new Set());     // 고른 덩어리(비면 전부)
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [kindPick, setKindPick] = useState<Set<string>>(new Set()); // 범례에서 고른 종류(파일·함수·역할…) — 비면 전부(유저 요청)     // 고른 덩어리(비면 전부)
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);    // 누른 노드 id → 오른쪽 상세
   const [panelOpen, setPanelOpen] = useState(() => kept.get(root)?.panelOpen ?? true);
@@ -117,7 +118,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   const rafRef = useRef(0);
   const hoverRef = useRef<SimNode | null>(null);
   // 그리기용 강조 상태 미러 — draw는 rAF에서 돌아 state를 직접 못 봄.
-  const hlRef = useRef<{ sel: string | null; match: Set<string>; picked: Set<number>; path: Set<string>; pathEdges: Set<string>; changed: Set<string>; affected: Set<string> }>({ sel: null, match: new Set(), picked: new Set(), path: new Set(), pathEdges: new Set(), changed: new Set(), affected: new Set() });
+  const hlRef = useRef<{ kinds: Set<string>; sel: string | null; match: Set<string>; picked: Set<number>; path: Set<string>; pathEdges: Set<string>; changed: Set<string>; affected: Set<string> }>({ kinds: new Set(), sel: null, match: new Set(), picked: new Set(), path: new Set(), pathEdges: new Set(), changed: new Set(), affected: new Set() });
 
   // 1) 그래프 로드 — 서브2 캐시 라우트 재사용.
   useEffect(() => {
@@ -227,10 +228,10 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   useEffect(() => {
     const pathEdges = new Set<string>();
     if (path) for (let i = 1; i < path.length; i++) { pathEdges.add(`${path[i - 1]}|${path[i]}`); pathEdges.add(`${path[i]}|${path[i - 1]}`); }
-    hlRef.current = { sel: selected, match: new Set(query.trim() ? matches.map((n) => n.id) : []), picked, path: new Set(path ?? [pathFrom, pathTo].filter((x): x is string => !!x)), pathEdges,
+    hlRef.current = { kinds: kindPick, sel: selected, match: new Set(query.trim() ? matches.map((n) => n.id) : []), picked, path: new Set(path ?? [pathFrom, pathTo].filter((x): x is string => !!x)), pathEdges,
       changed: hit?.changed ?? new Set(), affected: hit?.affected ?? new Set() };
     dirtyRef.current = true;
-  }, [selected, matches, picked, query, path, pathFrom, pathTo, hit]);
+  }, [selected, matches, picked, query, path, pathFrom, pathTo, hit, kindPick]);
 
   // 화면→그래프 좌표 역변환(줌/팬 역산). 히트테스트·드래그에.
   const toGraph = useCallback((sx: number, sy: number) => {
@@ -258,12 +259,16 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     const ctx = cv.getContext("2d");
     if (!ctx) return;
     const v = viewRef.current;
-    const { sel, match, picked: pk, path: onPath, pathEdges, changed, affected } = hlRef.current;
+    const { kinds, sel, match, picked: pk, path: onPath, pathEdges, changed, affected } = hlRef.current;
     const impactOn = changed.size > 0;
-    // 흐리게(배치 유지): 경로가 있으면 경로 밖 전부 → 영향 강조 중이면 바뀐·영향 밖 → 아니면 덩어리 거름 밖.
+    // 고른 노드 + 바로 이어진 노드(유저 요청: 클릭하면 그 노드와 연결된 것만 밝게)
+    const near = new Set<string>();
+    if (sel && !pathEdges.size) { near.add(sel); for (const l of linksRef.current) { const a = l.source as SimNode, b = l.target as SimNode; if (typeof a !== "object" || typeof b !== "object") continue; if (a.id === sel) near.add(b.id); else if (b.id === sel) near.add(a.id); } }
+    // 흐리게(배치 유지): 경로가 있으면 경로 밖 전부 → 노드를 골랐으면 이웃 밖 → 영향 강조 중이면 바뀐·영향 밖 → 아니면 덩어리·종류 거름 밖.
     const dim = (n: SimNode) => (pathEdges.size > 0 ? !onPath.has(n.id)
+      : near.size ? !near.has(n.id)
       : impactOn ? !changed.has(n.id) && !affected.has(n.id)
-      : pk.size > 0 && (n.community == null || !pk.has(n.community)));
+      : (pk.size > 0 && (n.community == null || !pk.has(n.community))) || (kinds.size > 0 && !kinds.has(n.kind) && !(n.role && kinds.has(n.role))));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     ctx.translate(v.x, v.y); ctx.scale(v.k, v.k);
@@ -322,12 +327,26 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     const wrap = wrapRef.current;
     const w = wrap?.clientWidth ?? 800, h = wrap?.clientHeight ?? 600;
     const sim = forceSimulation(nodes)
-      .force("charge", forceManyBody().strength(-24))
+      .force("charge", forceManyBody().strength(-24).distanceMax(240)) // 멀리 있는 덩어리끼리는 안 밀어냄(외딴 노드가 화면 밖으로 날아가던 것, 유저 피드백)
       .force("link", forceLink<SimNode, SimLink>(links).id((d) => d.id).distance(26).strength(0.4))
       .force("center", forceCenter(w / 2, h / 2))
+      .force("x", forceX(w / 2).strength(0.06)).force("y", forceY(h / 2).strength(0.06)) // 연결 없는 덩어리도 가운데로 살짝 당김
       .force("collide", forceCollide(NODE_R + 1))
       .on("tick", () => { dirtyRef.current = true; });
     simRef.current = sim;
+    // 처음 펼칠 때(되살린 화면이 없을 때) 자리가 잡히면 전체가 보이게 맞춤 — 축소해야 보이던 것(유저 피드백)
+    if (!back || (!back.view.x && !back.view.y && back.view.k === 1)) sim.on("end.fit", () => { // 맞추기 전에 갱신이 와도(화면이 처음 그대로) 맞춤(리뷰)
+      const wr = wrapRef.current;
+      if (!wr || !wr.clientWidth || !wr.clientHeight) return; // 숨겨진·0 크기면 다음 끝남에(리뷰)
+      sim.on("end.fit", null);
+      if (!nodes.length || viewRef.current.x || viewRef.current.y || viewRef.current.k !== 1) return; // 그사이 유저가 움직였으면 그대로
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const n of nodes) { x0 = Math.min(x0, n.x ?? 0); y0 = Math.min(y0, n.y ?? 0); x1 = Math.max(x1, n.x ?? 0); y1 = Math.max(y1, n.y ?? 0); }
+      const pad = 40, W = wr.clientWidth, H = wr.clientHeight;
+      const k = Math.min(2, Math.max(0.1, Math.min((W - pad * 2) / Math.max(1, x1 - x0), (H - pad * 2) / Math.max(1, y1 - y0))));
+      viewRef.current = { k, x: W / 2 - k * (x0 + x1) / 2, y: H / 2 - k * (y0 + y1) / 2 };
+      dirtyRef.current = true;
+    });
     let unpin: number | undefined;
     if (back && nodes.some((n) => back.pos[n.id])) {
       if (nodes.every((n) => back.pos[n.id])) sim.alpha(0.05); // 자리가 다 있으면 거의 안 움직이게
@@ -564,17 +583,17 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
               <canvas ref={canvasRef} className="h-full w-full cursor-grab touch-none active:cursor-grabbing"
                 onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onDoubleClick={onDoubleClick} onWheel={onWheel} />
               {/* 범례 — 노드 종류 색(지금 깊이에서 보이는 종류만) */}
-              <div className="pointer-events-none absolute bottom-3 left-3 flex flex-col gap-1 rounded-lg border border-zinc-200 bg-white/80 px-2.5 py-2 text-[10px] dark:border-zinc-700 dark:bg-zinc-900/80">
-                {(Object.keys(KIND_COLOR) as RepoNodeKind[]).map((k) => (
-                  <span key={k} className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: KIND_COLOR[k] }} aria-hidden /> {KIND_LABEL[k]}
-                  </span>
-                ))}
-                {roles.map((r) => (
-                  <span key={r} className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: ROLE_COLOR[r] }} aria-hidden /> {r}
-                  </span>
-                ))}
+              {/* 범례 — 누르면 그 종류만 밝게(여러 개 가능), 다시 누르면 해제 */}
+              <div className="absolute bottom-3 left-3 flex flex-col gap-0.5 rounded-lg border border-zinc-200 bg-white/80 px-1.5 py-1.5 text-[10px] dark:border-zinc-700 dark:bg-zinc-900/80">
+                {[...(Object.keys(KIND_COLOR) as RepoNodeKind[]).map((k) => [k, KIND_COLOR[k], KIND_LABEL[k]] as const), ...roles.map((r) => [r, ROLE_COLOR[r], r] as const)].map(([k, color, label]) => {
+                  const on = kindPick.has(k);
+                  return (
+                    <button key={k} type="button" aria-pressed={on} onClick={() => setKindPick((p) => { const n = new Set(p); if (n.has(k)) n.delete(k); else n.add(k); return n; })}
+                      className={`flex items-center gap-1.5 rounded px-1 py-0.5 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${kindPick.size && !on ? "opacity-40" : ""} ${on ? "text-zinc-800 dark:text-zinc-100" : "text-zinc-500 dark:text-zinc-400"}`}>
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} aria-hidden /> {label}
+                    </button>
+                  );
+                })}
               </div>
             </>
           )}
