@@ -29,6 +29,7 @@ const KIND_LABEL: Record<RepoNodeKind, string> = {
 // 게임 에셋 역할 색(#1013) — 역할이 있으면 kind(file) 색 대신. 범례엔 그래프에 실제 있는 역할만.
 const ROLE_COLOR: Record<RepoAssetRole, string> = { scene: "#fb923c", prefab: "#a3e635", asset: "#a5b4fc", config: "#94a3b8" }; // config(#1335) 회청
 const NODE_R = 4, DRAG_THRESHOLD = 4; // 노드 반경(그래프 좌표), 클릭/드래그 판별 이동 임계(px)
+const FILE_ONLY_AT = 4000;            // #1338 노드가 이보다 많으면 처음엔 파일 노드만(심볼은 칩·덩어리로 펼침)
 const BIG_GRAPH = 5000;               // 이 이상이면 무거움 배너(silent 캡 금지)
 const MAX_CHIPS = 14, MAX_LIST = 50;  // 덩어리 칩·상세 목록 상한(화면 넘침 방지)
 const HL = "#e8b93a";                  // 강조색(머스타드)
@@ -53,6 +54,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   const [graph, setGraph] = useState<RepoGraph | null>(null);
   const restoreRef = useRef<Saved | undefined>(kept.get(root)); // 시뮬이 꺼내 씀(노드 자리·화면) — 그 그래프에만(restoreFor)
   const restoreFor = useRef<RepoGraph | null>(null);
+  const focusLater = useRef<string | null>(null); // 숨겨 둔 노드를 골랐을 때 다시 그린 뒤 화면을 옮길 대상(#1338)
   const skipSelSync = useRef(!!kept.get(root)?.selected); // 되살린 선택은 코드 칸을 다시 열지 않음(닫아 둔 코드 칸 유지, 리뷰)
   const [builtAt, setBuiltAt] = useState<number | null>(null);
   const [graphOf, setGraphOf] = useState<string | null>(null); // 지금 graph가 어느 레포 것인지(레포 전환 직후 옛 그래프로 노드 설명을 부르지 않게)
@@ -165,9 +167,11 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     return () => { alive = false; window.clearInterval(iv); window.removeEventListener("focus", check); };
   }, [root, graphOf]);
 
-  const shown = useMemo(() => graph?.nodes ?? [], [graph]);
+  // #1338 큰 그래프는 처음엔 파일 노드만 — 범례에서 종류를 고르거나 덩어리 칩을 고르면 그 심볼만. 고른 노드는 늘 보임.
+  // 칩 대신 범례로(유저 피드백) — 큰 그래프에서 범례로 function·class 등을 고르면 그 종류 심볼이 보임
+  const symOn = (graph?.nodes.length ?? 0) <= FILE_ONLY_AT;
   const byId = useMemo(() => new Map(graph?.nodes.map((n) => [n.id, n]) ?? []), [graph]);
-  const matches = useMemo(() => searchNodes(shown, query), [shown, query]);
+  const matches = useMemo(() => searchNodes(graph?.nodes ?? [], query), [graph, query]); // 숨긴 심볼도 찾음 — 고르면 그 노드가 보이게(리뷰)
   const communities = useMemo(() => [...(graph?.communities ?? [])].sort((a, b) => b.count - a.count).slice(0, MAX_CHIPS), [graph]);
   const langs = useMemo(() => langStats(graph?.nodes ?? []).slice(0, 6), [graph]);
   const path = useMemo(() => (graph && pathFrom && pathTo ? shortestPath(graph.edges, pathFrom, pathTo) : null), [graph, pathFrom, pathTo]);
@@ -188,6 +192,15 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     return () => { alive = false; };
   }, [root, impactBase]);
   const hit = useMemo(() => (graph && impact ? impactOf(graph, impact.files) : null), [graph, impact]);
+  // 파일만 보기일 때도 고른 심볼·경로·영향 노드는 보이게(숨은 채로 강조·경로가 끊겨 보이던 것, 리뷰). 파일 노드만 고를 땐 다시 그리지 않음.
+  const selSym = selected && !symOn && graph?.nodes.find((n) => n.id === selected)?.kind !== "file" ? selected : null;
+  const shown = useMemo(() => {
+    const all = graph?.nodes ?? [];
+    if (symOn) return all;
+    const extra = new Set<string>([...(path ?? []), ...(hit ? [...hit.changed].slice(0, 500) : [])]);
+    if (kindPick.size) { const cnt = new Map<string, number>(); for (const n of all) { if (n.kind === "file" || !kindPick.has(n.kind)) continue; const c = cnt.get(n.kind) ?? 0; if (c >= 2000) continue; cnt.set(n.kind, c + 1); extra.add(n.id); } } // 범례로 고른 종류는 종류마다 2000개까지(아주 큰 그래프가 통째로 펼쳐지지 않게, 리뷰) // 영향은 바뀐 노드만·500개까지 — 넓은 기준이 심볼 수천 개를 다 펼치지 않게(리뷰). 이웃(affected)은 파일 노드로 보임
+    return all.filter((n) => n.kind === "file" || n.id === selSym || extra.has(n.id) || (n.community != null && picked.has(n.community)));
+  }, [graph, symOn, selSym, picked, path, hit, kindPick]);
   // #1322 노드 설명 — 누르면 저장분(파일 그대로면) 즉시, 없으면 그 노드의 실제 코드 + 연결을 AI에 보여 주고 근거와 함께 씀 → 저장.
   const [note, setNote] = useState<{ id: string; text?: string; busy?: boolean; err?: string } | null>(null);
   // 이 창 안 캐시·진행 중 요청 — 키는 레포+노드(레포를 바꿔도 같은 id가 섞이지 않게), 같은 노드를 다시 눌러도 AI를 두 번 안 부름(리뷰).
@@ -318,7 +331,8 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     // 다시 열었으면 노드 자리·화면을 닫기 전대로 — 처음 받은 그래프에만(다시 빌드되면 안 씀). 같은 그래프로 이펙트가 두 번 돌아도 그대로(리뷰)
     if (restoreRef.current && !restoreFor.current) restoreFor.current = graph;
     const back = restoreFor.current === graph ? restoreRef.current : undefined;
-    const nodes: SimNode[] = shown.map((n) => { const p = back?.pos[n.id]; return { id: n.id, label: n.label, file: n.file, kind: n.kind, role: n.role, community: n.community, ...(p ? { x: p[0], y: p[1] } : {}) }; });
+    const prevPos = new Map(nodesRef.current.map((n) => [n.id, [n.x, n.y] as const])); // 보이는 노드가 바뀌어도(심볼 펼치기 등) 있던 노드는 제자리
+    const nodes: SimNode[] = shown.map((n) => { const pp = prevPos.get(n.id); const p = back?.pos[n.id] ?? (pp && pp[0] != null && pp[1] != null ? [pp[0], pp[1]] as [number, number] : undefined); return { id: n.id, label: n.label, file: n.file, kind: n.kind, role: n.role, community: n.community, ...(p ? { x: p[0], y: p[1] } : {}) }; });
     const ids = new Map(nodes.map((n) => [n.id, n]));
     const links: SimLink[] = graph.edges
       .filter((e) => ids.has(e.source) && ids.has(e.target))
@@ -334,6 +348,13 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
       .force("collide", forceCollide(NODE_R + 1))
       .on("tick", () => { dirtyRef.current = true; });
     simRef.current = sim;
+    // 숨겨 뒀던 노드를 골라 다시 그렸으면 자리가 잡힌 뒤 그 노드로 화면 이동
+    const later = focusLater.current;
+    let focusT: number | undefined;
+    if (later && nodes.some((n) => n.id === later)) {
+      focusLater.current = null;
+      focusT = window.setTimeout(() => { const n = nodes.find((x) => x.id === later), wr = wrapRef.current; if (!n || !wr) return; const v = viewRef.current; v.k = Math.max(v.k, 1.8); v.x = wr.clientWidth / 2 - (n.x ?? 0) * v.k; v.y = wr.clientHeight / 2 - (n.y ?? 0) * v.k; dirtyRef.current = true; }, 500);
+    }
     // 처음 펼칠 때(되살린 화면이 없을 때) 자리가 잡히면 전체가 보이게 맞춤 — 축소해야 보이던 것(유저 피드백)
     if (!back || (!back.view.x && !back.view.y && back.view.k === 1)) sim.on("end.fit", () => { // 맞추기 전에 갱신이 와도(화면이 처음 그대로) 맞춤(리뷰)
       const wr = wrapRef.current;
@@ -360,7 +381,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     dirtyRef.current = true;
     const loop = () => { if (dirtyRef.current) { dirtyRef.current = false; draw(); } rafRef.current = requestAnimationFrame(loop); };
     rafRef.current = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(rafRef.current); window.clearTimeout(unpin); sim.stop(); simRef.current = null; };
+    return () => { cancelAnimationFrame(rafRef.current); window.clearTimeout(unpin); window.clearTimeout(focusT); sim.stop(); simRef.current = null; };
   }, [graph, shown, draw]);
 
   // 컨테이너 리사이즈(오른쪽 패널 접기 포함) → 다시 그림.
@@ -385,7 +406,8 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     if (pathPick) { choosePathEnd(id); setQuery(""); return; }
     setSelected(id);
     const n = nodesRef.current.find((x) => x.id === id), wrap = wrapRef.current;
-    if (!n || !wrap) return;
+    if (!n) { focusLater.current = id; return; } // 숨겨 둔 노드 — 다시 그린 뒤 그리로(리뷰)
+    if (!wrap) return;
     const v = viewRef.current;
     v.k = Math.max(v.k, 1.8);
     v.x = wrap.clientWidth / 2 - (n.x ?? 0) * v.k; v.y = wrap.clientHeight / 2 - (n.y ?? 0) * v.k;
@@ -552,6 +574,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
               </div>
             )}
           </div>
+            
             {/* 경로 찾기 — 누르면 시작·끝 노드 고르기(캔버스 클릭 또는 검색), 켜진 상태에서 다시 누르면 지움 */}
             <button type="button" onClick={() => (pathActive ? clearPath() : (setPathPick("from"), setPanelOpen(true)))} aria-pressed={pathActive} title={t("graph.pathTitle")}
               className={`flex items-center gap-1 ${chip(pathActive)}`}>

@@ -2,6 +2,7 @@
 // 무시 디렉터리 제외 + 파일 수 상한(폭주 방지). import 파싱은 graph.ts에서.
 import { readdirSync, existsSync, statSync, type Dirent } from "node:fs";
 import { isConfigFile, CONFIG_MAX_BYTES } from "./configFiles.ts";
+import { graphMaxFiles, filePriority, LIMIT_DEFAULT } from "./graphLimit.ts";
 import { execFileSync } from "node:child_process";
 import { join, relative, sep } from "node:path";
 import { SUPPORTED_EXTS } from "./langs.ts"; // .ts 명시 — scan.check(strip-types)가 직접 로드(symbols.ts 관례)
@@ -66,8 +67,9 @@ const UNITY_ASSETS: ReadonlySet<string> = new Set(UNITY_ASSET_EXTS);
 // Godot 스크립트·씬·리소스(#1011) — project.godot 있는 폴더(Godot 루트)와 그 아래에서만(다른 레포 오인 방지, Unity와 같은 플래그 전파).
 const GODOT_FILES: ReadonlySet<string> = new Set(GODOT_FILE_EXTS);
 
-// 파일 수 상한 — 초대형 레포 방어(후속 최적화 전까지).
-export const MAX_FILES = 3000;
+// 파일 수 상한 — 기본값(#1338: 3000 → 20000). 실제 값은 설정(graphLimit.ts 서버 파일). scanAllFiles(파일 트리)는 이 기본값.
+export const MAX_FILES = LIMIT_DEFAULT;
+const TREE_MAX = 3000; // 파일 트리(scanAllFiles)는 그대로 3000 — 트리는 자주 다시 읽어 2만 개면 무거움(리뷰)
 
 function ext(name: string): string {
   const i = name.lastIndexOf(".");
@@ -78,6 +80,7 @@ export interface ScanResult {
   root: string;
   files: string[];   // 레포 루트 기준 상대경로(POSIX 구분자 "/")
   capped: boolean;   // 상한에 걸려 잘렸으면 true
+  total?: number;    // #1338 상한 전 후보 파일 수(잘렸을 때 "N개 중 M개" 안내) — scanRepo만
   godotRoots?: string[]; // project.godot 있는 폴더들(레포 상대, 루트=""). res://의 기준(#1012 리뷰) — scanRepo만 채움
   engines: Engine[]; // 감지된 게임 엔진(#1003) — 레포 요약 등에 사용
 }
@@ -89,13 +92,19 @@ const GENERATED_RE = /\.(g|freezed|mocks|gr|config)\.dart$|\.pb(json|enum|server
 // #1335 설정 파일 — 이름 목록에 있고 1MiB 이하
 const isConfigOk = (full: string, rel: string) => { if (!isConfigFile(rel)) return false; try { return statSync(full).size <= CONFIG_MAX_BYTES; } catch { return false; } };
 
-export function scanRepo(root: string): ScanResult {
+export function scanRepo(root: string, opts?: { maxFiles?: number }): ScanResult {
   const files: string[] = [];
   const engines = new Set<Engine>();
   const godotRoots: string[] = [];
   let capped = false;
   const vis = gitVisible(root);
-  let cfgN = 0;
+  // #1338 우선순위 통(0 소스·1 기타·2 테스트/예제/문서)마다 상한 개수까지만 모음 — 끝까지 걸으며 전체 수는 정확히 세고, 메모리는 상한의 3배 이하.
+  // (전엔 상한 5배에서 걸음을 멈춰 뒤쪽 src가 빠지고 전체 수가 덜 세졌음, 리뷰.) 한계: 100만 개를 걸으면 멈춤(전체 수는 거기까지). 소스 통이 차도 설정 파일·엔진 정보 때문에 끝까지 걸음.
+  const cfgList: string[] = [];
+  const limit = opts?.maxFiles ?? graphMaxFiles();
+  const buckets: [number, string][][] = [[], [], []];
+  let total = 0, seq = 0;
+  const WALK_MAX = 1_000_000;
   const subs: string[] = [];
   const inSub = (rel: string) => subs.some((s) => rel === s || rel.startsWith(`${s}/`));
 
@@ -128,14 +137,25 @@ export function scanRepo(root: string): ScanResult {
         }
         walk(full, inUnityAssets || (engine === "unity" && name.toLowerCase() === "assets"), godot);
       } else if (e.isFile() && (!vis || vis.files.has(relative(root, full).split(sep).join("/")) || inSub(relative(root, full).split(sep).join("/"))) && !GENERATED_RE.test(name) && (SUPPORTED.has(ext(name)) || isConfigOk(full, relative(root, full).split(sep).join("/")) || (inUnityAssets && UNITY_ASSETS.has(ext(name))) || (godot && GODOT_FILES.has(ext(name))))) {
-        files.push(relative(root, full).split(sep).join("/"));
-        if (!SUPPORTED.has(ext(name)) && !UNITY_ASSETS.has(ext(name)) && !GODOT_FILES.has(ext(name))) cfgN++; // 설정 파일은 상한에 안 셈 — 소스 자리를 뺏지 않게(리뷰)
-        if (files.length - cfgN >= MAX_FILES) { capped = true; return; }
+        const rel = relative(root, full).split(sep).join("/");
+        if (!SUPPORTED.has(ext(name)) && !UNITY_ASSETS.has(ext(name)) && !GODOT_FILES.has(ext(name))) { cfgList.push(rel); continue; } // 설정 파일은 상한에 안 셈 — 소스 자리를 뺏지 않게(리뷰)
+        if (total >= WALK_MAX) { capped = true; return; } // 폭주 방어
+        if (buckets[0].length >= limit) { total++; continue; } // capped는 끝에서(total > limit) — 걷는 중 켜면 걷기가 멈춤 // 소스 통이 꽉 참 — 코드 파일은 세기만, 걷기는 계속(뒤쪽 설정 파일·엔진 정보는 모아야 함, 리뷰)
+        total++;
+        const b = buckets[filePriority(rel)];
+        if (b.length < limit) b.push([seq++, rel]);
       }
     }
   };
   walk(root);
-  return { root, files, capped, engines: [...engines], godotRoots };
+  // 상한을 넘으면 훑은 순서가 아니라 우선순위로 자름 — 소스 폴더 먼저, 테스트·예제·문서 나중(같은 순위·결과 순서는 원래 순서)
+  const picked: [number, string][] = [];
+  for (const b of buckets) for (const x of b) { if (picked.length >= limit) break; picked.push(x); }
+  if (total > limit) capped = true;
+  picked.sort((a, b) => a[0] - b[0]);
+  for (const f of cfgList) files.push(f); // 펼침 인자(...)는 수십만 개면 RangeError(리뷰)
+  for (const x of picked) files.push(x[1]);
+  return { root, files, capped, total, engines: [...engines], godotRoots };
 }
 
 // 전체 파일(확장자 무관) — 워크스페이스 파일트리용(#647). IGNORE_DIRS·숨김 폴더는 제외하되
@@ -161,7 +181,7 @@ export function scanAllFiles(root: string): ScanResult {
         walk(full);
       } else if (e.isFile()) {
         files.push(relative(root, full).split(sep).join("/"));
-        if (files.length >= MAX_FILES) { capped = true; return; }
+        if (files.length >= TREE_MAX) { capped = true; return; }
       }
     }
   };

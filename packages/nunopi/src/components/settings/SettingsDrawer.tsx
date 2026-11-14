@@ -236,6 +236,23 @@ export default function SettingsDrawer({
   const archDepthsRaw = useSetting<string>(ARCHKEYS.depths, ARCH_DEFAULTS.depths);          // #1322
   const archDefRaw = useSetting<string>(ARCHKEYS.defaultDepth, ARCH_DEFAULTS.defaultDepth);
   const archTourCode = useSetting<boolean>(ARCHKEYS.tourOpenCode, ARCH_DEFAULTS.tourOpenCode);
+  // #1338 코드 그래프 파일 수 상한 — 서버 파일이 기준이라 API로 읽고 씀(단독 앱엔 라우트가 없으면 칸을 숨김)
+  const [graphLimit, setGraphLimit] = useState<{ v: number; min: number; max: number } | null>(null);
+  const [graphLimitDraft, setGraphLimitDraft] = useState<string | null>(null);
+  useEffect(() => {
+    if (activeSection !== "set-arch" || graphLimit) return;
+    let alive = true;
+    fetch("/api/repo/codegraph/limit").then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive && j?.ok) setGraphLimit({ v: j.maxFiles, min: j.min, max: j.max }); }).catch(() => {});
+    return () => { alive = false; };
+  }, [activeSection, graphLimit]);
+  const commitGraphLimit = () => {
+    if (graphLimitDraft === null || !graphLimit) return;
+    const n = Number(graphLimitDraft);
+    setGraphLimitDraft(null);
+    if (!graphLimitDraft.trim() || !Number.isFinite(n)) return;
+    void fetch("/api/repo/codegraph/limit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ maxFiles: n }) })
+      .then((r) => r.json()).then((j) => { if (j?.ok) setGraphLimit((g) => (g ? { ...g, v: j.maxFiles } : g)); }).catch(() => {});
+  };
   const cu = {
     explainShow: useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow), explainAnalyze: useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze),
     commandsShow: useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow), commandsAnalyze: useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze),
@@ -1232,6 +1249,17 @@ export default function SettingsDrawer({
                 <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${archTourCode ? "left-[22px]" : "left-0.5"}`} />
               </button>
             </div>
+            {graphLimit && (
+              <div className="flex items-center justify-between gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+                <div className="min-w-0">
+                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.graphLimit")}</span>
+                  <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.graphLimitDesc")}</p>
+                </div>
+                <input type="number" min={graphLimit.min} max={graphLimit.max} step={1000} value={graphLimitDraft ?? graphLimit.v} aria-label={t("settings.graphLimit")}
+                  onChange={(e) => setGraphLimitDraft(e.target.value)} onBlur={commitGraphLimit} onKeyDown={(e) => { if (e.key === "Enter") commitGraphLimit(); }}
+                  className="w-32 shrink-0 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+              </div>
+            )}
           </section>
             );
           })()}
