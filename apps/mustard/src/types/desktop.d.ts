@@ -67,6 +67,14 @@ interface NunopiDesktopApi {
     syncGet(): Promise<{ start: boolean; pr: boolean; done: boolean }>;
     syncSet(cfg: Partial<{ start: boolean; pr: boolean; done: boolean }>): Promise<{ start: boolean; pr: boolean; done: boolean }>;
   };
+  dictation?: {
+    available(): Promise<boolean>;
+    start(locale: string): Promise<{ ok: boolean; error?: string }>;
+    stop(): Promise<boolean>;
+    cancel(): Promise<boolean>;
+    openSettings(which: "mic" | "speech"): Promise<void>;
+    onEvent(cb: (e: { type: "ready" | "level" | "partial" | "final" | "error" | "end"; text?: string; v?: number; code?: string | number; message?: string }) => void): () => void;
+  };
   detectAgents?(force?: boolean): Promise<{ ok: true; list: AgentDetect[] } | { ok: false; error: string }>;
   liftAgentArgs?(agent: string, args: string): Promise<{ choice: string; rest: string } | null>; // #1184
   relaunch(): Promise<void>;

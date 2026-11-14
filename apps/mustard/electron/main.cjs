@@ -514,6 +514,15 @@ const browserControl = require("./browser-control.cjs").createBrowserControl({
 const crewControl = require("./crew-control.cjs").createCrewControl({ appBase: () => appBase, uiToken: UI_TOKEN });
 // 컴퓨터 사용(#1175) — 켜져 있는 동안만 전역 비상 정지 단축키(다른 앱이 앞에 있어도). 누르면 끄고 알림.
 const computerUse = require("./computer-use.cjs");
+// #1341 받아쓰기 — macOS 음성 인식 도우미(패키지: Resources/mustard-dictate)
+const dictation = require("./dictation.cjs");
+dictation.setHelper(app.isPackaged ? join(process.resourcesPath, "mustard-dictate") : join(__dirname, "..", "native", "dictation-macos", "dist", "mustard-dictate"));
+ipcMain.handle("dictation:available", () => dictation.available());
+ipcMain.handle("dictation:start", (e, locale) => dictation.start(e.sender, locale));
+ipcMain.handle("dictation:stop", () => { dictation.stop(); return true; });
+ipcMain.handle("dictation:cancel", () => { dictation.cancel(); return true; });
+ipcMain.handle("dictation:openSettings", (_e, which) => shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${which === "speech" ? "Privacy_SpeechRecognition" : "Privacy_Microphone"}`));
+app.on("will-quit", () => dictation.stopNow());
 // #1189 내장 도우미 — 패키징 앱은 Resources, 개발 실행은 build-app.mjs 결과(없으면 외부 드라이버)
 computerUse.setHelperApp(app.isPackaged ? join(process.resourcesPath, "Mustard Computer Use.app") : join(__dirname, "..", "native", "computer-use-macos", "dist", "Mustard Computer Use.app"));
 const STOP_KEY = process.platform === "darwin" ? "Control+Alt+Command+." : "Control+Alt+Shift+.";

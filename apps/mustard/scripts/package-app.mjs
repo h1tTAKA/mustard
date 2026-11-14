@@ -33,6 +33,8 @@ const arch = process.arch;
 if (process.platform === "darwin") {
   const r = spawnSync("node", ["native/computer-use-macos/build-app.mjs"], { stdio: "inherit" });
   if (r.status !== 0) { console.error("[package-app] 컴퓨터 사용 도우미 빌드 실패 — Xcode 명령줄 도구(swift)를 확인하세요"); process.exit(r.status ?? 1); } // 옛 .app이나 빠진 채로 패키징하지 않음(리뷰)
+  const d = spawnSync("node", ["native/dictation-macos/build.mjs"], { stdio: "inherit" }); // #1341 받아쓰기 도우미
+  if (d.status !== 0) { console.error("[package-app] 받아쓰기 도우미 빌드 실패 — Xcode 명령줄 도구(swiftc)를 확인하세요"); process.exit(d.status ?? 1); }
 }
 
 // 1) 네이티브를 electron ABI로 소스빌드(루트 node_modules — 소스가 있는 곳).

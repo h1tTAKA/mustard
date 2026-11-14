@@ -3,9 +3,11 @@
 // 채팅 입력 카드(#1341) — 겹 그림자 카드 안에 글·첨부, 아래 줄 = [+첨부][실행 AI·모델·생각 강도][권한 모드] … [컨텍스트][보내기/멈춤].
 // `/` 로 시작하면 명령 메뉴(앱 명령 + 내 커맨드·스킬), `@` 뒤엔 레포 파일 자동완성, 빈 입력에서 ↑↓ = 보낸 말 다시 불러오기.
 // Enter 보내기(일하는 중이면 대기열), ⌘Enter = 일하는 중에도 바로 보내기, Shift+Enter 줄바꿈, Shift+Tab 권한 모드 바꾸기, Esc 멈춤.
+// 받아쓰기(macOS 음성 인식, main 도우미): 마이크 버튼·⌘D. 누르면 켜고 끄기, 0.5초 넘게 누르고 있으면 누르고 말하기(떼면 확정).
+// 받아쓰는 동안 아래 줄은 [파형][✕][✓], 글은 커서 자리에 실시간으로 들어감(자동 전송 안 함). Enter·✓ = 확정, Esc·✕ = 받아쓴 글만 되돌림.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { IconPlus, IconX, IconArrowUp, IconPlayerStopFilled, IconChevronDown, IconCheck, IconShield, IconShieldCheck, IconListCheck } from "@tabler/icons-react";
-import { useT } from "@mustard/core";
+import { IconPlus, IconX, IconArrowUp, IconPlayerStopFilled, IconChevronDown, IconCheck, IconShield, IconShieldCheck, IconListCheck, IconMicrophone } from "@tabler/icons-react";
+import { useT, useLocale } from "@mustard/core";
 import { AgentLogo, type AgentId } from "@/components/workspace/AgentLogo";
 
 export type Provider = "claude-code" | "codex" | "opencode" | "grok" | "cursor";
@@ -27,6 +29,27 @@ const MODE_LABEL: Record<Mode, string> = { default: "Default", plan: "Plan", ful
 const MODE_ICON = { plan: IconListCheck, default: IconShield, full: IconShieldCheck };
 
 type Menu = { kind: "slash"; q: string } | { kind: "file"; q: string; at: number } | null;
+type Dict = { phase: "starting" | "listening"; before: string; after: string; text: string };
+const nowMs = () => Date.now(); // 이벤트 처리기 안에서만 부름
+const DICT_LOCALE: Record<string, string> = { ko: "ko-KR", ja: "ja-JP", en: "en-US" };
+// 받아쓴 글 끼우기 — 중국어·일본어 글자 사이와 구두점 앞엔 띄어쓰기 안 넣음(한국어·영어는 넣음)
+const NO_SPACE = /[\u3040-\u30ff\u3400-\u9fff\uff00-\uffef]/;
+export function joinDictation(before: string, text: string, after: string): string {
+  if (!text) return before + after;
+  const a = before && !/\s$/.test(before) && !NO_SPACE.test(before.slice(-1)) && !NO_SPACE.test(text[0]) ? " " : "";
+  const b = after && !/^[\s.,!?;:)\]}]/.test(after) && !NO_SPACE.test(after[0]) && !NO_SPACE.test(text.slice(-1)) ? " " : "";
+  return before + a + text + b + after;
+}
+// 파형 — 최근 소리 크기 막대(오른쪽이 지금), 양 끝은 흐리게
+function Wave({ levels }: { levels: number[] }) {
+  const N = 40, bars = [...Array(Math.max(0, N - levels.length)).fill(0), ...levels.slice(-N)];
+  return (
+    <svg viewBox={`0 0 ${N * 7} 20`} className="h-5 min-w-[min(7rem,20vw)] flex-1 text-zinc-400 dark:text-zinc-500" preserveAspectRatio="xMaxYMid meet" aria-hidden
+      style={{ maskImage: "linear-gradient(90deg, transparent, #000 15%, #000 90%, transparent)" }}>
+      {bars.map((v, i) => { const h = Math.max(2, Math.min(20, v * 20)); return <rect key={i} x={i * 7 + 2.5} y={(20 - h) / 2} width={2} height={h} rx={1} fill="currentColor" />; })}
+    </svg>
+  );
+}
 
 export default function ChatComposer({ root, meta, providers, busy, empty, history, ctx, onSend, onStop, onOptions, onAppCommand, draft, onDraftTaken }: {
   root: string; meta: Meta; providers: typeof PROVIDERS; busy: boolean; empty: boolean; history: string[]; ctx?: { used: number; win: number };
@@ -48,6 +71,61 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
   const fileRef = useRef<HTMLInputElement>(null);
   const locked = meta.count > 0;
   const cur = P(meta.provider);
+  const { locale } = useLocale();
+  const [canDictate, setCanDictate] = useState(false);
+  const [dict, setDict] = useState<Dict | null>(null);
+  const [levels, setLevels] = useState<number[]>([]);
+  const [noteAction, setNoteAction] = useState<null | (() => void)>(null);
+  const dictRef = useRef<Dict | null>(null);
+  const pressAt = useRef(0);
+  const heardAt = useRef(0);
+  const startedAt = useRef(0);
+  useEffect(() => { void window.nunopiDesktop?.dictation?.available().then(setCanDictate).catch(() => {}); }, []);
+  const endDict = (finalText: string | null) => {
+    const d = dictRef.current;
+    dictRef.current = null; setDict(null); setLevels([]);
+    if (d) setInput(joinDictation(d.before, finalText ?? "", d.after));
+    taRef.current?.focus();
+  };
+  // 도우미 이벤트 — 받아쓰는 중인 입력 카드만 반응(다른 레포 칸의 카드는 dictRef가 비어 있음)
+  useEffect(() => {
+    const api = window.nunopiDesktop?.dictation;
+    if (!api) return;
+    return api.onEvent((e) => {
+      const d = dictRef.current;
+      if (!d) return;
+      if (e.type === "ready") { const n = { ...d, phase: "listening" as const }; dictRef.current = n; setDict(n); }
+      else if (e.type === "level") setLevels((l) => [...l.slice(-60), e.v ?? 0]);
+      else if (e.type === "partial") { const n = { ...d, text: e.text ?? "" }; dictRef.current = n; setDict(n); heardAt.current = Date.now(); }
+      else if (e.type === "final") endDict(e.text ?? d.text);
+      else if (e.type === "end") endDict(d.text);
+      else if (e.type === "error") {
+        endDict(d.text);
+        const denied = String(e.code).startsWith("denied");
+        setNote(denied ? t("achat.dictDenied") : t("achat.dictFail", { m: e.message ?? String(e.code ?? "") }));
+        setNoteAction(denied ? () => () => void window.nunopiDesktop?.dictation?.openSettings(e.code === "denied-speech" ? "speech" : "mic") : null);
+      }
+    });
+  }, [t]);
+  // 60초 동안 말이 없거나 10분이 차면 확정하고 멈춤
+  useEffect(() => {
+    if (!dict) return;
+    const iv = setInterval(() => { const now = Date.now(); if (now - heardAt.current > 60_000 || now - startedAt.current > 600_000) void window.nunopiDesktop?.dictation?.stop(); }, 1000);
+    return () => clearInterval(iv);
+  }, [dict]);
+  useEffect(() => () => { if (dictRef.current) void window.nunopiDesktop?.dictation?.cancel(); }, []); // 탭을 떠나면 버림
+  const startDict = async () => {
+    const api = window.nunopiDesktop?.dictation;
+    if (!api || dictRef.current) return;
+    const caret = taRef.current?.selectionStart ?? input.length;
+    const d: Dict = { phase: "starting", before: input.slice(0, caret), after: input.slice(caret), text: "" };
+    dictRef.current = d; setDict(d); setLevels([]); setNote(""); setNoteAction(null); setMenu(null);
+    heardAt.current = startedAt.current = nowMs();
+    const r = await api.start(DICT_LOCALE[locale] ?? "en-US");
+    if (!r.ok) { endDict(null); setNote(t("achat.dictFail", { m: r.error ?? "" })); }
+  };
+  const stopDict = () => void window.nunopiDesktop?.dictation?.stop();
+  const cancelDict = () => { if (!dictRef.current) return; endDict(null); void window.nunopiDesktop?.dictation?.cancel(); };
 
   useEffect(() => { taRef.current?.focus(); }, [meta.id]);
   // 편집(내 말 다시 쓰기)·대기열 편집으로 넘어온 글
@@ -113,6 +191,14 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
   };
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return;
+    const modD = (e.metaKey || e.ctrlKey) && e.code === "KeyD";
+    if (dict) { // 받아쓰는 중 — Enter·⌘D 확정, Esc 취소, 나머지 키는 막음(글은 도우미가 씀)
+      if (e.key === "Enter" || modD) { e.preventDefault(); stopDict(); }
+      else if (e.key === "Escape") { e.preventDefault(); cancelDict(); }
+      else if (!e.metaKey) e.preventDefault();
+      return;
+    }
+    if (modD && canDictate) { e.preventDefault(); void startDict(); return; }
     if (menu && options.length) {
       if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => (s + 1) % options.length); return; }
       if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => (s - 1 + options.length) % options.length); return; }
@@ -141,7 +227,12 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
 
   return (
     <div className="relative">
-      {note && <p className="mb-1.5 text-[12.5px] text-red-600 dark:text-red-400" onClick={() => setNote("")}>{note}</p>}
+      {note && (
+        <p className="mb-1.5 flex items-center gap-2 text-[12.5px] text-red-600 dark:text-red-400">
+          <span onClick={() => { setNote(""); setNoteAction(null); }}>{note}</span>
+          {noteAction && <button type="button" onClick={() => { noteAction(); setNote(""); setNoteAction(null); }} className="shrink-0 rounded-full bg-black/[.05] px-2 py-0.5 text-[12px] text-zinc-700 hover:bg-black/[.08] dark:bg-white/[.08] dark:text-zinc-200 dark:hover:bg-white/[.12]">{t("achat.openSettings")}</button>}
+        </p>
+      )}
       {/* `/`·`@` 메뉴 — 입력 카드 위(빈 채팅은 아래) */}
       {menu && options.length > 0 && (
         <div className={`${pop} inset-x-0 ${empty ? "top-full mt-1.5" : "bottom-full mb-1.5"} nunopi-scroll max-h-72 overflow-y-auto`}>
@@ -169,11 +260,20 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
             ))}
           </div>
         )}
-        <textarea ref={taRef} value={input} rows={1} placeholder={t(busy ? "achat.placeholderBusy" : "achat.placeholder")}
+        <textarea ref={taRef} value={dict ? joinDictation(dict.before, dict.text, dict.after) : input} readOnly={!!dict} rows={1}
+          placeholder={t(dict ? (dict.phase === "starting" ? "achat.connecting" : "achat.listening") : busy ? "achat.placeholderBusy" : "achat.placeholder")}
           onChange={(e) => onChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
           onPaste={(e) => { const fs = [...e.clipboardData.files]; if (fs.some((f) => f.type.startsWith("image/"))) { e.preventDefault(); addFiles(fs); } }}
           onKeyDown={onKey} onBlur={() => setTimeout(() => setMenu(null), 150)}
           className={`block max-h-[max(160px,40vh)] w-full resize-none bg-transparent px-4 pt-3.5 text-[14px] leading-5 text-zinc-800 outline-none [field-sizing:content] placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500 ${empty ? "min-h-[64px]" : "min-h-[40px]"}`} />
+        {dict ? (
+          <div className="flex w-full min-w-0 items-center justify-end gap-2 pb-2.5 pl-3.5 pr-3">
+            <Wave levels={levels} />
+            <button type="button" onClick={cancelDict} aria-label={t("achat.dictCancel")} title={`${t("achat.dictCancel")} (Esc)`} className={`${ghost} w-7 shrink-0 justify-center px-0`}><IconX size={15} stroke={2} aria-hidden /></button>
+            <button type="button" onClick={stopDict} aria-label={t("achat.dictDone")} title={`${t("achat.dictDone")} (Enter)`}
+              className="flex size-7 shrink-0 items-center justify-center rounded-full bg-mustard-500 text-white transition hover:bg-mustard-600 active:opacity-70"><IconCheck size={15} stroke={2.5} aria-hidden /></button>
+          </div>
+        ) : (
         <div className="flex items-center gap-0.5 pb-2.5 pl-2 pr-3">
           <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
           <button type="button" onClick={() => fileRef.current?.click()} aria-label={t("achat.attach")} title={t("achat.attach")} className={`${ghost} w-7 justify-center px-0`}>
@@ -231,6 +331,13 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
                 <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><circle cx="8" cy="8" r="6" fill="none" strokeWidth="2" className="stroke-black/[.08] dark:stroke-white/[.12]" /><circle cx="8" cy="8" r="6" fill="none" strokeWidth="2" strokeDasharray={`${(pct / 100) * 37.7} 37.7`} transform="rotate(-90 8 8)" strokeLinecap="round" className={pct > 85 ? "stroke-red-500" : pct > 60 ? "stroke-amber-500" : "stroke-zinc-400 dark:stroke-zinc-500"} /></svg>
               </span>
             )}
+            {canDictate && (
+              <button type="button" aria-label={t("achat.dictate")} title={`${t("achat.dictate")} (⌘D)`} className={`${ghost} w-7 justify-center px-0`}
+                onPointerDown={() => { pressAt.current = Date.now(); void startDict(); }}
+                onPointerUp={() => { if (Date.now() - pressAt.current > 500) stopDict(); }}>
+                <IconMicrophone size={16} stroke={1.8} aria-hidden />
+              </button>
+            )}
             {busy && !input.trim() && !images.length
               ? <button type="button" onClick={onStop} aria-label={t("achat.stop")} title={`${t("achat.stop")} (Esc)`}
                   className="flex size-7 items-center justify-center rounded-full bg-zinc-900 text-white transition active:opacity-70 dark:bg-zinc-100 dark:text-zinc-900">
@@ -242,6 +349,7 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
                 </button>}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

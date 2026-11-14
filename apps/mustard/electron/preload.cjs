@@ -11,6 +11,15 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
   getRuntimePaths: () => ipcRenderer.invoke("runtime-paths:get"),
   setRuntimePaths: (paths) => ipcRenderer.invoke("runtime-paths:set", paths),
   detectAgents: (force) => ipcRenderer.invoke("agents:detect", !!force),
+  // #1341 받아쓰기(macOS 음성 인식) — start(locale) 뒤 onEvent로 ready·level·partial·final·error·end
+  dictation: {
+    available: () => ipcRenderer.invoke("dictation:available"),
+    start: (locale) => ipcRenderer.invoke("dictation:start", locale),
+    stop: () => ipcRenderer.invoke("dictation:stop"),
+    cancel: () => ipcRenderer.invoke("dictation:cancel"),
+    openSettings: (which) => ipcRenderer.invoke("dictation:openSettings", which),
+    onEvent: (cb) => { const h = (_e, p) => cb(p); ipcRenderer.on("dictation:event", h); return () => ipcRenderer.removeListener("dictation:event", h); },
+  },
   liftAgentArgs: (agent, args) => ipcRenderer.invoke("agents:lift", { agent, args }), // #1184 인자 속 권한 플래그 → 권한 선택 // #1171 에이전트 CLI 설치·경로·로그인 상태
   relaunch: () => ipcRenderer.invoke("app:relaunch"),
   notify: (payload) => ipcRenderer.invoke("notify", payload),
