@@ -1,6 +1,7 @@
 // 레포 파일 스캐너 — 서버(Node) 전용. 폴더를 훑어 지원 소스 파일 경로를 모은다.
 // 무시 디렉터리 제외 + 파일 수 상한(폭주 방지). import 파싱은 graph.ts에서.
-import { readdirSync, type Dirent } from "node:fs";
+import { readdirSync, existsSync, type Dirent } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join, relative, sep } from "node:path";
 import { SUPPORTED_EXTS } from "./langs.ts"; // .ts 명시 — scan.check(strip-types)가 직접 로드(symbols.ts 관례)
 import { UNITY_ASSET_EXTS } from "./unityAssets.ts";
@@ -12,7 +13,24 @@ const SUPPORTED = SUPPORTED_EXTS;
 const IGNORE_DIRS = new Set([
   "node_modules", ".git", ".next", "dist", "dist_electron", "build", "out", "coverage", // dist_electron = electron-builder 출력(.app 안 소스 사본, #1155)
   ".turbo", ".vercel", ".cache", "graphify-out", ".idea", ".vscode",
+  // #1331 의존성·생성물(이름이 확실한 것 — 커밋돼 있어도 남의 코드). 실측: Flutter ios/Pods의 .h가 그래프를 차지
+  "Pods", "Carthage", "DerivedData", ".dart_tool", ".pub-cache", ".gradle", "vendor", "__pycache__", ".mypy_cache", ".pytest_cache", // vendor = Go·PHP가 커밋해 두는 남의 코드(리뷰)
 ]);
+// git이 없는 레포에서만 거르는 이름 — 진짜 소스 폴더 이름일 수도 있어 git 레포는 .gitignore에 맡김(리뷰)
+const NOGIT_IGNORE = new Set(["target", "venv", ".venv"]);
+// #1331 git 레포면 git이 보는 파일(추적 + 무시 안 된 새 파일)만 — 폴더마다 .gitignore·info/exclude를 그대로 따름.
+// 반환: 허용 파일 집합 + 그 파일들이 든 폴더 집합(폴더째 건너뛰기용). git이 없거나 실패하면 null(기존 걷기 그대로).
+// 한계: 요청 경로에서 동기 실행(기존 걷기도 동기) — 초대형 레포는 목록 받는 동안 서버가 잠깐 멈춤. 경로는 UTF-8로 읽음.
+function gitVisible(root: string): { files: Set<string>; dirs: Set<string> } | null {
+  if (!existsSync(join(root, ".git"))) return null;
+  try {
+    const out = execFileSync("git", ["-C", root, "ls-files", "-co", "--exclude-standard", "-z"], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
+    const files = new Set(out.split("\0").filter(Boolean));
+    const dirs = new Set<string>([""]);
+    for (const f of files) { let i = f.lastIndexOf("/"); while (i > 0) { const d = f.slice(0, i); if (dirs.has(d)) break; dirs.add(d); i = d.lastIndexOf("/"); } }
+    return { files, dirs };
+  } catch { return null; }
+}
 // 게임 엔진 자동 생성 폴더(#1003, 에픽 #1002) — 그 폴더가 엔진 프로젝트일 때만 바로 아래 이름을 제외.
 // (Library/ 같은 이름은 다른 레포에선 진짜 코드일 수 있어 전역 무시 X.) 실측: Unity Library/PackageCache가
 // 3000 상한 중 2904를 먹어 게임 코드가 밀려날 뻔.
@@ -64,11 +82,17 @@ export interface ScanResult {
 }
 
 // root 아래 지원 파일을 재귀 수집. IGNORE_DIRS·숨김폴더 제외, MAX_FILES 상한.
+// #1331 코드 생성기 산출물(사람이 안 쓰는 파일) — 그래프에서 뺌. Dart build_runner·freezed·mockito, protobuf.
+const GENERATED_RE = /\.(g|freezed|mocks|gr|config)\.dart$|\.pb(json|enum|server)?\.dart$|_pb2(_grpc)?\.py$|\.pb\.go$/i;
+
 export function scanRepo(root: string): ScanResult {
   const files: string[] = [];
   const engines = new Set<Engine>();
   const godotRoots: string[] = [];
   let capped = false;
+  const vis = gitVisible(root);
+  const subs: string[] = [];
+  const inSub = (rel: string) => subs.some((s) => rel === s || rel.startsWith(`${s}/`));
 
   const walk = (dir: string, inUnityAssets = false, inGodot = false) => {
     if (capped) return;
@@ -91,8 +115,14 @@ export function scanRepo(root: string): ScanResult {
         if (IGNORE_DIRS.has(name) || name.startsWith(".")) continue; // 숨김·무시 폴더 스킵
         if (engine && ENGINE_IGNORE[engine].has(name.toLowerCase())) continue; // 엔진 자동 생성 폴더(#1003)
         if (dotnet && DOTNET_IGNORE.has(name.toLowerCase())) continue; // .NET obj/bin(#1007)
+        const rel = relative(root, full).split(sep).join("/");
+        if (!vis && NOGIT_IGNORE.has(name)) continue;
+        if (vis && !inSub(rel)) {
+          if (vis.files.has(rel)) subs.push(rel); // 서브모듈(git은 폴더 하나로만 보여 줌) — 그 안은 거르지 않고 걸음(리뷰)
+          else if (!vis.dirs.has(rel)) continue; // git이 안 보는 폴더(무시됨) — 통째로 건너뜀
+        }
         walk(full, inUnityAssets || (engine === "unity" && name.toLowerCase() === "assets"), godot);
-      } else if (e.isFile() && (SUPPORTED.has(ext(name)) || (inUnityAssets && UNITY_ASSETS.has(ext(name))) || (godot && GODOT_FILES.has(ext(name))))) {
+      } else if (e.isFile() && (!vis || vis.files.has(relative(root, full).split(sep).join("/")) || inSub(relative(root, full).split(sep).join("/"))) && !GENERATED_RE.test(name) && (SUPPORTED.has(ext(name)) || (inUnityAssets && UNITY_ASSETS.has(ext(name))) || (godot && GODOT_FILES.has(ext(name))))) {
         files.push(relative(root, full).split(sep).join("/"));
         if (files.length >= MAX_FILES) { capped = true; return; }
       }

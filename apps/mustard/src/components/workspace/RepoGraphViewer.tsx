@@ -16,7 +16,7 @@ import { searchNodes, neighbors, langStats, shortestPath, impactOf, type Link } 
 import { archNode, archNodePut } from "@/lib/repo/archClient";
 import { askAgent } from "@/lib/repo/askAgent";
 
-type SimNode = SimulationNodeDatum & { id: string; label: string; file: string; kind: RepoNodeKind; role?: RepoAssetRole; community?: number };
+type SimNode = SimulationNodeDatum & { dragging?: boolean; id: string; label: string; file: string; kind: RepoNodeKind; role?: RepoAssetRole; community?: number };
 type SimLink = { source: SimNode | string; target: SimNode | string; relation: string };
 
 // 노드 종류별 색(다크 배경서 잘 보이는 톤). 엣지는 연한 회색.
@@ -139,6 +139,30 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     })();
     return () => { alive = false; };
   }, [root]);
+
+  // #1331 작업 중 갱신 — 창에 돌아올 때·30초마다 다시 물음(서버는 지문이 같으면 캐시를 바로 돌려줌). 새로 빌드됐으면
+  // 지금 노드 자리·화면을 그대로 이어받아 바꿈(배치가 튀지 않게, 새 노드만 자리 잡음).
+  const builtRef = useRef<number | null>(null);
+  useEffect(() => { builtRef.current = builtAt; }, [builtAt]);
+  useEffect(() => {
+    let busy = false, alive = true; // alive: 레포를 바꾼 뒤 늦게 온 옛 레포 응답은 버림(리뷰)
+    const check = async () => {
+      if (busy || !alive || document.hidden || graphOf !== root) return;
+      busy = true;
+      try {
+        const d = await fetch("/api/repo/codegraph", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: root }) }).then((r) => r.json()).catch(() => null);
+        if (!alive || !d?.graph || typeof d.builtAt !== "number" || d.builtAt === builtRef.current) return;
+        const pos: Record<string, [number, number]> = {};
+        for (const n of nodesRef.current) if (n.x != null && n.y != null) pos[n.id] = [n.x, n.y];
+        restoreRef.current = { selected: null, picked: [], query: "", panelOpen: true, treeOpen: true, askOpen: false, codeAt: null, pathFrom: null, pathTo: null, impactBase: "off", view: { ...viewRef.current }, pos }; // 시뮬은 pos·view만 씀
+        restoreFor.current = null;
+        setGraph(d.graph as RepoGraph); setBuiltAt(d.builtAt);
+      } finally { busy = false; }
+    };
+    const iv = window.setInterval(() => void check(), 30000);
+    window.addEventListener("focus", check);
+    return () => { alive = false; window.clearInterval(iv); window.removeEventListener("focus", check); };
+  }, [root, graphOf]);
 
   const shown = useMemo(() => graph?.nodes ?? [], [graph]);
   const byId = useMemo(() => new Map(graph?.nodes.map((n) => [n.id, n]) ?? []), [graph]);
@@ -304,12 +328,20 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
       .force("collide", forceCollide(NODE_R + 1))
       .on("tick", () => { dirtyRef.current = true; });
     simRef.current = sim;
-    if (back && nodes.some((n) => back.pos[n.id])) sim.alpha(0.05); // 자리가 있으면 거의 안 움직이게
+    let unpin: number | undefined;
+    if (back && nodes.some((n) => back.pos[n.id])) {
+      if (nodes.every((n) => back.pos[n.id])) sim.alpha(0.05); // 자리가 다 있으면 거의 안 움직이게
+      else { // 새 노드가 있으면 기존 노드는 잠깐 고정하고 새 것만 자리 잡게 — 배치가 통째로 섞이지 않게(리뷰)
+        for (const n of nodes) if (back.pos[n.id]) { n.fx = n.x; n.fy = n.y; }
+        sim.alpha(0.3);
+        unpin = window.setTimeout(() => { for (const n of nodes) if (back.pos[n.id] && !n.dragging && n.fx === n.x && n.fy === n.y) { n.fx = null; n.fy = null; } }, 2500); // 끄는 중인 노드는 그대로(리뷰)
+      }
+    }
     viewRef.current = back ? { ...back.view } : { x: 0, y: 0, k: 1 };
     dirtyRef.current = true;
     const loop = () => { if (dirtyRef.current) { dirtyRef.current = false; draw(); } rafRef.current = requestAnimationFrame(loop); };
     rafRef.current = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(rafRef.current); sim.stop(); simRef.current = null; };
+    return () => { cancelAnimationFrame(rafRef.current); window.clearTimeout(unpin); sim.stop(); simRef.current = null; };
   }, [graph, shown, draw]);
 
   // 컨테이너 리사이즈(오른쪽 패널 접기 포함) → 다시 그림.
@@ -351,7 +383,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     const node = nodeAt(sx, sy);
     dragRef.current = { id: e.pointerId, node, sx, sy, moved: false, panx: viewRef.current.x, pany: viewRef.current.y };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    if (node) { simRef.current?.alphaTarget(0.2).restart(); }
+    if (node) { node.dragging = true; simRef.current?.alphaTarget(0.2).restart(); } // dragging: 새 노드 자리 잡기 고정 풀기에서 제외
   };
   const onPointerMove = (e: React.PointerEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -375,6 +407,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     const d = dragRef.current;
     if (d && e.pointerId !== d.id) return; // 추적 포인터 아니면 무시
     dragRef.current = null;
+    if (d?.node) d.node.dragging = false;
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
     simRef.current?.alphaTarget(0);
     if (!d) return;

@@ -4,6 +4,7 @@
 // tree-sitter grammar 대부분 선언 노드에 name 필드 노출. 특이 케이스(TS arrow-const)만 특례.
 import type Parser from "web-tree-sitter";
 import { parseFile } from "./treesitter.ts";
+import { regexSymbols } from "./regexSymbols.ts";
 import type { RepoNode, RepoEdge, RepoNodeKind } from "./types";
 
 // 심볼로 볼 노드타입 → kind. (probe로 확인: ts/py/go/rust/java + 표준 grammar 명칭.)
@@ -18,6 +19,7 @@ const SYMBOL_KIND: Record<string, RepoNodeKind> = {
   impl_item: "class", trait_item: "class", interface_declaration: "class",
   enum_declaration: "class", enum_item: "class", object_declaration: "class",
   protocol_declaration: "class", module: "class",
+  class_interface: "class", class_implementation: "class", object_definition: "class", trait_definition: "class", contract_declaration: "class", // #1331 objc·scala·solidity
   // 타입 별칭
   type_alias_declaration: "type", type_spec: "type",
 };
@@ -90,7 +92,7 @@ function calleeNameOf(fn: Parser.SyntaxNode): Callee | null {
 // 소스+파일 → 심볼 목록 + 노드 + contains 엣지(file→symbol) + 원시 호출. 미지원 언어면 빈 결과.
 export async function extractSymbols(text: string, file: string): Promise<{ symbols: SymbolInfo[]; nodes: RepoNode[]; contains: RepoEdge[]; calls: RawCall[]; heritage: RawHeritage[] }> {
   const parsed = await parseFile(text, file);
-  if (!parsed) return { symbols: [], nodes: [], contains: [], calls: [], heritage: [] };
+  if (!parsed) return regexSymbols(text, file); // #1331 문법이 없거나 안 열리는 언어(Dart·Ruby)는 정규식 근사
 
   const symbols: SymbolInfo[] = [];
   const usedIds = new Set<string>();

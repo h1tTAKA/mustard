@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { scanRepo, scanAllFiles } from "./scan.ts";
+import { execFileSync } from "node:child_process";
 
 const root = mkdtempSync(join(tmpdir(), "scan-check-"));
 const put = (rel: string, body = "x") => { const p = join(root, rel); mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, body); };
@@ -67,3 +68,25 @@ assert.ok(!r4.includes("client/Assets/Art/cat.mat"), "머티리얼 제외");
 put("web/src/assets/data.asset", "x"); // 엔진 루트 밖 assets/ — Unity 에셋 아님(#1010 리뷰)
 assert.ok(!scanRepo(root).files.includes("web/src/assets/data.asset"), "Unity 루트 밖 assets/*.asset 제외");
 console.log("scan.check OK");
+
+// #1331 git 레포는 .gitignore(폴더별 포함)를 따름 + 의존성 폴더 기본 제외
+{
+  const g = mkdtempSync(join(tmpdir(), "scan-git-"));
+  const put2 = (rel: string, body = "x") => { const p = join(g, rel); mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, body); };
+  put2("lib/main.dart", "void main(){}");
+  put2("ios/Runner/AppDelegate.swift", "class A {}");
+  put2("ios/Pods/X/x.h", "int x;");
+  put2("ios/.gitignore", "**/Pods/\n");
+  put2("gen/out.ts", "export {}");
+  put2(".gitignore", "gen/\n");
+  execFileSync("git", ["init", "-q", g]);
+  const gr = scanRepo(g);
+  assert.ok(gr.files.includes("ios/Runner/AppDelegate.swift"), "git 레포 소스 포함");
+  assert.ok(!gr.files.some((f) => f.includes("Pods/")), "폴더별 .gitignore의 Pods 제외");
+  assert.ok(!gr.files.includes("gen/out.ts"), "루트 .gitignore 제외");
+  // git 없는 레포도 Pods는 기본 제외
+  const n = mkdtempSync(join(tmpdir(), "scan-nogit-"));
+  mkdirSync(join(n, "ios/Pods/Y"), { recursive: true }); writeFileSync(join(n, "ios/Pods/Y/y.h"), "int y;");
+  assert.ok(!scanRepo(n).files.some((f) => f.includes("Pods/")), "git 없어도 Pods 제외");
+  console.log("scan git ok");
+}

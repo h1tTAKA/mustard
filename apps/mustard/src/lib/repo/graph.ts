@@ -9,13 +9,16 @@ import { extractSymbols, resolveCalls, type SymbolInfo, type RawCall } from "./s
 import type { RepoGraph, RepoNode, RepoEdge, RepoAssetRole } from "./types";
 import { fileHash, fileSig, type FileCache, type ParsedFile } from "./incremental";
 import { readFileCache, writeFileCache } from "./graphStore";
+import { detectCommunities } from "./communities";
 
 // import 해석(상대 + tsconfig 별칭 + baseUrl)은 경량 모듈 imports.ts로 분리.
-import { resolveImport, resolvePythonBare, loadAliases, dirIndex, resolveJvmImport, resolveGoImport, goModulePath, JVM_RE, GO_RE } from "./imports";
+import { resolveImport, resolvePythonBare, aliasFinder, workspacePackages, resolveWorkspace, dirIndex, resolveJvmImport, resolveGoImport, goModulePath, dartPackages, resolveDartPackage, resolveElixir, JVM_RE, GO_RE, SWIFT_RE } from "./imports";
 import { godotEdges, isGodotFile } from "./godotAssets";
 import { isUnityAsset, underUnityAssets, unityGuidRefs, unityMetaGuid, unityRelation } from "./unityAssets";
 import { csharpNamespaceAt, csharpTypeRefs, isEngineStub, stripCsharp, type TypeDef } from "./typeRefs";
 
+// bare import 위로 찾기는 같은 언어 파일만(ruby require "x"가 x.py에 붙지 않게, 리뷰)
+const sameLang = (from: string, hit: string | null) => (hit && hit.slice(hit.lastIndexOf(".")) === from.slice(from.lastIndexOf(".")) ? hit : null);
 // 파일명(경로 마지막) — 노드 label용.
 const baseName = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
@@ -32,12 +35,15 @@ function assetRole(file: string): RepoAssetRole | undefined {
 export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<RepoGraph> {
   const scan = pre ?? scanRepo(root); // 라우트가 이미 스캔했으면 재사용(이중 스캔 방지, #845 🟡)
   const fileSet = new Set(scan.files);
-  const alias = loadAliases(root); // tsconfig paths(@/* 등) 별칭 해석 — Next 앱 엣지 확보
+  const aliasOf = aliasFinder(root); // #1331 파일마다 가장 가까운 tsconfig(+extends) paths 별칭 — 모노레포 앱별 @/
+  const wsPkgs = workspacePackages(root); // #1331 워크스페이스 패키지 이름(@scope/pkg) → 폴더
   // #1023 JVM·Go — 패키지 경로 import 해석용 폴더 인덱스 + go.mod 모듈 경로(루트). 같은 폴더 = 같은 패키지.
   const jvmDirs = dirIndex(scan.files, JVM_RE);
   const goDirs = dirIndex(scan.files, GO_RE);
+  const swiftDirs = dirIndex(scan.files, SWIFT_RE); // #1331 Swift는 모듈(대개 타깃 폴더) 안 파일끼리 import 없이 서로 씀
   let goModule: string | null = null;
   if (goDirs.size) { try { goModule = goModulePath(readFileSync(join(root, "go.mod"), "utf8")); } catch { /* go.mod 없음 */ } }
+  const dartPkgs = dartPackages(root, scan.files); // #1331 package:이름/ → 그 패키지 lib/
 
   const fileNodes: RepoNode[] = [];
   const symbolNodes: RepoNode[] = [];
@@ -75,10 +81,12 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
       let specs: string[] = [];
       if (hit) specs = hit.specs ?? [];
       else { try { specs = lang.extract(text); } catch { specs = []; } pf.specs = specs; }
-      const isJvm = JVM_RE.test(file), isGo = GO_RE.test(file);
+      const isJvm = JVM_RE.test(file), isGo = GO_RE.test(file), isSwift = SWIFT_RE.test(file);
       const seenT = new Set<string>();
       for (const spec of specs) {
-        const one = resolveImport(spec, file, fileSet, alias ?? undefined) ?? (file.endsWith(".py") ? resolvePythonBare(spec, file, fileSet) : null);
+        const one = spec.startsWith("package:") ? resolveDartPackage(spec, dartPkgs, fileSet)
+          : spec.startsWith("ex:") ? resolveElixir(spec, scan.files)
+          : resolveImport(spec, file, fileSet, aliasOf(file) ?? undefined) ?? (/\.(py|lua|rb)$/.test(file) ? sameLang(file, resolvePythonBare(spec, file, fileSet)) : null) ?? (wsPkgs.size ? resolveWorkspace(spec, wsPkgs, fileSet) : null);
         // #1023 상대·별칭으로 못 풀면 JVM FQN / Go 모듈 경로(패키지=폴더 → 여러 파일)
         const ts = one ? [one] : isJvm ? resolveJvmImport(spec, jvmDirs) : isGo ? resolveGoImport(spec, goModule, goDirs) : [];
         for (const target of ts) {
@@ -89,16 +97,16 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
         }
       }
       // #1023 같은 패키지(같은 폴더, JVM은 java+kt) 형제는 import 없이 서로 씀 → 엣지 없이 해석 대상에만(calls·상속이 패키지 안 파일을 넘게).
-      if (isJvm || isGo) {
+      if (isJvm || isGo || isSwift) {
         const dir = file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : "";
-        for (const sib of (isJvm ? jvmDirs : goDirs).get(dir) ?? []) if (sib !== file && !seenT.has(sib)) targets.push(sib);
+        for (const sib of (isJvm ? jvmDirs : isGo ? goDirs : swiftDirs).get(dir) ?? []) if (sib !== file && !seenT.has(sib)) targets.push(sib);
       }
       importTargetsByFile.set(file, targets);
     }
 
     if (file.endsWith(".cs")) csText.set(file, text);
     const skip = isUnityAsset(file) || isGodotFile(file);
-    if (!skip && !hit) pf.ex = await extractSymbols(text, file);
+    if (!skip && !hit) { try { pf.ex = await extractSymbols(text, file); } catch { pf.ex = undefined; } } // #1331 한 파일 실패가 그래프 전체를 죽이지 않게(심볼 없이 파일·import만)
     // 에셋(Unity·Godot)은 심볼이 없어 서명이 늘 같음 → 내용 해시를 서명으로(씬·프리팹 편집 = 연결 변화, 리뷰).
     if (!hit) { pf.sig = skip ? hash : fileSig(pf.specs, pf.ex?.symbols); reparsed++; }
     cache[file] = pf;
@@ -189,12 +197,15 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
   }
 
   writeFileCache(root, cache);
-  const nodes = [...fileNodes, ...symbolNodes];
   const allEdges = [...importEdges, ...edges];
+  // #1331 덩어리 — 파일 사이 실제 연결로 라벨 전파, 심볼은 자기 파일 덩어리
+  const { communities, byFile } = detectCommunities([...fileNodes, ...symbolNodes], allEdges);
+  const nodes = [...fileNodes, ...symbolNodes].map((n) => { const c = byFile.get(n.file); return c == null ? n : { ...n, community: c }; });
   return {
     root,
     nodes,
     edges: allEdges,
+    communities,
     stats: {
       files: fileNodes.length,
       edges: allEdges.length,

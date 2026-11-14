@@ -132,11 +132,70 @@ function extractSwift(text: string): string[] {
   return specs;
 }
 
+// ── #1331 언어 확장 ──
+// Objective-C — `#import "x.h"`·`#include "x.h"`(따옴표 = 레포 안, <...> = 시스템/프레임워크는 버림).
+function extractObjc(text: string): string[] {
+  const specs: string[] = [];
+  const re = /^\s*#\s*(?:import|include)\s*"([^"]+)"/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) specs.push("./" + m[1]);
+  return specs;
+}
+// Lua — `require("a.b")`·`require 'a.b'` → "a/b"(레포 루트·위 폴더에서 찾음).
+function extractLua(text: string): string[] {
+  return [...text.matchAll(/\brequire\s*\(?\s*['"]([\w./-]+)['"]/g)].map((m) => m[1].replace(/\./g, "/"));
+}
+// Elixir — `alias/import/use/require My.Mod` → "My.Mod"(파일은 snake_case 경로 끝 매칭으로 해석). `alias A.{B, C}`도.
+function extractElixir(text: string): string[] {
+  const specs: string[] = [];
+  for (const m of text.matchAll(/^\s*(?:alias|import|use|require)\s+([A-Z]\w*(?:\.[A-Z]\w*)*)(?:\.\{([^}]+)\})?/gm)) {
+    if (m[2]) for (const p of m[2].split(",")) specs.push(`${m[1]}.${p.trim()}`); else specs.push(m[1]);
+  }
+  return specs.map((s) => "ex:" + s);
+}
+// Zig — `@import("x.zig")`(std·builtin은 버림).
+function extractZig(text: string): string[] {
+  return [...text.matchAll(/@import\(\s*"([^"]+)"\s*\)/g)].map((m) => m[1]).filter((s) => s.endsWith(".zig")).map((s) => (s.startsWith(".") ? s : "./" + s));
+}
+// Solidity — `import "./x.sol"`·`import {A} from "./x.sol"`.
+function extractSolidity(text: string): string[] {
+  return [...text.matchAll(/^\s*import\s+(?:[^"']*\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1]);
+}
+// Vue·Svelte·Astro 단일 파일 컴포넌트 — <script> 블록(Astro는 --- 머리)만 TS로 읽음.
+function extractSfc(text: string): string[] {
+  const blocks = [...text.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  const fm = /^---\n([\s\S]*?)\n---/.exec(text); if (fm) blocks.push(fm[1]);
+  return blocks.flatMap((b) => extractTsJs(b));
+}
+// 문법 없는 그 밖의 코드 — 흔한 키워드의 따옴표 경로만(상대·레포 안). 파일 노드라도 남기는 게 목적.
+function extractGeneric(text: string): string[] {
+  const specs: string[] = [];
+  for (const m of text.matchAll(/^\s*(?:import|require|include|use|source|load|\.)\s*\(?\s*['"]([^'"\s]+)['"]/gm)) specs.push(m[1].startsWith(".") || m[1].startsWith("/") ? m[1] : "./" + m[1]);
+  return specs;
+}
+
+// Dart(#1331) — `import/export/part 'x';`(조건부 import의 대체 경로도). `dart:`는 SDK라 버림, `package:`는 그대로(해석은 pubspec 이름),
+// 그 밖은 파일 기준 상대.
+function extractDart(text: string): string[] {
+  const specs: string[] = [];
+  const re = /^\s*(?:import|export|part(?:\s+of)?)\s+([^;]+);/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    for (const q of m[1].matchAll(/['"]([^'"]+)['"]/g)) {
+      const s = q[1];
+      if (s.startsWith("dart:")) continue;
+      specs.push(s.startsWith("package:") || s.startsWith(".") || s.startsWith("/") ? s : "./" + s);
+    }
+  }
+  return specs;
+}
+
 export const LANGS: LangDef[] = [
   { lang: "ts/js", exts: [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"], extract: extractTsJs },
   { lang: "python", exts: [".py"], extract: extractPython },
   { lang: "go", exts: [".go"], extract: extractGo },
   { lang: "java", exts: [".java"], extract: extractJavaKotlin },
+  { lang: "scala", exts: [".scala", ".sc"], extract: extractJavaKotlin }, // #1331 import a.b.C — JVM 패키지 해석과 같음
   { lang: "kotlin", exts: [".kt", ".kts"], extract: extractJavaKotlin },
   { lang: "csharp", exts: [".cs"], extract: extractCSharp },
   { lang: "ruby", exts: [".rb"], extract: extractRuby },
@@ -144,6 +203,14 @@ export const LANGS: LangDef[] = [
   { lang: "php", exts: [".php"], extract: extractPhp },
   { lang: "c/c++", exts: [".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx"], extract: extractC },
   { lang: "swift", exts: [".swift"], extract: extractSwift },
+  { lang: "dart", exts: [".dart"], extract: extractDart },
+  { lang: "objc", exts: [".m", ".mm"], extract: extractObjc },
+  { lang: "lua", exts: [".lua"], extract: extractLua },
+  { lang: "elixir", exts: [".ex", ".exs"], extract: extractElixir },
+  { lang: "zig", exts: [".zig"], extract: extractZig },
+  { lang: "solidity", exts: [".sol"], extract: extractSolidity },
+  { lang: "sfc", exts: [".vue", ".svelte", ".astro"], extract: extractSfc },
+  { lang: "other", exts: [".sh", ".bash", ".zsh", ".r", ".jl", ".hs", ".clj", ".cljs", ".erl", ".hrl", ".pl", ".pm", ".ml", ".mli", ".fs", ".fsx", ".groovy", ".elm", ".nim", ".cr"], extract: extractGeneric },
 ];
 
 const EXT_TO_LANG = new Map<string, LangDef>();
