@@ -211,11 +211,11 @@ samp {
 .dark .nunopi-md code { background: rgba(255,255,255,0.1); }
 /* #1325 인라인 코드 역할별 색 약속 — 유저 결정 색: 함수·메서드·로직(초록) / 파일·경로(머스타드) / 명령어·옵션(빨강) / 이름(변수·타입·멤버, 파랑). 값과 나머지는 기존 회색.
    :not(pre) > 로 블록 코드(펜스)는 제외. 글자색 + 같은 계열 옅은 배경(라이트·다크 대비 각각). */
-.nunopi-md :not(pre) > code[data-k="fn"] { color: #047857; background: rgba(16,185,129,0.12); }
+.nunopi-md :not(pre) > code[data-k="fn"] { color: #14532d; background: rgba(163,230,53,0.55); } /* 형광펜 — 라이트는 연두 띠 + 진한 초록 글자 */
 .nunopi-md :not(pre) > code[data-k="path"] { color: #92400e; background: rgba(212,160,23,0.14); }
 .nunopi-md :not(pre) > code[data-k="cmd"] { color: #dc2626; background: rgba(239,68,68,0.10); }
 .nunopi-md :not(pre) > code[data-k="sym"] { color: #1d4ed8; background: rgba(59,130,246,0.12); }
-.dark .nunopi-md :not(pre) > code[data-k="fn"] { color: #6ee7b7; background: rgba(52,211,153,0.13); }
+.dark .nunopi-md :not(pre) > code[data-k="fn"] { color: #b9ff66; background: rgba(132,255,60,0.16); } /* 형광펜 — 다크는 형광 연두 글자 */
 .dark .nunopi-md :not(pre) > code[data-k="path"] { color: #f0c75e; background: rgba(232,185,58,0.14); }
 .dark .nunopi-md :not(pre) > code[data-k="cmd"] { color: #fca5a5; background: rgba(248,113,113,0.14); }
 .dark .nunopi-md :not(pre) > code[data-k="sym"] { color: #93c5fd; background: rgba(96,165,250,0.14); }
