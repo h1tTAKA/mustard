@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { IconSitemap, IconX, IconLoader2, IconChevronDown, IconRefresh, IconCode, IconBook2, IconSparkles, IconMessageCircle, IconPlayerPlay, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
+import { IconSitemap, IconX, IconLoader2, IconChevronDown, IconRefresh, IconCode, IconBook2, IconSparkles, IconMessageCircle, IconPlayerPlay, IconPlayerStop, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
+import { archJobKey, jobOf, startJob, stopJob, useArchJobs, type ArchJob } from "@/lib/repo/archJobs";
 import { useT, useLocale, useSetting, ARCHKEYS, ARCH_DEFAULTS, archDepthsOf, archDefaultOf, isArchDepth, type ArchDepth } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
@@ -95,14 +96,22 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const t = useT();
   const { locale } = useLocale();
   const [sections, setSections] = useState<FlowSection[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loadingSt, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lines, setLines] = useState<Line[]>([]); // 노드 간 연결선(측정된 좌표)
   const [overview, setOverview] = useState<string | null>(null); // 이 아키텍처 설명(초보용 산문)
   const [overviewOpen, setOverviewOpen] = useState(true);        // 설명 박스 펼침
   const [confirm, setConfirm] = useState<null | "regen" | "update">(null); // 확인 모달
-  const [running, setRunning] = useState<null | "regen" | "update">(null);  // 지금 도는 액션(그 버튼만 스핀)
+  const [runningSt, setRunning] = useState<null | "regen" | "update">(null);  // 지금 도는 액션(그 버튼만 스핀)
   const reqRef = useRef(0); // 최신 요청만 반영(빠른 feature 전환 경합 방지)
+  // #1329 이 기능의 작업(흐름·깊이별 설명·둘러보기)은 화면 밖 작업 목록에서도 추적 — 화면을 떠났다 와도 도는 중·멈춤이 보이고 같은 생성을 또 시작하지 않음.
+  useArchJobs();
+  const keyOf = (kind: "flow" | "depth" | "tour") => (root && feature ? archJobKey(root, kind, feature) : "");
+  const flowJob = jobOf(keyOf("flow")), depthJob = jobOf(keyOf("depth")), tourJob = jobOf(keyOf("tour"));
+  const on = (j?: ArchJob) => j?.status === "running";
+  const loading = loadingSt || on(flowJob);
+  const running = runningSt ?? (on(flowJob) ? (flowJob!.mode as "regen" | "update") : null);
+  const ownSeq = useRef(new Set<number>()); // 이 화면이 직접 끝낸 작업(끝남 알림에 저장분을 또 읽지 않게)
   const sectionsRef = useRef<FlowSection[] | null>(null); // 최신 sections 미러(갱신 병합 기준, load 의존성 회피)
   const flowRef = useRef<HTMLDivElement | null>(null); // 연결선 좌표 기준 컨테이너
   const nodeEls = useRef(new Map<string, HTMLElement>()); // 이름키 → 노드 DOM(엣지 끝점 측정)
@@ -119,7 +128,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const [baseDepth, setBaseDepth] = useState<ArchDepth>("beginner"); // overview가 쓰인 깊이(예전 저장분 = 초보)
   const baseDepthRef = useRef<ArchDepth>("beginner");
   const [overviews, setOverviews] = useState<Overviews>({}); // #1322 개발자·숙련자용 설명(없으면 초보용 기본을 보여 줌)
-  const [writing, setWriting] = useState(false);             // 깊이별 설명 쓰는 중
+  const [writingSt, setWriting] = useState(false);           // 깊이별 설명 쓰는 중
+  const writing = writingSt || on(depthJob);
   const [tour, setTour] = useState<Tour | null>(null);       // #1322 저장된 둘러보기
   const unsavedRef = useRef(false);                          // 화면 흐름이 저장 실패 상태 — 서버 흐름과 다를 수 있어 덧붙임(설명·단계) 안 함(리뷰)
   const atRef = useRef<number | null>(null);                 // 지금 보이는 흐름의 저장 판(at) — 덧붙임이 같은 흐름에 붙는지 서버가 확인
@@ -215,7 +225,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const flowLines = (secs: FlowSection[]) => secs.flatMap((s) => s.nodes.map((n) => `${s.layer} | ${n.name} | ${n.file ?? ""}${n.line ? `:${n.line}` : ""} | ${n.role ?? ""}${n.next?.length ? ` | → ${n.next.join(", ")}` : ""}`));
 
   // 에이전트 한 번 묻기 — 흐름 생성·차분 갱신·둘러보기·깊이별 설명 공용(lib/repo/askAgent).
-  const ask = useCallback((ctx: string, prompt: string) => askAgent(providerId!, providerSettings!, locale, ctx, prompt), [providerId, providerSettings, locale]);
+  const ask = useCallback((ctx: string, prompt: string, signal?: AbortSignal) => askAgent(providerId!, providerSettings!, locale, ctx, prompt, signal), [providerId, providerSettings, locale]);
 
   // #1322 둘러보기 단계 만들기 — 흐름 순서대로 노드마다: 파일 안 주요 함수·로직과 역할, 화살표로 이어진 파일과의 관계, 함수끼리 어떻게 물려 기능이 되는지.
   // 실제 코드 발췌 + 실측 연결(그래프)을 근거로. ▶(없을 때)·재생성·구조 갱신 뒤 자동으로 부름. 성공하면 저장하고 true.
@@ -308,6 +318,13 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     }
     if (mode === "regen" && loadFailedRef.current) return; // 저장분 불러오기 실패 상태 — 재생성으로 덮어쓰지 않음(리뷰)
     if (mode === "update" && (secOfRef.current !== feature || !sectionsRef.current)) return; // 다른 기능 흐름이 보이는 중엔 갱신 안 함(리뷰)
+    // #1329 자동(저장분 없음)인데 멈춘 작업이 있으면 다시 시작하지 않음 — "이어하기"로만. 같은 생성이 이미 돌면 끝나면 저장분을 다시 읽음.
+    const fk = archJobKey(root, "flow", feature);
+    if (mode === "cache" && jobOf(fk)?.status === "stopped") { setLoading(false); return; }
+    const h = startJob(fk, mode === "update" ? "update" : "regen");
+    if (!h) { setLoading(false); return; }
+    const sig = h.signal;
+    let ok = false;
     setLoading(true); setRunning(mode === "update" ? "update" : "regen"); setErr(null); setNote(null);
     if (mode !== "update") { setSections(null); setOverview(null); setOverviews({}); secOfRef.current = null; } // 갱신은 기존 유지
     try {
@@ -329,6 +346,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
           // 구조 변화 없음 = 노드 의미 그대로 → 깊이별 설명도 유지(#1322).
           const at = await archPut(root, "flow", { sections: next, overview: overviewRef.current, baseDepth: baseDepthRef.current }, feature, { token, keepExtras: true });
           if (!at) return saveFailed();
+          ok = true;
           if (my === reqRef.current) { atRef.current = at; unsavedRef.current = false; }
           if (my === reqRef.current) { setDiff(null); setNote(t("flow.noStructural", { n: d.changed.length + d.removed.length })); }
           return;
@@ -340,8 +358,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
         const cur = (sectionsRef.current ?? []).flatMap((s) => s.nodes.map((n) => `${s.layer} | ${n.name} | ${n.file ?? ""}${n.line ? `:${n.line}` : ""} | ${n.role ?? ""}${n.next?.length ? ` | → ${n.next.join(", ")}` : ""}`));
         const ctx = `레포: ${basename(root)}\n\n[지금 "${feature}" 흐름]\n${cur.join("\n")}\n\n[분석 뒤 구조가 바뀌었거나 새로 생긴 파일과 그 심볼]\n${skel || inc.structural.slice(0, 30).join("\n")}${inc.removed.length ? `\n\n[지워진 파일]\n${inc.removed.slice(0, 30).join("\n")}` : ""}`;
         const prompt = `"${feature}" 기능 흐름을 바뀐 코드에 맞춰 고치려고 해. 위 "바뀐 파일" 중 이 기능과 관련된 파일만 골라서, 그 파일에 해당하는 노드를 모두 아래 형식으로 한 줄씩 써줘(그 파일의 기존 노드가 아직 맞으면 그대로 다시 포함, 새 함수·파일이 흐름에 끼면 추가). 관련 없는 파일은 쓰지 마. 관련된 게 하나도 없으면 "없음" 한 줄만. 설명·인사 없이 줄만:\n레이어 | 표시이름 | 파일경로:라인 | 한줄역할 | → 다음노드이름\n(레이어 이름과 다음노드 표시이름은 지금 흐름에 있는 것과 정확히 맞춰. 파일경로는 위 실제 경로만.)`;
-        const answer = await ask(ctx, prompt);
-        if (my !== reqRef.current) return;
+        const answer = await ask(ctx, prompt, sig);
+        if (sig.aborted || my !== reqRef.current) return;
         if (answer.err) { setErr(answer.err); return; }
         const text = stripCardBlock(answer.text);
         const parsed = parseFlow(text);
@@ -349,8 +367,10 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
         if (!parsed.length && !/^[\s"'`*.。-]*(없음|none|なし)[\s"'`*.。-]*$/i.test(text)) { setErr(`no flow — ${text.slice(0, 140)}`); return; }
         const next = applyFlowDiff(sectionsRef.current ?? [], parsed, inc.removed, inc.structural);
         setSections(next); setOverviews({}); setTour(null); // 노드가 바뀜 → 깊이별 설명은 버림(저장도 안 넘김)
+        if (sig.aborted) return; // 멈춘 뒤엔 저장 안 함
         const at = await archPut(root, "flow", { sections: next, overview: overviewRef.current, baseDepth: baseDepthRef.current }, feature, { token });
         if (!at) return saveFailed();
+        ok = true;
         if (my === reqRef.current) { atRef.current = at; unsavedRef.current = false; }
         if (my === reqRef.current) { setDiff(null); setNote(t("flow.diffUpdated", { n: inc.structural.length })); void buildTour(next, feature, my, at); } // 둘러보기도 새로(#1322)
         return;
@@ -365,8 +385,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       const digest = await fetchGraphDigest(root);
       const ctx = `레포: ${name}\n파일 목록:\n${list.join("\n")}${digest ? `\n\n${digest}` : ""}`;
       const prompt = `레포 "${name}"에서 "${feature}" 기능의 아키텍처를 정리해줘.${digest ? " 아래 실측 코드그래프 구조(모듈·의존·허브)를 근거로, 이 기능에 실제로 연결된 파일을 허브·의존 따라 빠짐없이 찾되 없는 파일은 지어내지 마." : ""} 아래 두 부분을 순서대로:\n\n[설명]\n이 기능이 전체적으로 어떻게 동작하는지, 각 조각이 왜 있고 서로 어떻게 이어지는지, 데이터가 어디서 어디로 흐르는지를 개발 초보도 완전히 이해할 수 있게 친절하고 자세히. 형식은 마크다운으로:\n- 맨 위 큰 제목 한 줄(\`## 제목\`).\n- 흐름을 논리적 구간(예: 진입, 처리, provider 호출, 후처리·렌더)으로 나눠 **각 구간마다 \`### 소제목\` + 2~4문장**, 구간 사이는 \`---\` 한 줄로 구분.\n- 파일/함수 이름은 백틱(\`)으로 감싸. 파이프(|) 기호는 쓰지 마.\n- 선생님이 설명하듯 단정형으로. '추측', '짐작', '아마', '보인다', '~인 듯', '확인된다' 같은 불확실한 말은 쓰지 마.\n\n[흐름]\n그 다음 각 노드를 한 줄씩, 아래 형식으로만:\n레이어 | 표시이름 | 파일경로:라인 | 한줄역할 | → 다음노드이름\n(진입(UI/route)→처리(IPC/handler)→서비스/로직→데이터/외부 순. 파일경로는 위 목록의 실제 경로. 라인 모르면 파일만. "→ 다음노드"는 흐름상 이어지는 노드 표시이름들(쉼표로 여러 개), 없으면 생략. 표시이름은 서로 정확히 일치시켜 연결되게. **중요: 이 기능과 관련된 파일은 하나도 빠뜨리지 말고 전부 노드로 넣어. [설명]에서 언급한 파일은 반드시 [흐름]에도 노드로 포함. 관련 있으면 확실치 않아도 넣되, 없는 파일을 지어내진 마.** 예: 진입·UI | AnalyzeControls | src/components/AnalyzeControls.tsx | 분석 버튼 | → analyze route)`;
-      const answer = await ask(ctx, prompt);
-      if (my !== reqRef.current) return; // 더 최신 요청이 진행 중 → 폐기
+      const answer = await ask(ctx, prompt, sig);
+      if (sig.aborted || my !== reqRef.current) return; // 멈춤·더 최신 요청 → 폐기
       if (answer.err) { setErr(answer.err); return; }
       const clean = stripCardBlock(answer.text); // 튜터가 자동으로 붙이는 nunopi-cards 블록 제거
       const parsed = parseFlow(clean);
@@ -378,8 +398,8 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       if (code) {
         const ctx2 = `레포: ${name}\n\n["${feature}" 흐름]\n${flowLines(parsed).join("\n")}\n\n[코드 발췌]\n${code}${ov ? `\n\n[처음 쓴 설명 초안]\n${ov}` : ""}`;
         const prompt2 = `위 [코드 발췌]를 직접 읽고 "${feature}" 기능 설명을 다시 써줘. ${WHO[defDepth]}. 형식은 마크다운: 맨 위 \`## 제목\` 한 줄, 흐름을 구간으로 나눠 구간마다 \`### 소제목\` + 3~5문장, 구간 사이는 \`---\`. 각 구간 끝에 "근거:" 한 줄로 실제로 본 위치를 \`파일:줄\` 형식 1~3개. 파일/함수 이름은 백틱, 파이프(|) 기호와 흐름 줄 목록은 쓰지 마. ${EVIDENCE} 설명만.`;
-        const a2 = await ask(ctx2, prompt2);
-        if (my !== reqRef.current) return;
+        const a2 = await ask(ctx2, prompt2, sig);
+        if (sig.aborted || my !== reqRef.current) return;
         const ov2 = a2.err ? "" : parseOverview(stripCardBlock(a2.text));
         if (ov2) { ov = ov2; baseD = defDepth; }
       }
@@ -390,11 +410,13 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
       setBaseDepth(baseD);
       const at = await archPut(root, "flow", { sections: nextSecs, overview: ov, baseDepth: baseD }, feature, { token }); // 영속(#743 → #1320 서버)
       if (!at) return saveFailed();
+      ok = true;
       if (my === reqRef.current) { atRef.current = at; unsavedRef.current = false; }
       if (my === reqRef.current) { setDiff(null); void buildTour(nextSecs, feature, my, at); } // 방금 저장 = 최신 + 둘러보기도 같이(#1322)
     } catch (e) {
-      if (my === reqRef.current) setErr(e instanceof Error ? e.message : String(e));
+      if (!sig.aborted && my === reqRef.current) setErr(e instanceof Error ? e.message : String(e));
     } finally {
+      h.finish(ok); const fin = jobOf(fk); if (fin) ownSeq.current.add(fin.seq);
       if (my === reqRef.current) { setLoading(false); setRunning(null); }
     }
   }, [feature, root, providerId, providerSettings, ask, t, codeOf, defDepth, buildTour]);
@@ -463,22 +485,28 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     if (!feature || !root || depth === baseDepthRef.current || !sectionsRef.current) return;
     if (unsavedRef.current) { setErr(t("flow.saveFailed")); return; } // 저장 안 된 흐름엔 설명을 안 붙임
     const f = feature, d = depth, my = reqRef.current, at0 = atRef.current; // 쓰는 사이 재생성·갱신·기능 전환이 있으면(my 바뀜) 버림 — 새 흐름에 옛 설명이 붙지 않게
+    const dk = archJobKey(root, "depth", f);
+    const h = startJob(dk, d);
+    if (!h) return;
+    const sig = h.signal;
+    let ok = false;
     setWriting(true); setErr(null);
     try {
       const code = await codeOf(sectionsRef.current);
       if (my !== reqRef.current) return;
       const ctx = `레포: ${basename(root)}\n\n["${f}" 흐름]\n${flowLines(sectionsRef.current).join("\n")}${code ? `\n\n[코드 발췌]\n${code}` : ""}${overviewRef.current ? `\n\n[기존 설명]\n${overviewRef.current}` : ""}`;
       const prompt = `위 "${f}" 기능 흐름을 ${WHO[d]} 설명해줘. 형식은 마크다운: 맨 위 \`## 제목\` 한 줄, 흐름을 구간으로 나눠 구간마다 \`### 소제목\` + 몇 문장, 구간 사이는 \`---\`. 각 구간 끝에 "근거:" 한 줄로 실제로 본 위치를 \`파일:줄\` 형식 1~3개. 파일/함수 이름은 백틱으로. 파이프(|) 기호와 흐름 줄 목록은 쓰지 마. ${EVIDENCE} 설명만.`;
-      const answer = await ask(ctx, prompt);
-      if (my !== reqRef.current) return;
+      const answer = await ask(ctx, prompt, sig);
+      if (sig.aborted || my !== reqRef.current) return;
       if (answer.err) { setErr(answer.err); return; }
       const text = parseOverview(stripCardBlock(answer.text));
       if (!text) { setErr(`no overview — ${answer.text.slice(0, 140)}`); return; }
       const saved = await archPatch(root, f, { overviews: { [d]: text } }, at0);
       if (saved === "stale") return; // 그사이 흐름이 바뀜(재생성·갱신) — 버림
       if (saved === "fail") { if (my === reqRef.current) setErr(t("flow.saveFailed")); return; }
+      ok = true;
       if (my === reqRef.current) setOverviews((o) => ({ ...o, [d]: text }));
-    } finally { setWriting(false); }
+    } finally { h.finish(ok); const fin = jobOf(dk); if (fin) ownSeq.current.add(fin.seq); setWriting(false); }
   }, [feature, root, depth, ask, t, codeOf]);
 
   // 코드그래프 실측 연결 조회 — 플로우 노드 파일들 사이 실제 imports/calls. 곡선 근거화(#842 서브4).
@@ -535,6 +563,23 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     setLines(out);
   }, [edges, laneKeys]);
 
+  // #1329 다른 화면(떠나기 전 이 패널)에서 시작해 끝난 작업 — 저장분 다시 읽기
+  const doneSeq = Math.max(...[flowJob, depthJob, tourJob].map((j) => (j?.status === "done" ? j.seq : 0)));
+  useEffect(() => {
+    if (!doneSeq || ownSeq.current.has(doneSeq)) return;
+    ownSeq.current.add(doneSeq);
+    void load("cache");
+  }, [doneSeq, load]);
+  // 멈춤 — 이 기능에서 도는 작업 전부. 이어하기 — 멈춘 것만 같은 동작으로 다시.
+  const stopAll = () => { for (const k of ["flow", "depth", "tour"] as const) stopJob(keyOf(k)); };
+  const anyOn = on(flowJob) || on(depthJob) || on(tourJob);
+  const stopped = [flowJob, depthJob, tourJob].some((j) => j?.status === "stopped");
+  const resume = () => {
+    if (flowJob?.status === "stopped") { void load(flowJob.mode === "update" ? "update" : "regen"); return; }
+    if (depthJob?.status === "stopped") void writeDepth();
+    if (tourJob?.status === "stopped") void startTour();
+  };
+
   // feature 바뀌면 자동 로드.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- 비동기 로드(내부 setState는 이펙트 동기 실행 아님)
   useEffect(() => { void load(); }, [load]);
@@ -584,6 +629,13 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
                 <IconMessageCircle size={13} stroke={2} aria-hidden />
               </button>
             )}
+            {/* #1329 멈춤 — 이 기능에서 도는 흐름·설명·둘러보기 작업을 끊음(끝난 부분은 남음) */}
+            {anyOn && (
+              <button type="button" onClick={stopAll} title={t("job.stop")} aria-label={t("job.stop")}
+                className="shrink-0 rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 dark:hover:bg-zinc-800 dark:hover:text-mustard-400">
+                <IconPlayerStop size={13} stroke={2} aria-hidden />
+              </button>
+            )}
             {/* #1322 둘러보기 — 흐름 순서대로 카드 하나씩(단계 설명은 처음 한 번 AI). 흐름 없으면 비활성. */}
             <button type="button" onClick={() => void startTour()} disabled={loading || !sections || tourBusy} title={t("flow.tourTitle")} aria-label={t("flow.tourTitle")}
               className="shrink-0 rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-mustard-600 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-mustard-400">
@@ -609,6 +661,15 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
         )}
       </div>
       <div ref={scrollRef} className="nunopi-scroll min-h-0 flex-1 overflow-auto p-4">
+        {feature && stopped && !anyOn && (
+          <div className="mx-auto mb-3 flex w-full max-w-[30rem] items-center gap-2 rounded-md border border-zinc-200 px-2.5 py-1.5 text-[11px] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+            <span className="mr-auto">{t("job.stopped")}</span>
+            <button type="button" onClick={resume}
+              className="inline-flex shrink-0 items-center gap-1 rounded bg-mustard-500/12 px-1.5 py-0.5 text-[10px] font-semibold text-mustard-700 ring-1 ring-inset ring-mustard-500/35 transition hover:bg-mustard-500/20 dark:bg-mustard-400/12 dark:text-mustard-400 dark:ring-mustard-400/30 dark:hover:bg-mustard-400/20">
+              <IconPlayerPlay size={11} stroke={2} aria-hidden /> {t("job.resume")}
+            </button>
+          </div>
+        )}
         {!feature ? (
           <div className="flex h-full items-center justify-center text-center text-[12px] text-zinc-400 dark:text-zinc-500">{t("flow.pickFeature")}</div>
         ) : loading && !sections ? (
