@@ -22,7 +22,7 @@ import { useToast } from "@mustard/core";
 import type { AgentProviderKind, ChatMessage, ProviderSettings } from "@mustard/core";
 import type { QuizSession } from "@mustard/core";
 import { isNunopiEnabled } from "@/lib/product";
-import { REPO_KEY, MAX_SESSIONS, freshSub, mkSession, loadStore, persistChat, chatStoreKey, WS_CHAT_EVENT, type SessionKind, type Session } from "@/lib/wsChatStore";
+import { REPO_KEY, MAX_SESSIONS, freshSub, mkSession, loadStore, persistChat, chatStoreKey, WS_CHAT_EVENT, mergeSessions, type SessionKind, type Session } from "@/lib/wsChatStore";
 import { isCardWorthy } from "@/lib/cardWorthy";
 import { buildWorkHistory, type AskItem } from "@/lib/catchupAskContext";
 import { commitHashesIn, withRelatedCards } from "@/lib/catchupMarkdown";
@@ -153,9 +153,9 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
     // eslint-disable-next-line react-hooks/exhaustive-deps -- store 변경만 감지(t는 안정)
   }, [store]);
 
-  // #1326 바깥(그래프 노드 질문)이 같은 저장소에 쓰면 다시 읽음 — 안 그러면 다음 저장 때 내 상태로 덮어씀. 탭·활성은 그대로.
+  // #1326 바깥(그래프 노드 질문)이 같은 저장소에 쓰면 다시 읽어 합침 — 안 그러면 다음 저장 때 내 상태로 덮어씀. 통째 바꾸면 아직 저장 전인 내 질문이 사라져 합침(리뷰). 탭·활성은 그대로.
   useEffect(() => {
-    const on = (e: Event) => { if ((e as CustomEvent<{ root?: string }>).detail?.root === root) setSessions(loadStore(store, t("workspace.chatRepo")).sessions); };
+    const on = (e: Event) => { if ((e as CustomEvent<{ root?: string }>).detail?.root === root) { const disk = loadStore(store, t("workspace.chatRepo")).sessions; setSessions((prev) => mergeSessions(prev, disk)); } };
     window.addEventListener(WS_CHAT_EVENT, on);
     return () => window.removeEventListener(WS_CHAT_EVENT, on);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- t는 안정

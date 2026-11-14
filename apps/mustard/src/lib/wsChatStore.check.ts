@@ -6,7 +6,7 @@ const mem = new Map<string, string>();
 const events: string[] = [];
 (globalThis as Record<string, unknown>).window = { dispatchEvent: (e: { detail: { root: string } }) => { events.push(e.detail.root); return true; } };
 (globalThis as Record<string, unknown>).CustomEvent = class { detail: unknown; constructor(_t: string, o: { detail: unknown }) { this.detail = o.detail; } };
-const { appendSessionMessages, readSessionThread, loadStore, chatStoreKey, MAX_SESSIONS } = await import("./wsChatStore.ts");
+const { appendSessionMessages, readSessionThread, loadStore, chatStoreKey, MAX_SESSIONS, mergeSessions } = await import("./wsChatStore.ts");
 
 const root = "/r";
 // 질문 화면에 이미 있던 repo 세션 + 다른 파일 세션
@@ -28,4 +28,13 @@ for (let i = 0; i < MAX_SESSIONS + 5; i++) appendSessionMessages(root, `file:f${
 const after = loadStore(chatStoreKey(root), "레포").sessions;
 assert.ok(Object.keys(after).length <= MAX_SESSIONS);
 assert.ok(after.repo && after[`file:f${MAX_SESSIONS + 4}.ts`]); // repo·방금 쓴 것은 남음
+// 합치기 — 내 쪽에만 있는 새 질문·디스크에만 있는 그래프 답 둘 다 남음
+{
+  const mk = (id: string, n: number) => ({ id, messages: Array.from({ length: n }, (_, i) => ({ role: "user" as const, content: String(i) })) });
+  const mine = { repo: { key: "repo", kind: "repo" as const, label: "r", subs: [mk("a", 3)], activeSubId: "a" } };
+  const disk = { repo: { key: "repo", kind: "repo" as const, label: "r", subs: [mk("a", 2), mk("b", 1)], activeSubId: "a" }, "file:x": { key: "file:x", kind: "file" as const, label: "x", subs: [mk("c", 2)], activeSubId: "c" } };
+  const m = mergeSessions(mine, disk);
+  assert.equal(m.repo.subs.find((x) => x.id === "a")!.messages.length, 3);
+  assert.ok(m.repo.subs.some((x) => x.id === "b") && m["file:x"]);
+}
 console.log("wsChatStore ok");

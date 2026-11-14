@@ -68,6 +68,21 @@ export function persistChat(store: string, sessions: Record<string, Session>, op
   write(minimal);
 }
 
+// 질문 화면 상태(mine)와 저장소에서 다시 읽은 것(disk)을 합침 — 통째 바꾸면 아직 저장 안 된 내 질문·답이 사라짐(리뷰).
+// 세션·서브는 합집합, 같은 서브는 메시지가 더 많은 쪽(둘 다 덧붙이기만 하므로 긴 쪽이 최신).
+// 한계: 양쪽이 같은 서브에 동시에 덧붙이면 짧은 쪽 새 메시지는 빠짐(그래프 쪽은 저장소에 남아 다음 읽기에 다시 보임).
+export function mergeSessions(mine: Record<string, Session>, disk: Record<string, Session>): Record<string, Session> {
+  const out: Record<string, Session> = { ...disk, ...mine };
+  for (const [k, d] of Object.entries(disk)) {
+    const m = mine[k];
+    if (!m) continue;
+    const subs = m.subs.map((ms) => { const ds = d.subs.find((x) => x.id === ms.id); return ds && ds.messages.length > ms.messages.length ? { ...ms, messages: ds.messages } : ms; });
+    for (const ds of d.subs) if (!subs.some((x) => x.id === ds.id)) subs.push(ds);
+    out[k] = { ...m, subs };
+  }
+  return out;
+}
+
 export const chatStoreKey = (root: string) => `nunopi:ws-chat:${root}`;
 export const WS_CHAT_EVENT = "mustard:ws-chat";
 
