@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./sna": "./src/sna/client.ts",
     "./sna/server": "./src/sna/server.ts",
-    "./messages": "./src/i18n/messages.ts"
+    "./messages": "./src/i18n/messages.ts",
+    "./apiGuard": "./src/apiGuard.ts"
   }
 }

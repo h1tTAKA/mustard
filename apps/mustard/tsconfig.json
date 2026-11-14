@@ -22,6 +22,7 @@
     "paths": {
       "@/*": ["./src/*", "./*"],
       "@mustard/core": ["../../packages/core/src/index.ts"],
+      "@mustard/core/apiGuard": ["../../packages/core/src/apiGuard.ts"],
       "@mustard/nunopi": ["../../packages/nunopi/src/index.ts"],
       "@mustard/nunopi/server": ["../../packages/nunopi/src/server.ts"],
       "@mustard/nunopi/agent": ["../../packages/nunopi/src/agent.ts"],

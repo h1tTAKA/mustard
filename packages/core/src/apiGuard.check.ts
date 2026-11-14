@@ -1,4 +1,4 @@
-// apiGuard 점검(#1340) — node --experimental-strip-types apps/mustard/src/lib/apiGuard.check.ts
+// apiGuard 점검(#1340) — node --experimental-strip-types packages/core/src/apiGuard.check.ts
 import assert from "node:assert/strict";
 import { guardApi } from "./apiGuard.ts";
 const ok = (h: Parameters<typeof guardApi>[0]) => guardApi(h).ok;

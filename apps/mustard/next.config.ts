@@ -12,8 +12,8 @@ const nextConfig: NextConfig = {
   // 에이전트 런타임 SDK는 별도 node 프로세스를 fork로 띄운다(네이티브 better-sqlite3 포함).
   // 번들에 넣지 않고 런타임에 node_modules에서 require하도록 외부화.
   // tree-sitter(WASM 심볼 추출)는 런타임에 node_modules서 .wasm 로드 — 번들 시 grammar wasm 파싱 실패.
-  // #1340 proxy.ts가 요청 본문을 메모리에 복제(기본 10MB, 넘으면 잘림) — 큰 본문(이미지·파일)이 잘리지 않게 넉넉히.
-  experimental: { proxyClientMaxBodySize: "100mb" },
+  // #1340 proxy.ts가 요청 본문을 메모리에 복제(기본 10MB, 넘으면 잘림·경고). 지금 10MB 넘는 본문을 받는 라우트 없음 —
+  // 큰 업로드(채팅 이미지 등)가 생기면 그때 experimental.proxyClientMaxBodySize로 올림(리뷰: 미리 키우면 메모리 급증 통로).
   serverExternalPackages: ["@sna-sdk/core", "@sna-sdk/client", "better-sqlite3", "web-tree-sitter", "tree-sitter-wasms"],
 };
 
