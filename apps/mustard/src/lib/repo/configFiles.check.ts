@@ -45,7 +45,7 @@ console.log("configFiles ok");
     "package.json -contains-> web.config.unused/next.config.mjs", "android/settings.gradle.kts -contains-> android/app/build.gradle.kts", "android/app/build.gradle.kts -contains-> android/app/src/main/AndroidManifest.xml",
   ]) assert.ok(e.includes(want), `${want}\n${e.join("\n")}`);
   assert.ok(!e.some((x) => x.includes("react")), "외부 의존은 버림");
-  assert.deepEqual(pubspecDeps("name: a\ndependencies:\n  x: ^1\n  y:\n    path: ../y\ndev_dependencies:\n  z: any\nflutter:\n  uses: true\n"), ["x", "y", "z"]);
+  assert.deepEqual(pubspecDeps("name: a\ndependencies:\n# 주석\n  x: ^1\n  y:\n    path: ../y\ndev_dependencies:\n  z: any\nflutter:\n  uses: true\n"), ["x", "y", "z"]);
   assert.deepEqual(goWorkUses("use ./a\nuse (\n  ./b\n  ./c/\n)\n").sort(), ["a", "b", "c"]);
   console.log("configEdges ok");
 }

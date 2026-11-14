@@ -22,6 +22,7 @@ export function pubspecDeps(yaml: string): string[] {
   const out: string[] = [];
   let inDeps = false;
   for (const line of yaml.split("\n")) {
+    if (/^\s*#/.test(line)) continue; // 주석 줄은 블록을 끊지 않음(리뷰)
     if (/^\S/.test(line)) { inDeps = /^(dependencies|dev_dependencies|dependency_overrides):/.test(line); continue; }
     const m = inDeps ? /^ {2}([\w-]+):/.exec(line) : null;
     if (m) out.push(m[1]);

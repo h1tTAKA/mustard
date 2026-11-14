@@ -95,6 +95,7 @@ export function scanRepo(root: string): ScanResult {
   const godotRoots: string[] = [];
   let capped = false;
   const vis = gitVisible(root);
+  let cfgN = 0;
   const subs: string[] = [];
   const inSub = (rel: string) => subs.some((s) => rel === s || rel.startsWith(`${s}/`));
 
@@ -128,7 +129,8 @@ export function scanRepo(root: string): ScanResult {
         walk(full, inUnityAssets || (engine === "unity" && name.toLowerCase() === "assets"), godot);
       } else if (e.isFile() && (!vis || vis.files.has(relative(root, full).split(sep).join("/")) || inSub(relative(root, full).split(sep).join("/"))) && !GENERATED_RE.test(name) && (SUPPORTED.has(ext(name)) || isConfigOk(full, relative(root, full).split(sep).join("/")) || (inUnityAssets && UNITY_ASSETS.has(ext(name))) || (godot && GODOT_FILES.has(ext(name))))) {
         files.push(relative(root, full).split(sep).join("/"));
-        if (files.length >= MAX_FILES) { capped = true; return; }
+        if (!SUPPORTED.has(ext(name)) && !UNITY_ASSETS.has(ext(name)) && !GODOT_FILES.has(ext(name))) cfgN++; // 설정 파일은 상한에 안 셈 — 소스 자리를 뺏지 않게(리뷰)
+        if (files.length - cfgN >= MAX_FILES) { capped = true; return; }
       }
     }
   };
