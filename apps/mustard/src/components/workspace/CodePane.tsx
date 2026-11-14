@@ -1,7 +1,7 @@
 "use client";
 // 워크스페이스 코드칸(#647) — 파일 클릭 시 소스 읽어 shiki로 하이라이트(읽기전용). 다크 전환 대응.
 import { langOf } from "@/lib/codeLang";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { codeToHtml } from "shiki";
 import { IconLoader2, IconAlertTriangle, IconFileOff, IconZoomIn, IconZoomOut, IconArrowsMinimize, IconArrowsMaximize } from "@tabler/icons-react";
 import { useT, useSetting, EKEYS, EDITOR_DEFAULTS } from "@mustard/core";
@@ -60,6 +60,8 @@ export default function CodePane({ root, file }: { root: string; file: string })
     return () => { cancelled = true; };
   }, [raw, file, isDark, status, bin, ws]);
 
+  // #1324 React 19는 렌더마다 새 {__html} 객체면 innerHTML을 다시 넣음 → 워크스페이스가 1초마다 다시 그려질 때 코드 DOM이 갈려 ⌘A·드래그 선택이 풀림. 같은 html이면 같은 객체.
+  const inner = useMemo(() => ({ __html: html }), [html]);
   if (status === "loading") return <div className="flex h-full items-center justify-center text-zinc-400"><IconLoader2 size={16} stroke={2} className="animate-spin" aria-hidden /></div>;
   if (status === "error") return <div className="flex h-full items-center justify-center gap-1.5 text-[12px] text-amber-600 dark:text-amber-500"><IconAlertTriangle size={14} stroke={2} aria-hidden /> {file}</div>;
 
@@ -71,8 +73,16 @@ export default function CodePane({ root, file }: { root: string; file: string })
   }
 
   return (
-    <div style={font} className={`nunopi-scroll h-full overflow-auto bg-white p-3 dark:bg-[var(--s-pane)] [&_pre]:!m-0 [&_pre]:!bg-transparent [&_pre]:[font-family:inherit] ${wrap ? "[&_pre]:whitespace-pre-wrap [&_pre]:[overflow-wrap:anywhere]" : ""}`}>
-      {html ? <div dangerouslySetInnerHTML={{ __html: html }} /> : <pre className="text-zinc-700 dark:text-zinc-200">{raw}</pre>}
+    // #1324 ⌘A/Ctrl+A — 코드 탭에 포커스가 있으면 이 파일 코드만 전부 선택(앱 화면 전체 선택 대신). tabIndex로 클릭하면 포커스가 옴.
+    // data-select-all: 앱 메뉴 "전체 선택"(⌘A)이 포커스가 여기 있으면 코드만 선택(electron/main.cjs selectAllScoped). onKeyDown은 메뉴가 없는 환경용.
+    <div style={font} tabIndex={0} data-select-all="" onKeyDown={(e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "a") return;
+      e.preventDefault(); e.stopPropagation();
+      const sel = window.getSelection(), body = e.currentTarget.firstElementChild;
+      if (!sel || !body) return;
+      const r = document.createRange(); r.selectNodeContents(body); sel.removeAllRanges(); sel.addRange(r);
+    }} className={`nunopi-scroll h-full overflow-auto bg-white p-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-mustard-500/60 dark:bg-[var(--s-pane)] [&_pre]:!m-0 [&_pre]:!bg-transparent [&_pre]:[font-family:inherit] ${wrap ? "[&_pre]:whitespace-pre-wrap [&_pre]:[overflow-wrap:anywhere]" : ""}`}>
+      {html ? <div dangerouslySetInnerHTML={inner} /> : <pre className="text-zinc-700 dark:text-zinc-200">{raw}</pre>}
     </div>
   );
 }

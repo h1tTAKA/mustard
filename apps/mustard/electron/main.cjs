@@ -1994,11 +1994,25 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
   // #1027 앱 메뉴 직접 구성 — Electron 기본 메뉴엔 ⌘W(창 닫기=앱 꺼짐)·⌘R(새로고침)·⌘+/−(설정과 따로 노는 확대)가 숨어 있어
 // 렌더러 단축키(⌘W 터미널 탭 닫기·⌘=/− 터미널 글자 크기)와 충돌. 입력창에 꼭 필요한 편집(⌘C/V/Z/A)·앱(숨기기·종료)·창(최소화)만 남김.
+function selectAllScoped() {
+  const wc = webContents.getFocusedWebContents();
+  if (!wc) return;
+  const js = `(() => { const a = document.activeElement; const el = a && a.closest ? a.closest("[data-select-all]") : null; if (!el) return false;
+    const r = document.createRange(); r.selectNodeContents(el.firstElementChild || el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); return true; })()`;
+  wc.executeJavaScript(js, true).then((done) => { if (!done) wc.selectAll(); }).catch(() => wc.selectAll());
+}
 function installAppMenu() {
   const mac = process.platform === "darwin";
   const template = [
     ...(mac ? [{ role: "appMenu" }] : [{ label: "File", submenu: [{ role: "quit" }] }]),
-    { role: "editMenu" },
+    // #1324 편집 메뉴를 직접 — "전체 선택"(⌘A)만 바꿈: 포커스가 [data-select-all] 영역(코드 탭) 안이면 그 내용만, 아니면 기존 전체 선택.
+    // macOS는 메뉴 단축키가 화면 키 처리보다 먼저라 화면에서 막을 수 없음(리뷰). 입력창·터미널·인앱 브라우저는 그대로 selectAll.
+    { label: "Edit", submenu: [
+      { role: "undo" }, { role: "redo" }, { type: "separator" },
+      { role: "cut" }, { role: "copy" }, { role: "paste" }, ...(mac ? [{ role: "pasteAndMatchStyle" }] : []), { role: "delete" },
+      { label: "Select All", accelerator: "CmdOrCtrl+A", click: () => selectAllScoped() },
+      ...(mac ? [{ type: "separator" }, { label: "Speech", submenu: [{ role: "startSpeaking" }, { role: "stopSpeaking" }] }] : []), // editMenu 역할에 있던 말하기 유지
+    ] },
     { label: "View", submenu: [{ role: "toggleDevTools" }] }, // ⌥⌘I — 단축키 충돌 없음, 디버깅용
     { label: "Window", submenu: [{ role: "minimize" }, ...(mac ? [{ role: "zoom" }, { type: "separator" }, { role: "front" }] : [])] },
   ];
