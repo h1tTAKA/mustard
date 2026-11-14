@@ -16,7 +16,7 @@ import { searchNodes, neighbors, langStats, shortestPath, impactOf, type Link } 
 import { archNode, archNodePut } from "@/lib/repo/archClient";
 import { askAgent } from "@/lib/repo/askAgent";
 
-type SimNode = SimulationNodeDatum & { id: string; label: string; file: string; kind: RepoNodeKind; role?: RepoAssetRole; community?: number };
+type SimNode = SimulationNodeDatum & { dragging?: boolean; id: string; label: string; file: string; kind: RepoNodeKind; role?: RepoAssetRole; community?: number };
 type SimLink = { source: SimNode | string; target: SimNode | string; relation: string };
 
 // 노드 종류별 색(다크 배경서 잘 보이는 톤). 엣지는 연한 회색.
@@ -334,7 +334,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
       else { // 새 노드가 있으면 기존 노드는 잠깐 고정하고 새 것만 자리 잡게 — 배치가 통째로 섞이지 않게(리뷰)
         for (const n of nodes) if (back.pos[n.id]) { n.fx = n.x; n.fy = n.y; }
         sim.alpha(0.3);
-        unpin = window.setTimeout(() => { for (const n of nodes) if (back.pos[n.id] && dragRef.current?.node !== n && n.fx === n.x && n.fy === n.y) { n.fx = null; n.fy = null; } }, 2500); // 끄는 중인 노드는 그대로(리뷰)
+        unpin = window.setTimeout(() => { for (const n of nodes) if (back.pos[n.id] && !n.dragging && n.fx === n.x && n.fy === n.y) { n.fx = null; n.fy = null; } }, 2500); // 끄는 중인 노드는 그대로(리뷰)
       }
     }
     viewRef.current = back ? { ...back.view } : { x: 0, y: 0, k: 1 };
@@ -383,7 +383,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     const node = nodeAt(sx, sy);
     dragRef.current = { id: e.pointerId, node, sx, sy, moved: false, panx: viewRef.current.x, pany: viewRef.current.y };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    if (node) { simRef.current?.alphaTarget(0.2).restart(); }
+    if (node) { node.dragging = true; simRef.current?.alphaTarget(0.2).restart(); } // dragging: 새 노드 자리 잡기 고정 풀기에서 제외
   };
   const onPointerMove = (e: React.PointerEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -407,6 +407,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     const d = dragRef.current;
     if (d && e.pointerId !== d.id) return; // 추적 포인터 아니면 무시
     dragRef.current = null;
+    if (d?.node) d.node.dragging = false;
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
     simRef.current?.alphaTarget(0);
     if (!d) return;
