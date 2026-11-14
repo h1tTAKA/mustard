@@ -7,6 +7,8 @@ import { IconLoader2, IconAlertTriangle, IconFileOff, IconZoomIn, IconZoomOut, I
 import { useT, useSetting, EKEYS, EDITOR_DEFAULTS } from "@mustard/core";
 import { useCodeFont } from "@/lib/codeFont";
 import { wsTransformer } from "@/lib/codeWs";
+import { warmShiki } from "@/lib/shikiWarm";
+warmShiki(); // 이 모듈을 불러올 때(워크스페이스 들어올 때) 한가한 틈에 흔한 언어 문법을 미리 올림
 
 // 확장자 → shiki 언어. 없으면 text.
 // 바이트 → 사람이 읽는 크기(#657 미리보기 안내용).
