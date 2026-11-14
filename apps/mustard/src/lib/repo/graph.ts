@@ -10,6 +10,7 @@ import type { RepoGraph, RepoNode, RepoEdge, RepoAssetRole } from "./types";
 import { fileHash, fileSig, type FileCache, type ParsedFile } from "./incremental";
 import { readFileCache, writeFileCache } from "./graphStore";
 import { isConfigFile } from "./configFiles";
+import { configEdges } from "./configEdges";
 import { detectCommunities } from "./communities";
 
 // import 해석(상대 + tsconfig 별칭 + baseUrl)은 경량 모듈 imports.ts로 분리.
@@ -199,7 +200,7 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
   }
 
   writeFileCache(root, cache);
-  const allEdges = [...importEdges, ...edges];
+  const allEdges = [...importEdges, ...edges, ...configEdges(root, scan.files, fileSet, wsPkgs, dartPkgs)]; // #1335 설정 파일 연결
   // #1331 덩어리 — 파일 사이 실제 연결로 라벨 전파, 심볼은 자기 파일 덩어리
   const { communities, byFile } = detectCommunities([...fileNodes, ...symbolNodes], allEdges);
   const nodes = [...fileNodes, ...symbolNodes].map((n) => { const c = byFile.get(n.file); return c == null ? n : { ...n, community: c }; });

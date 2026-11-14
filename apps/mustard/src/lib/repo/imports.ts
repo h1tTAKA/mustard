@@ -11,7 +11,7 @@ const INDEX_BASES = ["index.ts", "index.tsx", "index.js", "index.jsx", "__init__
 export interface AliasConf { baseDir: string; rules: Array<{ prefix: string; suffix: string; wildcard: boolean; pattern: string; targets: string[] }> }
 
 // 후보 경로(root-상대)를 확장자/인덱스로 fileSet서 찾기.
-function tryResolve(base: string, fileSet: Set<string>): string | null {
+export function tryResolve(base: string, fileSet: Set<string>): string | null {
   const b = posix.normalize(base).replace(/^\.?\//, "").replace(/^\/+/, "");
   for (const ext of CANDIDATE_EXTS) { const c = b + ext; if (fileSet.has(c)) return c; }
   for (const idx of INDEX_BASES) { const c = posix.join(b, idx); if (fileSet.has(c)) return c; }
@@ -55,7 +55,7 @@ export function resolvePythonBare(spec: string, fromFile: string, fileSet: Set<s
 }
 
 // JSONC(주석·후행쉼표) 관대 파싱.
-function parseJsonc<T = unknown>(text: string): T | null {
+export function parseJsonc<T = unknown>(text: string): T | null {
   try { return JSON.parse(text) as T; } catch { /* strip 후 재시도 */ }
   try {
     const stripped = text.replace(/\/\/[^\n\r]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/,(\s*[}\]])/g, "$1");
