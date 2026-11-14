@@ -101,6 +101,12 @@ function splitNarration(summary: string): { title: string; note: string } {
   const lines = summary.trim().split("\n");
   let i = 0;
   while (i < lines.length && !lines[i].trim()) i++;
+  // #1333 제목 줄을 빼먹고 바로 "### 지금 하는 일"로 시작하면 — 그 소제목을 제목으로 먹지 않고 첫 문장에서 제목을 만듦(리뷰)
+  if (/^#{2,6}\s/.test(lines[i] ?? "")) {
+    const body = lines.slice(i).find((l) => l.trim() && !/^#{1,6}\s/.test(l.trim())) ?? "";
+    const t = body.replace(/^[-*]\s*/, "").replace(/[`*]/g, "").split(/[.。!?]/)[0].trim();
+    return { title: t.length > 42 ? `${t.slice(0, 41)}…` : t, note: lines.slice(i).join("\n").trim() };
+  }
   let title = (lines[i] || "").trim()
     .replace(/^#{1,6}\s*/, "")            // # heading
     .replace(/^\*\*(.*)\*\*$/, "$1")      // **볼드**

@@ -268,7 +268,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     const dim = (n: SimNode) => (pathEdges.size > 0 ? !onPath.has(n.id)
       : near.size ? !near.has(n.id)
       : impactOn ? !changed.has(n.id) && !affected.has(n.id)
-      : (pk.size > 0 && (n.community == null || !pk.has(n.community))) || (kinds.size > 0 && !kinds.has(n.role ?? n.kind)));
+      : (pk.size > 0 && (n.community == null || !pk.has(n.community))) || (kinds.size > 0 && !kinds.has(n.kind) && !(n.role && kinds.has(n.role))));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     ctx.translate(v.x, v.y); ctx.scale(v.k, v.k);
@@ -335,10 +335,11 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
       .on("tick", () => { dirtyRef.current = true; });
     simRef.current = sim;
     // 처음 펼칠 때(되살린 화면이 없을 때) 자리가 잡히면 전체가 보이게 맞춤 — 축소해야 보이던 것(유저 피드백)
-    if (!back) sim.on("end.fit", () => {
-      sim.on("end.fit", null);
+    if (!back || (!back.view.x && !back.view.y && back.view.k === 1)) sim.on("end.fit", () => { // 맞추기 전에 갱신이 와도(화면이 처음 그대로) 맞춤(리뷰)
       const wr = wrapRef.current;
-      if (!wr || !nodes.length || viewRef.current.x || viewRef.current.y || viewRef.current.k !== 1) return; // 그사이 유저가 움직였으면 그대로
+      if (!wr || !wr.clientWidth || !wr.clientHeight) return; // 숨겨진·0 크기면 다음 끝남에(리뷰)
+      sim.on("end.fit", null);
+      if (!nodes.length || viewRef.current.x || viewRef.current.y || viewRef.current.k !== 1) return; // 그사이 유저가 움직였으면 그대로
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const n of nodes) { x0 = Math.min(x0, n.x ?? 0); y0 = Math.min(y0, n.y ?? 0); x1 = Math.max(x1, n.x ?? 0); y1 = Math.max(y1, n.y ?? 0); }
       const pad = 40, W = wr.clientWidth, H = wr.clientHeight;
