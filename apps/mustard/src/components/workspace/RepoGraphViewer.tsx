@@ -376,6 +376,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   const nodeCount = graph?.nodes.length ?? 0;
   const symbolCount = graph ? nodeCount - graph.stats.files : 0;
   const sel = selected ? byId.get(selected) : undefined;
+  useEffect(() => { setCodeAt(null); }, [root]); // eslint-disable-line react-hooks/set-state-in-effect -- 레포 바뀌면 옛 레포 파일 코드 비움(리뷰)
   // 노드를 고르면 그 파일 코드(그 줄) + 트리에서 펼침·강조
   const selFile = sel?.file, selLine = sel?.line;
   useEffect(() => {
@@ -414,7 +415,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
         {nodeCount > 0 && <span className="shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500">{t("graph.stats", { nodes: nodeCount, edges: graph?.edges.length ?? 0 })}</span>}
         {nodeCount > BIG_GRAPH && <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">{t("graph.big")}</span>}
         <button type="button" onClick={reset} title={t("graph.reset")} aria-label={t("graph.reset")} className={btn}><IconFocus2 size={15} stroke={2} aria-hidden /></button>
-        {files && <button type="button" onClick={() => setTreeOpen((v) => !v)} title={t("graph.tree")} aria-label={t("graph.tree")} aria-pressed={treeOpen} className={btn}><IconLayoutSidebar size={15} stroke={2} aria-hidden /></button>}
+        {files && <button type="button" onClick={() => { setTreeOpen((v) => !v); if (codeAt) setReveal((r) => ({ file: codeAt.file, n: (r?.n ?? 0) + 1, at: Date.now() })); }} title={t("graph.tree")} aria-label={t("graph.tree")} aria-pressed={treeOpen} className={btn}><IconLayoutSidebar size={15} stroke={2} aria-hidden /></button>}
         <button type="button" onClick={() => setPanelOpen((v) => !v)} title={t("graph.panel")} aria-label={t("graph.panel")} aria-pressed={panelOpen} className={btn}><IconLayoutSidebarRight size={15} stroke={2} aria-hidden /></button>
         <button type="button" onClick={onClose} title={t("mem.close")} aria-label={t("mem.close")} className={btn}><IconX size={16} stroke={2} aria-hidden /></button>
       </div>

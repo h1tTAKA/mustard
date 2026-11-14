@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { IconChevronRight, IconArrowUp, IconLoader2 } from "@tabler/icons-react";
 import { useT, useLocale, Markdown, stripCardBlock, relocalizeFailure } from "@mustard/core";
 import type { AgentProviderKind, ChatMessage, ProviderSettings } from "@mustard/core";
-import { readSessionThread, writeSessionThread, WS_CHAT_EVENT } from "@/lib/wsChatStore";
+import { readSessionThread, appendSessionMessages, WS_CHAT_EVENT } from "@/lib/wsChatStore";
 
 type StreamEvent = { type: string; line?: string; message?: string; response?: { summary?: string } };
 
@@ -36,14 +36,15 @@ export default function GraphNodeAsk({ root, file, label, kind, line, note, prov
   }, [root, load]);
   useEffect(() => { if (open) bottomRef.current?.scrollIntoView({ block: "end" }); }, [open, msgs.length, streaming]);
 
-  const write = (m: ChatMessage[]) => { subRef.current = writeSessionThread(root, key, "file", file.split("/").pop() ?? file, m, repoLabel, subRef.current); setMsgs(m); };
+  // 덧붙이기만(저장소 최신 + add) — 기다리는 사이 다른 곳이 쓴 것도 보존. 화면은 이벤트로 다시 읽음.
+  const append = (add: ChatMessage[]) => { subRef.current = appendSessionMessages(root, key, "file", file.split("/").pop() ?? file, add, repoLabel, subRef.current); };
 
   async function send() {
     const text = input.trim();
     if (!text || busy) return;
     setInput("");
     const thread: ChatMessage[] = [...msgs, { role: "user", content: text }];
-    write(thread);
+    append([thread[thread.length - 1]]);
     setBusy(true); setStreaming("");
     let answer = "";
     try {
@@ -70,9 +71,9 @@ export default function GraphNodeAsk({ root, file, label, kind, line, note, prov
         }
       }
       if (!answer && err) throw new Error(err);
-      write([...thread, { role: "assistant", content: answer || t("fallback.emptyResponse") }]);
+      append([{ role: "assistant", content: answer || t("fallback.emptyResponse") }]);
     } catch {
-      write([...thread, { role: "assistant", content: t("fallback.error") }]);
+      append([{ role: "assistant", content: t("fallback.error") }]);
     } finally { setBusy(false); setStreaming(null); }
   }
 

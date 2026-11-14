@@ -43,7 +43,7 @@ export function loadStore(store: string, repoLabel: string): { sessions: Record<
 // 챗 영속 — 조용한 쿼터 실패로 새 내용이 안 남던 것(#754) 방지.
 // setItem이 던지면(QuotaExceededError 등) 비활성(=repo·활성 세션 아닌) 세션을 오래된 것부터
 // 잘라내며 재시도한다. repo·현재 활성 세션은 최대한 보존. 그래도 안 되면 최후로 둘만 저장.
-export function persistChat(store: string, sessions: Record<string, Session>, openKeys: string[], activeKey: string): void {
+export function persistChat(store: string, sessions: Record<string, Session>, openKeys: string[], activeKey: string, keep?: string): void { // keep: 쿼터 정리에서 지킬 세션(방금 쓴 것, 리뷰)
   if (typeof localStorage === "undefined") return;
   const write = (s: Record<string, Session>): boolean => {
     const ok = openKeys.filter((k) => s[k]);
@@ -57,28 +57,37 @@ export function persistChat(store: string, sessions: Record<string, Session>, op
   const work: Record<string, Session> = { ...sessions };
   const recency = (v: Session) => v.subs.reduce((m, sub) => Math.max(m, sub.createdAt ?? 0), 0);
   const removable = Object.keys(work)
-    .filter((k) => k !== REPO_KEY && k !== activeKey)
+    .filter((k) => k !== REPO_KEY && k !== activeKey && k !== keep)
     .sort((a, b) => recency(work[a]) - recency(work[b]));
   for (const k of removable) { delete work[k]; if (write(work)) return; }
   // 최후 — repo + 활성 세션만. 그래도 실패면 포기(이전 성공 저장분은 그대로 남음).
   const minimal: Record<string, Session> = {};
   if (work[REPO_KEY]) minimal[REPO_KEY] = work[REPO_KEY];
   if (work[activeKey]) minimal[activeKey] = work[activeKey];
+  if (keep && work[keep]) minimal[keep] = work[keep];
   write(minimal);
 }
 
 export const chatStoreKey = (root: string) => `nunopi:ws-chat:${root}`;
 export const WS_CHAT_EVENT = "mustard:ws-chat";
 
-// 바깥(그래프 노드 질문 등)에서 한 세션의 지금 서브 대화를 통째로 바꿔 씀. 세션이 없으면 만듦(탭은 안 엶 — 질문 화면을 건드리지 않음).
-// 반환: 쓴 뒤의 서브 id(다음 저장 목적지 고정용).
-export function writeSessionThread(root: string, key: string, kind: SessionKind, label: string, messages: ChatMessage[], repoLabel: string, subId?: string): string {
+// 바깥(그래프 노드 질문 등)에서 한 세션의 서브 대화 끝에 메시지를 덧붙임 — 매번 저장소의 최신을 읽고 붙여서,
+// 그사이 질문 화면이 같은 세션에 쓴 것을 지우지 않음(리뷰: 통째 덮어쓰기 금지). 세션이 없으면 만듦(탭은 안 엶).
+// 새 세션이면 MAX_SESSIONS를 넘는 만큼 오래된 닫힌 세션을 정리(질문 화면 openSession과 같은 규칙).
+// 반환: 쓴 서브 id(다음 덧붙임 목적지 고정용).
+export function appendSessionMessages(root: string, key: string, kind: SessionKind, label: string, add: ChatMessage[], repoLabel: string, subId?: string): string {
   const store = chatStoreKey(root);
   const d = loadStore(store, repoLabel);
+  const isNew = !d.sessions[key];
   const s = d.sessions[key] ?? mkSession(key, kind, label);
   const id = subId && s.subs.some((x) => x.id === subId) ? subId : s.activeSubId;
-  const next: Session = { ...s, subs: s.subs.map((x) => (x.id === id ? { ...x, messages } : x)), activeSubId: id };
-  persistChat(store, { ...d.sessions, [key]: next }, d.openKeys, d.activeKey);
+  const sessions: Record<string, Session> = { ...d.sessions, [key]: { ...s, subs: s.subs.map((x) => (x.id === id ? { ...x, messages: [...x.messages, ...add] } : x)), activeSubId: id } };
+  if (isNew && Object.keys(sessions).length > MAX_SESSIONS) {
+    const recency = (v: Session) => v.subs.reduce((m, sub) => Math.max(m, sub.createdAt ?? 0), 0);
+    const closed = Object.keys(sessions).filter((k) => k !== REPO_KEY && k !== key && k !== d.activeKey && !d.openKeys.includes(k)).sort((a, b) => recency(sessions[a]) - recency(sessions[b]));
+    for (const k of closed) { if (Object.keys(sessions).length <= MAX_SESSIONS) break; delete sessions[k]; }
+  }
+  persistChat(store, sessions, d.openKeys, d.activeKey, key);
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(WS_CHAT_EVENT, { detail: { root } }));
   return id;
 }
