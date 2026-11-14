@@ -62,7 +62,8 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   const [err, setErr] = useState<string | null>(null);
 
   const { locale } = useLocale();
-  const [picked, setPicked] = useState<Set<number>>(new Set());     // 고른 덩어리(비면 전부)
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [kindPick, setKindPick] = useState<Set<string>>(new Set()); // 범례에서 고른 종류(파일·함수·역할…) — 비면 전부(유저 요청)     // 고른 덩어리(비면 전부)
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);    // 누른 노드 id → 오른쪽 상세
   const [panelOpen, setPanelOpen] = useState(() => kept.get(root)?.panelOpen ?? true);
@@ -117,7 +118,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   const rafRef = useRef(0);
   const hoverRef = useRef<SimNode | null>(null);
   // 그리기용 강조 상태 미러 — draw는 rAF에서 돌아 state를 직접 못 봄.
-  const hlRef = useRef<{ sel: string | null; match: Set<string>; picked: Set<number>; path: Set<string>; pathEdges: Set<string>; changed: Set<string>; affected: Set<string> }>({ sel: null, match: new Set(), picked: new Set(), path: new Set(), pathEdges: new Set(), changed: new Set(), affected: new Set() });
+  const hlRef = useRef<{ kinds: Set<string>; sel: string | null; match: Set<string>; picked: Set<number>; path: Set<string>; pathEdges: Set<string>; changed: Set<string>; affected: Set<string> }>({ kinds: new Set(), sel: null, match: new Set(), picked: new Set(), path: new Set(), pathEdges: new Set(), changed: new Set(), affected: new Set() });
 
   // 1) 그래프 로드 — 서브2 캐시 라우트 재사용.
   useEffect(() => {
@@ -227,10 +228,10 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
   useEffect(() => {
     const pathEdges = new Set<string>();
     if (path) for (let i = 1; i < path.length; i++) { pathEdges.add(`${path[i - 1]}|${path[i]}`); pathEdges.add(`${path[i]}|${path[i - 1]}`); }
-    hlRef.current = { sel: selected, match: new Set(query.trim() ? matches.map((n) => n.id) : []), picked, path: new Set(path ?? [pathFrom, pathTo].filter((x): x is string => !!x)), pathEdges,
+    hlRef.current = { kinds: kindPick, sel: selected, match: new Set(query.trim() ? matches.map((n) => n.id) : []), picked, path: new Set(path ?? [pathFrom, pathTo].filter((x): x is string => !!x)), pathEdges,
       changed: hit?.changed ?? new Set(), affected: hit?.affected ?? new Set() };
     dirtyRef.current = true;
-  }, [selected, matches, picked, query, path, pathFrom, pathTo, hit]);
+  }, [selected, matches, picked, query, path, pathFrom, pathTo, hit, kindPick]);
 
   // 화면→그래프 좌표 역변환(줌/팬 역산). 히트테스트·드래그에.
   const toGraph = useCallback((sx: number, sy: number) => {
@@ -258,12 +259,16 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     const ctx = cv.getContext("2d");
     if (!ctx) return;
     const v = viewRef.current;
-    const { sel, match, picked: pk, path: onPath, pathEdges, changed, affected } = hlRef.current;
+    const { kinds, sel, match, picked: pk, path: onPath, pathEdges, changed, affected } = hlRef.current;
     const impactOn = changed.size > 0;
-    // 흐리게(배치 유지): 경로가 있으면 경로 밖 전부 → 영향 강조 중이면 바뀐·영향 밖 → 아니면 덩어리 거름 밖.
+    // 고른 노드 + 바로 이어진 노드(유저 요청: 클릭하면 그 노드와 연결된 것만 밝게)
+    const near = new Set<string>();
+    if (sel && !pathEdges.size) { near.add(sel); for (const l of linksRef.current) { const a = l.source as SimNode, b = l.target as SimNode; if (typeof a !== "object" || typeof b !== "object") continue; if (a.id === sel) near.add(b.id); else if (b.id === sel) near.add(a.id); } }
+    // 흐리게(배치 유지): 경로가 있으면 경로 밖 전부 → 노드를 골랐으면 이웃 밖 → 영향 강조 중이면 바뀐·영향 밖 → 아니면 덩어리·종류 거름 밖.
     const dim = (n: SimNode) => (pathEdges.size > 0 ? !onPath.has(n.id)
+      : near.size ? !near.has(n.id)
       : impactOn ? !changed.has(n.id) && !affected.has(n.id)
-      : pk.size > 0 && (n.community == null || !pk.has(n.community)));
+      : (pk.size > 0 && (n.community == null || !pk.has(n.community))) || (kinds.size > 0 && !kinds.has(n.role ?? n.kind)));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     ctx.translate(v.x, v.y); ctx.scale(v.k, v.k);
@@ -577,17 +582,17 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
               <canvas ref={canvasRef} className="h-full w-full cursor-grab touch-none active:cursor-grabbing"
                 onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onDoubleClick={onDoubleClick} onWheel={onWheel} />
               {/* 범례 — 노드 종류 색(지금 깊이에서 보이는 종류만) */}
-              <div className="pointer-events-none absolute bottom-3 left-3 flex flex-col gap-1 rounded-lg border border-zinc-200 bg-white/80 px-2.5 py-2 text-[10px] dark:border-zinc-700 dark:bg-zinc-900/80">
-                {(Object.keys(KIND_COLOR) as RepoNodeKind[]).map((k) => (
-                  <span key={k} className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: KIND_COLOR[k] }} aria-hidden /> {KIND_LABEL[k]}
-                  </span>
-                ))}
-                {roles.map((r) => (
-                  <span key={r} className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: ROLE_COLOR[r] }} aria-hidden /> {r}
-                  </span>
-                ))}
+              {/* 범례 — 누르면 그 종류만 밝게(여러 개 가능), 다시 누르면 해제 */}
+              <div className="absolute bottom-3 left-3 flex flex-col gap-0.5 rounded-lg border border-zinc-200 bg-white/80 px-1.5 py-1.5 text-[10px] dark:border-zinc-700 dark:bg-zinc-900/80">
+                {[...(Object.keys(KIND_COLOR) as RepoNodeKind[]).map((k) => [k, KIND_COLOR[k], KIND_LABEL[k]] as const), ...roles.map((r) => [r, ROLE_COLOR[r], r] as const)].map(([k, color, label]) => {
+                  const on = kindPick.has(k);
+                  return (
+                    <button key={k} type="button" aria-pressed={on} onClick={() => setKindPick((p) => { const n = new Set(p); if (n.has(k)) n.delete(k); else n.add(k); return n; })}
+                      className={`flex items-center gap-1.5 rounded px-1 py-0.5 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${kindPick.size && !on ? "opacity-40" : ""} ${on ? "text-zinc-800 dark:text-zinc-100" : "text-zinc-500 dark:text-zinc-400"}`}>
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} aria-hidden /> {label}
+                    </button>
+                  );
+                })}
               </div>
             </>
           )}
