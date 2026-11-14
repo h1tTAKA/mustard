@@ -6,7 +6,8 @@ const k = archJobKey("/r", "tour", "login");
 const a = startJob(k, "build")!;
 assert.ok(a);
 assert.equal(startJob(k), null); // 돌고 있으면 중복 시작 안 함
-a.progress(2, 5, { done: ["x"] });
+a.progress(1, 5, { done: [] });
+a.progress(2, 5, { done: ["x"] }); // 두 번째 진행도 반영(리뷰)
 assert.equal(jobOf(k)!.done, 2);
 assert.deepEqual([...runningFeatures("/r")], ["login"]);
 stopJob(k);

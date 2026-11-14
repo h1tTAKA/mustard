@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { IconSitemap, IconX, IconLoader2, IconChevronDown, IconRefresh, IconCode, IconBook2, IconSparkles, IconMessageCircle, IconPlayerPlay, IconPlayerStop, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
-import { archJobKey, jobOf, startJob, stopJob, useArchJobs, type ArchJob } from "@/lib/repo/archJobs";
+import { archJobKey, jobOf, startJob, stopJob, clearJob, useArchJobs, type ArchJob } from "@/lib/repo/archJobs";
 import { useT, useLocale, useSetting, ARCHKEYS, ARCH_DEFAULTS, archDepthsOf, archDefaultOf, isArchDepth, type ArchDepth } from "@mustard/core";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { Markdown } from "@mustard/core";
@@ -129,7 +129,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   const baseDepthRef = useRef<ArchDepth>("beginner");
   const [overviews, setOverviews] = useState<Overviews>({}); // #1322 개발자·숙련자용 설명(없으면 초보용 기본을 보여 줌)
   const [writingSt, setWriting] = useState(false);           // 깊이별 설명 쓰는 중
-  const writing = writingSt || on(depthJob);
+  const writing = writingSt || (on(depthJob) && depthJob!.mode === (pick && depths.includes(pick) ? pick : defDepth)); // 쓰는 그 깊이에서만(리뷰)
   const [tour, setTour] = useState<Tour | null>(null);       // #1322 저장된 둘러보기
   const unsavedRef = useRef(false);                          // 화면 흐름이 저장 실패 상태 — 서버 흐름과 다를 수 있어 덧붙임(설명·단계) 안 함(리뷰)
   const atRef = useRef<number | null>(null);                 // 지금 보이는 흐름의 저장 판(at) — 덧붙임이 같은 흐름에 붙는지 서버가 확인
@@ -338,6 +338,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
     if (mode === "cache" && jobOf(fk)?.status === "stopped") { setLoading(false); return; }
     const h = startJob(fk, mode === "update" ? "update" : "regen");
     if (!h) { setLoading(false); return; }
+    { const tk = archJobKey(root, "tour", feature); stopJob(tk); clearJob(tk); } // 옛 흐름 둘러보기는 끊음 — 새 흐름 뒤 둘러보기가 막히지 않게(리뷰)
     const sig = h.signal;
     let ok = false;
     setLoading(true); setRunning(mode === "update" ? "update" : "regen"); setErr(null); setNote(null);
@@ -419,6 +420,7 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
         if (ov2) { ov = ov2; baseD = defDepth; }
       }
       // 차분 정보 없는 갱신(옛 저장분)=기존 흐름에 새 노드만 병합, 그 외(재생성·구조 변화가 많은 갱신)=교체.
+      if (sig.aborted) return; // 멈춘 뒤엔 저장 안 함(코드 발췌가 비어 AI를 안 불렀어도, 리뷰)
       const base = sectionsRef.current;
       const nextSecs = mode === "update" && base && !d ? mergeFlow(base, parsed) : parsed;
       setSections(nextSecs); setOverview(ov); setOverviews({}); setTour(null); secOfRef.current = feature;
@@ -496,10 +498,11 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
   }, [tourIdx, tourSteps.length]);
 
   // #1322 지금 깊이(개발자·숙련자)로 설명글만 다시 쓰기 — 흐름(노드)은 그대로, 덧붙임으로만 저장(스냅샷 안 건드림).
-  const writeDepth = useCallback(async () => {
-    if (!feature || !root || depth === baseDepthRef.current || !sectionsRef.current) return;
+  const writeDepth = useCallback(async (only?: ArchDepth) => {
+    const dd = only ?? depth; // 이어하기는 멈춘 그 깊이
+    if (!feature || !root || dd === baseDepthRef.current || !sectionsRef.current) return;
     if (unsavedRef.current) { setErr(t("flow.saveFailed")); return; } // 저장 안 된 흐름엔 설명을 안 붙임
-    const f = feature, d = depth, my = reqRef.current, at0 = atRef.current; // 쓰는 사이 재생성·갱신·기능 전환이 있으면(my 바뀜) 버림 — 새 흐름에 옛 설명이 붙지 않게
+    const f = feature, d = dd, my = reqRef.current, at0 = atRef.current; // 쓰는 사이 재생성·갱신·기능 전환이 있으면(my 바뀜) 버림 — 새 흐름에 옛 설명이 붙지 않게
     const dk = archJobKey(root, "depth", f);
     const h = startJob(dk, d);
     if (!h) return;
@@ -580,18 +583,19 @@ export default function RepoFlowPane({ feature, root, providerId, providerSettin
 
   // #1329 다른 화면(떠나기 전 이 패널)에서 시작해 끝난 작업 — 저장분 다시 읽기
   const doneSeq = Math.max(...[flowJob, depthJob, tourJob].map((j) => (j?.status === "done" ? j.seq : 0)));
+  const ownOn = on(flowJob) || on(depthJob) || on(tourJob);
   useEffect(() => {
-    if (!doneSeq || ownSeq.current.has(doneSeq)) return;
+    if (!doneSeq || ownSeq.current.has(doneSeq) || ownOn) return; // 이 기능 작업이 아직 돌면 끝날 때까지 미룸(돌던 화면을 갈아엎지 않게, 리뷰)
     ownSeq.current.add(doneSeq);
     void load("cache");
-  }, [doneSeq, load]);
+  }, [doneSeq, ownOn, load]);
   // 멈춤 — 이 기능에서 도는 작업 전부. 이어하기 — 멈춘 것만 같은 동작으로 다시.
   const stopAll = () => { for (const k of ["flow", "depth", "tour"] as const) stopJob(keyOf(k)); };
-  const anyOn = on(flowJob) || on(depthJob) || on(tourJob);
+  const anyOn = ownOn;
   const stopped = [flowJob, depthJob, tourJob].some((j) => j?.status === "stopped");
   const resume = () => {
     if (flowJob?.status === "stopped") { void load(flowJob.mode === "update" ? "update" : "regen"); return; }
-    if (depthJob?.status === "stopped") void writeDepth();
+    if (depthJob?.status === "stopped" && isArchDepth(depthJob.mode)) void writeDepth(depthJob.mode); // 멈춘 그 깊이로(리뷰)
     if (tourJob?.status === "stopped") void startTour();
   };
 

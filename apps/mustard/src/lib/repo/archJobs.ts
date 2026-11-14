@@ -32,7 +32,7 @@ export function startJob(key: string, mode?: string): { signal: AbortSignal; par
   const job: ArchJob = { status: "running", mode, ctrl, seq: ++seq, partial: prev?.status === "stopped" ? prev.partial : undefined };
   jobs.set(key, job);
   emit();
-  const mine = () => jobs.get(key) === job;
+  const mine = () => { const c = jobs.get(key); return c?.ctrl === ctrl && c.status === "running"; }; // 진행 때마다 새 객체로 바뀌니 ctrl로 확인(리뷰)
   return {
     signal: ctrl.signal,
     partial: job.partial,
