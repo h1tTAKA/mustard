@@ -334,7 +334,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
       else { // 새 노드가 있으면 기존 노드는 잠깐 고정하고 새 것만 자리 잡게 — 배치가 통째로 섞이지 않게(리뷰)
         for (const n of nodes) if (back.pos[n.id]) { n.fx = n.x; n.fy = n.y; }
         sim.alpha(0.3);
-        unpin = window.setTimeout(() => { for (const n of nodes) if (back.pos[n.id] && n.fx === n.x && n.fy === n.y) { n.fx = null; n.fy = null; } }, 2500);
+        unpin = window.setTimeout(() => { for (const n of nodes) if (back.pos[n.id] && dragRef.current?.node !== n && n.fx === n.x && n.fy === n.y) { n.fx = null; n.fy = null; } }, 2500); // 끄는 중인 노드는 그대로(리뷰)
       }
     }
     viewRef.current = back ? { ...back.view } : { x: 0, y: 0, k: 1 };

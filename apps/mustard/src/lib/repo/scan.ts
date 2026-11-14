@@ -14,10 +14,10 @@ const IGNORE_DIRS = new Set([
   "node_modules", ".git", ".next", "dist", "dist_electron", "build", "out", "coverage", // dist_electron = electron-builder 출력(.app 안 소스 사본, #1155)
   ".turbo", ".vercel", ".cache", "graphify-out", ".idea", ".vscode",
   // #1331 의존성·생성물(이름이 확실한 것 — 커밋돼 있어도 남의 코드). 실측: Flutter ios/Pods의 .h가 그래프를 차지
-  "Pods", "Carthage", "DerivedData", ".dart_tool", ".pub-cache", ".gradle", "__pycache__", ".mypy_cache", ".pytest_cache",
+  "Pods", "Carthage", "DerivedData", ".dart_tool", ".pub-cache", ".gradle", "vendor", "__pycache__", ".mypy_cache", ".pytest_cache", // vendor = Go·PHP가 커밋해 두는 남의 코드(리뷰)
 ]);
 // git이 없는 레포에서만 거르는 이름 — 진짜 소스 폴더 이름일 수도 있어 git 레포는 .gitignore에 맡김(리뷰)
-const NOGIT_IGNORE = new Set(["vendor", "target", "venv", ".venv"]);
+const NOGIT_IGNORE = new Set(["target", "venv", ".venv"]);
 // #1331 git 레포면 git이 보는 파일(추적 + 무시 안 된 새 파일)만 — 폴더마다 .gitignore·info/exclude를 그대로 따름.
 // 반환: 허용 파일 집합 + 그 파일들이 든 폴더 집합(폴더째 건너뛰기용). git이 없거나 실패하면 null(기존 걷기 그대로).
 // 한계: 요청 경로에서 동기 실행(기존 걷기도 동기) — 초대형 레포는 목록 받는 동안 서버가 잠깐 멈춤. 경로는 UTF-8로 읽음.
