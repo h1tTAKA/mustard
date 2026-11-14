@@ -29,6 +29,7 @@ const KIND_LABEL: Record<RepoNodeKind, string> = {
 // 게임 에셋 역할 색(#1013) — 역할이 있으면 kind(file) 색 대신. 범례엔 그래프에 실제 있는 역할만.
 const ROLE_COLOR: Record<RepoAssetRole, string> = { scene: "#fb923c", prefab: "#a3e635", asset: "#a5b4fc", config: "#94a3b8" }; // config(#1335) 회청
 const NODE_R = 4, DRAG_THRESHOLD = 4; // 노드 반경(그래프 좌표), 클릭/드래그 판별 이동 임계(px)
+const FILE_ONLY_AT = 4000;            // #1338 노드가 이보다 많으면 처음엔 파일 노드만(심볼은 칩·덩어리로 펼침)
 const BIG_GRAPH = 5000;               // 이 이상이면 무거움 배너(silent 캡 금지)
 const MAX_CHIPS = 14, MAX_LIST = 50;  // 덩어리 칩·상세 목록 상한(화면 넘침 방지)
 const HL = "#e8b93a";                  // 강조색(머스타드)
@@ -165,7 +166,16 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     return () => { alive = false; window.clearInterval(iv); window.removeEventListener("focus", check); };
   }, [root, graphOf]);
 
-  const shown = useMemo(() => graph?.nodes ?? [], [graph]);
+  // #1338 큰 그래프는 처음엔 파일 노드만 — 심볼 칩으로 다 펼치거나, 덩어리 칩을 고르면 그 덩어리 심볼만. 고른 노드는 늘 보임.
+  const [symPick, setSymPick] = useState<boolean | null>(null); // null = 자동(노드 수로)
+  const symOn = symPick ?? (graph?.nodes.length ?? 0) <= FILE_ONLY_AT;
+  const symCount = useMemo(() => graph?.nodes.filter((n) => n.kind !== "file").length ?? 0, [graph]);
+  const selSym = selected && !symOn && graph?.nodes.find((n) => n.id === selected)?.kind !== "file" ? selected : null; // 파일 노드를 고를 땐 다시 그리지 않게
+  const shown = useMemo(() => {
+    const all = graph?.nodes ?? [];
+    if (symOn) return all;
+    return all.filter((n) => n.kind === "file" || n.id === selSym || (n.community != null && picked.has(n.community)));
+  }, [graph, symOn, selSym, picked]);
   const byId = useMemo(() => new Map(graph?.nodes.map((n) => [n.id, n]) ?? []), [graph]);
   const matches = useMemo(() => searchNodes(shown, query), [shown, query]);
   const communities = useMemo(() => [...(graph?.communities ?? [])].sort((a, b) => b.count - a.count).slice(0, MAX_CHIPS), [graph]);
@@ -318,7 +328,8 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
     // 다시 열었으면 노드 자리·화면을 닫기 전대로 — 처음 받은 그래프에만(다시 빌드되면 안 씀). 같은 그래프로 이펙트가 두 번 돌아도 그대로(리뷰)
     if (restoreRef.current && !restoreFor.current) restoreFor.current = graph;
     const back = restoreFor.current === graph ? restoreRef.current : undefined;
-    const nodes: SimNode[] = shown.map((n) => { const p = back?.pos[n.id]; return { id: n.id, label: n.label, file: n.file, kind: n.kind, role: n.role, community: n.community, ...(p ? { x: p[0], y: p[1] } : {}) }; });
+    const prevPos = new Map(nodesRef.current.map((n) => [n.id, [n.x, n.y] as const])); // 보이는 노드가 바뀌어도(심볼 펼치기 등) 있던 노드는 제자리
+    const nodes: SimNode[] = shown.map((n) => { const pp = prevPos.get(n.id); const p = back?.pos[n.id] ?? (pp && pp[0] != null && pp[1] != null ? [pp[0], pp[1]] as [number, number] : undefined); return { id: n.id, label: n.label, file: n.file, kind: n.kind, role: n.role, community: n.community, ...(p ? { x: p[0], y: p[1] } : {}) }; });
     const ids = new Map(nodes.map((n) => [n.id, n]));
     const links: SimLink[] = graph.edges
       .filter((e) => ids.has(e.source) && ids.has(e.target))
@@ -552,6 +563,12 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
               </div>
             )}
           </div>
+            {/* #1338 심볼(함수·클래스…) 보이기 — 큰 그래프는 처음엔 파일만 */}
+            {symCount > 0 && (
+              <button type="button" onClick={() => setSymPick(!symOn)} aria-pressed={symOn} title={t("graph.symbolsTitle")} className={chip(symOn)}>
+                {t("graph.symbols")} <span className="text-zinc-400 dark:text-zinc-500">{symCount}</span>
+              </button>
+            )}
             {/* 경로 찾기 — 누르면 시작·끝 노드 고르기(캔버스 클릭 또는 검색), 켜진 상태에서 다시 누르면 지움 */}
             <button type="button" onClick={() => (pathActive ? clearPath() : (setPathPick("from"), setPanelOpen(true)))} aria-pressed={pathActive} title={t("graph.pathTitle")}
               className={`flex items-center gap-1 ${chip(pathActive)}`}>
