@@ -1,11 +1,12 @@
 // 인라인 코드 역할 분류(#1325) — 설명 글의 `백틱` 조각이 무엇인지 모양으로 판단해 색 약속을 입힘.
 // AI 출력 형식을 바꾸지 않고 공용 Markdown 한곳에서. 확실하지 않으면 "plain"(기존 회색 그대로).
 // 색은 4가지만 — 읽는 사람이 그 조각으로 "무엇을 하나" 기준(실제 캐치업·아키텍처 설명 9.4만 조각 분석):
-//   path 파일·경로(열어 볼 곳) / cmd 명령어·옵션(터미널에 칠 것) / sym 코드 이름(함수·변수·타입·키워드·상수 — 코드 안의 이름은 전부 한 색) / val 값(숫자·색·문자열·불린)
+//   중요도 순 색(유저 결정): fn 함수·메서드 호출·로직 식(빨강) / path 파일·경로(노랑) / cmd 명령어·옵션(초록) / sym 이름 하나 — 변수·타입·멤버·키워드(파랑)
+//   val 값(숫자·색·문자열·불린)은 분류만 하고 색은 기존 회색(덜 중요)
 // 같은 것은 늘 같은 색: fieldLine(변수)·Color()(함수)·static(키워드)이 서로 다른 색이던 것을 sym 하나로(유저 피드백 "뒤죽박죽").
 // 순서가 중요: 값 → 명령어 → 경로 → 코드 이름.
-export type CodeKind = "path" | "cmd" | "sym" | "val" | "plain";
-export const CODE_KINDS: Exclude<CodeKind, "plain">[] = ["path", "cmd", "sym", "val"];
+export type CodeKind = "fn" | "path" | "cmd" | "sym" | "val" | "plain";
+export const CODE_KINDS: Exclude<CodeKind, "plain">[] = ["fn", "path", "cmd", "sym", "val"];
 
 const KW = new Set([
   "import", "export", "from", "return", "await", "async", "static", "const", "let", "var", "final", "late", "class", "struct", "enum", "interface",
@@ -43,26 +44,27 @@ const notPath = (s: string) => {
   return /^\d+\/\d+$/.test(s) || (p.length === 2 && p.every((x) => /^[A-Z]+$/.test(x) || PAIR.has(x.toLowerCase())));
 };
 
-const isSym = (s: string): boolean => {
+// 코드 조각 → "fn"(함수·메서드 호출·로직 식 — 이해에 제일 중요) / "sym"(이름 하나 — 변수·타입·멤버·키워드) / null
+const symKind = (s: string): "fn" | "sym" | null => {
   // 함수·메서드 호출 — 이름 뒤 괄호(인자 포함 가능)
-  if (/^\.?[\w$.@:<>]+\s*\(.*\)$/.test(s)) return true;
+  if (/^\.?[\w$.@:<>]+\s*\(.*\)$/.test(s)) return "fn";
   // 이름 하나 — 변수·함수·타입·상수·키워드(fieldLine, useEffect, AppDelegate, MAX_FILES, static), 제네릭(List<String>), 멤버 접근(console.log, catchup.enabled)
-  if (/^[A-Za-z_$][\w$]*(<[\w, <>[\]|]+>)?(\??\.[A-Za-z_$][\w$]*)*(\[\])?$/.test(s)) return /[a-z]/.test(s) || s.includes("_"); // API·JSON 같은 약어는 회색
-  if (/^@[A-Za-z]\w*$/.test(s)) return true; // @main·@override 어노테이션
+  if (/^[A-Za-z_$][\w$]*(<[\w, <>[\]|]+>)?(\??\.[A-Za-z_$][\w$]*)*(\[\])?$/.test(s)) return /[a-z]/.test(s) || s.includes("_") ? "sym" : null; // API·JSON 같은 약어는 회색
+  if (/^@[A-Za-z]\w*$/.test(s)) return "sym"; // @main·@override 어노테이션
   // JSX·태그 이름 — <Text>, <input>, </View>, <true/>
-  if (/^<\/?[A-Za-z][\w.:-]*\s*\/?>$/.test(s)) return true;
+  if (/^<\/?[A-Za-z][\w.:-]*\s*\/?>$/.test(s)) return "sym";
   // 키워드로 시작하는 코드 조각 — "static const fieldLine", "import type", "export default"
   const w = s.split(/\s+/);
-  if (w.length > 1 && KW.has(w[0]) && !/[가-힣ぁ-んァ-ン一-龥]/.test(s)) return true; // import { ... } from '...'·as const도
+  if (w.length > 1 && KW.has(w[0]) && !/[가-힣ぁ-んァ-ン一-龥]/.test(s)) return "fn"; // import { ... } from '...'·as const도
   // 스프레드·구조분해 — ...ex1, { ko, ja, hl }
-  if (/^\.\.\.[A-Za-z_$][\w$.]*$/.test(s) || /^\{\s*[A-Za-z_$][\w$]*(\s*[,:]\s*[A-Za-z_$][\w$]*)*\s*\}$/.test(s)) return true;
+  if (/^\.\.\.[A-Za-z_$][\w$.]*$/.test(s) || /^\{\s*[A-Za-z_$][\w$]*(\s*[,:]\s*[A-Za-z_$][\w$]*)*\s*\}$/.test(s)) return "fn";
   // 연산자 하나만 — ?. ?? && || => === !== ...(스프레드)
-  if (/^(\?\.|\?\?|&&|\|\||=>|===|!==|\.\.\.)$/.test(s)) return true;
+  if (/^(\?\.|\?\?|&&|\|\||=>|===|!==|\.\.\.)$/.test(s)) return "fn";
   // 속성: 값 — "flex: 1", "flexDirection: 'row'"(한글 "키: 값"은 설명이라 회색)
-  if (/^[A-Za-z_$][\w$-]*:\s+\S.*$/.test(s) && !/[가-힣ぁ-んァ-ン一-龥]/.test(s) && s.length <= 60) return true;
+  if (/^[A-Za-z_$][\w$-]*:\s+\S.*$/.test(s) && !/[가-힣ぁ-んァ-ン一-龥]/.test(s) && s.length <= 60) return "fn";
   // 연산자가 들어간 짧은 식 — "b === 0", "a ?? b", "x => x.id" (한글·문장 아님)
-  if (!/[가-힣ぁ-んァ-ン一-龥]/.test(s) && /[A-Za-z_$]/.test(s) && /(===|!==|==|!=|=>|\?\?|\?\.|&&|\|\||->|::|\+=|<=|>=)/.test(s) && s.length <= 60) return true;
-  return false;
+  if (!/[가-힣ぁ-んァ-ン一-龥]/.test(s) && /[A-Za-z_$]/.test(s) && /(===|!==|==|!=|=>|\?\?|\?\.|&&|\|\||->|::|\+=|<=|>=)/.test(s) && s.length <= 60) return "fn";
+  return null;
 };
 
 export function codeKind(raw: string): CodeKind {
@@ -84,6 +86,6 @@ export function codeKind(raw: string): CodeKind {
     const m = s.match(/^[\w@.-]*[\w-]\.([a-z][a-z0-9]{0,9})(:\d+(-\d+)?)?$/i);
     if (m && (EXT.has(m[1].toLowerCase()) || m[2]) && !notFile(s, m[1].toLowerCase())) return "path"; // 아는 확장자이거나 줄 번호가 붙을 때만("catchup.enabled" 같은 키와 구분)
   }
-  return isSym(s) ? "sym" : "plain";
+  return symKind(s) ?? "plain";
 }
 
