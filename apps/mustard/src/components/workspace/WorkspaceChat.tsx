@@ -22,28 +22,18 @@ import { useToast } from "@mustard/core";
 import type { AgentProviderKind, ChatMessage, ProviderSettings } from "@mustard/core";
 import type { QuizSession } from "@mustard/core";
 import { isNunopiEnabled } from "@/lib/product";
+import { REPO_KEY, MAX_SESSIONS, freshSub, mkSession, loadStore, persistChat, chatStoreKey, WS_CHAT_EVENT, type SessionKind, type Session } from "@/lib/wsChatStore";
 import { isCardWorthy } from "@/lib/cardWorthy";
 import { buildWorkHistory, type AskItem } from "@/lib/catchupAskContext";
 import { commitHashesIn, withRelatedCards } from "@/lib/catchupMarkdown";
 import { archGet } from "@/lib/repo/archClient";
 type StreamEvent = { type: "progress"; line: string } | { type: "result"; response: { summary: string } } | { type: "error"; message: string };
 
-type SessionKind = "repo" | "file" | "diff" | "branch" | "worktree" | "arch";
 // 아키텍처(flow) 캐시 shape — #743이 저장한 것을 컨텍스트로 읽기 위한 최소 타입.
 type ArchNode = { name: string; file?: string; line?: number; role?: string; next?: string[] };
 type ArchSection = { layer: string; nodes: ArchNode[] };
-interface Sub { id: string; messages: ChatMessage[]; createdAt?: number; quizzes?: QuizSession[]; activeQuizId?: string; } // 세션 안의 한 대화 스레드. createdAt=생성 시각(ms, 히스토리 날짜 그룹용 #691). quizzes=이 스레드의 테스트 세션들·activeQuizId=활성 테스트(#760). 레거시 저장분은 undefined.
-// baseHead: worktree 세션 생성 시점 HEAD sha — 커밋 승계 판별용(#689, 커밋3에서 채움).
-interface Session { key: string; kind: SessionKind; label: string; subs: Sub[]; activeSubId: string; baseHead?: string; }
 // WorkspaceView가 주는 포커스 신호 — n(nonce)로 같은 대상 재클릭도 매번 발화.
 export interface ChatFocus { key: string; kind: SessionKind; label: string; n: number; }
-
-const REPO_KEY = "repo";
-const MAX_SESSIONS = 40; // 닫힌 세션 포함 저장 상한 — 초과 시 가장 오래된 "닫힌" 세션부터 정리.
-
-const genId = () => globalThis.crypto?.randomUUID?.() ?? String(Math.random()).slice(2);
-const freshSub = (): Sub => ({ id: genId(), messages: [], createdAt: Date.now() });
-const mkSession = (key: string, kind: SessionKind, label: string): Session => { const s = freshSub(); return { key, kind, label, subs: [s], activeSubId: s.id }; };
 
 // DiffPane hunk 노트 버킷을 워킹트리→커밋 해시로 승계(#689). 키 스킴은 DiffPane.noteStore와 동일:
 //   nunopi:hunk-notes:<root>:<hash | "wt:"+kind>:<file>. hunk는 diffText로 키잉돼 내용 같으면 재부착.
@@ -65,57 +55,6 @@ function carryHunkNotes(root: string, file: string, hash: string): void {
     }
     if (touched) localStorage.setItem(dstKey, JSON.stringify(dst));
   } catch { /* ignore */ }
-}
-
-// localStorage에서 세션 복원(마이그레이션 포함). SSR/미저장 시 기본(repo 세션 1개).
-// 마운트 시 동기 호출 → 하이드레이션 이펙트 레이스(빈 상태 덮어쓰기) 원천 제거.
-function loadStore(store: string, repoLabel: string): { sessions: Record<string, Session>; openKeys: string[]; activeKey: string } {
-  const fresh = () => ({ sessions: { [REPO_KEY]: mkSession(REPO_KEY, "repo", repoLabel) } as Record<string, Session>, openKeys: [REPO_KEY], activeKey: REPO_KEY });
-  if (typeof localStorage === "undefined") return fresh();
-  try {
-    const raw = localStorage.getItem(store);
-    if (!raw) return fresh();
-    const p = JSON.parse(raw) as { sessions?: Record<string, Partial<Session> & { messages?: ChatMessage[] }>; openKeys?: string[]; activeKey?: string };
-    if (!p.sessions) return fresh(); // 데이터 자체가 없을 때만 완전 초기화
-    const sessions: Record<string, Session> = {};
-    for (const [k, s] of Object.entries(p.sessions)) {
-      const subs = Array.isArray(s.subs) && s.subs.length ? s.subs : [{ id: genId(), messages: Array.isArray(s.messages) ? s.messages : [] }];
-      sessions[k] = { key: k, kind: (s.kind ?? "file") as SessionKind, label: s.label ?? k, subs, activeSubId: s.activeSubId && subs.some((x) => x.id === s.activeSubId) ? s.activeSubId : subs[0].id };
-    }
-    // repo 세션이 없으면 나머지(file/diff/arch…)를 버리지 말고 repo만 보강(관용, #754).
-    if (!sessions[REPO_KEY]) sessions[REPO_KEY] = mkSession(REPO_KEY, "repo", repoLabel);
-    let openKeys = Array.isArray(p.openKeys) && p.openKeys.length ? p.openKeys.filter((k) => sessions[k]) : Object.keys(sessions);
-    openKeys = [REPO_KEY, ...openKeys.filter((k) => k !== REPO_KEY)]; // repo 항상 맨 앞
-    const activeKey = p.activeKey && sessions[p.activeKey] && openKeys.includes(p.activeKey) ? p.activeKey : REPO_KEY;
-    return { sessions, openKeys, activeKey };
-  } catch { return fresh(); }
-}
-
-// 챗 영속 — 조용한 쿼터 실패로 새 내용이 안 남던 것(#754) 방지.
-// setItem이 던지면(QuotaExceededError 등) 비활성(=repo·활성 세션 아닌) 세션을 오래된 것부터
-// 잘라내며 재시도한다. repo·현재 활성 세션은 최대한 보존. 그래도 안 되면 최후로 둘만 저장.
-function persistChat(store: string, sessions: Record<string, Session>, openKeys: string[], activeKey: string): void {
-  if (typeof localStorage === "undefined") return;
-  const write = (s: Record<string, Session>): boolean => {
-    const ok = openKeys.filter((k) => s[k]);
-    try {
-      localStorage.setItem(store, JSON.stringify({ sessions: s, openKeys: ok.length ? ok : [REPO_KEY], activeKey: s[activeKey] ? activeKey : REPO_KEY }));
-      return true;
-    } catch { return false; }
-  };
-  if (write(sessions)) return;
-  // 쿼터 초과 → 비보호 세션을 오래된 것(서브 createdAt 최대값 기준)부터 제거하며 재시도.
-  const work: Record<string, Session> = { ...sessions };
-  const recency = (v: Session) => v.subs.reduce((m, sub) => Math.max(m, sub.createdAt ?? 0), 0);
-  const removable = Object.keys(work)
-    .filter((k) => k !== REPO_KEY && k !== activeKey)
-    .sort((a, b) => recency(work[a]) - recency(work[b]));
-  for (const k of removable) { delete work[k]; if (write(work)) return; }
-  // 최후 — repo + 활성 세션만. 그래도 실패면 포기(이전 성공 저장분은 그대로 남음).
-  const minimal: Record<string, Session> = {};
-  if (work[REPO_KEY]) minimal[REPO_KEY] = work[REPO_KEY];
-  if (work[activeKey]) minimal[activeKey] = work[activeKey];
-  write(minimal);
 }
 
 // 세션 kind별 아이콘 — JSX 직접 반환(렌더 중 컴포넌트 변수 생성 회피: react-hooks/static-components).
@@ -145,7 +84,7 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
   }, [onOpenCard]);
   const confirm = useConfirm();
   const toast = useToast();
-  const store = `nunopi:ws-chat:${root}`;
+  const store = chatStoreKey(root);
   // #1125 레포 세션 이름은 저장값(만들 때 언어로 굳음) 대신 보여 줄 때 번역
   const labelOf = (kind: SessionKind, label: string) => (kind === "repo" ? t("workspace.chatRepo") : label);
 
@@ -213,6 +152,14 @@ export default function WorkspaceChat({ root, files, focus, prefill, changedFile
     ctxCache.current.clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- store 변경만 감지(t는 안정)
   }, [store]);
+
+  // #1326 바깥(그래프 노드 질문)이 같은 저장소에 쓰면 다시 읽음 — 안 그러면 다음 저장 때 내 상태로 덮어씀. 탭·활성은 그대로.
+  useEffect(() => {
+    const on = (e: Event) => { if ((e as CustomEvent<{ root?: string }>).detail?.root === root) setSessions(loadStore(store, t("workspace.chatRepo")).sessions); };
+    window.addEventListener(WS_CHAT_EVENT, on);
+    return () => window.removeEventListener(WS_CHAT_EVENT, on);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t는 안정
+  }, [root, store]);
 
   // 세션 변경 영속. deps에서 store 제외 — store 바뀐 렌더에 옛 sessions를 새 store 키에 쓰는 오염 방지.
   // (store는 클로저 현재값으로 씀. 첫 실행은 loaded===loaded라 idempotent.)
