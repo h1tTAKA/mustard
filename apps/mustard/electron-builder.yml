@@ -62,7 +62,9 @@ afterPack: electron/after-pack.cjs
 
 mac:
   category: public.app-category.developer-tools
-  # #1341 받아쓰기 — 없으면 macOS가 권한을 묻지 못하고 도우미를 죽임
+  # #1341 받아쓰기 — 마이크 권한 표시(보안 강화 모드에선 필수, 자식 도우미도 같은 것) + 사용 설명(없으면 macOS가 도우미를 죽임)
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     NSMicrophoneUsageDescription: "Mustard uses the microphone when you dictate a message to your agent."
     NSSpeechRecognitionUsageDescription: "Mustard turns your voice into text on this Mac when you dictate a message."
