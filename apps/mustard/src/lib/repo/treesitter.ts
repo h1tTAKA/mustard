@@ -55,7 +55,7 @@ const EXT_TO_GRAMMAR: Record<string, string> = {
   ".ts": "typescript", ".tsx": "tsx", ".js": "javascript", ".jsx": "javascript",
   ".mjs": "javascript", ".cjs": "javascript",
   ".py": "python", ".go": "go", ".java": "java", ".kt": "kotlin", ".kts": "kotlin",
-  ".cs": "c_sharp", ".rb": "ruby", ".rs": "rust", ".php": "php",
+  ".cs": "c_sharp", ".rs": "rust", ".php": "php", // .rb 없음 — 이 런타임(0.20)에서 ruby 문법 로드가 깨져 그래프 전체가 실패했음(#1331). import는 정규식
   ".c": "c", ".h": "c", ".cc": "cpp", ".cpp": "cpp", ".cxx": "cpp",
   ".hpp": "cpp", ".hh": "cpp", ".hxx": "cpp", ".swift": "swift",
 };
