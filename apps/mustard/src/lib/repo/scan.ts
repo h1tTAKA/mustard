@@ -2,6 +2,7 @@
 // 무시 디렉터리 제외 + 파일 수 상한(폭주 방지). import 파싱은 graph.ts에서.
 import { readdirSync, existsSync, statSync, type Dirent } from "node:fs";
 import { isConfigFile, CONFIG_MAX_BYTES } from "./configFiles.ts";
+import { graphMaxFiles, filePriority, LIMIT_DEFAULT } from "./graphLimit.ts";
 import { execFileSync } from "node:child_process";
 import { join, relative, sep } from "node:path";
 import { SUPPORTED_EXTS } from "./langs.ts"; // .ts 명시 — scan.check(strip-types)가 직접 로드(symbols.ts 관례)
@@ -66,8 +67,8 @@ const UNITY_ASSETS: ReadonlySet<string> = new Set(UNITY_ASSET_EXTS);
 // Godot 스크립트·씬·리소스(#1011) — project.godot 있는 폴더(Godot 루트)와 그 아래에서만(다른 레포 오인 방지, Unity와 같은 플래그 전파).
 const GODOT_FILES: ReadonlySet<string> = new Set(GODOT_FILE_EXTS);
 
-// 파일 수 상한 — 초대형 레포 방어(후속 최적화 전까지).
-export const MAX_FILES = 3000;
+// 파일 수 상한 — 기본값(#1338: 3000 → 20000). 실제 값은 설정(graphLimit.ts 서버 파일). scanAllFiles(파일 트리)는 이 기본값.
+export const MAX_FILES = LIMIT_DEFAULT;
 
 function ext(name: string): string {
   const i = name.lastIndexOf(".");
@@ -78,6 +79,7 @@ export interface ScanResult {
   root: string;
   files: string[];   // 레포 루트 기준 상대경로(POSIX 구분자 "/")
   capped: boolean;   // 상한에 걸려 잘렸으면 true
+  total?: number;    // #1338 상한 전 후보 파일 수(잘렸을 때 "N개 중 M개" 안내) — scanRepo만
   godotRoots?: string[]; // project.godot 있는 폴더들(레포 상대, 루트=""). res://의 기준(#1012 리뷰) — scanRepo만 채움
   engines: Engine[]; // 감지된 게임 엔진(#1003) — 레포 요약 등에 사용
 }
@@ -89,13 +91,14 @@ const GENERATED_RE = /\.(g|freezed|mocks|gr|config)\.dart$|\.pb(json|enum|server
 // #1335 설정 파일 — 이름 목록에 있고 1MiB 이하
 const isConfigOk = (full: string, rel: string) => { if (!isConfigFile(rel)) return false; try { return statSync(full).size <= CONFIG_MAX_BYTES; } catch { return false; } };
 
-export function scanRepo(root: string): ScanResult {
+export function scanRepo(root: string, opts?: { maxFiles?: number }): ScanResult {
   const files: string[] = [];
   const engines = new Set<Engine>();
   const godotRoots: string[] = [];
   let capped = false;
   const vis = gitVisible(root);
-  let cfgN = 0;
+  const cfgSet = new Set<string>();
+  const limit = opts?.maxFiles ?? graphMaxFiles(), HARD = limit * 5;
   const subs: string[] = [];
   const inSub = (rel: string) => subs.some((s) => rel === s || rel.startsWith(`${s}/`));
 
@@ -129,13 +132,21 @@ export function scanRepo(root: string): ScanResult {
         walk(full, inUnityAssets || (engine === "unity" && name.toLowerCase() === "assets"), godot);
       } else if (e.isFile() && (!vis || vis.files.has(relative(root, full).split(sep).join("/")) || inSub(relative(root, full).split(sep).join("/"))) && !GENERATED_RE.test(name) && (SUPPORTED.has(ext(name)) || isConfigOk(full, relative(root, full).split(sep).join("/")) || (inUnityAssets && UNITY_ASSETS.has(ext(name))) || (godot && GODOT_FILES.has(ext(name))))) {
         files.push(relative(root, full).split(sep).join("/"));
-        if (!SUPPORTED.has(ext(name)) && !UNITY_ASSETS.has(ext(name)) && !GODOT_FILES.has(ext(name))) cfgN++; // 설정 파일은 상한에 안 셈 — 소스 자리를 뺏지 않게(리뷰)
-        if (files.length - cfgN >= MAX_FILES) { capped = true; return; }
+        if (!SUPPORTED.has(ext(name)) && !UNITY_ASSETS.has(ext(name)) && !GODOT_FILES.has(ext(name))) cfgSet.add(files[files.length - 1]); // 설정 파일은 상한에 안 셈 — 소스 자리를 뺏지 않게(리뷰)
+        if (files.length - cfgSet.size >= HARD) { capped = true; return; } // 폭주 방어 — 상한의 5배까지만 모음
       }
     }
   };
   walk(root);
-  return { root, files, capped, engines: [...engines], godotRoots };
+  // #1338 상한을 넘으면 훑은 순서가 아니라 우선순위로 자름 — 소스 폴더 먼저, 테스트·예제·문서 나중(같은 순위는 원래 순서)
+  const code = files.filter((f) => !cfgSet.has(f));
+  const total = code.length;
+  if (code.length > limit) {
+    capped = true;
+    const keep = new Set(code.map((f, i) => ({ f, i, p: filePriority(f) })).sort((a, b) => a.p - b.p || a.i - b.i).slice(0, limit).map((x) => x.f));
+    return { root, files: files.filter((f) => cfgSet.has(f) || keep.has(f)), capped, total, engines: [...engines], godotRoots };
+  }
+  return { root, files, capped, total, engines: [...engines], godotRoots };
 }
 
 // 전체 파일(확장자 무관) — 워크스페이스 파일트리용(#647). IGNORE_DIRS·숨김 폴더는 제외하되

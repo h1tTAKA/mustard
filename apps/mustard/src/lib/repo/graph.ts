@@ -212,7 +212,7 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
     stats: {
       files: fileNodes.length,
       edges: allEdges.length,
-      scanned: scan.files.length,
+      scanned: scan.total ?? scan.files.length, // #1338 상한 전 후보 수(잘렸으면 files보다 큼)
       capped: scan.capped,
       reparsed,
     },
