@@ -86,3 +86,42 @@ export function codeKind(raw: string): CodeKind {
   }
   return isSym(s) ? "sym" : "plain";
 }
+
+// 툴팁용 세부 종류 — 색은 4가지 그대로, 마우스를 올리면 "메서드 호출"·"옵션"·"폴더"처럼 무엇인지 더 자세히(유저 요청).
+export type CodeSub =
+  | "file" | "fileLine" | "dir" | "url" | "route" | "path"
+  | "command" | "flag" | "redirect"
+  | "method" | "fn" | "type" | "const" | "keyword" | "annotation" | "tag" | "member" | "logic" | "snippet" | "name"
+  | "color" | "number" | "string" | "bool" | "buildVar";
+const HAN = /[가-힣ぁ-んァ-ン一-龥]/;
+export function codeSub(raw: string, kind: CodeKind = codeKind(raw)): CodeSub | null {
+  const s = raw.trim();
+  if (kind === "path") {
+    if (/:\/\//.test(s)) return "url";
+    if (/:\d+(-\d+)?$/.test(s)) return "fileLine";
+    if (/\/$/.test(s)) return "dir";
+    const last = s.split(/[\\/]/).pop() ?? s;
+    if (/\.[A-Za-z][\w]*$/.test(last) || /^\.[A-Za-z]/.test(last)) return "file";
+    if (s.startsWith("/") && !s.startsWith("/Users") && !s.startsWith("/tmp") && !s.startsWith("/private") && !s.startsWith("/dev")) return "route"; // /api/tasks 같은 주소 경로
+    return "path";
+  }
+  if (kind === "cmd") return /^-/.test(s) ? "flag" : /^\d?>/.test(s) ? "redirect" : "command";
+  if (kind === "val") {
+    if (/^#|^[0-9A-F]{6}([0-9A-F]{2})?$|^0x[0-9a-f]{6,8}$/i.test(s)) return "color";
+    if (/^-?\d|^0x/i.test(s) || s === "NaN") return "number";
+    if (/^\$\(/.test(s)) return "buildVar";
+    if (/^(true|false|null|nil|undefined|None|True|False)$/.test(s)) return "bool";
+    return "string";
+  }
+  if (kind !== "sym") return null;
+  if (/\(.*\)$/.test(s) && !/\s(===|!==|=>|&&|\|\|)\s/.test(s)) return /[\w)]\??\.[\w$]+\s*\(/.test(s) || s.startsWith(".") ? "method" : "fn";
+  if (/^@\w/.test(s)) return "annotation";
+  if (/^<\/?[A-Za-z]/.test(s) && s.endsWith(">")) return "tag";
+  if (KW.has(s)) return "keyword";
+  if (/\s/.test(s) && KW.has(s.split(/\s+/)[0]) && !HAN.test(s)) return "snippet";
+  if (/^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/.test(s)) return "const";
+  if (/^[A-Z][A-Za-z0-9]*(<.+>)?(\[\])?$/.test(s)) return "type";
+  if (/^\.?[A-Za-z_$][\w$]*(\??\.[A-Za-z_$][\w$]*)+$/.test(s) || /^\.[A-Za-z_$][\w$]*$/.test(s)) return "member";
+  if (/^[A-Za-z_$][\w$]*$/.test(s)) return "name";
+  return "logic"; // 연산자 식·스프레드·구조분해·속성: 값
+}

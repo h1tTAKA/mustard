@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, memo, useContext, useMemo, type ComponentProps } from "react";
-import { codeKind } from "../codeKind";
+import { codeKind, codeSub } from "../codeKind";
 import { useT } from "../i18n/I18nProvider";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -53,7 +53,7 @@ const EXTRA = { dart, dockerfile, scala, elixir, haskell, groovy, gradle, protob
 let highlight: ReturnType<typeof rehypeHighlight> | undefined;
 const highlightOnce = () => (highlight ??= rehypeHighlight({ detect: true, languages: { ...common, ...EXTRA }, subset: Object.keys(common), aliases: { xml: ["vue", "svelte"] } }));
 // #1325 인라인 코드 역할별 색 — `백틱` 조각을 모양으로 분류해 data-k를 붙임(색은 globals.css, 블록 코드 안은 CSS에서 제외).
-// 마우스를 올리면 무슨 종류인지(파일·경로/함수/타입/설정 키/값/키워드) 툴팁.
+// 마우스를 올리면(브라우저 기본 title, 약 1초 뒤) 세부 종류 툴팁 — 메서드 호출·함수 호출·명령어 옵션·폴더·색상 값 등(codeSub).
 const InPre = createContext(false); // 펜스 코드(<pre> 안)는 한 줄이라도 분류 안 함(리뷰)
 function Pre({ node: _node, ...rest }: ComponentProps<"pre"> & { node?: unknown }) {
   return <InPre.Provider value><pre {...rest} /></InPre.Provider>;
@@ -63,7 +63,9 @@ function InlineCode({ node: _node, className, children, ...rest }: ComponentProp
   const inPre = useContext(InPre);
   const text = typeof children === "string" ? children : Array.isArray(children) && children.every((c) => typeof c === "string") ? children.join("") : null;
   const k = !inPre && !className && text !== null && !text.includes("\n") ? codeKind(text) : "plain"; // 언어 클래스가 붙은 건 펜스 코드 → 분류 안 함
-  return k === "plain" ? <code className={className} {...rest}>{children}</code> : <code data-k={k} title={t(`code.kind.${k}`)} {...rest}>{children}</code>;
+  if (k === "plain") return <code className={className} {...rest}>{children}</code>;
+  const sub = codeSub(text as string, k); // 툴팁은 세부 종류("메서드 호출"·"명령어 옵션"…), 없으면 색 묶음 이름
+  return <code data-k={k} title={sub ? t(`code.sub.${sub}`) : t(`code.kind.${k}`)} {...rest}>{children}</code>;
 }
 export default memo(function Markdown({ children, className, onLink }: { children: string; className?: string; onLink?: (href: string) => boolean }) {
   const components = useMemo(() => ({
