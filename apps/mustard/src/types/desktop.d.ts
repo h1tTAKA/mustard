@@ -73,7 +73,7 @@ interface NunopiDesktopApi {
     stop(): Promise<boolean>;
     cancel(): Promise<boolean>;
     openSettings(which: "mic" | "speech"): Promise<void>;
-    onEvent(cb: (e: { type: "ready" | "level" | "partial" | "final" | "error" | "end"; text?: string; v?: number; code?: string | number; message?: string }) => void): () => void;
+    onEvent(cb: (e: { type: "ready" | "level" | "partial" | "final" | "error" | "end"; text?: string; v?: number; code?: string | number; signal?: string; message?: string }) => void): () => void;
   };
   detectAgents?(force?: boolean): Promise<{ ok: true; list: AgentDetect[] } | { ok: false; error: string }>;
   liftAgentArgs?(agent: string, args: string): Promise<{ choice: string; rest: string } | null>; // #1184

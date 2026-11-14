@@ -78,6 +78,7 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
   const [noteAction, setNoteAction] = useState<null | (() => void)>(null);
   const dictRef = useRef<Dict | null>(null);
   const pressAt = useRef(0);
+  const stoppingRef = useRef(false); // 확정·취소를 눌러서 끝난 건 오류로 안 보여 줌
   const heardAt = useRef(0);
   const startedAt = useRef(0);
   useEffect(() => { void window.nunopiDesktop?.dictation?.available().then(setCanDictate).catch(() => {}); }, []);
@@ -98,7 +99,7 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
       else if (e.type === "level") setLevels((l) => [...l.slice(-60), e.v ?? 0]);
       else if (e.type === "partial") { const n = { ...d, text: e.text ?? "" }; dictRef.current = n; setDict(n); heardAt.current = Date.now(); }
       else if (e.type === "final") endDict(e.text ?? d.text);
-      else if (e.type === "end") endDict(d.text);
+      else if (e.type === "end") { endDict(d.text); if (e.code !== 0 && !stoppingRef.current) setNote(t("achat.dictFail", { m: `helper exited (${e.code}${e.signal ? ` ${e.signal}` : ""})` })); }
       else if (e.type === "error") {
         endDict(d.text);
         const denied = String(e.code).startsWith("denied");
@@ -119,13 +120,13 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
     if (!api || dictRef.current) return;
     const caret = taRef.current?.selectionStart ?? input.length;
     const d: Dict = { phase: "starting", before: input.slice(0, caret), after: input.slice(caret), text: "" };
-    dictRef.current = d; setDict(d); setLevels([]); setNote(""); setNoteAction(null); setMenu(null);
+    dictRef.current = d; setDict(d); setLevels([]); setNote(""); setNoteAction(null); setMenu(null); stoppingRef.current = false;
     heardAt.current = startedAt.current = nowMs();
     const r = await api.start(DICT_LOCALE[locale] ?? "en-US");
     if (!r.ok) { endDict(null); setNote(t("achat.dictFail", { m: r.error ?? "" })); }
   };
-  const stopDict = () => void window.nunopiDesktop?.dictation?.stop();
-  const cancelDict = () => { if (!dictRef.current) return; endDict(null); void window.nunopiDesktop?.dictation?.cancel(); };
+  const stopDict = () => { stoppingRef.current = true; void window.nunopiDesktop?.dictation?.stop(); };
+  const cancelDict = () => { if (!dictRef.current) return; stoppingRef.current = true; endDict(null); void window.nunopiDesktop?.dictation?.cancel(); };
 
   useEffect(() => { taRef.current?.focus(); }, [meta.id]);
   // 편집(내 말 다시 쓰기)·대기열 편집으로 넘어온 글
