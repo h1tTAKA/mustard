@@ -4,7 +4,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join, posix } from "node:path";
 
-const CANDIDATE_EXTS = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".java", ".kt", ".rb", ".rs", ".php", ".cs", ".c", ".cc", ".cpp", ".swift", ".dart"];
+const CANDIDATE_EXTS = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".java", ".kt", ".rb", ".rs", ".php", ".cs", ".c", ".cc", ".cpp", ".swift", ".dart", ".m", ".mm", ".h", ".lua", ".ex", ".exs", ".zig", ".sol", ".scala", ".vue", ".svelte"];
 const INDEX_BASES = ["index.ts", "index.tsx", "index.js", "index.jsx", "__init__.py"];
 
 // tsconfig paths 별칭 규칙. pattern "@/*" → targets ["src/*","*"](baseUrl 기준 root-상대 접두).
@@ -178,7 +178,8 @@ export function dirIndex(files: string[], re: RegExp): Map<string, string[]> {
   }
   return m;
 }
-export const JVM_RE = /\.(java|kt|kts)$/i;
+export const JVM_RE = /\.(java|kt|kts|scala|sc)$/i;
+export const SWIFT_RE = /\.swift$/i;
 export const GO_RE = /\.go$/i;
 const noExt = (f: string) => f.replace(/\.[^./]+$/, "");
 
@@ -222,6 +223,18 @@ export function resolveDartPackage(spec: string, pkgs: Map<string, string>, file
   if (dir == null) return null;
   const p = (dir ? `${dir}/` : "") + `lib/${m[2]}`;
   return fileSet.has(p) ? p : null;
+}
+
+// #1331 Elixir `My.App.User` → 경로가 my/app/user.ex(s)로 끝나는 파일(lib/ 등 루트 무관). 못 찾으면 앞 조각을 떼며 재시도.
+export function resolveElixir(spec: string, files: string[]): string | null {
+  const snake = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+  const segs = spec.replace(/^ex:/, "").split(".").map(snake);
+  for (let i = 0; i < segs.length; i++) {
+    const tail = segs.slice(i).join("/");
+    const hit = files.find((f) => /\.exs?$/.test(f) && (noExt(f) === tail || noExt(f).endsWith(`/${tail}`)));
+    if (hit) return hit;
+  }
+  return null;
 }
 
 // go.mod `module github.com/x/y` → 모듈 경로.

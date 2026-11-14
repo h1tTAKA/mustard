@@ -19,6 +19,7 @@ const SYMBOL_KIND: Record<string, RepoNodeKind> = {
   impl_item: "class", trait_item: "class", interface_declaration: "class",
   enum_declaration: "class", enum_item: "class", object_declaration: "class",
   protocol_declaration: "class", module: "class",
+  class_interface: "class", class_implementation: "class", object_definition: "class", trait_definition: "class", contract_declaration: "class", // #1331 objc·scala·solidity
   // 타입 별칭
   type_alias_declaration: "type", type_spec: "type",
 };

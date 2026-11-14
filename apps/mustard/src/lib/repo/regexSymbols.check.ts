@@ -37,4 +37,12 @@ assert.equal(resolveDartPackage("package:app/a.dart", new Map([["app", ""]]), ne
 assert.equal(resolveDartPackage("package:app/a.dart", new Map([["app", "packages/core"]]), new Set(["packages/core/lib/a.dart"])), "packages/core/lib/a.dart");
 assert.equal(resolveDartPackage("package:flutter/material.dart", new Map(), new Set()), null);
 assert.equal(dartPackages("/nonexistent", ["lib/a.dart"]).size, 0);
+// #1331 언어 확장 추출기
+const ex = (f: string, t: string) => detectLang(f)!.extract(t);
+assert.deepEqual(ex("a.m", '#import "Foo.h"\n#import <UIKit/UIKit.h>\n'), ["./Foo.h"]);
+assert.deepEqual(ex("a.lua", 'local u = require("util.str")\nlocal v = require "x"\n'), ["util/str", "x"]);
+assert.deepEqual(ex("a.ex", "alias MyApp.Accounts.User\nalias MyApp.{A, B}\n"), ["ex:MyApp.Accounts.User", "ex:MyApp.A", "ex:MyApp.B"]);
+assert.deepEqual(ex("a.zig", 'const std = @import("std");\nconst m = @import("m.zig");\n'), ["./m.zig"]);
+assert.deepEqual(ex("a.vue", '<script setup lang="ts">\nimport { a } from "./a"\n</script>'), ["./a"]);
+assert.deepEqual(ex("a.scala", "import a.b.C\n"), ["a/b/C"]);
 console.log("regexSymbols ok");

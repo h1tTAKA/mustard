@@ -58,6 +58,8 @@ const EXT_TO_GRAMMAR: Record<string, string> = {
   ".cs": "c_sharp", ".rs": "rust", ".php": "php", // .rb 없음 — 이 런타임(0.20)에서 ruby 문법 로드가 깨져 그래프 전체가 실패했음(#1331). import는 정규식
   ".c": "c", ".h": "c", ".cc": "cpp", ".cpp": "cpp", ".cxx": "cpp",
   ".hpp": "cpp", ".hh": "cpp", ".hxx": "cpp", ".swift": "swift",
+  // #1331 이 런타임에서 열리는 것 확인된 문법(dart·ruby·elm은 안 열려 정규식)
+  ".m": "objc", ".mm": "objc", ".scala": "scala", ".sc": "scala", ".lua": "lua", ".ex": "elixir", ".exs": "elixir", ".zig": "zig", ".sol": "solidity", ".ml": "ocaml", ".sh": "bash", ".bash": "bash",
 };
 
 function extOf(file: string): string {
@@ -95,7 +97,8 @@ async function loadLanguage(grammar: string): Promise<Parser.Language> {
 
 // 소스 → 구문트리. 미지원 언어면 null. (파서는 매 호출 새로 — 언어 캐시가 무거운 부분.)
 export async function parseFile(text: string, file: string): Promise<{ tree: Parser.Tree; grammar: string } | null> {
-  const grammar = grammarForFile(file);
+  let grammar = grammarForFile(file);
+  if (grammar === "c" && /^\s*@(interface|protocol|implementation)\b/m.test(text)) grammar = "objc"; // #1331 .h가 Objective-C 헤더면
   if (!grammar) return null;
   await ensureInit();
   const lang = await loadLanguage(grammar);
