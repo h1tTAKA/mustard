@@ -1,16 +1,20 @@
 // 코드 그래프 파일 수 상한(#1338) — 서버 파일 하나가 기준(그래프 빌드·연결·요약·MCP가 모두 서버 scanRepo라 화면마다 다르면 캐시가 엇갈림).
 // 설정 화면은 /api/repo/codegraph/limit로 읽고 씀. 프로세스 메모리에 캐시(설정 바꾸면 바로 갱신).
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 
 export const LIMIT_DEFAULT = 20000, LIMIT_MIN = 500, LIMIT_MAX = 200000;
 const FILE = () => join(process.env.MUSTARD_CODEGRAPH_DIR || join(homedir(), ".nunopi", "codegraph"), "limit.json");
-const g = globalThis as unknown as { __mustardGraphLimit?: number };
+const g = globalThis as unknown as { __mustardGraphLimit?: number; __mustardGraphLimitAt?: number };
 export const clampLimit = (n: number) => Math.min(LIMIT_MAX, Math.max(LIMIT_MIN, Math.round(n)));
 
+// 파일 수정 시각이 바뀌면 다시 읽음 — MCP 같은 다른 프로세스가 오래 떠 있어도 설정 변경을 따라감(값이 엇갈리면 캐시가 서로 덮어씀, 리뷰)
 export function graphMaxFiles(): number {
-  if (g.__mustardGraphLimit == null) {
+  let at = 0;
+  try { at = statSync(FILE()).mtimeMs; } catch { /* 없음 = 기본 */ }
+  if (g.__mustardGraphLimit == null || g.__mustardGraphLimitAt !== at) {
+    g.__mustardGraphLimitAt = at;
     try { const n = Number(JSON.parse(readFileSync(FILE(), "utf8"))?.maxFiles); g.__mustardGraphLimit = Number.isFinite(n) ? clampLimit(n) : LIMIT_DEFAULT; } catch { g.__mustardGraphLimit = LIMIT_DEFAULT; }
   }
   return g.__mustardGraphLimit;
