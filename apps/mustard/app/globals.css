@@ -209,15 +209,15 @@ samp {
 .dark .nunopi-md hr { border-top-color: rgba(255,255,255,0.14); }
 .nunopi-md code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; background: rgba(0,0,0,0.06); padding: 0.1em 0.35em; border-radius: 0.35em; }
 .dark .nunopi-md code { background: rgba(255,255,255,0.1); }
-/* #1325 인라인 코드 역할별 색 약속 — 이해에 중요한 순 빨·노·초·파(유저 결정): 함수·메서드·로직(빨강) / 파일·경로(머스타드) / 명령어·옵션(초록) / 이름(변수·타입·멤버, 파랑). 값과 나머지는 기존 회색.
+/* #1325 인라인 코드 역할별 색 약속 — 유저 결정 색: 함수·메서드·로직(초록) / 파일·경로(머스타드) / 명령어·옵션(빨강) / 이름(변수·타입·멤버, 파랑). 값과 나머지는 기존 회색.
    :not(pre) > 로 블록 코드(펜스)는 제외. 글자색 + 같은 계열 옅은 배경(라이트·다크 대비 각각). */
-.nunopi-md :not(pre) > code[data-k="fn"] { color: #dc2626; background: rgba(239,68,68,0.10); }
+.nunopi-md :not(pre) > code[data-k="fn"] { color: #047857; background: rgba(16,185,129,0.12); }
 .nunopi-md :not(pre) > code[data-k="path"] { color: #92400e; background: rgba(212,160,23,0.14); }
-.nunopi-md :not(pre) > code[data-k="cmd"] { color: #047857; background: rgba(16,185,129,0.12); }
+.nunopi-md :not(pre) > code[data-k="cmd"] { color: #dc2626; background: rgba(239,68,68,0.10); }
 .nunopi-md :not(pre) > code[data-k="sym"] { color: #1d4ed8; background: rgba(59,130,246,0.12); }
-.dark .nunopi-md :not(pre) > code[data-k="fn"] { color: #fca5a5; background: rgba(248,113,113,0.14); }
+.dark .nunopi-md :not(pre) > code[data-k="fn"] { color: #6ee7b7; background: rgba(52,211,153,0.13); }
 .dark .nunopi-md :not(pre) > code[data-k="path"] { color: #f0c75e; background: rgba(232,185,58,0.14); }
-.dark .nunopi-md :not(pre) > code[data-k="cmd"] { color: #6ee7b7; background: rgba(52,211,153,0.13); }
+.dark .nunopi-md :not(pre) > code[data-k="cmd"] { color: #fca5a5; background: rgba(248,113,113,0.14); }
 .dark .nunopi-md :not(pre) > code[data-k="sym"] { color: #93c5fd; background: rgba(96,165,250,0.14); }
 /* #1326 코드 보기에서 고른 줄(CodePane line) — 머스타드 옅은 띠 */
 .code-line-focus { display: inline-block; min-width: 100%; background: rgba(232,185,58,0.18); }
