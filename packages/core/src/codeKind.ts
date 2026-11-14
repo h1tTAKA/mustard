@@ -103,7 +103,7 @@ export function codeSub(raw: string, kind: CodeKind = codeKind(raw)): CodeSub | 
     if (/\/$/.test(s)) return "dir";
     const last = s.split(/[\\/]/).pop() ?? s;
     if (/\.[A-Za-z][\w]*$/.test(last) || /^\.[A-Za-z]/.test(last)) return "file";
-    if (s.startsWith("/") && !FS_ROOT.has(s.split("/")[1] ?? "")) return "route"; // /api/tasks 같은 주소 경로(파일 시스템 루트는 제외 — 리뷰)
+    if (s.startsWith("/") && !(FS_ROOT.has(s.split("/")[1] ?? "") && s.split("/").filter(Boolean).length > 1)) return "route"; // /api/tasks 같은 주소 경로(파일 시스템 루트는 제외 — 리뷰)
     return "path";
   }
   if (kind === "cmd") return /^-/.test(s) ? "flag" : /^\d?>/.test(s) ? "redirect" : "command";
@@ -115,7 +115,10 @@ export function codeSub(raw: string, kind: CodeKind = codeKind(raw)): CodeSub | 
     return "string";
   }
   if (kind !== "sym") return null;
-  if (/\s/.test(s) && KW.has(s.split(/\s+/)[0]) && !HAN.test(s)) return "snippet"; // if (x)·catch (e)는 함수 호출이 아님(리뷰)
+  const call = s.replace(/^(await|return|yield|throw|new)\s+/, ""); // await fetchUser()·return api.get(x)는 호출로 봄(리뷰)
+  if (call === s && /\s/.test(s) && KW.has(s.split(/\s+/)[0]) && !HAN.test(s)) return "snippet"; // if (x)·catch (e)는 함수 호출이 아님(리뷰)
+  if (/^[\w$.?]+\s*\(.*\)$/.test(call) && !/\s(===|!==|=>|&&|\|\|)\s/.test(call)) { const head = call.slice(0, call.indexOf("(")); return /\.[\w$]+\s*$/.test(head) ? "method" : "fn"; }
+  if (call !== s) return "snippet";
   if (/\(.*\)$/.test(s) && !/\s(===|!==|=>|&&|\|\|)\s/.test(s)) { const head = s.slice(0, s.indexOf("(")); return /\.[\w$]+\s*$/.test(head) ? "method" : "fn"; } // 첫 괄호 앞만 봄 — setState(obj.run())는 함수(리뷰)
   if (/^@\w/.test(s)) return "annotation";
   if (/^<\/?[A-Za-z]/.test(s) && s.endsWith(">")) return "tag";

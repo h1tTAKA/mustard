@@ -27,7 +27,7 @@ const subs: [string, string | null][] = [
   ["gh run watch", "command"], ["--merge", "flag"], ["2>&1", "redirect"],
   ["src/a.ts", "file"], ["Info.plist:9", "fileLine"], ["lib/", "dir"], ["https://x.com/a", "url"], ["/api/tasks", "route"], ["src/lib", "path"], [".gitignore", "file"],
   ["#D1D6DB", "color"], ["D1D6DB", "color"], ["16px", "number"], ["\"玄関\"", "string"], ["false", "bool"], ["$(X)", "buildVar"], ["API", null],
-  ["100000", "number"], ["/usr/local/bin", "path"], ["/etc/hosts", "path"], ["if (x)", "snippet"], ["catch (e)", "snippet"], ["setState(obj.run())", "fn"], ["Text(user.name.toUpperCase())", "fn"], ["obj?.run()", "method"],
+  ["100000", "number"], ["/usr/local/bin", "path"], ["/etc/hosts", "path"], ["if (x)", "snippet"], ["catch (e)", "snippet"], ["setState(obj.run())", "fn"], ["Text(user.name.toUpperCase())", "fn"], ["obj?.run()", "method"], ["/home", "route"], ["/home/x", "path"], ["await api.get(x)", "method"], ["await fetchUser()", "fn"], ["return x", "snippet"],
 ];
 for (const [s, k] of subs) assert.equal(codeSub(s), k, s);
 console.log("codeKind ok");
