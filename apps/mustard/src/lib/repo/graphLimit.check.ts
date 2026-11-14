@@ -22,10 +22,11 @@ assert.equal(graphMaxFiles(), 1234);
 // 넘으면 소스 먼저 — 상한 3에 테스트·예제·기타·소스가 섞인 레포
 const r = mkdtempSync(join(tmpdir(), "glimit-repo-"));
 const put = (rel: string) => { const p = join(r, rel); mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, "export {}"); };
-for (const f of ["examples/e1.ts", "tests/t1.ts", "misc/m1.ts", "src/s1.ts", "src/s2.ts", "src/s1.test.ts", "package.json"]) put(f);
+for (const f of ["examples/e1.ts", "tests/t1.ts", "misc/m1.ts", "src/s1.ts", "src/s2.ts", "src/s1.test.ts", "package.json", "src/s3.ts", "src/s4.ts", "zz/pubspec.yaml"]) put(f);
 const s = scanRepo(r, { maxFiles: 3 });
 assert.ok(s.capped);
-assert.equal(s.total, 6);
-assert.deepEqual(s.files.filter((f) => f.endsWith(".ts")).sort(), ["misc/m1.ts", "src/s1.ts", "src/s2.ts"]);
-assert.ok(s.files.includes("package.json")); // 설정 파일은 상한 밖
+assert.equal(s.total, 8);
+assert.equal(s.files.filter((f) => f.endsWith(".ts")).length, 3);
+assert.ok(s.files.filter((f) => f.endsWith(".ts")).every((f) => f.startsWith("src/") && !f.includes(".test.")), s.files.join()); // 소스만
+assert.ok(s.files.includes("package.json") && s.files.includes("zz/pubspec.yaml")); // 설정 파일은 상한 밖 — 소스 통이 찬 뒤 것도(리뷰)
 console.log("graphLimit ok");

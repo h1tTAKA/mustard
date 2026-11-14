@@ -99,7 +99,7 @@ export function scanRepo(root: string, opts?: { maxFiles?: number }): ScanResult
   let capped = false;
   const vis = gitVisible(root);
   // #1338 우선순위 통(0 소스·1 기타·2 테스트/예제/문서)마다 상한 개수까지만 모음 — 끝까지 걸으며 전체 수는 정확히 세고, 메모리는 상한의 3배 이하.
-  // (전엔 상한 5배에서 걸음을 멈춰 뒤쪽 src가 빠지고 전체 수가 덜 세졌음, 리뷰.) 한계: 소스 통이 상한만큼 차거나 100만 개를 걸으면 멈춤(그때 전체 수는 거기까지 센 값).
+  // (전엔 상한 5배에서 걸음을 멈춰 뒤쪽 src가 빠지고 전체 수가 덜 세졌음, 리뷰.) 한계: 100만 개를 걸으면 멈춤(전체 수는 거기까지). 소스 통이 차도 설정 파일·엔진 정보 때문에 끝까지 걸음.
   const cfgList: string[] = [];
   const limit = opts?.maxFiles ?? graphMaxFiles();
   const buckets: [number, string][][] = [[], [], []];
@@ -139,7 +139,8 @@ export function scanRepo(root: string, opts?: { maxFiles?: number }): ScanResult
       } else if (e.isFile() && (!vis || vis.files.has(relative(root, full).split(sep).join("/")) || inSub(relative(root, full).split(sep).join("/"))) && !GENERATED_RE.test(name) && (SUPPORTED.has(ext(name)) || isConfigOk(full, relative(root, full).split(sep).join("/")) || (inUnityAssets && UNITY_ASSETS.has(ext(name))) || (godot && GODOT_FILES.has(ext(name))))) {
         const rel = relative(root, full).split(sep).join("/");
         if (!SUPPORTED.has(ext(name)) && !UNITY_ASSETS.has(ext(name)) && !GODOT_FILES.has(ext(name))) { cfgList.push(rel); continue; } // 설정 파일은 상한에 안 셈 — 소스 자리를 뺏지 않게(리뷰)
-        if (buckets[0].length >= limit || total >= WALK_MAX) { total++; capped = true; return; } // 소스 통이 이미 꽉 찼는데 파일이 더 있음 — 더 걸어도 남길 게 없어 멈춤(전체 수는 그때까지, 리뷰)
+        if (total >= WALK_MAX) { capped = true; return; } // 폭주 방어
+        if (buckets[0].length >= limit) { total++; continue; } // capped는 끝에서(total > limit) — 걷는 중 켜면 걷기가 멈춤 // 소스 통이 꽉 참 — 코드 파일은 세기만, 걷기는 계속(뒤쪽 설정 파일·엔진 정보는 모아야 함, 리뷰)
         total++;
         const b = buckets[filePriority(rel)];
         if (b.length < limit) b.push([seq++, rel]);
