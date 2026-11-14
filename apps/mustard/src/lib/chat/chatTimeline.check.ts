@@ -1,6 +1,6 @@
 // chatTimeline 점검 — node --experimental-strip-types src/lib/chat/chatTimeline.check.ts
 import assert from "node:assert";
-import { applyEvent, extractImages, type Timeline } from "./chatTimeline.ts";
+import { applyEvent, extractImages, itemsFromClaudeTranscript, type Timeline } from "./chatTimeline.ts";
 
 const saved: string[] = [];
 const save = (b64: string, mime: string) => { saved.push(`${mime}:${b64.length}`); return `img${saved.length}`; };
@@ -49,4 +49,22 @@ assert.deepStrictEqual(a.images, [{ base64: "QUJD", mime: "image/png" }]);
 const d = extractImages(`shot: data:image/png;base64,${"B".repeat(120)} done`);
 assert.strictEqual(d.text, "shot: [image] done"); assert.strictEqual(d.images.length, 1);
 assert.deepStrictEqual(extractImages("plain {not json"), { text: "plain {not json", images: [] });
+// 컨텍스트 사용량 — 입력 + 캐시 읽기·쓰기
+const t2: Timeline = { items: [], streaming: "", busy: true };
+applyEvent(t2, { type: "complete", data: { inputTokens: 10, cacheReadTokens: 1000, cacheWriteTokens: 90, contextWindow: 200000 } }, save);
+assert.deepStrictEqual([(t2.items[0] as { ctx?: number }).ctx, (t2.items[0] as { win?: number }).win], [1100, 200000]);
+
+// CLI 기록 가져오기 — 사람 말·답·도구·결과, 시스템 줄·사이드체인 뺌
+const L = (o: unknown) => JSON.stringify(o);
+const tr = itemsFromClaudeTranscript([
+  L({ type: "user", message: { content: "<command-name>/clear</command-name>" } }),
+  L({ type: "user", message: { content: "a.txt 읽어줘" } }),
+  L({ type: "assistant", message: { content: [{ type: "text", text: "읽을게요" }, { type: "tool_use", id: "u1", name: "Read", input: { file_path: "a.txt" } }] } }),
+  L({ type: "assistant", isSidechain: true, message: { content: "서브" } }),
+  L({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "u1", content: [{ type: "text", text: "hello" }] }] } }),
+  "{broken",
+  L({ type: "assistant", message: { content: [{ type: "text", text: "hello 래요" }] } }),
+], save);
+assert.deepStrictEqual(tr.map((i) => i.k), ["user", "text", "tool", "text"]);
+const rt = tr[2]; assert.ok(rt.k === "tool" && rt.result === "hello" && rt.input === '{"file_path":"a.txt"}');
 console.log("chatTimeline.check ok");

@@ -8,7 +8,7 @@ export type ChatItem =
   | { k: "text"; text: string }
   | { k: "tool"; id: string; name: string; input?: string; result?: string; error?: boolean; images?: string[] }
   | { k: "perm"; id: string; tool: string; input: string; state: "pending" | "allowed" | "denied" }
-  | { k: "done"; inTok?: number; outTok?: number; cost?: number; ms?: number }
+  | { k: "done"; inTok?: number; outTok?: number; cost?: number; ms?: number; ctx?: number; win?: number } // ctx = 이번 턴 입력 전체(캐시 포함), win = 컨텍스트 창
   | { k: "error"; text: string }
   | { k: "stopped" };
 
@@ -83,7 +83,8 @@ export function applyEvent(t: Timeline, ev: Record<string, unknown>, save: SaveI
     case "complete": {
       const ch = flush(); t.flushed = undefined; t.busy = false;
       const n = (k: string) => (typeof data[k] === "number" ? (data[k] as number) : undefined);
-      return { changed: [...ch, push({ k: "done", inTok: n("inputTokens"), outTok: n("outputTokens"), cost: n("costUsd"), ms: n("durationMs") })], delta: true };
+      const ctx = (n("inputTokens") ?? 0) + (n("cacheReadTokens") ?? 0) + (n("cacheWriteTokens") ?? 0);
+      return { changed: [...ch, push({ k: "done", inTok: n("inputTokens"), outTok: n("outputTokens"), cost: n("costUsd"), ms: n("durationMs"), ...(ctx ? { ctx } : {}), ...(n("contextWindow") ? { win: n("contextWindow") } : {}) })], delta: true };
     }
     case "interrupted": { const ch = flush(); t.flushed = undefined; t.busy = false; return { changed: [...ch, push({ k: "stopped" })], delta: true }; }
     case "error": {
@@ -93,4 +94,34 @@ export function applyEvent(t: Timeline, ev: Record<string, unknown>, save: SaveI
     }
     default: return { changed: [] }; // init·thinking·tool_use_delta·user_message(보낼 때 직접 넣음)·permission_needed(따로 받음)
   }
+}
+
+// Claude CLI 기록(jsonl 줄들) → 화면 항목 — 터미널에서 했던 대화를 채팅으로 가져올 때(#1341). 사이드체인·메타·시스템이 끼운 줄은 뺌.
+const SYSTEM_USER = /^(<|\[Request interrupted|Another Claude session sent a message|This session is being continued|Caveat:)/;
+export function itemsFromClaudeTranscript(lines: string[], save: SaveImage): ChatItem[] {
+  const items: ChatItem[] = [];
+  const toolAt = new Map<string, number>();
+  for (const line of lines) {
+    let o: Record<string, unknown>; try { o = JSON.parse(line); } catch { continue; }
+    if ((o.type !== "user" && o.type !== "assistant") || o.isSidechain || o.isMeta) continue;
+    const content = (o.message as { content?: unknown } | undefined)?.content;
+    const blocks = typeof content === "string" ? [{ type: "text", text: content }] : Array.isArray(content) ? (content as Record<string, unknown>[]) : [];
+    for (const b of blocks) {
+      if (b.type === "text" && typeof b.text === "string" && b.text.trim()) {
+        if (o.type === "user") { if (!SYSTEM_USER.test(b.text.trimStart())) items.push({ k: "user", text: b.text }); }
+        else items.push({ k: "text", text: b.text });
+      } else if (b.type === "tool_use") {
+        toolAt.set(String(b.id), items.length);
+        items.push({ k: "tool", id: String(b.id ?? ""), name: String(b.name ?? "tool"), input: cut(JSON.stringify(b.input ?? {}), INPUT_MAX) });
+      } else if (b.type === "tool_result") {
+        const at = toolAt.get(String(b.tool_use_id));
+        const it = at === undefined ? undefined : items[at];
+        if (!it || it.k !== "tool") continue;
+        const { text, images } = extractImages(typeof b.content === "string" ? b.content : JSON.stringify(b.content ?? ""));
+        const ids = images.map((im) => save(im.base64, im.mime)).filter(Boolean);
+        items[at!] = { ...it, result: cut(text, RESULT_MAX), ...(b.is_error ? { error: true } : {}), ...(ids.length ? { images: ids } : {}) };
+      }
+    }
+  }
+  return items;
 }
