@@ -16,7 +16,7 @@ const KW = new Set([
 
 // 터미널 명령 — 첫 단어가 흔한 CLI면 명령어(뒤에 인자가 붙어도). 한계: 목록에 없는 도구는 코드 이름으로 보임.
 // 변수·메서드 이름으로도 흔한 것(env·open·find…)은 뒤에 인자가 있을 때만 명령어(리뷰) — 혼자면 코드 이름.
-const CLI_AMBIG = new Set("open find head tail sort diff patch make source env which say tee echo cat kill touch go uv bundle gem".split(" "));
+const CLI_AMBIG = new Set("open find head tail sort diff patch make source env which say tee echo cat kill touch go uv bundle gem node zip pod tar ps cp mv wc".split(" "));
 const CLI = new Set(("git gh npm npx pnpm yarn bun node deno python python3 pip pip3 uv grep rg sed awk cat ls cd mkdir rm cp mv touch curl wget open echo "
   + "find head tail wc sort chmod chown kill pkill ps lsof brew flutter dart pod xcodebuild xcrun swift cargo rustc go docker kubectl tsc eslint jest vitest "
   + "playwright make expo rtk claude codex ssh scp tar zip unzip source sudo jq tee diff patch which env say ffmpeg gradle mvn rails bundle gem").split(" "));
@@ -94,6 +94,7 @@ export type CodeSub =
   | "method" | "fn" | "type" | "const" | "keyword" | "annotation" | "tag" | "member" | "logic" | "snippet" | "name"
   | "color" | "number" | "string" | "bool" | "buildVar";
 const HAN = /[가-힣ぁ-んァ-ン一-龥]/;
+const FS_ROOT = new Set("Users home tmp private dev usr etc opt var bin sbin Applications Library System Volumes mnt proc root srv".split(" "));
 export function codeSub(raw: string, kind: CodeKind = codeKind(raw)): CodeSub | null {
   const s = raw.trim();
   if (kind === "path") {
@@ -102,23 +103,23 @@ export function codeSub(raw: string, kind: CodeKind = codeKind(raw)): CodeSub | 
     if (/\/$/.test(s)) return "dir";
     const last = s.split(/[\\/]/).pop() ?? s;
     if (/\.[A-Za-z][\w]*$/.test(last) || /^\.[A-Za-z]/.test(last)) return "file";
-    if (s.startsWith("/") && !s.startsWith("/Users") && !s.startsWith("/tmp") && !s.startsWith("/private") && !s.startsWith("/dev")) return "route"; // /api/tasks 같은 주소 경로
+    if (s.startsWith("/") && !FS_ROOT.has(s.split("/")[1] ?? "")) return "route"; // /api/tasks 같은 주소 경로(파일 시스템 루트는 제외 — 리뷰)
     return "path";
   }
   if (kind === "cmd") return /^-/.test(s) ? "flag" : /^\d?>/.test(s) ? "redirect" : "command";
   if (kind === "val") {
-    if (/^#|^[0-9A-F]{6}([0-9A-F]{2})?$|^0x[0-9a-f]{6,8}$/i.test(s)) return "color";
+    if (/^#/.test(s) || /^0x[0-9a-f]{6,8}$/i.test(s) || (/^[0-9A-F]{6}([0-9A-F]{2})?$/.test(s) && /[A-F]/.test(s))) return "color"; // 숫자만(100000)은 숫자(리뷰)
     if (/^-?\d|^0x/i.test(s) || s === "NaN") return "number";
     if (/^\$\(/.test(s)) return "buildVar";
     if (/^(true|false|null|nil|undefined|None|True|False)$/.test(s)) return "bool";
     return "string";
   }
   if (kind !== "sym") return null;
-  if (/\(.*\)$/.test(s) && !/\s(===|!==|=>|&&|\|\|)\s/.test(s)) return /[\w)]\??\.[\w$]+\s*\(/.test(s) || s.startsWith(".") ? "method" : "fn";
+  if (/\s/.test(s) && KW.has(s.split(/\s+/)[0]) && !HAN.test(s)) return "snippet"; // if (x)·catch (e)는 함수 호출이 아님(리뷰)
+  if (/\(.*\)$/.test(s) && !/\s(===|!==|=>|&&|\|\|)\s/.test(s)) { const head = s.slice(0, s.indexOf("(")); return /\.[\w$]+\s*$/.test(head) ? "method" : "fn"; } // 첫 괄호 앞만 봄 — setState(obj.run())는 함수(리뷰)
   if (/^@\w/.test(s)) return "annotation";
   if (/^<\/?[A-Za-z]/.test(s) && s.endsWith(">")) return "tag";
   if (KW.has(s)) return "keyword";
-  if (/\s/.test(s) && KW.has(s.split(/\s+/)[0]) && !HAN.test(s)) return "snippet";
   if (/^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/.test(s)) return "const";
   if (/^[A-Z][A-Za-z0-9]*(<.+>)?(\[\])?$/.test(s)) return "type";
   if (/^\.?[A-Za-z_$][\w$]*(\??\.[A-Za-z_$][\w$]*)+$/.test(s) || /^\.[A-Za-z_$][\w$]*$/.test(s)) return "member";

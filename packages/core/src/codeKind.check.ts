@@ -7,7 +7,7 @@ const cases: [string, string][] = [
   ["ios/Runner/Info.plist:9", "path"], ["ios/Runner/Info.plist:29-36", "path"], ["lib/", "path"], ["Info.plist", "path"], ["main.dart", "path"], ["src/a.ts", "path"], ["app.tsx", "path"], ["App.js", "path"], ["path.ts", "path"], ["Button.js", "path"], ["next.config.js", "path"], ["express.js", "path"], ["app.log", "path"], ["app.env", "path"],
   ["src/lib", "path"], ["https://x.com/a", "path"], ["/api/tasks", "path"], [".gitignore", "path"], [".tsx", "path"], ["src\\a.ts", "path"],
   // 명령어·옵션
-  ["gh run watch", "cmd"], ["gh pr merge 65 --merge --delete-branch", "cmd"], ["--exit-status", "cmd"], ["--merge", "cmd"], ["-q", "cmd"], ["-i ''", "cmd"], ["grep", "cmd"], ["npm test", "cmd"], ["2>&1", "cmd"], [">/dev/null 2>&1", "cmd"], ["s/old/new/g", "cmd"], ["find . -name x", "cmd"], ["open", "sym"], ["env", "sym"], ["head", "sym"],
+  ["gh run watch", "cmd"], ["gh pr merge 65 --merge --delete-branch", "cmd"], ["--exit-status", "cmd"], ["--merge", "cmd"], ["-q", "cmd"], ["-i ''", "cmd"], ["grep", "cmd"], ["npm test", "cmd"], ["2>&1", "cmd"], [">/dev/null 2>&1", "cmd"], ["s/old/new/g", "cmd"], ["find . -name x", "cmd"], ["open", "sym"], ["env", "sym"], ["head", "sym"], ["node", "sym"], ["cp", "sym"], ["node --test", "cmd"],
   // 코드 이름 — 함수·변수·타입·키워드·상수는 한 색(유저 피드백: 같은 코드 이름이 제각각 색이던 것)
   ["application(_:didFinishLaunchingWithOptions:)", "sym"], ["testExample()", "sym"], ["GeneratedPluginRegistrant.register(with:)", "sym"], ["super.application(...)", "sym"], ["AppState.load()", "sym"], ["Color(0xFFD1D6DB)", "sym"], [".map(...)", "sym"],
   ["AppDelegate", "sym"], ["XCTestCase", "sym"], ["List<String>", "sym"], ["Record<string, string>", "sym"], ["MAX_FILES", "sym"], ["<key>", "sym"], ["<true/>", "sym"], ["<Text>", "sym"],
@@ -27,6 +27,7 @@ const subs: [string, string | null][] = [
   ["gh run watch", "command"], ["--merge", "flag"], ["2>&1", "redirect"],
   ["src/a.ts", "file"], ["Info.plist:9", "fileLine"], ["lib/", "dir"], ["https://x.com/a", "url"], ["/api/tasks", "route"], ["src/lib", "path"], [".gitignore", "file"],
   ["#D1D6DB", "color"], ["D1D6DB", "color"], ["16px", "number"], ["\"玄関\"", "string"], ["false", "bool"], ["$(X)", "buildVar"], ["API", null],
+  ["100000", "number"], ["/usr/local/bin", "path"], ["/etc/hosts", "path"], ["if (x)", "snippet"], ["catch (e)", "snippet"], ["setState(obj.run())", "fn"], ["Text(user.name.toUpperCase())", "fn"], ["obj?.run()", "method"],
 ];
 for (const [s, k] of subs) assert.equal(codeSub(s), k, s);
 console.log("codeKind ok");
