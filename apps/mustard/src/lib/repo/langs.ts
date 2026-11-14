@@ -132,6 +132,22 @@ function extractSwift(text: string): string[] {
   return specs;
 }
 
+// Dart(#1331) — `import/export/part 'x';`(조건부 import의 대체 경로도). `dart:`는 SDK라 버림, `package:`는 그대로(해석은 pubspec 이름),
+// 그 밖은 파일 기준 상대.
+function extractDart(text: string): string[] {
+  const specs: string[] = [];
+  const re = /^\s*(?:import|export|part(?:\s+of)?)\s+([^;]+);/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    for (const q of m[1].matchAll(/['"]([^'"]+)['"]/g)) {
+      const s = q[1];
+      if (s.startsWith("dart:")) continue;
+      specs.push(s.startsWith("package:") || s.startsWith(".") || s.startsWith("/") ? s : "./" + s);
+    }
+  }
+  return specs;
+}
+
 export const LANGS: LangDef[] = [
   { lang: "ts/js", exts: [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"], extract: extractTsJs },
   { lang: "python", exts: [".py"], extract: extractPython },
@@ -144,6 +160,7 @@ export const LANGS: LangDef[] = [
   { lang: "php", exts: [".php"], extract: extractPhp },
   { lang: "c/c++", exts: [".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx"], extract: extractC },
   { lang: "swift", exts: [".swift"], extract: extractSwift },
+  { lang: "dart", exts: [".dart"], extract: extractDart },
 ];
 
 const EXT_TO_LANG = new Map<string, LangDef>();

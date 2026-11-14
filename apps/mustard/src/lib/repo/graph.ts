@@ -11,7 +11,7 @@ import { fileHash, fileSig, type FileCache, type ParsedFile } from "./incrementa
 import { readFileCache, writeFileCache } from "./graphStore";
 
 // import 해석(상대 + tsconfig 별칭 + baseUrl)은 경량 모듈 imports.ts로 분리.
-import { resolveImport, resolvePythonBare, loadAliases, dirIndex, resolveJvmImport, resolveGoImport, goModulePath, JVM_RE, GO_RE } from "./imports";
+import { resolveImport, resolvePythonBare, loadAliases, dirIndex, resolveJvmImport, resolveGoImport, goModulePath, dartPackages, resolveDartPackage, JVM_RE, GO_RE } from "./imports";
 import { godotEdges, isGodotFile } from "./godotAssets";
 import { isUnityAsset, underUnityAssets, unityGuidRefs, unityMetaGuid, unityRelation } from "./unityAssets";
 import { csharpNamespaceAt, csharpTypeRefs, isEngineStub, stripCsharp, type TypeDef } from "./typeRefs";
@@ -38,6 +38,7 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
   const goDirs = dirIndex(scan.files, GO_RE);
   let goModule: string | null = null;
   if (goDirs.size) { try { goModule = goModulePath(readFileSync(join(root, "go.mod"), "utf8")); } catch { /* go.mod 없음 */ } }
+  const dartPkgs = dartPackages(root, scan.files); // #1331 package:이름/ → 그 패키지 lib/
 
   const fileNodes: RepoNode[] = [];
   const symbolNodes: RepoNode[] = [];
@@ -78,7 +79,8 @@ export async function buildRepoGraph(root: string, pre?: ScanResult): Promise<Re
       const isJvm = JVM_RE.test(file), isGo = GO_RE.test(file);
       const seenT = new Set<string>();
       for (const spec of specs) {
-        const one = resolveImport(spec, file, fileSet, alias ?? undefined) ?? (file.endsWith(".py") ? resolvePythonBare(spec, file, fileSet) : null);
+        const one = spec.startsWith("package:") ? resolveDartPackage(spec, dartPkgs, fileSet)
+          : resolveImport(spec, file, fileSet, alias ?? undefined) ?? (file.endsWith(".py") ? resolvePythonBare(spec, file, fileSet) : null);
         // #1023 상대·별칭으로 못 풀면 JVM FQN / Go 모듈 경로(패키지=폴더 → 여러 파일)
         const ts = one ? [one] : isJvm ? resolveJvmImport(spec, jvmDirs) : isGo ? resolveGoImport(spec, goModule, goDirs) : [];
         for (const target of ts) {

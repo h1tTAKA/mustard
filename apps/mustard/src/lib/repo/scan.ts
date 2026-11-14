@@ -79,6 +79,9 @@ export interface ScanResult {
 }
 
 // root 아래 지원 파일을 재귀 수집. IGNORE_DIRS·숨김폴더 제외, MAX_FILES 상한.
+// #1331 코드 생성기 산출물(사람이 안 쓰는 파일) — 그래프에서 뺌. Dart build_runner·freezed·mockito, protobuf.
+const GENERATED_RE = /\.(g|freezed|mocks|gr|config)\.dart$|\.pb(json|enum|server)?\.dart$|_pb2(_grpc)?\.py$|\.pb\.go$/i;
+
 export function scanRepo(root: string): ScanResult {
   const files: string[] = [];
   const engines = new Set<Engine>();
@@ -109,7 +112,7 @@ export function scanRepo(root: string): ScanResult {
         if (dotnet && DOTNET_IGNORE.has(name.toLowerCase())) continue; // .NET obj/bin(#1007)
         if (vis && !vis.dirs.has(relative(root, full).split(sep).join("/"))) continue; // git이 안 보는 폴더(무시됨) — 통째로 건너뜀
         walk(full, inUnityAssets || (engine === "unity" && name.toLowerCase() === "assets"), godot);
-      } else if (e.isFile() && (!vis || vis.files.has(relative(root, full).split(sep).join("/"))) && (SUPPORTED.has(ext(name)) || (inUnityAssets && UNITY_ASSETS.has(ext(name))) || (godot && GODOT_FILES.has(ext(name))))) {
+      } else if (e.isFile() && (!vis || vis.files.has(relative(root, full).split(sep).join("/"))) && !GENERATED_RE.test(name) && (SUPPORTED.has(ext(name)) || (inUnityAssets && UNITY_ASSETS.has(ext(name))) || (godot && GODOT_FILES.has(ext(name))))) {
         files.push(relative(root, full).split(sep).join("/"));
         if (files.length >= MAX_FILES) { capped = true; return; }
       }

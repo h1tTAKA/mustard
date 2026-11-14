@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 
-const CANDIDATE_EXTS = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".java", ".kt", ".rb", ".rs", ".php", ".cs", ".c", ".cc", ".cpp", ".swift"];
+const CANDIDATE_EXTS = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".java", ".kt", ".rb", ".rs", ".php", ".cs", ".c", ".cc", ".cpp", ".swift", ".dart"];
 const INDEX_BASES = ["index.ts", "index.tsx", "index.js", "index.jsx", "__init__.py"];
 
 // tsconfig paths 별칭 규칙. pattern "@/*" → targets ["src/*","*"](baseUrl 기준 root-상대 접두).
@@ -122,6 +122,26 @@ export function resolveJvmImport(spec: string, jvmDirs: Map<string, string[]>): 
     if (hit) return [hit];
   }
   return [];
+}
+
+// Dart(#1331) — 레포 안 패키지 이름 → 패키지 폴더. `<폴더>/lib/` 아래 dart 파일이 있는 폴더의 pubspec.yaml `name:`(모노레포 여러 패키지).
+export function dartPackages(root: string, files: string[]): Map<string, string> {
+  const dirs = new Set<string>();
+  for (const f of files) { if (!f.endsWith(".dart")) continue; const i = f.startsWith("lib/") ? 0 : f.indexOf("/lib/"); if (i >= 0) dirs.add(i === 0 ? "" : f.slice(0, i)); }
+  const out = new Map<string, string>();
+  for (const d of dirs) {
+    try { const name = /^name:\s*([\w-]+)/m.exec(readFileSync(join(root, d, "pubspec.yaml"), "utf8"))?.[1]; if (name) out.set(name, d); } catch { /* pubspec 없음 */ }
+  }
+  return out;
+}
+// `package:이름/경로.dart` → `<패키지 폴더>/lib/경로.dart`(레포 밖 패키지면 null).
+export function resolveDartPackage(spec: string, pkgs: Map<string, string>, fileSet: Set<string>): string | null {
+  const m = /^package:([\w-]+)\/(.+)$/.exec(spec);
+  if (!m) return null;
+  const dir = pkgs.get(m[1]);
+  if (dir == null) return null;
+  const p = (dir ? `${dir}/` : "") + `lib/${m[2]}`;
+  return fileSet.has(p) ? p : null;
 }
 
 // go.mod `module github.com/x/y` → 모듈 경로.
