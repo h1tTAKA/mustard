@@ -132,6 +132,7 @@ export default function RepoGraphViewer({ root, files, providerId, providerSetti
         const d = await r.json().catch(() => null);
         if (!alive) return;
         if (!r.ok || !d?.graph) { setErr(d?.error ? String(d.error) : `HTTP ${r.status}`); return; }
+        if (!(d.graph as RepoGraph).nodes.some((n) => n.id === k?.selected)) skipSelSync.current = false; // 되살릴 노드가 다시 빌드돼 없어졌으면 다음 클릭을 삼키지 않게(리뷰)
         setGraph(d.graph as RepoGraph); setGraphOf(root); setBuiltAt(typeof d.builtAt === "number" ? d.builtAt : null);
       } catch (e) { if (alive) setErr(e instanceof Error ? e.message : String(e)); }
       finally { if (alive) setLoading(false); }
