@@ -52,8 +52,9 @@ export default function ChatPane({ cwd, modeToggle, initial }: { cwd: string; mo
     return () => { alive = false; };
   }, [cwd]);
   useEffect(() => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) setInstalled(new Set(r.list.filter((a) => a.status === "ok" && agentEnabled(a.id)).map((a) => a.id))); }).catch(() => {}); }, []);
+  const initUsed = useRef(false); // 시작 고르기의 실행 AI·모델·첫 메시지는 첫 채팅에만(다 닫은 뒤 새로 생길 땐 안 씀, 리뷰)
   const autoMade = useRef(false); // 하나도 없으면 바로 하나(한 번만 — 개발 모드 이펙트 두 번·느린 응답에 둘 생기지 않게)
-  useEffect(() => { if (chats && !chats.length && !autoMade.current) { autoMade.current = true; void create(initial?.provider ?? firstProvider, undefined, initial?.model, initial?.text).finally(() => { autoMade.current = false; }); } }, [chats, create, firstProvider, initial]); // 시작 고르기에서 고른 실행 AI·모델로
+  useEffect(() => { if (chats && !chats.length && !autoMade.current) { autoMade.current = true; const init = initUsed.current ? undefined : initial; initUsed.current = true; void create(init?.provider ?? firstProvider, undefined, init?.model, init?.text).finally(() => { autoMade.current = false; }); } }, [chats, create, firstProvider, initial]); // 시작 고르기에서 고른 실행 AI·모델로
   const list = chats ?? [];
   const active = list.find((c) => c.id === activeId) ?? list[list.length - 1];
   useEffect(() => { try { if (active) localStorage.setItem(activeKey, active.id); } catch { /* 저장 못 해도 동작 */ } }, [active, activeKey]);

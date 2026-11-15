@@ -25,7 +25,7 @@ export type ChatMode = "plan" | "default" | "full";
 export const asProvider = (v: unknown): ChatProvider => (CHAT_PROVIDERS.includes(v as ChatProvider) ? (v as ChatProvider) : "claude-code");
 const AGENT_ID: Record<ChatProvider, string> = { "claude-code": "claude", codex: "codex", opencode: "opencode", grok: "grok", cursor: "cursor" };
 const asMode = (v: unknown): ChatMode => (v === "plan" || v === "full" ? v : "default");
-export interface ChatMeta { id: string; title: string; provider: ChatProvider; model: string; effort?: number; mode: ChatMode; createdAt: number; updatedAt: number; busy: boolean; archived: boolean; count: number; cc?: string }
+export interface ChatMeta { id: string; title: string; provider: ChatProvider; model: string; effort?: number; mode: ChatMode; createdAt: number; updatedAt: number; busy: boolean; archived: boolean; count: number; cc?: string; handedOff?: boolean }
 export type ChatPush =
   | { type: "snapshot"; items: ChatItem[]; streaming: string; busy: boolean; title: string; provider: ChatProvider }
   | { type: "item"; i: number; item: ChatItem }
@@ -130,7 +130,7 @@ export function defaultModel(p: ChatProvider): string {
   if (p === "claude-code") return CLAUDE_LATEST[0].id;
   return p === "grok" ? "grok-build" : p === "cursor" ? "auto" : defaultSnaModel(p); // 비우면 SNA가 Claude 모델을 넣어 다른 AI가 바로 실패(Crew와 같은 이유)
 }
-const metaOf = (c: Chat): ChatMeta => ({ id: c.id, title: c.title, provider: c.provider, model: c.model || defaultModel(c.provider), ...(c.effort !== undefined ? { effort: c.effort } : {}), mode: c.mode, createdAt: c.createdAt, updatedAt: c.updatedAt, busy: c.tl.busy, archived: !!c.archived, count: c.tl.items.filter((i) => i.k === "user").length, ...(c.cc ? { cc: c.cc } : {}) });
+const metaOf = (c: Chat): ChatMeta => ({ id: c.id, title: c.title, provider: c.provider, model: c.model || defaultModel(c.provider), ...(c.effort !== undefined ? { effort: c.effort } : {}), mode: c.mode, createdAt: c.createdAt, updatedAt: c.updatedAt, busy: c.tl.busy, archived: !!c.archived, count: c.tl.items.filter((i) => i.k === "user").length, ...(c.cc ? { cc: c.cc } : {}), ...(c.handedOff ? { handedOff: true } : {}) });
 // 열린 탭(보관 안 된 것, 만든 순)
 export function listChats(root: string): ChatMeta[] {
   load(root);
@@ -196,6 +196,14 @@ export function reopenChat(root: string, id: string): ChatMeta | null {
   const c = g.chats.get(id);
   if (!c || c.root !== root) return null;
   c.archived = false; persist(c, true);
+  return metaOf(c);
+}
+// 터미널로 넘긴 대화를 다시 채팅에서 — 사람이 터미널 쪽을 끝냈다고 고른 것
+export function resumeHere(root: string, id: string): ChatMeta | null {
+  load(root);
+  const c = g.chats.get(id);
+  if (!c || c.root !== root) return null;
+  c.handedOff = false; persist(c, true);
   return metaOf(c);
 }
 export async function deleteChat(root: string, id: string): Promise<boolean> {

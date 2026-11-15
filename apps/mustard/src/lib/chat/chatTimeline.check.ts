@@ -57,6 +57,14 @@ applyEvent(t3, { type: "tool_result", message: "ok", data: { toolUseId: "r1" } }
 applyEvent(t3, { type: "assistant", message: "다 읽었어요. 결과는 이래요" }, save);
 assert.deepStrictEqual(t3.items.map((i) => (i.k === "text" ? i.text : i.k)), ["먼저 읽어 볼게요", "tool", "다 읽었어요. 결과는 이래요"]);
 
+// 짧은 앞글이 뒤 글 앞부분과 같아도 도구 결과가 온 뒤면 덮지 않음(재리뷰)
+const t4: Timeline = { items: [], streaming: "", busy: true };
+applyEvent(t4, { type: "assistant_delta", delta: "네." }, save);
+applyEvent(t4, { type: "tool_use", data: { toolName: "Read", id: "r2" } }, save);
+applyEvent(t4, { type: "tool_result", message: "ok", data: { toolUseId: "r2" } }, save);
+applyEvent(t4, { type: "assistant", message: "네. 결과는 이래요" }, save);
+assert.deepStrictEqual(t4.items.map((i) => (i.k === "text" ? i.text : i.k)), ["네.", "tool", "네. 결과는 이래요"]);
+
 // 컨텍스트 사용량 — 입력 + 캐시 읽기·쓰기
 const t2: Timeline = { items: [], streaming: "", busy: true };
 applyEvent(t2, { type: "complete", data: { inputTokens: 10, cacheReadTokens: 1000, cacheWriteTokens: 90, contextWindow: 200000 } }, save);

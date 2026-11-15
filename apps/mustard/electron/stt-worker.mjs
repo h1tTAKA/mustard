@@ -23,7 +23,7 @@ process.stdin.on("data", (b) => {
   chunks.push(f); samples += n;
 });
 
-let lastLen = 0;
+let lastLen = 0, gen = 0; // gen = 받아쓰기 세대(새로 시작·취소마다 +1) — 늦게 끝난 옛 디코딩이 새 소리를 건드리지 않게(리뷰)
 // 앞에서 n개 샘플을 버림(창 확정 때 — 그 사이 들어온 소리는 다음 창으로)
 function dropFront(n) {
   while (n > 0 && chunks.length) { const c = chunks[0]; if (c.length <= n) { chunks.shift(); n -= c.length; samples -= c.length; } else { chunks[0] = c.subarray(n); samples -= n; n = 0; } }
@@ -41,8 +41,10 @@ async function decode() {
 }
 async function step(final) {
   if (decoding) await decoding;
+  const my = gen;
   decoding = (async () => {
     const text = await decode();
+    if (my !== gen) return ""; // 그 사이 취소·새 시작 — 버림
     if (final || samples >= WINDOW) { committed = join2(committed, text); dropFront(lastLen); decodedAt = 0; return committed; } // 디코딩 중 들어온 소리는 남김(리뷰)
     decodedAt = samples;
     return join2(committed, text);
@@ -67,14 +69,14 @@ process.on("message", async (m) => {
       }
       send({ type: "loaded" });
     } else if (m.type === "start") {
-      active = true; committed = ""; chunks = []; samples = 0; decodedAt = 0; leftover = Buffer.alloc(0); language = m.language || "";
+      gen++; active = true; committed = ""; chunks = []; samples = 0; decodedAt = 0; leftover = Buffer.alloc(0); language = m.language || "";
     } else if (m.type === "finish") {
       active = false;
       const text = await step(true);
       send({ type: "final", text });
       committed = "";
     } else if (m.type === "cancel") {
-      active = false; committed = ""; chunks = []; samples = 0;
+      gen++; active = false; committed = ""; chunks = []; samples = 0;
     }
   } catch (e) { active = false; send({ type: "error", message: String(e?.message || e) }); }
 });

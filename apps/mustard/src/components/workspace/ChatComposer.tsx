@@ -12,7 +12,7 @@ import { AgentLogo, type AgentId } from "@/components/workspace/AgentLogo";
 
 export type Provider = "claude-code" | "codex" | "opencode" | "grok" | "cursor";
 export type Mode = "plan" | "default" | "full";
-export interface Meta { id: string; title: string; provider: Provider; model: string; effort?: number; mode: Mode; createdAt: number; updatedAt: number; busy: boolean; archived: boolean; count: number; cc?: string }
+export interface Meta { id: string; title: string; provider: Provider; model: string; effort?: number; mode: Mode; createdAt: number; updatedAt: number; busy: boolean; archived: boolean; count: number; cc?: string; handedOff?: boolean }
 export const PROVIDERS: { id: Provider; agent: AgentId; label: string }[] = [
   { id: "claude-code", agent: "claude", label: "Claude Code" }, { id: "codex", agent: "codex", label: "Codex" },
   { id: "opencode", agent: "opencode", label: "OpenCode" }, { id: "grok", agent: "grok", label: "Grok" }, { id: "cursor", agent: "cursor", label: "Cursor" },
@@ -146,8 +146,9 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
     if (keyHeld.current) return; // 누르고 있는 동안 오는 키 반복은 무시(리뷰)
     keyHeld.current = true;
     const wasOn = !!dictRef.current;
-    const up = () => { window.removeEventListener("keyup", up, true); keyHeld.current = false; if (!wasOn && voiceMode === "hold") stopDict(); };
+    const up = () => { window.removeEventListener("keyup", up, true); window.removeEventListener("blur", up); keyHeld.current = false; if (!wasOn && voiceMode === "hold") stopDict(); };
     window.addEventListener("keyup", up, true);
+    window.addEventListener("blur", up); // 누르는 중 권한 창·⌘Tab으로 포커스가 빠지면 keyup이 안 옴(리뷰)
     if (wasOn) stopDict(); else void startDict();
   });
 

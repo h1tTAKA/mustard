@@ -333,6 +333,14 @@ export default function ChatSession({ root, meta, providers, onMeta, onAppComman
           </div>
         )}
         {note && <p className="mb-1.5 px-1 text-xs text-red-600 dark:text-red-400">{note}</p>}
+        {meta.handedOff && (
+          <div className="mb-2 flex items-center gap-2 rounded-lg border border-mustard-400/40 bg-mustard-500/[.06] px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300">
+            <IconTerminal2 size={14} stroke={1.8} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
+            <span className="min-w-0 flex-1">{t("achat.handedOffBanner")}</span>
+            <button type="button" onClick={async () => { const r = await post("/api/chat/sessions", { root, op: "resume-here", id }); if (r?.ok && r.chat) onMeta(r.chat as Meta); }}
+              className="shrink-0 rounded-md px-2 py-0.5 font-medium text-mustard-700 hover:bg-mustard-500/10 dark:text-mustard-300">{t("achat.resumeHere")}</button>
+          </div>
+        )}
         {/* 권한 묻기 — 입력 카드 자리에 카드로(답하면 타임라인엔 한 줄 기록). Esc = 거절 */}
         {pendingPerm ? (
           <div className="rounded-lg border border-black/[.11] bg-white px-4 py-3 shadow-xs dark:border-white/[.09] dark:bg-white/[.04]" tabIndex={-1}
