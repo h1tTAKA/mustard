@@ -259,7 +259,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
 
   // #1027 터미널 탭 단축키 — 보이는(활성) 레포의 터미널 패널만 처리, 아니면 false로 다른 레포에 넘김.
   useShortcut(["term.new", "term.newAgent", "term.close", "term.next", "term.prev", ...Array.from({ length: 9 }, (_, i) => `term.goto${i + 1}`)], (d) => {
-    if (!paneActive || !tabs.length) return false;
+    if (!paneActive || !tabs.length || mode === "chat" || starting) return false; // 채팅 모드에선 안 보이는 터미널 탭을 건드리지 않음(리뷰)
     const i = Math.max(0, tabs.findIndex((x) => x.id === activeId));
     if (d.id === "term.new") addTab();
     else if (d.id === "term.newAgent") launchDefaultAgent();

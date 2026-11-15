@@ -23,10 +23,16 @@ process.stdin.on("data", (b) => {
   chunks.push(f); samples += n;
 });
 
+let lastLen = 0;
+// 앞에서 n개 샘플을 버림(창 확정 때 — 그 사이 들어온 소리는 다음 창으로)
+function dropFront(n) {
+  while (n > 0 && chunks.length) { const c = chunks[0]; if (c.length <= n) { chunks.shift(); n -= c.length; samples -= c.length; } else { chunks[0] = c.subarray(n); samples -= n; n = 0; } }
+}
 const windowPcm = () => { const out = new Float32Array(samples); let o = 0; for (const c of chunks) { out.set(c, o); o += c.length; } return out; };
 const join2 = (a, b) => (!a ? b : !b ? a : /[぀-ヿ㐀-鿿]$/.test(a) ? a + b : `${a} ${b}`);
 async function decode() {
   const pcm = windowPcm();
+  lastLen = pcm.length;
   if (pcm.length < RATE / 4) return "";
   const langs = model.capabilities.languages ?? [];
   const lang = language && (langs.find((c) => c === language) ?? langs.find((c) => c.startsWith(`${language}-`)));
@@ -37,7 +43,7 @@ async function step(final) {
   if (decoding) await decoding;
   decoding = (async () => {
     const text = await decode();
-    if (final || samples >= WINDOW) { committed = join2(committed, text); chunks = []; samples = 0; decodedAt = 0; return committed; }
+    if (final || samples >= WINDOW) { committed = join2(committed, text); dropFront(lastLen); decodedAt = 0; return committed; } // 디코딩 중 들어온 소리는 남김(리뷰)
     decodedAt = samples;
     return join2(committed, text);
   })();

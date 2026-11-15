@@ -80,6 +80,7 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
   const [noteAction, setNoteAction] = useState<null | (() => void)>(null);
   const dictRef = useRef<Dict | null>(null);
   const pressAt = useRef(0);
+  const keyHeld = useRef(false);
   const stoppingRef = useRef(false); // 확정·취소를 눌러서 끝난 건 오류로 안 보여 줌
   const heardAt = useRef(0);
   const startedAt = useRef(0);
@@ -142,9 +143,12 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
   // 받아쓰기 단축키(설정 > 단축키 chat.dictate, 기본 ⌘D) — 이 입력창에 커서가 있거나 받아쓰는 중일 때만. 길게 누르기 모드는 키를 떼면 넣음
   useShortcut(["chat.dictate"], () => {
     if (!dictateOk || (document.activeElement !== taRef.current && !dictRef.current)) return false;
-    if (dictRef.current) { stopDict(); return; }
-    void startDict();
-    if (voiceMode === "hold") { const up = () => { window.removeEventListener("keyup", up, true); stopDict(); }; window.addEventListener("keyup", up, true); }
+    if (keyHeld.current) return; // 누르고 있는 동안 오는 키 반복은 무시(리뷰)
+    keyHeld.current = true;
+    const wasOn = !!dictRef.current;
+    const up = () => { window.removeEventListener("keyup", up, true); keyHeld.current = false; if (!wasOn && voiceMode === "hold") stopDict(); };
+    window.addEventListener("keyup", up, true);
+    if (wasOn) stopDict(); else void startDict();
   });
 
   useEffect(() => { taRef.current?.focus(); }, [meta.id]);

@@ -60,7 +60,9 @@ export function applyEvent(t: Timeline, ev: Record<string, unknown>, save: SaveI
     case "assistant_delta": t.streaming += str(ev.delta); return { changed: [], delta: true };
     case "assistant": {
       if (!msg.trim()) return { changed: [] };
-      if (t.flushed !== undefined && t.items[t.flushed]?.k === "text") { const i = t.flushed; t.items[i] = { k: "text", text: msg }; t.flushed = undefined; t.streaming = ""; return { changed: [i], delta: true }; }
+      // 도구 앞에서 굳힌 글의 전체본일 때만 그 자리를 덮음(앞부분이 같음) — 아니면 새 글(도구 뒤 글이 앞 글을 지우지 않게, 리뷰)
+      const fl = t.flushed !== undefined ? t.items[t.flushed] : undefined;
+      if (fl?.k === "text" && msg.trimStart().startsWith(fl.text.trim().slice(0, 40))) { const i = t.flushed!; t.items[i] = { k: "text", text: msg }; t.flushed = undefined; t.streaming = ""; return { changed: [i], delta: true }; }
       t.streaming = ""; t.flushed = undefined;
       return { changed: [push({ k: "text", text: msg })], delta: true };
     }

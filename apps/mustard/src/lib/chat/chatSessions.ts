@@ -7,7 +7,7 @@
 // 실행 AI = SNA 런타임 5종(Claude Code·Codex·OpenCode·Grok·Cursor). 모델은 SNA listModels, 생각 강도는 reasoningLevel(0~5),
 // 권한 모드 = plan(Claude만) / default(Crew 정책, 나머지 카드) / full(전부 허용). 탭 닫기 = 보관(기록 패널에서 다시 엶), 지우기는 따로.
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { getSnaClient } from "@mustard/core/sna";
@@ -37,10 +37,12 @@ interface Chat {
   model?: string; effort?: number; mode: ChatMode; archived?: boolean;
   sid?: string; cc?: string; token: string; tl: Timeline; // cc = Claude CLI 대화 id(init 이벤트) — 재시작 뒤 --resume
   stopping?: boolean; // 멈춤을 눌렀음 — 실측: 끊기면 interrupted 대신 error("Unknown error")가 옴 → 멈춤으로 표시
-  pending?: { permId: string; resolve: (ok: boolean) => void };
+  pending: Map<string, (ok: boolean) => void>; // 사람 답을 기다리는 권한 카드(permId별 — 병렬 도구가 둘 다 물어도 각자 카드)
+  handedOff?: boolean; // 터미널로 넘김 — 같은 대화를 두 프로세스가 쓰지 않게 채팅에서 보내기 막음
+  starting?: Promise<void>; // 에이전트 띄우는 중(겹친 보내기가 세션을 또 만들지 않게)
 }
-type G = { chats: Map<string, Chat>; bySid: Map<string, string>; subs: Map<string, Set<(p: ChatPush) => void>>; loaded: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; subscribed: Set<string>; wired: boolean };
-const g = ((globalThis as unknown as { __mustardChat?: G }).__mustardChat ??= { chats: new Map(), bySid: new Map(), subs: new Map(), loaded: new Set(), flush: new Map(), subscribed: new Set(), wired: false });
+type G = { chats: Map<string, Chat>; bySid: Map<string, string>; subs: Map<string, Set<(p: ChatPush) => void>>; loaded: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; subscribed: Set<string>; wired: boolean; wiring?: Promise<void> };
+const g = ((globalThis as unknown as { __mustardChat?: G }).__mustardChat ??= { chats: new Map(), bySid: new Map(), subs: new Map(), loaded: new Set(), flush: new Map(), subscribed: new Set(), wired: false } as G);
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 32);
 const baseDir = () => process.env.MUSTARD_CHAT_DIR || join(homedir(), ".nunopi", "chat");
@@ -74,7 +76,7 @@ function persist(c: Chat, now = false) {
     if (!g.chats.has(c.id)) return; // 닫힌 탭
     const d = rootDir(c.root); mkdirSync(d, { recursive: true });
     const f = join(d, `${c.id}.json`);
-    writeFileSync(`${f}.tmp`, JSON.stringify({ id: c.id, root: c.root, cwd: c.cwd, provider: c.provider, model: c.model, effort: c.effort, mode: c.mode, archived: c.archived, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt, sid: c.sid, cc: c.cc, items: c.tl.items }));
+    writeFileSync(`${f}.tmp`, JSON.stringify({ id: c.id, root: c.root, cwd: c.cwd, provider: c.provider, model: c.model, effort: c.effort, mode: c.mode, archived: c.archived, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt, sid: c.sid, cc: c.cc, handedOff: c.handedOff, items: c.tl.items }));
     renameSync(`${f}.tmp`, f);
   };
   const t = g.flush.get(c.id);
@@ -92,7 +94,7 @@ function load(root: string) {
       if (!ID_RE.test(j.id) || g.chats.has(j.id)) continue;
       // 앱이 꺼졌다 켜지면 기다리던 권한 요청은 끝난 것 — 거절로 표시
       const items = (Array.isArray(j.items) ? j.items : []).map((it: ChatItem) => (it.k === "perm" && it.state === "pending" ? { ...it, state: "denied" } : it));
-      g.chats.set(j.id, { id: j.id, root, cwd: j.cwd || root, provider: asProvider(j.provider), model: typeof j.model === "string" ? j.model : undefined, effort: typeof j.effort === "number" ? j.effort : undefined, mode: asMode(j.mode), archived: !!j.archived, title: String(j.title ?? ""), createdAt: Number(j.createdAt) || 0, updatedAt: Number(j.updatedAt) || Number(j.createdAt) || 0, sid: j.sid, cc: typeof j.cc === "string" ? j.cc : undefined, token: randomUUID(), tl: { items, streaming: "", busy: false } });
+      g.chats.set(j.id, { id: j.id, root, cwd: j.cwd || root, provider: asProvider(j.provider), model: typeof j.model === "string" ? j.model : undefined, effort: typeof j.effort === "number" ? j.effort : undefined, mode: asMode(j.mode), archived: !!j.archived, title: String(j.title ?? ""), createdAt: Number(j.createdAt) || 0, updatedAt: Number(j.updatedAt) || Number(j.createdAt) || 0, sid: j.sid, cc: typeof j.cc === "string" ? j.cc : undefined, token: randomUUID(), pending: new Map(), handedOff: !!j.handedOff, tl: { items, streaming: "", busy: false } });
       if (j.sid) g.bySid.set(j.sid, j.id);
     } catch { /* 깨진 파일은 건너뜀 */ }
   }
@@ -111,6 +113,7 @@ export function subscribe(root: string, id: string, f: (p: ChatPush) => void): (
 }
 function pushItem(c: Chat, item: ChatItem) { c.tl.items.push(item); const i = c.tl.items.length - 1; emit(c.id, { type: "item", i, item }); return i; }
 function setItem(c: Chat, i: number, item: ChatItem) { c.tl.items[i] = item; emit(c.id, { type: "item", i, item }); }
+function denyAll(c: Chat) { for (const done of [...c.pending.values()]) done(false); }
 function setBusy(c: Chat, busy: boolean) { if (c.tl.busy !== busy) { c.tl.busy = busy; emit(c.id, { type: "busy", busy }); } }
 
 // ── 목록·만들기·닫기 ────────────────────────────────────────────────
@@ -141,7 +144,7 @@ export function historyChats(root: string): ChatMeta[] {
 export function createChat(root: string, provider: ChatProvider, opts: { model?: string; effort?: number; mode?: ChatMode } = {}): ChatMeta {
   load(root);
   const now = Date.now();
-  const c: Chat = { id: randomUUID(), root, cwd: root, provider, model: opts.model, effort: opts.effort, mode: opts.mode ?? "default", title: "", createdAt: now, updatedAt: now, token: randomUUID(), tl: { items: [], streaming: "", busy: false } };
+  const c: Chat = { id: randomUUID(), root, cwd: root, provider, model: opts.model, effort: opts.effort, mode: opts.mode ?? "default", title: "", createdAt: now, updatedAt: now, token: randomUUID(), pending: new Map(), tl: { items: [], streaming: "", busy: false } };
   g.chats.set(c.id, c);
   persist(c, true);
   return metaOf(c);
@@ -181,7 +184,7 @@ export async function closeChat(root: string, id: string): Promise<boolean> {
   load(root);
   const c = g.chats.get(id);
   if (!c || c.root !== root) return false;
-  c.pending?.resolve(false);
+  denyAll(c);
   if (!c.tl.items.length) return deleteChat(root, id); // 빈 채팅은 남길 것 없음
   c.archived = true;
   await killAgent(c);
@@ -199,7 +202,7 @@ export async function deleteChat(root: string, id: string): Promise<boolean> {
   load(root);
   const c = g.chats.get(id);
   if (!c || c.root !== root) return false;
-  c.pending?.resolve(false);
+  denyAll(c);
   await killAgent(c);
   g.chats.delete(id); g.subs.delete(id);
   rmSync(join(rootDir(root), `${id}.json`), { force: true });
@@ -216,14 +219,19 @@ export async function handoffChat(root: string, id: string): Promise<{ provider:
   load(root);
   const c = g.chats.get(id);
   if (!c || c.root !== root) return null;
-  c.pending?.resolve(false);
+  denyAll(c);
   await killAgent(c);
+  c.handedOff = true;
   persist(c, true);
   return { provider: c.provider, ...(c.cc ? { cc: c.cc } : {}) };
 }
 
 // ── 터미널(CLI)에서 했던 Claude 대화 가져오기 ─────────────────────────
 const CC_RE = /^[a-f0-9-]{36}$/;
+function readTail(file: string, n: number): string {
+  const fd = openSync(file, "r");
+  try { const size = fstatSync(fd).size, buf = Buffer.alloc(Math.min(n, size)); readSync(fd, buf, 0, buf.length, size - buf.length); return buf.toString("utf8"); } finally { closeSync(fd); }
+}
 function readHead(file: string, n: number): string {
   const fd = openSync(file, "r");
   try { const buf = Buffer.alloc(n); const got = readSync(fd, buf, 0, n, 0); return buf.subarray(0, got).toString("utf8"); } finally { closeSync(fd); }
@@ -247,12 +255,19 @@ export function listCliSessions(root: string): { id: string; title: string; mtim
 export function importCliSession(root: string, cc: string): ChatMeta | null {
   if (!CC_RE.test(cc)) return null;
   load(root);
+  const dup = [...g.chats.values()].find((c) => c.root === root && c.cc === cc); // 두 번 가져와도 채팅은 하나(같은 대화를 둘이 resume하지 않게, 리뷰)
+  if (dup) { dup.archived = false; persist(dup, true); return metaOf(dup); }
   let lines: string[];
-  try { lines = readFileSync(join(projectDirFor(root), `${cc}.jsonl`), "utf8").split("\n"); } catch { return null; }
+  try {
+    const f = join(projectDirFor(root), `${cc}.jsonl`);
+    const size = statSync(f).size, MAX = 30 * 1024 * 1024;
+    // 기록이 크면 뒤쪽(최근) 30MB만 — 통째로 읽다 메모리가 터지지 않게(리뷰). 잘린 첫 줄은 버림
+    lines = size > MAX ? readTail(f, MAX).split("\n").slice(1) : readFileSync(f, "utf8").split("\n");
+  } catch { return null; }
   const items = itemsFromClaudeTranscript(lines, saveImage);
   const first = items.find((i) => i.k === "user");
   const now = Date.now();
-  const c: Chat = { id: randomUUID(), root, cwd: root, provider: "claude-code", mode: "default", cc, title: first && first.k === "user" ? first.text.replace(/\s+/g, " ").trim().slice(0, 40) : "CLI", createdAt: now, updatedAt: now, token: randomUUID(), tl: { items, streaming: "", busy: false } };
+  const c: Chat = { id: randomUUID(), root, cwd: root, provider: "claude-code", mode: "default", cc, title: first && first.k === "user" ? first.text.replace(/\s+/g, " ").trim().slice(0, 40) : "CLI", createdAt: now, updatedAt: now, token: randomUUID(), pending: new Map(), tl: { items, streaming: "", busy: false } };
   g.chats.set(c.id, c);
   persist(c, true);
   return metaOf(c); // 다음 보내기 때 --resume cc 로 이어 시작
@@ -268,14 +283,16 @@ export async function listModels(p: ChatProvider): Promise<ModelInfo[]> {
   // Claude: 최신을 앞에, SNA 목록의 별칭(opus·sonnet·haiku — 이름이 옛 버전으로 붙어 헷갈림)은 빼고 나머지는 옛 모델로 뒤에
   if (p === "claude-code") models = [...CLAUDE_LATEST, ...models.filter((m) => !/^(opus|sonnet|haiku)$/.test(m.id) && !CLAUDE_LATEST.some((x) => x.id === m.id)).map((m) => ({ ...m, legacy: true }))];
   if (!models.some((m) => m.id === defaultModel(p))) models.unshift({ id: defaultModel(p), label: defaultModel(p) });
-  modelCache.set(p, { at: Date.now(), models });
+  if (r && !r.error) modelCache.set(p, { at: Date.now(), models }); // 실패·부분 결과는 캐시 안 함(리뷰)
   return models;
 }
 
 // ── 에이전트 ────────────────────────────────────────────────────────
-async function wire() {
-  if (g.wired) return;
-  g.wired = true;
+function wire(): Promise<void> {
+  g.wiring ??= wireOnce().catch((e) => { g.wiring = undefined; throw e; }); // 실패하면 다음 보내기 때 다시(리뷰: 영영 안 붙던 문제)
+  return g.wiring;
+}
+async function wireOnce() {
   const sna = await getSnaClient();
   sna.agent.onEvent(({ session, event, isHistory }) => {
     if (isHistory) return;
@@ -287,7 +304,7 @@ async function wire() {
     if (c.stopping && ev.type === "error") ev = { type: "interrupted" };
     if (ev.type === "complete" || ev.type === "interrupted" || ev.type === "error") c.stopping = false;
     const r = applyEvent(c.tl, ev, saveImage);
-    observeChat(c.id, c.cwd, AGENT_ID[c.provider as ChatProvider], ev); // 캐치업 실시간 해설(터미널과 같은 narrate)
+    observeChat(c.id, c.cwd, AGENT_ID[c.provider], ev); // 캐치업 실시간 해설(터미널과 같은 narrate)
     for (const i of r.changed) emit(c.id, { type: "item", i, item: c.tl.items[i] });
     if (r.delta) emit(c.id, { type: "delta", streaming: c.tl.streaming });
     if (wasBusy !== c.tl.busy) emit(c.id, { type: "busy", busy: c.tl.busy });
@@ -296,7 +313,8 @@ async function wire() {
   // Codex(SNA 승인 흐름) — 정책으로 바로 답하거나 채팅 카드로 사람에게
   sna.agent.onPermissionRequest(({ session, request }) => {
     const c = g.chats.get(g.bySid.get(session) ?? "");
-    if (!c || c.pending) return; // 이미 사람 답을 기다리는 중 — SNA 응답엔 요청 id가 없어 그 요청 답이 먼저(Crew와 같은 이유)
+    if (!c) return;
+    if (c.pending.size) { void sna.agent.respondPermission(session, false).catch(() => {}); return; } // SNA 응답엔 요청 id가 없어 먼저 온 카드가 우선 — 겹친 요청은 거절(매달리지 않게, 리뷰)
     const { tool, input } = fromAgentRequest((request ?? {}) as Record<string, unknown>);
     void ask(c, tool, input).then((ok) => sna.agent.respondPermission(session, ok)).catch(() => {});
   });
@@ -307,7 +325,6 @@ async function wire() {
 function ask(c: Chat, tool: string, input: Record<string, unknown>): Promise<boolean> {
   if (c.mode === "full") return Promise.resolve(true); // 전부 허용 모드
   if (decide(tool, input, c.cwd, readPerms()) === "allow") return Promise.resolve(true);
-  if (c.pending) return Promise.resolve(false);
   const permId = randomUUID();
   const i = pushItem(c, { k: "perm", id: permId, tool, input: JSON.stringify(input).slice(0, 2000), state: "pending" });
   persist(c);
@@ -315,32 +332,36 @@ function ask(c: Chat, tool: string, input: Record<string, unknown>): Promise<boo
     const timer = setTimeout(() => done(false), 10 * 60_000);
     const done = (ok: boolean) => {
       clearTimeout(timer);
-      if (c.pending?.permId === permId) c.pending = undefined;
+      c.pending.delete(permId);
       const it = c.tl.items[i];
       if (it?.k === "perm" && it.id === permId) { setItem(c, i, { ...it, state: ok ? "allowed" : "denied" }); persist(c); }
       res(ok);
     };
-    c.pending = { permId, resolve: done };
+    c.pending.set(permId, done);
   });
 }
 export function answerPermission(root: string, id: string, permId: string, allow: boolean): boolean {
   const c = g.chats.get(id);
-  if (!c || c.root !== root || c.pending?.permId !== permId) return false;
-  c.pending.resolve(allow);
+  const done = c?.root === root ? c.pending.get(permId) : undefined;
+  if (!done) return false;
+  done(allow);
   return true;
 }
 // Claude 훅 창구 — 탭마다 무작위 토큰으로만 통과
 export async function hookDecision(id: string, token: string, tool: string, input: Record<string, unknown>): Promise<{ decision: "allow" | "deny"; reason?: string }> {
   const c = g.chats.get(id);
   if (!c || c.token !== token) return { decision: "deny", reason: "unknown chat" };
-  if (c.pending) return { decision: "deny", reason: "another permission is pending" };
   return (await ask(c, tool, input)) ? { decision: "allow" } : { decision: "deny", reason: "The user denied this action" };
 }
 
 const safeOrigin = (o: string) => (/^http:\/\/(127\.0\.0\.1|localhost):\d{2,5}$/.test(o) ? o : `http://127.0.0.1:${Number(process.env.PORT) || 59720}`);
 
 // 살아 있는 에이전트 확보 — 없으면(첫 보내기·앱 재시작 뒤) SNA 세션을 만들거나 저장된 대화로 이어 시작.
-async function ensureAgent(c: Chat, origin: string) {
+function ensureAgent(c: Chat, origin: string): Promise<void> {
+  c.starting ??= ensureAgentOnce(c, origin).finally(() => { c.starting = undefined; }); // 겹친 보내기는 같은 시작을 기다림(리뷰)
+  return c.starting;
+}
+async function ensureAgentOnce(c: Chat, origin: string) {
   await wire();
   const sna = await getSnaClient();
   const isClaude = c.provider === "claude-code";
@@ -372,6 +393,7 @@ export async function sendChat(root: string, id: string, text: string, images: {
   load(root);
   const c = g.chats.get(id);
   if (!c || c.root !== root) return { ok: false, error: "unknown chat" };
+  if (c.handedOff) return { ok: false, error: "handed-off" }; // 터미널에서 이어 하는 중 — 같은 기록 파일에 둘이 쓰면 꼬임
   const ids = images.map((im) => saveImage(im.base64, im.mime)).filter(Boolean);
   pushItem(c, { k: "user", text, ...(ids.length ? { images: ids } : {}) });
   c.updatedAt = Date.now(); c.archived = false;
@@ -392,7 +414,7 @@ export async function sendChat(root: string, id: string, text: string, images: {
 export async function stopChat(root: string, id: string): Promise<boolean> {
   const c = g.chats.get(id);
   if (!c || c.root !== root) return false;
-  c.pending?.resolve(false);
+  denyAll(c);
   if (c.tl.busy) c.stopping = true;
   const r = c.sid ? await (await getSnaClient()).agent.interrupt(c.sid).catch(() => null) : null;
   if (!r || r.status === "no_session") { if (c.tl.busy) { c.stopping = false; pushItem(c, { k: "stopped" }); setBusy(c, false); persist(c); } } // 에이전트가 없으면 멈춤 이벤트가 안 옴 — 직접 표시

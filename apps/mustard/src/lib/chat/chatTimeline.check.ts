@@ -49,6 +49,14 @@ assert.deepStrictEqual(a.images, [{ base64: "QUJD", mime: "image/png" }]);
 const d = extractImages(`shot: data:image/png;base64,${"B".repeat(120)} done`);
 assert.strictEqual(d.text, "shot: [image] done"); assert.strictEqual(d.images.length, 1);
 assert.deepStrictEqual(extractImages("plain {not json"), { text: "plain {not json", images: [] });
+// 도구 뒤 다른 글이 오면 도구 앞 글을 덮지 않음(리뷰)
+const t3: Timeline = { items: [], streaming: "", busy: true };
+applyEvent(t3, { type: "assistant_delta", delta: "먼저 읽어 볼게요" }, save);
+applyEvent(t3, { type: "tool_use", data: { toolName: "Read", id: "r1" } }, save);
+applyEvent(t3, { type: "tool_result", message: "ok", data: { toolUseId: "r1" } }, save);
+applyEvent(t3, { type: "assistant", message: "다 읽었어요. 결과는 이래요" }, save);
+assert.deepStrictEqual(t3.items.map((i) => (i.k === "text" ? i.text : i.k)), ["먼저 읽어 볼게요", "tool", "다 읽었어요. 결과는 이래요"]);
+
 // 컨텍스트 사용량 — 입력 + 캐시 읽기·쓰기
 const t2: Timeline = { items: [], streaming: "", busy: true };
 applyEvent(t2, { type: "complete", data: { inputTokens: 10, cacheReadTokens: 1000, cacheWriteTokens: 90, contextWindow: 200000 } }, save);

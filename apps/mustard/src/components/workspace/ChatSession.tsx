@@ -116,18 +116,21 @@ export default function ChatSession({ root, meta, providers, onMeta, onAppComman
     if (scrollOn) stick.current = true;
     setNote("");
     const r = await post("/api/chat/send", { root, id, text, images: images.map(({ base64, mime }) => ({ base64, mime })) });
-    if (!r?.ok && r?.error) setNote(String(r.error));
-  }, [root, id, scrollOn]);
+    if (!r?.ok && r?.error) setNote(r.error === "handed-off" ? t("achat.handedOff") : String(r.error));
+  }, [root, id, scrollOn, t]);
   // 일하는 중이면 대기열(⌘Enter면 바로) — 쉬게 되면 맨 앞 하나를 보냄
   const onSend = (text: string, images: Img[], immediate: boolean) => {
     if (busy && !immediate && queueOn) { setQueue((q) => [...q, { id: ++qid.current, text, images }]); return; }
     void sendNow(text, images);
   };
+  const flushing = useRef(false); // 대기열에서 하나 보냄 → 일 시작(busy)이 올 때까지 다음 것은 기다림(리뷰: 둘이 한 턴에 붙던 문제)
+  useEffect(() => { if (busy) flushing.current = false; }, [busy]);
   useEffect(() => {
-    if (busy || !queue.length || items === null) return;
+    if (busy || flushing.current || !queue.length || items === null) return;
     const [head, ...rest] = queue;
-    setQueue(rest); // eslint-disable-line react-hooks/set-state-in-effect -- 쉬게 되면 대기열 맨 앞을 보냄
-    void sendNow(head.text, head.images);
+    flushing.current = true;
+    setQueue(rest); // 쉬게 되면 대기열 맨 앞을 보냄
+    void sendNow(head.text, head.images).then(() => { setTimeout(() => { flushing.current = false; }, 15_000); }); // busy가 끝내 안 오면(보내기 실패) 15초 뒤 풀림
   }, [busy, queue, items, sendNow]);
   const stop = () => void post("/api/chat/stop", { root, id });
   const answer = (permId: string, allow: boolean) => void post("/api/chat/answer", { root, id, permId, allow });

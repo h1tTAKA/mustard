@@ -61,7 +61,7 @@ function start(wc, opts) {
     createInterface({ input: p.stdout }).on("line", (l) => { if (proc !== p) return; try { send(JSON.parse(l)); } catch { /* 깨진 줄 */ } });
   }
   // 권한 설명이 없거나 TCC가 막으면 시그널로 죽음 — 화면이 기다리지 않게 end로 알림. 로컬은 녹음이 끝나면 일꾼에게 확정을 맡김(end는 final 뒤에)
-  p.on("exit", (code, sig) => {
+  p.on("close", (code, sig) => { // exit는 stdout을 다 읽기 전에 올 수 있음 — 마지막 소리까지 일꾼에 넘긴 뒤 확정(리뷰)
     if (proc !== p) return;
     proc = null;
     if (useLocal && local && code === 0) { worker?.send({ type: "finish" }); return; }
