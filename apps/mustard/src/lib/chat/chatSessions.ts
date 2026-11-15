@@ -116,9 +116,12 @@ function setBusy(c: Chat, busy: boolean) { if (c.tl.busy !== busy) { c.tl.busy =
 // ── 목록·만들기·닫기 ────────────────────────────────────────────────
 // Claude 최신 모델 — SNA 고정 목록은 옛 버전(Opus 4.7 등)이라 앞에 직접 둠(실측 11-14: CLI 2.1.325에서 이 id로 실행됨, opus 별칭 = claude-opus-5-5).
 // 한계: 새 모델이 나오면 여기 갱신.
-const CLAUDE_LATEST = [
-  { id: "claude-opus-5-5", label: "Claude Opus 5.5" }, { id: "claude-fable-5-2", label: "Claude Fable 5.2" },
-  { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5" }, { id: "claude-haiku-5-5", label: "Claude Haiku 5.5" },
+export interface ModelInfo { id: string; label: string; description?: string; legacy?: boolean }
+const CLAUDE_LATEST: ModelInfo[] = [
+  { id: "claude-opus-5-5", label: "Claude Opus 5.5", description: "Complex coding and everyday work" },
+  { id: "claude-fable-5-2", label: "Claude Fable 5.2", description: "Hardest, longest-running problems" },
+  { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", description: "Fast and efficient for simpler tasks" },
+  { id: "claude-haiku-5-5", label: "Claude Haiku 5.5", description: "Quickest answers" },
 ];
 export function defaultModel(p: ChatProvider): string {
   if (p === "claude-code") return CLAUDE_LATEST[0].id;
@@ -256,14 +259,14 @@ export function importCliSession(root: string, cc: string): ChatMeta | null {
 }
 
 // 모델 목록(SNA listModels) — 실행 AI마다 10분 캐시
-const modelCache = new Map<string, { at: number; models: { id: string; label: string }[] }>();
-export async function listModels(p: ChatProvider): Promise<{ id: string; label: string }[]> {
+const modelCache = new Map<string, { at: number; models: ModelInfo[] }>();
+export async function listModels(p: ChatProvider): Promise<ModelInfo[]> {
   const hit = modelCache.get(p);
   if (hit && Date.now() - hit.at < 10 * 60_000) return hit.models;
   const r = await (await getSnaClient()).agent.listModels(p, {}).catch(() => null);
-  let models = (r?.models ?? []).filter((m) => !m.deprecated).map((m) => ({ id: m.id, label: m.label || m.id }));
+  let models: ModelInfo[] = (r?.models ?? []).filter((m) => !m.deprecated).map((m) => ({ id: m.id, label: m.label || m.id, ...(m.notes ? { description: m.notes } : {}) }));
   // Claude: 최신을 앞에, SNA 목록의 별칭(opus·sonnet·haiku — 이름이 옛 버전으로 붙어 헷갈림)은 빼고 나머지는 옛 모델로 뒤에
-  if (p === "claude-code") models = [...CLAUDE_LATEST, ...models.filter((m) => !/^(opus|sonnet|haiku)$/.test(m.id) && !CLAUDE_LATEST.some((x) => x.id === m.id))];
+  if (p === "claude-code") models = [...CLAUDE_LATEST, ...models.filter((m) => !/^(opus|sonnet|haiku)$/.test(m.id) && !CLAUDE_LATEST.some((x) => x.id === m.id)).map((m) => ({ ...m, legacy: true }))];
   if (!models.some((m) => m.id === defaultModel(p))) models.unshift({ id: defaultModel(p), label: defaultModel(p) });
   modelCache.set(p, { at: Date.now(), models });
   return models;

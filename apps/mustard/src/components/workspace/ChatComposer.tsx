@@ -6,7 +6,7 @@
 // 받아쓰기(macOS 음성 인식, main 도우미): 마이크 버튼·⌘D. 누르면 켜고 끄기, 0.5초 넘게 누르고 있으면 누르고 말하기(떼면 확정).
 // 받아쓰는 동안 아래 줄은 [파형][✕][✓], 글은 커서 자리에 실시간으로 들어감(자동 전송 안 함). Enter·✓ = 확정, Esc·✕ = 받아쓴 글만 되돌림.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { IconPlus, IconX, IconArrowUp, IconPlayerStopFilled, IconChevronDown, IconCheck, IconShield, IconShieldCheck, IconListCheck, IconMicrophone } from "@tabler/icons-react";
+import { IconPlus, IconX, IconArrowUp, IconPlayerStopFilled, IconChevronDown, IconCheck, IconShield, IconShieldExclamation, IconListCheck, IconMicrophone, IconSearch, IconChevronRight } from "@tabler/icons-react";
 import { useT, useLocale } from "@mustard/core";
 import { AgentLogo, type AgentId } from "@/components/workspace/AgentLogo";
 
@@ -25,9 +25,9 @@ export const APP_COMMANDS = ["new", "model", "mode", "history", "terminal", "fin
 export type AppCommand = (typeof APP_COMMANDS)[number];
 // 생각 강도·권한 모드 이름은 어느 언어든 영어 그대로(CLI 용어와 같게, 유저 결정 11-14). SNA reasoningLevel 1~5 = low·medium·high·xhigh·max
 const EFFORTS: { v: number | undefined; label: string }[] = [{ v: undefined, label: "Auto" }, { v: 1, label: "Low" }, { v: 2, label: "Medium" }, { v: 3, label: "High" }, { v: 4, label: "XHigh" }, { v: 5, label: "Max" }];
-const MODE_LABEL: Record<Mode, string> = { default: "Default", plan: "Plan", full: "Full access" };
-const MODE_ICON = { plan: IconListCheck, default: IconShield, full: IconShieldCheck };
+const MODE_LABEL: Record<"default" | "full", string> = { default: "Default", full: "Full access" };
 
+type ModelInfo = { id: string; label: string; description?: string; legacy?: boolean };
 type Menu = { kind: "slash"; q: string } | { kind: "file"; q: string; at: number } | null;
 type Dict = { phase: "starting" | "listening"; before: string; after: string; text: string };
 const nowMs = () => Date.now(); // 이벤트 처리기 안에서만 부름
@@ -51,8 +51,8 @@ function Wave({ levels }: { levels: number[] }) {
   );
 }
 
-export default function ChatComposer({ root, meta, providers, busy, empty, history, ctx, onSend, onStop, onOptions, onAppCommand, draft, onDraftTaken }: {
-  root: string; meta: Meta; providers: typeof PROVIDERS; busy: boolean; empty: boolean; history: string[]; ctx?: { used: number; win: number };
+export default function ChatComposer({ root, meta, providers, busy, history, ctx, onSend, onStop, onOptions, onAppCommand, draft, onDraftTaken }: {
+  root: string; meta: Meta; providers: typeof PROVIDERS; busy: boolean; history: string[]; ctx?: { used: number; win: number };
   onSend: (text: string, images: Img[], now: boolean) => void; onStop: () => void; onOptions: (o: Partial<Pick<Meta, "provider" | "model" | "effort" | "mode">>) => void; onAppCommand: (c: AppCommand) => void;
   draft?: string; onDraftTaken?: () => void;
 }) {
@@ -61,7 +61,10 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
   const [images, setImages] = useState<Img[]>([]);
   const [note, setNote] = useState("");
   const [picker, setPicker] = useState(false);
-  const [models, setModels] = useState<{ id: string; label: string }[] | null>(null);
+  const [models, setModels] = useState<ModelInfo[] | null>(null);
+  const [modelQ, setModelQ] = useState("");
+  const [showOld, setShowOld] = useState(false);
+  const [modeMenu, setModeMenu] = useState(false);
   const [menu, setMenu] = useState<Menu>(null);
   const [sel, setSel] = useState(0);
   const [commands, setCommands] = useState<{ name: string; description: string; source: string }[]>([]);
@@ -70,7 +73,6 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const locked = meta.count > 0;
-  const cur = P(meta.provider);
   const { locale } = useLocale();
   const [canDictate, setCanDictate] = useState(false);
   const [dict, setDict] = useState<Dict | null>(null);
@@ -178,10 +180,7 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
     onSend(text, images, now);
     setInput(""); setImages([]); setNote(""); setMenu(null); recall.current = -1;
   };
-  const cycleMode = () => {
-    const modes: Mode[] = meta.provider === "claude-code" ? ["default", "plan", "full"] : ["default", "full"];
-    onOptions({ mode: modes[(modes.indexOf(meta.mode) + 1) % modes.length] });
-  };
+  const cycleMode = () => { onOptions({ mode: meta.mode === "full" ? "default" : "full" }); }; // Shift+Tab — 기본 ↔ 전체 액세스(계획은 칩)
   const addFiles = (fs: File[]) => {
     for (const f of fs.filter((x) => x.type.startsWith("image/"))) {
       if (f.size > 5 * 1024 * 1024) { setNote(t("achat.imageTooBig")); continue; }
@@ -218,45 +217,68 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
     }
   };
 
-  const ghost = "flex h-7 items-center gap-1.5 rounded-full px-2 text-[13px] leading-[18px] text-zinc-500 transition hover:bg-black/[.06] hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-white/[.08] dark:hover:text-zinc-100";
-  const pop = "absolute z-50 rounded-2xl bg-white p-1 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_8px_24px_rgba(0,0,0,0.12)] dark:bg-zinc-800 dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_8px_24px_rgba(0,0,0,0.4)]";
-  const where = empty ? "top-full mt-1.5" : "bottom-full mb-1.5";
-  const modelLabel = models?.find((m) => m.id === meta.model)?.label ?? meta.model;
-  const effortLabel = EFFORTS.find((e) => e.v === meta.effort)?.label ?? "Auto";
-  const ModeIcon = MODE_ICON[meta.mode];
+  // 툴바 — 알약(h-6 rounded-md text-xs)·아이콘 버튼(size-8 rounded-md)·보내기(size-8 rounded-full, 강조색은 여기만)
+  const pill = "flex h-6 min-w-0 items-center gap-1 rounded-md px-2 text-xs text-zinc-600 transition hover:bg-black/[.06] hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[.08] dark:hover:text-zinc-100";
+  const iconBtn = "flex size-8 shrink-0 items-center justify-center rounded-md text-zinc-500 transition hover:bg-black/[.06] hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[.08] dark:hover:text-zinc-100";
+  const pop = "absolute bottom-full z-50 mb-1.5 rounded-xl border border-black/[.14] bg-white/90 p-1 shadow-lg backdrop-blur-2xl dark:border-white/[.12] dark:bg-zinc-800/90";
+  const model = models?.find((m) => m.id === meta.model);
+  const modelLabel = (model?.label ?? meta.model).replace(/^Claude /, "");
+  const effortLabel = EFFORTS.find((e) => e.v === meta.effort && e.v !== undefined)?.label;
   const pct = ctx && ctx.win ? Math.min(100, Math.round((ctx.used / ctx.win) * 100)) : null;
+  const q = modelQ.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shownModels = (models ?? []).filter((m) => q.every((w) => `${m.label} ${m.id} ${m.description ?? ""}`.toLowerCase().includes(w)));
+  const latest = shownModels.filter((m) => !m.legacy), older = shownModels.filter((m) => m.legacy);
+  const plan = meta.mode === "plan";
+  const permMode: "default" | "full" = meta.mode === "full" ? "full" : "default";
+  const modelRow = (m: ModelInfo) => (
+    <button key={m.id} type="button" onClick={() => { onOptions({ model: m.id }); setPicker(false); setModelQ(""); }}
+      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition hover:bg-black/[.05] dark:hover:bg-white/[.08] ${m.id === meta.model ? "bg-black/[.04] dark:bg-white/[.06]" : ""}`}>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] text-zinc-800 dark:text-zinc-100">{m.label}</span>
+        {m.description && <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">{m.description}</span>}
+      </span>
+      {m.id === meta.model && <IconCheck size={14} stroke={2} className="shrink-0 text-zinc-700 dark:text-zinc-200" aria-hidden />}
+    </button>
+  );
 
   return (
     <div className="relative">
       {note && (
-        <p className="mb-1.5 flex items-center gap-2 text-[12.5px] text-red-600 dark:text-red-400">
+        <p className="mb-1.5 flex items-center gap-2 px-1 text-xs text-red-600 dark:text-red-400">
           <span onClick={() => { setNote(""); setNoteAction(null); }}>{note}</span>
-          {noteAction && <button type="button" onClick={() => { noteAction(); setNote(""); setNoteAction(null); }} className="shrink-0 rounded-full bg-black/[.05] px-2 py-0.5 text-[12px] text-zinc-700 hover:bg-black/[.08] dark:bg-white/[.08] dark:text-zinc-200 dark:hover:bg-white/[.12]">{t("achat.openSettings")}</button>}
+          {noteAction && <button type="button" onClick={() => { noteAction(); setNote(""); setNoteAction(null); }} className="shrink-0 rounded-md bg-black/[.05] px-2 py-0.5 text-xs text-zinc-700 hover:bg-black/[.08] dark:bg-white/[.08] dark:text-zinc-200 dark:hover:bg-white/[.12]">{t("achat.openSettings")}</button>}
         </p>
       )}
-      {/* `/`·`@` 메뉴 — 입력 카드 위(빈 채팅은 아래) */}
+      {/* `/`·`@` 메뉴 — 입력 카드 위. 명령/스킬 묶음 머리, 행은 이름(고정폭)·설명 두 줄 */}
       {menu && options.length > 0 && (
-        <div className={`${pop} inset-x-0 ${empty ? "top-full mt-1.5" : "bottom-full mb-1.5"} nunopi-scroll max-h-72 overflow-y-auto`}>
+        <div className={`${pop} inset-x-0 nunopi-scroll max-h-72 overflow-y-auto`}>
           {options.map((o, k) => (
-            <button key={`${o.source}:${o.name}`} type="button" onMouseDown={(e) => { e.preventDefault(); pick(o.name, o.source); }} onMouseEnter={() => setSel(k)}
-              className={`flex w-full items-baseline gap-2 rounded-xl px-3 py-1.5 text-left text-[13px] ${k === sel ? "bg-black/[.05] dark:bg-white/[.08]" : ""}`}>
-              <span className="shrink-0 font-medium text-zinc-800 dark:text-zinc-100">{menu.kind === "slash" ? `/${o.name}` : o.name}</span>
-              {o.description && <span className="min-w-0 truncate text-[12px] text-zinc-400 dark:text-zinc-500">{o.description}</span>}
-              {o.source !== "app" && o.source !== "file" && <span className="ml-auto shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500">{t(`achat.src.${o.source}`)}</span>}
-            </button>
+            <div key={`${o.source}:${o.name}`}>
+              {menu.kind === "slash" && (k === 0 || (options[k - 1].source === "skill") !== (o.source === "skill")) && (
+                <p className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">{t(o.source === "skill" ? "achat.menuSkills" : "achat.menuCommands")}</p>
+              )}
+              <button type="button" onMouseDown={(e) => { e.preventDefault(); pick(o.name, o.source); }} onMouseEnter={() => setSel(k)}
+                className={`flex w-full flex-col rounded-lg px-2.5 py-1 text-left ${k === sel ? "bg-black/[.06] dark:bg-white/[.08]" : ""}`}>
+                <span className="flex items-center gap-2 font-mono text-[12.5px] text-zinc-800 dark:text-zinc-100">
+                  {menu.kind === "slash" ? `/${o.name}` : o.name}
+                  {o.source !== "app" && o.source !== "file" && <span className="ml-auto font-sans text-[11px] text-zinc-400 dark:text-zinc-500">{t(`achat.src.${o.source}`)}</span>}
+                </span>
+                {o.description && <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{o.description}</span>}
+              </button>
+            </div>
           ))}
         </div>
       )}
-      <div className="rounded-[22px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_2px_8px_rgba(0,0,0,0.05),0_4px_40px_4px_rgba(0,0,0,0.03)] dark:bg-zinc-800 dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_4px_24px_rgba(0,0,0,0.3)]"
+      <div className="rounded-xl border border-black/[.11] bg-white p-1.5 shadow-xs transition-colors focus-within:border-black/[.2] dark:border-white/[.09] dark:bg-white/[.04] dark:focus-within:border-white/[.18]"
         onDragOver={(e) => { if ([...e.dataTransfer.items].some((i) => i.type.startsWith("image/"))) e.preventDefault(); }}
         onDrop={(e) => { const fs = [...e.dataTransfer.files]; if (fs.some((f) => f.type.startsWith("image/"))) { e.preventDefault(); addFiles(fs); } }}>
         {images.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-2.5 pb-1 pt-2.5">
+          <div className="flex flex-wrap gap-2 px-1 pb-1 pt-1">
             {images.map((im, k) => (
               <div key={k} className="group/img relative">
-                <img src={im.url} alt="" className="h-20 w-20 rounded-[16px] object-cover ring-1 ring-inset ring-black/[.08] dark:ring-white/[.1]" />
+                <img src={im.url} alt="" className="h-16 w-16 rounded-lg border border-black/[.1] object-cover dark:border-white/[.1]" />
                 <button type="button" onClick={() => setImages((p) => p.filter((_, j) => j !== k))} aria-label={t("achat.removeImage")}
-                  className="absolute -right-1 -top-1 rounded-full bg-zinc-900 p-0.5 text-white opacity-0 shadow transition group-hover/img:opacity-100 dark:bg-zinc-100 dark:text-zinc-900"><IconX size={11} stroke={2.5} aria-hidden /></button>
+                  className="absolute -right-1.5 -top-1.5 rounded-full bg-zinc-900 p-0.5 text-white opacity-0 shadow transition group-hover/img:opacity-100 dark:bg-zinc-100 dark:text-zinc-900"><IconX size={11} stroke={2.5} aria-hidden /></button>
               </div>
             ))}
           </div>
@@ -266,74 +288,115 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
           onChange={(e) => onChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
           onPaste={(e) => { const fs = [...e.clipboardData.files]; if (fs.some((f) => f.type.startsWith("image/"))) { e.preventDefault(); addFiles(fs); } }}
           onKeyDown={onKey} onBlur={() => setTimeout(() => setMenu(null), 150)}
-          className={`block max-h-[max(160px,40vh)] w-full resize-none bg-transparent px-4 pt-3.5 text-[14px] leading-5 text-zinc-800 outline-none [field-sizing:content] placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500 ${empty ? "min-h-[64px]" : "min-h-[40px]"}`} />
+          className="block max-h-[calc(8lh+0.5rem)] min-h-12 w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 text-zinc-800 outline-none [field-sizing:content] placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500" />
         {dict ? (
-          <div className="flex w-full min-w-0 items-center justify-end gap-2 pb-2.5 pl-3.5 pr-3">
+          <div className="flex w-full min-w-0 items-center justify-end gap-2 pl-2 pt-0.5">
             <Wave levels={levels} />
-            <button type="button" onClick={cancelDict} aria-label={t("achat.dictCancel")} title={`${t("achat.dictCancel")} (Esc)`} className={`${ghost} w-7 shrink-0 justify-center px-0`}><IconX size={15} stroke={2} aria-hidden /></button>
+            <button type="button" onClick={cancelDict} aria-label={t("achat.dictCancel")} title={`${t("achat.dictCancel")} (Esc)`} className={iconBtn}><IconX size={15} stroke={2} aria-hidden /></button>
             <button type="button" onClick={stopDict} aria-label={t("achat.dictDone")} title={`${t("achat.dictDone")} (Enter)`}
-              className="flex size-7 shrink-0 items-center justify-center rounded-full bg-mustard-500 text-white transition hover:bg-mustard-600 active:opacity-70"><IconCheck size={15} stroke={2.5} aria-hidden /></button>
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-mustard-500 text-white transition hover:bg-mustard-600 active:opacity-70"><IconCheck size={15} stroke={2.5} aria-hidden /></button>
           </div>
         ) : (
-        <div className="flex items-center gap-0.5 pb-2.5 pl-2 pr-3">
-          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
-          <button type="button" onClick={() => fileRef.current?.click()} aria-label={t("achat.attach")} title={t("achat.attach")} className={`${ghost} w-7 justify-center px-0`}>
-            <IconPlus size={16} stroke={1.8} aria-hidden />
-          </button>
-          {/* 실행 AI · 모델 · 생각 강도 — 한 알약, 누르면 고르기 */}
-          <div className="relative min-w-0">
-            <button type="button" onClick={() => setPicker((v) => !v)} className={`${ghost} min-w-0`} data-chat-picker>
-              <AgentLogo agent={cur.agent} size={13} />
-              <span className="min-w-0 truncate">{modelLabel}</span>
-              {meta.effort !== undefined && <span className="shrink-0 text-zinc-400 dark:text-zinc-500">· {effortLabel}</span>}
-              <IconChevronDown size={12} stroke={2} className="shrink-0" aria-hidden />
+        <div className="flex items-center gap-2 pt-0.5">
+          <div className="flex min-w-0 items-center gap-0.5">
+            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
+            <button type="button" onClick={() => fileRef.current?.click()} aria-label={t("achat.attach")} title={t("achat.attach")} className={iconBtn}>
+              <IconPlus size={16} stroke={1.8} aria-hidden />
             </button>
-            {picker && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setPicker(false)} aria-hidden />
-                <div className={`${pop} left-0 ${where} nunopi-scroll max-h-[min(70vh,520px)] w-[260px] overflow-y-auto`}>
-                  <p className="px-3 pb-1 pt-1.5 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">{t("achat.pickAgent")}{locked && ` · ${t("achat.agentLocked")}`}</p>
-                  {providers.map((p) => (
-                    <button key={p.id} type="button" disabled={locked && p.id !== meta.provider} onClick={() => onOptions({ provider: p.id })}
-                      className="flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left text-[13px] text-zinc-700 transition hover:bg-black/[.05] disabled:opacity-35 disabled:hover:bg-transparent dark:text-zinc-200 dark:hover:bg-white/[.08]">
-                      <AgentLogo agent={p.agent} size={14} />{p.label}
-                      {p.id === meta.provider && <IconCheck size={14} stroke={2} className="ml-auto text-mustard-600 dark:text-mustard-400" aria-hidden />}
-                    </button>
-                  ))}
-                  <div className="mx-2 my-1 border-t border-black/[.06] dark:border-white/[.08]" />
-                  <p className="px-3 pb-1 pt-1 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">{t("achat.pickModel")}</p>
-                  {models === null ? <p className="px-3 py-1.5 text-[12px] text-zinc-400">…</p> : models.map((m) => (
-                    <button key={m.id} type="button" onClick={() => { onOptions({ model: m.id }); setPicker(false); }}
-                      className="flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left text-[13px] text-zinc-700 transition hover:bg-black/[.05] dark:text-zinc-200 dark:hover:bg-white/[.08]">
-                      <span className="min-w-0 truncate">{m.label}</span>
-                      {m.id === meta.model && <IconCheck size={14} stroke={2} className="ml-auto shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />}
-                    </button>
-                  ))}
-                  <div className="mx-2 my-1 border-t border-black/[.06] dark:border-white/[.08]" />
-                  <p className="px-3 pb-1 pt-1 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">{t("achat.pickEffort")}</p>
-                  <div className="flex gap-1 px-2 pb-1.5">
-                    {EFFORTS.map((e) => (
-                      <button key={e.label} type="button" onClick={() => onOptions({ effort: e.v })}
-                        className={`flex-1 rounded-full px-1 py-1 text-[11.5px] transition ${meta.effort === e.v ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 hover:bg-black/[.05] dark:text-zinc-300 dark:hover:bg-white/[.08]"}`}>{e.label}</button>
+            {/* 권한 모드 — 위로 열리는 목록, 행마다 한 줄 설명. 전체 액세스는 노란 경고 방패 */}
+            <div className="relative">
+              <button type="button" onClick={() => setModeMenu((v) => !v)} title={`${t(`achat.modeHint.${permMode}`)} (Shift+Tab)`}
+                className={`${pill} ${permMode === "full" ? "text-yellow-600 hover:text-yellow-700 dark:text-yellow-500 dark:hover:text-yellow-400" : ""}`}>
+                {permMode === "full" ? <IconShieldExclamation size={14} stroke={1.8} aria-hidden /> : <IconShield size={14} stroke={1.8} aria-hidden />}
+                {MODE_LABEL[permMode]}<IconChevronDown size={12} stroke={2} className="opacity-60" aria-hidden />
+              </button>
+              {modeMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setModeMenu(false)} aria-hidden />
+                  <div className={`${pop} left-0 w-72`}>
+                    {(["default", "full"] as const).map((m) => (
+                      <button key={m} type="button" onClick={() => { onOptions({ mode: plan && m === "default" ? "plan" : m }); setModeMenu(false); }}
+                        className="flex w-full items-start gap-2 rounded-lg px-2.5 py-1.5 text-left transition hover:bg-black/[.05] dark:hover:bg-white/[.08]">
+                        {m === "full" ? <IconShieldExclamation size={15} stroke={1.8} className="mt-0.5 shrink-0 text-yellow-600 dark:text-yellow-500" aria-hidden /> : <IconShield size={15} stroke={1.8} className="mt-0.5 shrink-0 text-zinc-500" aria-hidden />}
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[13px] text-zinc-800 dark:text-zinc-100">{MODE_LABEL[m]}</span>
+                          <span className="block text-xs text-zinc-500 dark:text-zinc-400">{t(`achat.modeHint.${m}`)}</span>
+                        </span>
+                        {permMode === m && <IconCheck size={14} stroke={2} className="mt-0.5 shrink-0" aria-hidden />}
+                      </button>
                     ))}
                   </div>
-                </div>
-              </>
+                </>
+              )}
+            </div>
+            {/* 계획 — 권한과 따로 켜고 끄는 칩(Claude만) */}
+            {meta.provider === "claude-code" && (
+              <button type="button" onClick={() => onOptions({ mode: plan ? "default" : "plan" })} title={t("achat.modeHint.plan")}
+                className={`${pill} ${plan ? "bg-sky-500/10 text-sky-700 hover:bg-sky-500/15 dark:text-sky-300" : ""}`}>
+                <IconListCheck size={14} stroke={1.8} aria-hidden />Plan
+              </button>
             )}
           </div>
-          {/* 권한 모드 — 누르거나 Shift+Tab으로 바꿈 */}
-          <button type="button" onClick={cycleMode} title={`${t(`achat.modeHint.${meta.mode}`)} (Shift+Tab)`}
-            className={`${ghost} shrink-0 ${meta.mode === "full" ? "text-amber-600 dark:text-amber-400" : meta.mode === "plan" ? "text-sky-600 dark:text-sky-400" : ""}`}>
-            <ModeIcon size={14} stroke={1.8} aria-hidden />{MODE_LABEL[meta.mode]}
-          </button>
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <div className="ml-auto flex min-w-0 items-center gap-1.5">
+            {/* 모델 · 추론 수준 — 한 알약, 팝업: 검색·모델(설명)·이전 모델 접기·추론 수준 */}
+            <div className="relative min-w-0">
+              <button type="button" onClick={() => setPicker((v) => !v)} className={pill} data-chat-picker>
+                <span className="truncate">{modelLabel}</span>
+                {effortLabel && <span className="shrink-0 text-zinc-400 dark:text-zinc-500">{effortLabel}</span>}
+                <IconChevronDown size={12} stroke={2} className="shrink-0 opacity-60" aria-hidden />
+              </button>
+              {picker && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => { setPicker(false); setModelQ(""); }} aria-hidden />
+                  <div className={`${pop} right-0 w-96 max-w-[calc(100vw-2rem)] p-0`}>
+                    <div className="flex items-center gap-2 border-b border-black/[.08] px-3 py-2 dark:border-white/[.08]">
+                      <IconSearch size={14} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
+                      <input autoFocus value={modelQ} onChange={(e) => setModelQ(e.target.value)} placeholder={t("achat.modelSearch")}
+                        className="min-w-0 flex-1 bg-transparent text-[13px] text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100" />
+                    </div>
+                    {!locked && providers.length > 1 && (
+                      <div className="flex flex-wrap gap-1 border-b border-black/[.08] px-2 py-1.5 dark:border-white/[.08]">
+                        {providers.map((p) => (
+                          <button key={p.id} type="button" onClick={() => onOptions({ provider: p.id })}
+                            className={`flex h-6 items-center gap-1.5 rounded-md px-2 text-xs transition ${p.id === meta.provider ? "bg-black/[.08] text-zinc-900 dark:bg-white/[.12] dark:text-white" : "text-zinc-600 hover:bg-black/[.05] dark:text-zinc-300 dark:hover:bg-white/[.08]"}`}>
+                            <AgentLogo agent={p.agent} size={12} />{p.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="nunopi-scroll max-h-[min(233px,60vh)] overflow-y-auto p-1">
+                      {models === null ? <p className="px-3 py-2 text-xs text-zinc-400">…</p> : (
+                        <>
+                          {latest.map(modelRow)}
+                          {older.length > 0 && (
+                            <>
+                              <button type="button" onClick={() => setShowOld((v) => !v)} className="flex w-full items-center gap-1 px-2.5 py-1 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">
+                                <IconChevronRight size={12} stroke={2} className={`transition ${showOld || q.length ? "rotate-90" : ""}`} aria-hidden />{t("achat.olderModels", { n: older.length })}
+                              </button>
+                              {(showOld || q.length > 0) && older.map(modelRow)}
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 border-t border-black/[.08] px-3 py-2 dark:border-white/[.08]">
+                      <span className="mr-auto text-xs text-zinc-500 dark:text-zinc-400">{t("achat.pickEffort")}</span>
+                      {EFFORTS.filter((e) => e.v !== undefined).map((e) => (
+                        <button key={e.label} type="button" onClick={() => { onOptions({ effort: meta.effort === e.v ? undefined : e.v }); setPicker(false); }}
+                          className={`h-6 rounded-md px-2 text-xs transition ${meta.effort === e.v ? "bg-black/[.12] text-zinc-900 dark:bg-white/[.16] dark:text-white" : "text-zinc-600 hover:bg-black/[.05] dark:text-zinc-300 dark:hover:bg-white/[.08]"}`}>{e.label}</button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
             {pct !== null && (
-              <span title={t("achat.ctx", { pct, used: Math.round(ctx!.used / 1000), win: Math.round(ctx!.win / 1000) })} className="flex items-center">
+              <span title={t("achat.ctx", { pct, used: Math.round(ctx!.used / 1000), win: Math.round(ctx!.win / 1000) })} className="flex shrink-0 items-center">
                 <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><circle cx="8" cy="8" r="6" fill="none" strokeWidth="2" className="stroke-black/[.08] dark:stroke-white/[.12]" /><circle cx="8" cy="8" r="6" fill="none" strokeWidth="2" strokeDasharray={`${(pct / 100) * 37.7} 37.7`} transform="rotate(-90 8 8)" strokeLinecap="round" className={pct > 85 ? "stroke-red-500" : pct > 60 ? "stroke-amber-500" : "stroke-zinc-400 dark:stroke-zinc-500"} /></svg>
               </span>
             )}
             {canDictate && (
-              <button type="button" aria-label={t("achat.dictate")} title={`${t("achat.dictate")} (⌘D)`} className={`${ghost} w-7 justify-center px-0`}
+              <button type="button" aria-label={t("achat.dictate")} title={`${t("achat.dictate")} (⌘D)`} className={iconBtn}
                 onPointerDown={() => { pressAt.current = Date.now(); void startDict(); }}
                 onPointerUp={() => { if (Date.now() - pressAt.current > 500) stopDict(); }}>
                 <IconMicrophone size={16} stroke={1.8} aria-hidden />
@@ -341,12 +404,12 @@ export default function ChatComposer({ root, meta, providers, busy, empty, histo
             )}
             {busy && !input.trim() && !images.length
               ? <button type="button" onClick={onStop} aria-label={t("achat.stop")} title={`${t("achat.stop")} (Esc)`}
-                  className="flex size-7 items-center justify-center rounded-full bg-zinc-900 text-white transition active:opacity-70 dark:bg-zinc-100 dark:text-zinc-900">
-                  <IconPlayerStopFilled size={11} aria-hidden />
+                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-700 transition hover:bg-zinc-200 active:opacity-70 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">
+                  <IconPlayerStopFilled size={12} aria-hidden />
                 </button>
               : <button type="button" onClick={() => send(false)} disabled={!input.trim() && !images.length} aria-label={t("achat.send")} title={busy ? t("achat.queueHint") : undefined}
-                  className="flex size-7 items-center justify-center rounded-full bg-mustard-500 text-white transition hover:bg-mustard-600 active:opacity-70 disabled:bg-black/[.08] disabled:text-zinc-400 dark:disabled:bg-white/[.1] dark:disabled:text-zinc-500">
-                  <IconArrowUp size={15} stroke={2.5} aria-hidden />
+                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-mustard-500 text-white transition hover:bg-mustard-600 active:opacity-70 disabled:bg-black/[.08] disabled:text-zinc-400 dark:disabled:bg-white/[.1] dark:disabled:text-zinc-500">
+                  <IconArrowUp size={16} stroke={2.5} aria-hidden />
                 </button>}
           </div>
         </div>
