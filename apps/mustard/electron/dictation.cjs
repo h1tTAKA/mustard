@@ -7,7 +7,7 @@ const { existsSync } = require("node:fs");
 const { createInterface } = require("node:readline");
 
 let helper = "", workerScript = "", modulesDir = "";
-let proc = null, owner = null, worker = null, workerReady = false, local = null; // local = {helperReady, modelReady, finishing}
+let proc = null, owner = null, worker = null, workerReady = false, local = null, seq = 0; // local = {id, helperReady, modelReady} — id는 받아쓰기 번호(일꾼 결과와 맞춰 봄)
 const send = (o) => { try { if (owner && !owner.isDestroyed()) owner.send("dictation:event", o); } catch { /* 창 닫힘 */ } };
 
 function setHelper(p) { helper = p; }
@@ -25,6 +25,7 @@ function ensureWorker() {
   worker = fork(workerScript, [modulesDir], { execPath: process.execPath, env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, stdio: ["pipe", "ignore", "inherit", "ipc"] });
   worker.on("message", (m) => {
     if (!local) return;
+    if (m.sid !== undefined && m.sid !== local.id) return; // 옛 받아쓰기의 늦은 결과 — 지금 것에 안 섞음(재리뷰)
     if (m.type === "loaded") { local.modelReady = true; if (local.helperReady) send({ type: "ready" }); }
     else if (m.type === "partial") send({ type: "partial", text: m.text });
     else if (m.type === "final") { const done = local; local = null; send({ type: "final", text: m.text }); if (done) send({ type: "end", code: 0 }); }
@@ -47,9 +48,9 @@ function start(wc, opts) {
   proc = p;
   if (useLocal) {
     const w = ensureWorker();
-    local = { helperReady: false, modelReady: false };
+    local = { id: ++seq, helperReady: false, modelReady: false };
     w.send({ type: "load", modelPath: o.modelPath });
-    w.send({ type: "start", language: String(o.language || lc.split("-")[0]) });
+    w.send({ type: "start", sid: local.id, language: String(o.language || lc.split("-")[0]) });
     p.stdout.on("data", (b) => { try { if (proc === p) w.stdin.write(b); } catch { /* 일꾼 끝남 */ } });
     createInterface({ input: p.stderr }).on("line", (l) => {
       if (proc !== p) return;
@@ -64,7 +65,7 @@ function start(wc, opts) {
   p.on("close", (code, sig) => { // exit는 stdout을 다 읽기 전에 올 수 있음 — 마지막 소리까지 일꾼에 넘긴 뒤 확정(리뷰)
     if (proc !== p) return;
     proc = null;
-    if (useLocal && local && code === 0) { worker?.send({ type: "finish" }); return; }
+    if (useLocal && local && code === 0) { worker?.send({ type: "finish", sid: local.id }); return; }
     if (useLocal) { local = null; worker?.send({ type: "cancel" }); }
     send({ type: "end", code: code ?? -1, signal: sig || undefined });
   });

@@ -23,7 +23,7 @@ process.stdin.on("data", (b) => {
   chunks.push(f); samples += n;
 });
 
-let lastLen = 0, gen = 0; // gen = 받아쓰기 세대(새로 시작·취소마다 +1) — 늦게 끝난 옛 디코딩이 새 소리를 건드리지 않게(리뷰)
+let lastLen = 0, gen = 0, sid = 0; // sid = main이 준 받아쓰기 번호 — 결과에 되돌려 줘서 옛 결과가 새 받아쓰기에 섞이지 않게(재리뷰) // gen = 받아쓰기 세대(새로 시작·취소마다 +1) — 늦게 끝난 옛 디코딩이 새 소리를 건드리지 않게(리뷰)
 // 앞에서 n개 샘플을 버림(창 확정 때 — 그 사이 들어온 소리는 다음 창으로)
 function dropFront(n) {
   while (n > 0 && chunks.length) { const c = chunks[0]; if (c.length <= n) { chunks.shift(); n -= c.length; samples -= c.length; } else { chunks[0] = c.subarray(n); samples -= n; n = 0; } }
@@ -53,7 +53,8 @@ async function step(final) {
 }
 setInterval(() => {
   if (!active || decoding || samples - decodedAt < RATE * 0.6) return;
-  void step(false).then((t) => { if (active && t) send({ type: "partial", text: t }); }).catch((e) => send({ type: "error", message: String(e?.message || e) }));
+  const mySid = sid;
+  void step(false).then((t) => { if (active && t && mySid === sid) send({ type: "partial", text: t, sid: mySid }); }).catch((e) => send({ type: "error", message: String(e?.message || e) }));
 }, 1200);
 
 process.on("message", async (m) => {
@@ -69,15 +70,18 @@ process.on("message", async (m) => {
       }
       send({ type: "loaded" });
     } else if (m.type === "start") {
-      gen++; active = true; committed = ""; chunks = []; samples = 0; decodedAt = 0; leftover = Buffer.alloc(0); language = m.language || "";
+      gen++; sid = m.sid ?? 0; active = true; committed = ""; chunks = []; samples = 0; decodedAt = 0; leftover = Buffer.alloc(0); language = m.language || "";
     } else if (m.type === "finish") {
       // 끝 — 지금 소리·확정 글을 떼어 내 그것만으로 최종 글(공용 상태는 바로 비움 → 바로 다시 시작해도 안 섞임, 재리뷰)
       active = false; gen++;
-      const pcm = windowPcm(), before = committed;
+      const pcm = windowPcm(), before = committed, mySid = m.sid ?? sid;
       committed = ""; chunks = []; samples = 0; decodedAt = 0;
-      if (decoding) await decoding.catch(() => {});
-      const text = await decode(pcm);
-      send({ type: "final", text: join2(before, text) });
+      const prev = decoding;
+      const job = (async () => { if (prev) await prev.catch(() => {}); return decode(pcm); })();
+      decoding = job; // 다음 중간 처리는 이걸 기다림(같은 세션을 동시에 부르지 않게, 재리뷰)
+      let text = "";
+      try { text = await job; } finally { if (decoding === job) decoding = null; }
+      send({ type: "final", text: join2(before, text), sid: mySid });
     } else if (m.type === "cancel") {
       gen++; active = false; committed = ""; chunks = []; samples = 0;
     }
