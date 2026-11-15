@@ -115,9 +115,9 @@ export const AKEYS = {
   trustFolder: "agent.trustFolder", // #1216 띄우기 전 작업공간 미리 신뢰(Claude, 메인 폴더 신뢰를 물려줌)
   fullOk: "agent.fullAccessOk", // 전체 액세스 처음 고를 때 확인 — 한 번 확인하면 다시 안 물음
 } as const;
-// 채팅 모드·받아쓰기(#1341) — 채팅 = 새 레포 기본 화면·새 채팅 권한·일하는 중 보낸 말 대기열·보낼 때 맨 아래로,
+// 채팅 모드·받아쓰기(#1341) — 채팅 = 처음 여는 레포(ask = 시작 고르기 화면)·새 채팅 권한·일하는 중 보낸 말 대기열·보낼 때 맨 아래로,
 // 받아쓰기 = 켜기·누르는 방식(auto = 탭하면 켜고 끄기 + 길게 누르면 누르는 동안만, hold, toggle)·엔진(system = macOS, local = 받은 모델)·언어(""=앱 언어)·마이크(""=시스템 기본)
-export const CHAT_DEFAULTS = { defaultView: "term" as "term" | "chat", newChatMode: "default" as "default" | "full", queueWhileBusy: true, scrollOnSend: true };
+export const CHAT_DEFAULTS = { defaultView: "ask" as "ask" | "term" | "chat", newChatMode: "default" as "default" | "full", queueWhileBusy: true, scrollOnSend: true };
 export const CHATKEYS = { defaultView: "chat.defaultView", newChatMode: "chat.newChatMode", queueWhileBusy: "chat.queueWhileBusy", scrollOnSend: "chat.scrollOnSend" } as const;
 export const VOICE_DEFAULTS = { enabled: true, mode: "auto" as "auto" | "hold" | "toggle", engine: "system" as "system" | "local", modelId: "", language: "", device: "" };
 export const VOICEKEYS = { enabled: "voice.enabled", mode: "voice.mode", engine: "voice.engine", modelId: "voice.modelId", language: "voice.language", device: "voice.device" } as const;

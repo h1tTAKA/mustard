@@ -7,6 +7,8 @@ import { IconPlus, IconX, IconTerminal2, IconMessageCircle } from "@tabler/icons
 import { useShortcut, useT, isCurrentTerminalDark, getSetting, CKEYS, CHATKEYS, CHAT_DEFAULTS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
 import Terminal from "@/components/workspace/Terminal";
 import ChatPane, { CHAT_HANDOFF_EVENT } from "@/components/workspace/ChatPane";
+import PaneStart from "@/components/workspace/PaneStart";
+import type { Provider } from "@/components/workspace/ChatComposer";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
 import { clearUnread, isUnread, sessionState, useAgentSessionStates } from "@/lib/agentSessionStates";
@@ -57,7 +59,12 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   const curStore = useRef(store);
   const modeKey = `nunopi:ws-termmode:${cwd}`;
   // 레포마다 마지막 모드, 처음이면 설정 > 채팅의 기본 화면
-  const readMode = (k: string): "term" | "chat" => { try { const v = localStorage.getItem(k); return v === "chat" || v === "term" ? v : getSetting(CHATKEYS.defaultView, CHAT_DEFAULTS.defaultView); } catch { return "term"; } };
+  const readMode = (k: string): "term" | "chat" => { try { const v = localStorage.getItem(k); return v === "chat" || v === "term" ? v : getSetting<string>(CHATKEYS.defaultView, CHAT_DEFAULTS.defaultView) === "chat" ? "chat" : "term"; } catch { return "term"; } };
+  // 처음 여는 레포(탭 기록·모드 기록 둘 다 없음) + 설정이 '물어보기'면 시작 고르기 화면(PaneStart)
+  const firstOpen = (st: string, mk: string) => { try { return !localStorage.getItem(st) && !localStorage.getItem(mk) && getSetting<string>(CHATKEYS.defaultView, CHAT_DEFAULTS.defaultView) === "ask"; } catch { return false; } };
+  const [startState, setStartState] = useState(() => ({ key: store, on: firstOpen(store, modeKey) }));
+  const starting = startState.key === store && startState.on;
+  const [chatInit, setChatInit] = useState<{ provider: Provider; model?: string } | undefined>(undefined);
   const [modeState, setModeState] = useState<{ key: string; mode: "term" | "chat" }>(() => ({ key: modeKey, mode: readMode(modeKey) }));
   const mode = modeState.key === modeKey ? modeState.mode : readMode(modeKey); // 레포(cwd)가 바뀌면 그 레포 모드
   const setMode = (m: "term" | "chat") => { setModeState({ key: modeKey, mode: m }); try { localStorage.setItem(modeKey, m); } catch { /* 저장 못 해도 동작 */ } };
@@ -67,6 +74,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   useEffect(() => {
     if (curStore.current === store) return;
     curStore.current = store;
+    setStartState({ key: store, on: firstOpen(store, `nunopi:ws-termmode:${cwd}`) }); // 탭 기록을 쓰기 전에 판정
     const d = loadTabs(store, t("workspace.terminalTab", { n: 1 }));
     setTabs(d.tabs); setActiveId(d.activeId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- store 변경만
@@ -271,7 +279,15 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
       {t(mode === "chat" ? "achat.modeChat" : "achat.modeTerminal")}
     </button>
   );
-  if (mode === "chat") return <ChatPane cwd={cwd} modeToggle={modeToggle} />;
+  if (starting) return (
+    <PaneStart agents={menuAgents.map((a) => ({ id: a.id, label: a.label }))} defaultPick={defaultPick}
+      onTerminal={(agent) => {
+        setStartState({ key: store, on: false }); setMode("term");
+        if (agent && active) { markAgentUsed(agent); void window.nunopiDesktop?.terminal?.launchAgent?.({ id: active.id, agent, dark: isCurrentTerminalDark(), ...launchOpts(agent) }); } // 첫 탭에서 바로
+      }}
+      onChat={(provider, model) => { setStartState({ key: store, on: false }); setChatInit({ provider, model }); setMode("chat"); }} />
+  );
+  if (mode === "chat") return <ChatPane cwd={cwd} modeToggle={modeToggle} initial={chatInit} />;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
