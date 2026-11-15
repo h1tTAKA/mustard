@@ -52,6 +52,8 @@ extraResources:
     to: node_modules/@transcribe-cpp/darwin-arm64-metal
   - from: ../../node_modules/koffi
     to: node_modules/koffi
+  - from: ../../node_modules/@koromix/koffi-darwin-arm64   # koffi 네이티브(.node) — 없으면 'Cannot find the native Koffi module'(실측)
+    to: node_modules/@koromix/koffi-darwin-arm64
   # 데몬이 require("node-pty") 하는데, resources/electron/에서 walk-up 하면 resources/node_modules/node-pty를
   # 찾는다. from은 hoist된 루트 node_modules(apps/mustard/node_modules는 비어 있음, #906).
   # node-pty .node는 package-app.mjs가 패키징 전 electron ABI로 선빌드(RUN_AS_NODE 데몬서 로드).
