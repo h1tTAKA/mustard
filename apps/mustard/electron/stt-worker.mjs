@@ -40,7 +40,7 @@ async function decode(given) {
   const lang0 = language;
   // 모델 올리기도 같은 줄(serial)이라 그 뒤에 돎 — 올리기 전에 부르면 순서대로 기다림(재리뷰)
   const r = await serial(() => {
-    if (!session) return { text: "" };
+    if (!session) throw new Error("speech model not loaded"); // 조용히 빈 글 대신 화면에 오류
     const langs = model.capabilities.languages ?? [];
     const lang = lang0 && (langs.find((c) => c === lang0) ?? langs.find((c) => c.startsWith(`${lang0}-`)));
     return session.run(pcm, { timestamps: "none", ...(lang ? { language: lang } : {}) });
@@ -72,9 +72,9 @@ process.on("message", async (m) => {
     if (m.type === "load") {
       // 올리기도 인식 호출과 같은 줄 — 겹친 load가 모델을 덮어쓰거나 쓰는 중인 세션을 버리지 않게(재리뷰)
       await serial(async () => {
-        if (modelPath === m.modelPath && model) return;
+        if (modelPath === m.modelPath && session) return; // 세션까지 살아 있어야 '이미 올라옴'(재리뷰 6차)
         try { session?.dispose(); model?.dispose(); } catch { /* */ }
-        session = null; model = null;
+        session = null; model = null; modelPath = "";
         await tc.initialize();
         model = await tc.TranscribeModel.load(m.modelPath);
         session = model.createSession({ nThreads: 4 });
