@@ -284,7 +284,7 @@ export default function ChatSession({ root, meta, providers, onMeta, onAppComman
         {empty ? (
           // 빈 채팅 — 입력 카드는 늘 아래, 가운데엔 아이콘 원 + 제목 + 부제
           <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-            <span className="flex size-12 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 dark:bg-zinc-700/70 dark:text-zinc-300"><IconMessageCircle size={24} stroke={1.6} aria-hidden /></span>
+            <span className="flex size-12 items-center justify-center rounded-full bg-mustard-500/10 text-mustard-600 dark:bg-mustard-400/10 dark:text-mustard-400"><IconMessageCircle size={24} stroke={1.6} aria-hidden /></span>
             <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">{t("achat.emptyTitle", { agent: P(meta.provider).label })}</p>
             <p className="max-w-sm text-balance text-xs text-zinc-500 dark:text-zinc-400">{t("achat.emptySub", { agent: P(meta.provider).label })}</p>
           </div>

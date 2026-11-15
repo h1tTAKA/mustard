@@ -252,7 +252,7 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
         <span className="block truncate text-[13px] text-zinc-800 dark:text-zinc-100">{m.label}</span>
         {m.description && <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">{m.description}</span>}
       </span>
-      {m.id === meta.model && <IconCheck size={14} stroke={2} className="shrink-0 text-zinc-700 dark:text-zinc-200" aria-hidden />}
+      {m.id === meta.model && <IconCheck size={14} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />}
     </button>
   );
 
@@ -284,7 +284,7 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
           ))}
         </div>
       )}
-      <div className="rounded-xl border border-black/[.11] bg-white p-1.5 shadow-xs transition-colors focus-within:border-black/[.2] dark:border-white/[.09] dark:bg-white/[.04] dark:focus-within:border-white/[.18]"
+      <div className="rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-sm transition focus-within:border-mustard-400/70 focus-within:ring-4 focus-within:ring-mustard-400/10 dark:border-zinc-700/80 dark:bg-zinc-900/60 dark:focus-within:border-mustard-400/50 dark:focus-within:ring-mustard-400/10"
         onDragOver={(e) => { if ([...e.dataTransfer.items].some((i) => i.type.startsWith("image/"))) e.preventDefault(); }}
         onDrop={(e) => { const fs = [...e.dataTransfer.files]; if (fs.some((f) => f.type.startsWith("image/"))) { e.preventDefault(); addFiles(fs); } }}>
         {images.length > 0 && (
@@ -330,14 +330,14 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
                   <div className="fixed inset-0 z-40" onClick={() => setModeMenu(false)} aria-hidden />
                   <div className={`${pop} left-0 w-72`}>
                     {(["default", "full"] as const).map((m) => (
-                      <button key={m} type="button" onClick={() => { onOptions({ mode: plan && m === "default" ? "plan" : m }); setModeMenu(false); }}
+                      <button key={m} type="button" onClick={() => { onOptions({ mode: m }); setModeMenu(false); }}
                         className="flex w-full items-start gap-2 rounded-lg px-2.5 py-1.5 text-left transition hover:bg-black/[.05] dark:hover:bg-white/[.08]">
                         {m === "full" ? <IconShieldExclamation size={15} stroke={1.8} className="mt-0.5 shrink-0 text-yellow-600 dark:text-yellow-500" aria-hidden /> : <IconShield size={15} stroke={1.8} className="mt-0.5 shrink-0 text-zinc-500" aria-hidden />}
                         <span className="min-w-0 flex-1">
                           <span className="block text-[13px] text-zinc-800 dark:text-zinc-100">{MODE_LABEL[m]}</span>
                           <span className="block text-xs text-zinc-500 dark:text-zinc-400">{t(`achat.modeHint.${m}`)}</span>
                         </span>
-                        {permMode === m && <IconCheck size={14} stroke={2} className="mt-0.5 shrink-0" aria-hidden />}
+                        {permMode === m && !plan && <IconCheck size={14} stroke={2} className="mt-0.5 shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />}
                       </button>
                     ))}
                   </div>
@@ -347,7 +347,7 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
             {/* 계획 — 권한과 따로 켜고 끄는 칩(Claude만) */}
             {meta.provider === "claude-code" && (
               <button type="button" onClick={() => onOptions({ mode: plan ? "default" : "plan" })} title={t("achat.modeHint.plan")}
-                className={`${pill} ${plan ? "bg-sky-500/10 text-sky-700 hover:bg-sky-500/15 dark:text-sky-300" : ""}`}>
+                aria-pressed={plan} className={`${pill} ${plan ? "bg-mustard-500/15 font-medium text-mustard-700 hover:bg-mustard-500/20 hover:text-mustard-800 dark:text-mustard-300 dark:hover:text-mustard-200" : ""}`}>
                 <IconListCheck size={14} stroke={1.8} aria-hidden />Plan
               </button>
             )}
@@ -356,6 +356,7 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
             {/* 모델 · 추론 수준 — 한 알약, 팝업: 검색·모델(설명)·이전 모델 접기·추론 수준 */}
             <div className="relative min-w-0">
               <button type="button" onClick={() => setPicker((v) => !v)} className={pill} data-chat-picker>
+                <AgentLogo agent={P(meta.provider).agent} size={13} />
                 <span className="truncate">{modelLabel}</span>
                 {effortLabel && <span className="shrink-0 text-zinc-400 dark:text-zinc-500">{effortLabel}</span>}
                 <IconChevronDown size={12} stroke={2} className="shrink-0 opacity-60" aria-hidden />
@@ -398,7 +399,7 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
                       <span className="mr-auto text-xs text-zinc-500 dark:text-zinc-400">{t("achat.pickEffort")}</span>
                       {EFFORTS.filter((e) => e.v !== undefined).map((e) => (
                         <button key={e.label} type="button" onClick={() => { onOptions({ effort: meta.effort === e.v ? undefined : e.v }); setPicker(false); }}
-                          className={`h-6 rounded-md px-2 text-xs transition ${meta.effort === e.v ? "bg-black/[.12] text-zinc-900 dark:bg-white/[.16] dark:text-white" : "text-zinc-600 hover:bg-black/[.05] dark:text-zinc-300 dark:hover:bg-white/[.08]"}`}>{e.label}</button>
+                          className={`h-6 rounded-md px-2 text-xs transition ${meta.effort === e.v ? "bg-mustard-500/15 font-medium text-mustard-700 dark:text-mustard-300" : "text-zinc-600 hover:bg-black/[.05] dark:text-zinc-300 dark:hover:bg-white/[.08]"}`}>{e.label}</button>
                       ))}
                     </div>
                   </div>
