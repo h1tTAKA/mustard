@@ -3,7 +3,7 @@
 // 활성 탭만 렌더(전환 시 remount → scrollback 재생). 탭 목록은 레포별 localStorage 영속.
 import { launchOpts, liftStoredArgs } from "@/lib/agentLaunch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconPlus, IconX, IconTerminal2, IconArrowsExchange } from "@tabler/icons-react";
+import { IconPlus, IconX, IconTerminal2, IconMessageCircle } from "@tabler/icons-react";
 import { useShortcut, useT, isCurrentTerminalDark, getSetting, CKEYS, CHATKEYS, CHAT_DEFAULTS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
 import Terminal from "@/components/workspace/Terminal";
 import ChatPane, { CHAT_HANDOFF_EVENT } from "@/components/workspace/ChatPane";
@@ -262,12 +262,13 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   });
 
   // #1341 터미널 ↔ 채팅 모드 — 칸 하나에 버튼 하나(유저 결정 11-14). 레포별로 기억. 터미널(pty)은 모드를 바꿔도 main에 살아 있음.
-  // 버튼 하나 — ⇄ + 지금 모드 이름, 누르면 다른 모드로(자리 적게)
+  // 버튼 하나 — 지금 모드 아이콘(머스타드) + 이름, 누르면 다른 모드로(자리 적게)
   const modeToggle = (
     <button type="button" onClick={() => setMode(mode === "chat" ? "term" : "chat")}
       title={t(mode === "chat" ? "achat.switchToTerminal" : "achat.switchToChat")} aria-label={t(mode === "chat" ? "achat.switchToTerminal" : "achat.switchToChat")}
       className="my-auto mr-1 flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] text-zinc-500 transition hover:bg-white hover:text-mustard-600 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-mustard-400">
-      <IconArrowsExchange size={13} stroke={2} aria-hidden />{t(mode === "chat" ? "achat.modeChat" : "achat.modeTerminal")}
+      {mode === "chat" ? <IconMessageCircle size={13} stroke={2} className="text-mustard-600 dark:text-mustard-400" aria-hidden /> : <IconTerminal2 size={13} stroke={2} className="text-mustard-600 dark:text-mustard-400" aria-hidden />}
+      {t(mode === "chat" ? "achat.modeChat" : "achat.modeTerminal")}
     </button>
   );
   if (mode === "chat") return <ChatPane cwd={cwd} modeToggle={modeToggle} />;
