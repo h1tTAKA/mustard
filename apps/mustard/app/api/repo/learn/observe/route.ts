@@ -10,7 +10,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const GAP_MS = 20_000, LATE_MS = 25_000;
-type Pending = { msgs: SessionMsg[]; prompt?: string; agent: string; diff: string; last: number; busy: boolean; timer?: ReturnType<typeof setTimeout> };
+type Pending = { msgs: SessionMsg[]; prompt?: string; agent: string; diff: string; diffHash: number; last: number; busy: boolean; timer?: ReturnType<typeof setTimeout> };
+const djb2 = (s: string) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return h; };
 const g = ((globalThis as unknown as { __mustardObserve?: Map<string, Pending> }).__mustardObserve ??= new Map());
 
 async function flush(cwd: string, providerId: unknown) {
@@ -19,9 +20,13 @@ async function flush(cwd: string, providerId: unknown) {
   if (st.timer) { clearTimeout(st.timer); st.timer = undefined; }
   if (!hasSubstance(st.msgs)) return; // 해설할 거리(말·작업)가 아직 없음 — 더 모음
   const msgs = st.msgs; st.msgs = []; st.last = Date.now(); st.busy = true;
-  try { await narrate(cwd, st.agent, "", st.diff, Date.now(), { providerId, material: materialOf(msgs, st.prompt), signal: AbortSignal.timeout(60_000) }); }
+  const diff = st.diff; st.diff = ""; // 이번에 넘긴 diff는 소비(바뀐 때만 다시 — 리뷰: 옛 diff가 매번 가서 반복 가드가 꺼지던 문제)
+  try { await narrate(cwd, st.agent, "", diff, Date.now(), { providerId, material: materialOf(msgs, st.prompt), signal: AbortSignal.timeout(60_000) }); }
   catch { /* 구독 미가용·시간 초과 — 다음 묶음에서 */ }
-  finally { st.busy = false; }
+  finally {
+    st.busy = false;
+    if (!st.timer && hasSubstance(st.msgs)) st.timer = setTimeout(() => { st.timer = undefined; void flush(cwd, providerId); }, GAP_MS); // 해설하는 동안 쌓인 것(리뷰)
+  }
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -38,10 +43,11 @@ export async function POST(req: Request): Promise<Response> {
   const tx = await readNewMessages(cwd).catch(() => null);
   if (tx?.found) {
     let st = g.get(cwd);
-    if (!st) g.set(cwd, (st = { msgs: [], agent, diff: "", last: 0, busy: false }));
+    if (!st) g.set(cwd, (st = { msgs: [], agent, diff: "", diffHash: 0, last: 0, busy: false }));
     st.msgs.push(...tx.msgs); st.msgs = st.msgs.slice(-200);
     if (tx.prompt) st.prompt = tx.prompt;
-    st.agent = agent; if (diff) st.diff = diff;
+    st.agent = agent;
+    if (diff) { const h = djb2(diff); if (h !== st.diffHash) { st.diffHash = h; st.diff = diff; } } // 바뀐 때만
     const wait = Math.max(0, st.last + GAP_MS - Date.now());
     if (!wait && hasSubstance(st.msgs)) { await flush(cwd, body.providerId); return Response.json({ ok: true, source: "transcript" }); }
     if (!st.timer && st.msgs.length) st.timer = setTimeout(() => { if (g.get(cwd)) g.get(cwd)!.timer = undefined; void flush(cwd, body.providerId); }, Math.max(wait, LATE_MS)); // 신호가 끊겨도 모인 건 해설

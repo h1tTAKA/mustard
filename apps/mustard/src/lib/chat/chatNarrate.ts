@@ -54,7 +54,10 @@ export function observeChat(chatId: string, cwd: string, agent: string, ev: Reco
       if (full) st.diffHash = h;
       await narrate(cwd, agent, "", diff, Date.now(), { material: materialOf(msgs, st.prompt), signal: AbortSignal.timeout(60_000) });
     } catch { /* 구독 미가용·시간 초과 — 다음 묶음에서 */ }
-    finally { st.busy = false; }
+    finally {
+      st.busy = false;
+      if (!st.timer && hasSubstance(st.msgs)) st.timer = setTimeout(() => void fire(), GAP_MS); // 해설하는 동안 쌓인 것(턴 끝 마지막 해설이 묶이지 않게, 리뷰)
+    }
   };
   // 턴이 끝나면 바로, 아니면 간격을 지켜 한 번(묶어서)
   if (end) { if (s.timer) clearTimeout(s.timer); void fire(); }

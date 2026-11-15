@@ -30,11 +30,10 @@ async function newLines(file: string): Promise<{ lines: string[]; first: boolean
     if (size <= from) { g.offsets.set(file, size); return { lines: [], first }; }
     const buf = Buffer.alloc(size - from);
     await fh.read(buf, 0, buf.length, from);
-    const text = buf.toString("utf8");
-    const end = text.lastIndexOf("\n");
-    if (end < 0) { if (first) g.offsets.set(file, from); return { lines: [], first }; }
-    g.offsets.set(file, from + Buffer.byteLength(text.slice(0, end + 1)));
-    const lines = text.slice(0, end).split("\n");
+    const nl = buf.lastIndexOf(0x0a); // 바이트로 찾음 — 한글 중간에서 읽기 시작해도 위치가 안 밀리게(리뷰)
+    if (nl < 0) { if (first) g.offsets.set(file, from); return { lines: [], first }; }
+    g.offsets.set(file, from + nl + 1);
+    const lines = buf.subarray(0, nl).toString("utf8").split("\n");
     return { lines: (first && from > 0) ? lines.slice(1) : lines, first }; // 중간부터 읽었으면 잘린 첫 줄 버림
   } finally { await fh.close(); }
 }
@@ -43,24 +42,39 @@ async function codexCwd(file: string): Promise<string> {
   const hit = g.codexCwd.get(file); if (hit !== undefined) return hit;
   let cwd = "";
   try { const fh = await fs.open(file, "r"); try { const b = Buffer.alloc(64 * 1024); const { bytesRead } = await fh.read(b, 0, b.length, 0); cwd = parseCodexLine(b.subarray(0, bytesRead).toString("utf8").split("\n")[0])?.cwd ?? ""; } finally { await fh.close(); } } catch { /* 없음 */ }
-  g.codexCwd.set(file, cwd);
+  if (cwd) g.codexCwd.set(file, cwd); // 첫 줄이 덜 쓰였을 때의 빈 값은 기억 안 함(리뷰)
   return cwd;
 }
 
 export interface LiveTranscript { agent: "claude" | "codex"; msgs: SessionMsg[]; prompt?: string; found: boolean }
 // 이 레포에서 방금 쌓인 대화 — found = 최근에 바뀐 기록 파일이 있었는지(없으면 호출부가 터미널 글자로 대신)
-export async function readNewMessages(root: string): Promise<LiveTranscript> {
+// 같은 레포를 동시에 읽으면 같은 구간을 두 번 가져옴 → 레포별로 한 줄(리뷰)
+const chains = new Map<string, Promise<unknown>>();
+export function readNewMessages(root: string): Promise<LiveTranscript> {
+  const prev = chains.get(root) ?? Promise.resolve();
+  const p = prev.catch(() => {}).then(() => readOnce(root));
+  chains.set(root, p);
+  return p;
+}
+async function readOnce(root: string): Promise<LiveTranscript> {
   const now = Date.now(), since = now - FRESH_MS;
   const out: { agent: "claude" | "codex"; p: ParsedLine }[] = [];
   let found = false;
   const take = async (agent: "claude" | "codex", file: string, parse: (l: string) => ParsedLine | null) => {
-    found = true;
     const { lines, first } = await newLines(file);
-    for (const l of lines) { const p = parse(l); if (p && (!first || p.ts >= since)) out.push({ agent, p }); }
+    for (const l of lines) { const p = parse(l); if (p && p.ts >= since) out.push({ agent, p }); } // 늘 최근 3분만 — 오래 쉬다 읽어도 옛 대화를 '방금'으로 안 봄(리뷰)
   };
-  for (const f of await fresh(projectDirFor(root), since)) await take("claude", f, parseClaudeLine);
+  // found = 이 레포에 기록이 있는 에이전트(최근 30분 기록) — 3분 넘는 빌드·테스트 중에도 터미널 글자로 안 떨어지게(리뷰)
+  const claudeDir = projectDirFor(root);
+  if ((await fresh(claudeDir, now - 30 * 60_000)).length) found = true;
+  for (const f of await fresh(claudeDir, since)) await take("claude", f, parseClaudeLine);
   const day = (d: Date) => join(process.env.CODEX_HOME?.trim() || join(homedir(), ".codex"), "sessions", String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0"));
-  for (const d of [new Date(now), new Date(now - 86_400_000)]) for (const f of await fresh(day(d), since)) { if (under(await codexCwd(f), root)) await take("codex", f, parseCodexLine); }
+  for (const d of [new Date(now), new Date(now - 86_400_000)]) for (const f of await fresh(day(d), now - 30 * 60_000)) {
+    if (!under(await codexCwd(f), root)) continue;
+    found = true;
+    const m = (await fs.stat(f).catch(() => null))?.mtimeMs ?? 0;
+    if (m >= since) await take("codex", f, parseCodexLine);
+  }
   out.sort((a, b) => a.p.ts - b.p.ts);
   const msgs = out.flatMap((x) => x.p.msgs);
   const prompt = [...out].reverse().find((x) => x.p.prompt)?.p.msgs.find((m) => m.role === "user")?.text;

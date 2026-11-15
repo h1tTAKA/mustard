@@ -18,12 +18,12 @@ export function memoLines(past: PastNarration[], fmt: (ts: number) => string): s
 const titleKey = (t: string) => t.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase(); // 글자·숫자만(기호·띄어쓰기 무시)
 // 새 카드가 반복인지 — 제목이 최근 것과 같거나, 코드 변경 없이 새 개념이 하나도 없으면(이미 다 설명한 것만) 반복
 export function isRepeat(title: string, expl: string, past: PastNarration[], hasDiff: boolean): boolean {
-  const tk = titleKey(title);
-  if (past.some((p) => titleKey(p.title) === tk)) return true;
-  if (hasDiff) return false; // 진짜 코드가 바뀌었으면 해설할 거리가 있음
-  const mine = conceptsOf(expl);
-  if (!mine.size) return false;
   const seen = new Set<string>();
   for (const p of past) for (const c of conceptsOf(p.expl)) seen.add(c);
-  return [...mine].every((c) => seen.has(c));
+  const mine = conceptsOf(expl);
+  const noNew = [...mine].every((c) => seen.has(c)); // 개념이 없거나 전부 이미 설명함
+  const tk = titleKey(title);
+  if (past.some((p) => titleKey(p.title) === tk) && noNew) return true; // 같은 제목 + 새 개념 없음(기본 제목끼리 겹쳐도 새 개념이 있으면 통과 — 리뷰)
+  if (hasDiff || !mine.size) return false; // 진짜 코드가 바뀌었으면 해설할 거리가 있음
+  return noNew;
 }

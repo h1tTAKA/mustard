@@ -98,9 +98,13 @@ function recentNarrations(cwd: string, ts: number): PastNarration[] {
 // material = 대화 기록 재료(liveTranscript.materialOf) — 있으면 그걸, 없으면 delta(터미널 글자)를 재료로
 export async function narrate(cwd: string, agent: string, delta: string, diff: string, ts: number, opts: { providerId?: unknown; signal?: AbortSignal; material?: string } = {}): Promise<boolean> {
   if (repoPrefOff(cwd, "explainAnalyze")) return false; // #1239 이 레포만 해설 분석 끔(캐치업 창 레포 설정) — observe·backfill 공통 길목
-  const end = beginNarrate(cwd); // #1240 캐치업 창 "만드는 중" — 성공·실패·SKIP 모두 끝에서 뺌
-  try { return await narrateOnce(cwd, agent, delta, diff, ts, opts); } finally { end(); }
+  // #1359 같은 레포 해설은 한 줄로 — 동시에 돌면 둘 다 같은 '앞서 해설한 것'을 보고 같은 개념을 또 설명(리뷰)
+  const prev = narrateChains.get(cwd) ?? Promise.resolve();
+  const run = prev.catch(() => {}).then(async () => { const end = beginNarrate(cwd); try { return await narrateOnce(cwd, agent, delta, diff, ts, opts); } finally { end(); } }); // #1240 "만드는 중" 표시
+  narrateChains.set(cwd, run);
+  try { return await run; } finally { if (narrateChains.get(cwd) === run) narrateChains.delete(cwd); }
 }
+const narrateChains = new Map<string, Promise<boolean>>();
 
 async function narrateOnce(cwd: string, agent: string, delta: string, diff: string, ts: number, opts: { providerId?: unknown; signal?: AbortSignal; material?: string }): Promise<boolean> {
   // #1359 앞서 해설한 것(같은 레포, 최근 30분 6장) — 반복 대신 흐름을 잇게 프롬프트에, 그래도 새것 없는 카드는 버림
