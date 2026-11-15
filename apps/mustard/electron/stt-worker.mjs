@@ -23,6 +23,8 @@ process.stdin.on("data", (b) => {
   chunks.push(f); samples += n;
 });
 
+let chain = Promise.resolve();
+const serial = (fn) => { const p = chain.then(fn, fn); chain = p.catch(() => {}); return p; };
 let lastLen = 0, gen = 0, sid = 0; // sid = main이 준 받아쓰기 번호 — 결과에 되돌려 줘서 옛 결과가 새 받아쓰기에 섞이지 않게(재리뷰) // gen = 받아쓰기 세대(새로 시작·취소마다 +1) — 늦게 끝난 옛 디코딩이 새 소리를 건드리지 않게(리뷰)
 // 앞에서 n개 샘플을 버림(창 확정 때 — 그 사이 들어온 소리는 다음 창으로)
 function dropFront(n) {
@@ -36,7 +38,7 @@ async function decode(given) {
   if (pcm.length < RATE / 4) return "";
   const langs = model.capabilities.languages ?? [];
   const lang = language && (langs.find((c) => c === language) ?? langs.find((c) => c.startsWith(`${language}-`)));
-  const r = await session.run(pcm, { timestamps: "none", ...(lang ? { language: lang } : {}) });
+  const r = await serial(() => session.run(pcm, { timestamps: "none", ...(lang ? { language: lang } : {}) })); // 세션 호출은 늘 하나씩(재리뷰: 동시 실행이 계속 새어 나옴)
   return String(r.text ?? "").trim();
 }
 async function step(final) {
@@ -49,12 +51,13 @@ async function step(final) {
     decodedAt = samples;
     return join2(committed, text);
   })();
-  try { return await decoding; } finally { decoding = null; }
+  const mine = decoding;
+  try { return await mine; } finally { if (decoding === mine) decoding = null; } // finish가 건 처리를 지우지 않게(재리뷰)
 }
 setInterval(() => {
   if (!active || decoding || samples - decodedAt < RATE * 0.6) return;
   const mySid = sid;
-  void step(false).then((t) => { if (active && t && mySid === sid) send({ type: "partial", text: t, sid: mySid }); }).catch((e) => send({ type: "error", message: String(e?.message || e) }));
+  void step(false).then((t) => { if (active && t && mySid === sid) send({ type: "partial", text: t, sid: mySid }); }).catch((e) => send({ type: "error", message: String(e?.message || e), sid: mySid }));
 }, 1200);
 
 process.on("message", async (m) => {
@@ -85,5 +88,5 @@ process.on("message", async (m) => {
     } else if (m.type === "cancel") {
       gen++; active = false; committed = ""; chunks = []; samples = 0;
     }
-  } catch (e) { active = false; send({ type: "error", message: String(e?.message || e) }); }
+  } catch (e) { active = false; send({ type: "error", message: String(e?.message || e), sid: m.sid ?? sid }); }
 });
