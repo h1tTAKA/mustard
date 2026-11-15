@@ -265,6 +265,19 @@ samp {
   .nunopi-indeterminate > span { animation: none; transform: none; width: 100%; opacity: 0.5; }
 }
 
+/* 채팅 모드(#1341) — 실행 중 글자 위로 빛이 지나감(색 배지 대신 움직임으로 진행 표시). 움직임 끄기 설정이면 흐린 글자만. */
+@keyframes mustard-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.mustard-shimmer {
+  background: linear-gradient(90deg, currentColor 0%, currentColor 40%, rgba(255,255,255,0.95) 50%, currentColor 60%, currentColor 100%);
+  background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: mustard-shimmer 2s linear infinite;
+}
+:root:not(.dark) .mustard-shimmer { background-image: linear-gradient(90deg, currentColor 0%, currentColor 40%, rgba(0,0,0,0.9) 50%, currentColor 60%, currentColor 100%); }
+/* 채팅 찾기(⌘F) — CSS 하이라이트(글을 바꾸지 않고 칠함) */
+::highlight(mustard-find) { background-color: rgba(250, 204, 21, 0.35); }
+::highlight(mustard-find-cur) { background-color: rgba(234, 140, 0, 0.7); color: #000; }
+@media (prefers-reduced-motion: reduce) { .mustard-shimmer { animation: none; -webkit-text-fill-color: currentColor; opacity: 0.7; } }
+
 /* 타이틀바 통합(#779) — 신호등 줄로 올린 헤더에서 빈 영역은 창 이동(drag),
    버튼·탭·입력 등 인터랙션 요소는 no-drag(클릭·드래그 재정렬이 창 이동에 안 먹히게). */
 .titlebar-drag { -webkit-app-region: drag; app-region: drag; }

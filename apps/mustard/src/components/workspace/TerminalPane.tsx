@@ -3,9 +3,12 @@
 // 활성 탭만 렌더(전환 시 remount → scrollback 재생). 탭 목록은 레포별 localStorage 영속.
 import { launchOpts, liftStoredArgs } from "@/lib/agentLaunch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
-import { useShortcut, useT, isCurrentTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
+import { IconPlus, IconX, IconTerminal2, IconMessageCircle } from "@tabler/icons-react";
+import { useShortcut, useT, isCurrentTerminalDark, getSetting, CKEYS, CHATKEYS, CHAT_DEFAULTS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
 import Terminal from "@/components/workspace/Terminal";
+import ChatPane, { CHAT_HANDOFF_EVENT } from "@/components/workspace/ChatPane";
+import PaneStart from "@/components/workspace/PaneStart";
+import type { Provider } from "@/components/workspace/ChatComposer";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
 import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
 import { clearUnread, isUnread, sessionState, useAgentSessionStates } from "@/lib/agentSessionStates";
@@ -54,12 +57,24 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   const [tabs, setTabs] = useState<Tab[]>(initial.tabs);
   const [activeId, setActiveId] = useState<string>(initial.activeId);
   const curStore = useRef(store);
+  const modeKey = `nunopi:ws-termmode:${cwd}`;
+  // 레포마다 마지막 모드, 처음이면 설정 > 채팅의 기본 화면
+  const readMode = (k: string): "term" | "chat" => { try { const v = localStorage.getItem(k); return v === "chat" || v === "term" ? v : getSetting<string>(CHATKEYS.defaultView, CHAT_DEFAULTS.defaultView) === "chat" ? "chat" : "term"; } catch { return "term"; } };
+  // 처음 여는 레포(탭 기록·모드 기록 둘 다 없음) + 설정이 '물어보기'면 시작 고르기 화면(PaneStart)
+  const firstOpen = (st: string, mk: string) => { try { return !localStorage.getItem(st) && !localStorage.getItem(mk) && getSetting<string>(CHATKEYS.defaultView, CHAT_DEFAULTS.defaultView) === "ask"; } catch { return false; } };
+  const [startState, setStartState] = useState(() => ({ key: store, on: firstOpen(store, modeKey) }));
+  const starting = startState.key === store && startState.on;
+  const [chatInit, setChatInit] = useState<{ provider: Provider; model?: string; text?: string } | undefined>(undefined);
+  const [modeState, setModeState] = useState<{ key: string; mode: "term" | "chat" }>(() => ({ key: modeKey, mode: readMode(modeKey) }));
+  const mode = modeState.key === modeKey ? modeState.mode : readMode(modeKey); // 레포(cwd)가 바뀌면 그 레포 모드
+  const setMode = (m: "term" | "chat") => { setModeState({ key: modeKey, mode: m }); try { localStorage.setItem(modeKey, m); } catch { /* 저장 못 해도 동작 */ } };
   const confirm = useConfirm();
 
   // 폴더(cwd) 바뀌면 그 레포 탭셋 재로드(첫 마운트는 lazy init).
   useEffect(() => {
     if (curStore.current === store) return;
     curStore.current = store;
+    setStartState({ key: store, on: firstOpen(store, `nunopi:ws-termmode:${cwd}`) }); // 탭 기록을 쓰기 전에 판정
     const d = loadTabs(store, t("workspace.terminalTab", { n: 1 }));
     setTabs(d.tabs); setActiveId(d.activeId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- store 변경만
@@ -208,6 +223,21 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
     window.addEventListener("mustard:crew-takeover", on);
     return () => window.removeEventListener("mustard:crew-takeover", on);
   }, [cwd, t]);
+  // #1341 채팅 → 터미널 넘기기 — 채팅 에이전트는 서버가 이미 끔. 터미널 모드로 바꾸고 새 탭에서 같은 대화 resume
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ root: string; agent: string; args: string }>).detail;
+      if (!d || d.root !== cwd) return;
+      const id = genId();
+      setModeState({ key: `nunopi:ws-termmode:${cwd}`, mode: "term" }); try { localStorage.setItem(`nunopi:ws-termmode:${cwd}`, "term"); } catch { /* 저장 못 해도 동작 */ }
+      setTabs((prev) => [...prev, { id, title: t("workspace.terminalTab", { n: nextNum(prev) }) }]);
+      setActiveId(id);
+      markAgentUsed(d.agent);
+      void window.nunopiDesktop?.terminal?.launchAgent?.({ id, agent: d.agent, dark: isCurrentTerminalDark(), ...launchOpts(d.agent, d.args) });
+    };
+    window.addEventListener(CHAT_HANDOFF_EVENT, on);
+    return () => window.removeEventListener(CHAT_HANDOFF_EVENT, on);
+  }, [cwd, t]);
   const launchInNewTab = (agent: string) => {
     setMenuOpen(false);
     markAgentUsed(agent);
@@ -229,7 +259,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
 
   // #1027 터미널 탭 단축키 — 보이는(활성) 레포의 터미널 패널만 처리, 아니면 false로 다른 레포에 넘김.
   useShortcut(["term.new", "term.newAgent", "term.close", "term.next", "term.prev", ...Array.from({ length: 9 }, (_, i) => `term.goto${i + 1}`)], (d) => {
-    if (!paneActive || !tabs.length) return false;
+    if (!paneActive || !tabs.length || mode === "chat" || starting) return false; // 채팅 모드에선 안 보이는 터미널 탭을 건드리지 않음(리뷰)
     const i = Math.max(0, tabs.findIndex((x) => x.id === activeId));
     if (d.id === "term.new") addTab();
     else if (d.id === "term.newAgent") launchDefaultAgent();
@@ -238,6 +268,26 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
     else if (d.id === "term.prev") setActiveId(tabs[(i - 1 + tabs.length) % tabs.length].id);
     else if (d.arg) setActiveId((d.arg === 9 ? tabs[tabs.length - 1] : tabs[d.arg - 1] ?? tabs[tabs.length - 1]).id); // ⌘9 = 마지막(터미널 관례)
   });
+
+  // #1341 터미널 ↔ 채팅 모드 — 칸 하나에 버튼 하나(유저 결정 11-14). 레포별로 기억. 터미널(pty)은 모드를 바꿔도 main에 살아 있음.
+  // 버튼 하나 — 누르면 갈 모드를 보여 줌(터미널일 땐 '채팅으로', 채팅일 땐 '터미널로', 아이콘 머스타드)
+  const modeToggle = (
+    <button type="button" onClick={() => setMode(mode === "chat" ? "term" : "chat")}
+      title={t(mode === "chat" ? "achat.switchToTerminal" : "achat.switchToChat")} aria-label={t(mode === "chat" ? "achat.switchToTerminal" : "achat.switchToChat")}
+      className="my-auto mr-1 flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] text-zinc-500 transition hover:bg-white hover:text-mustard-600 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-mustard-400">
+      {mode === "chat" ? <IconTerminal2 size={13} stroke={2} className="text-mustard-600 dark:text-mustard-400" aria-hidden /> : <IconMessageCircle size={13} stroke={2} className="text-mustard-600 dark:text-mustard-400" aria-hidden />}
+      {t(mode === "chat" ? "achat.goTerminal" : "achat.goChat")}
+    </button>
+  );
+  if (starting) return (
+    <PaneStart agents={menuAgents.map((a) => ({ id: a.id, label: a.label }))} defaultPick={defaultPick}
+      onTerminal={(agent) => {
+        setStartState({ key: store, on: false }); setMode("term");
+        if (agent && active) { markAgentUsed(agent); void window.nunopiDesktop?.terminal?.launchAgent?.({ id: active.id, agent, dark: isCurrentTerminalDark(), ...launchOpts(agent) }); } // 첫 탭에서 바로
+      }}
+      onChat={(provider, model, text) => { setStartState({ key: store, on: false }); setChatInit({ provider, model, text }); setMode("chat"); }} />
+  );
+  if (mode === "chat") return <ChatPane cwd={cwd} modeToggle={modeToggle} initial={chatInit} />;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -294,6 +344,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
           <IconPlus size={15} stroke={2.5} aria-hidden />
         </button>
       </div>
+      {modeToggle}
       </div>
       {/* ＋ 드롭다운(#864) — position:fixed라 overflow-x-auto에 안 잘림. 버튼 rect 기준 좌표. */}
       {menuOpen && (

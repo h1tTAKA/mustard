@@ -40,6 +40,20 @@ extraResources:
   # 컴퓨터 사용 도우미(#1189) — 자기 번들 id를 가진 .app이라 macOS 권한이 이 도우미에 붙음. package-app.mjs가 먼저 만듦.
   - from: native/computer-use-macos/dist/Mustard Computer Use.app
     to: Mustard Computer Use.app
+  # 받아쓰기 도우미(#1341) — Mustard 자식으로 실행돼 마이크·음성 인식 권한은 Mustard 이름으로(아래 extendInfo 설명 필요). package-app.mjs가 먼저 만듦.
+  - from: native/dictation-macos/dist/mustard-dictate
+    to: mustard-dictate
+  # 로컬 음성 모델 엔진(#1341) — koffi가 dylib를 dlopen하므로 asar 밖 Resources/node_modules에(받아쓰기 일꾼이 여기서 찾음). 모델 파일은 받을 때만 내려받음.
+  - from: electron/stt-worker.mjs
+    to: electron/stt-worker.mjs
+  - from: ../../node_modules/transcribe-cpp
+    to: node_modules/transcribe-cpp
+  - from: ../../node_modules/@transcribe-cpp/darwin-arm64-metal
+    to: node_modules/@transcribe-cpp/darwin-arm64-metal
+  - from: ../../node_modules/koffi
+    to: node_modules/koffi
+  - from: ../../node_modules/@koromix/koffi-darwin-arm64   # koffi 네이티브(.node) — 없으면 'Cannot find the native Koffi module'(실측)
+    to: node_modules/@koromix/koffi-darwin-arm64
   # 데몬이 require("node-pty") 하는데, resources/electron/에서 walk-up 하면 resources/node_modules/node-pty를
   # 찾는다. from은 hoist된 루트 node_modules(apps/mustard/node_modules는 비어 있음, #906).
   # node-pty .node는 package-app.mjs가 패키징 전 electron ABI로 선빌드(RUN_AS_NODE 데몬서 로드).
@@ -59,6 +73,12 @@ afterPack: electron/after-pack.cjs
 
 mac:
   category: public.app-category.developer-tools
+  # #1341 받아쓰기 — 마이크 권한 표시(보안 강화 모드에선 필수, 자식 도우미도 같은 것) + 사용 설명(없으면 macOS가 도우미를 죽임)
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: "Mustard uses the microphone when you dictate a message to your agent."
+    NSSpeechRecognitionUsageDescription: "Mustard turns your voice into text on this Mac when you dictate a message."
   target:
     - dir   # 빠른 로컬 검증용
     - dmg   # 배포물(미노터라이즈 — 서명/노터라이즈는 배포 임박 시)

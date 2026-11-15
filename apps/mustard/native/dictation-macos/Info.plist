@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleIdentifier</key><string>ai.neuradex.mustard.dictation</string>
+  <key>CFBundleName</key><string>Mustard Dictation</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>NSMicrophoneUsageDescription</key><string>Mustard uses the microphone when you dictate a message to your agent.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Mustard turns your voice into text on this Mac when you dictate a message.</string>
+</dict></plist>

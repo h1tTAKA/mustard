@@ -4,6 +4,7 @@ type TrackerProvider = "linear" | "jira";
 interface TrackerIssue { provider: TrackerProvider; id: string; key: string; title: string; state: string; stateType: string; url: string; updatedAt: string; branchName: string; assignee: string; team?: { id: string; key: string }; body?: string; comments?: { author: string; body: string; at: string }[] }
 type TrackerResult<T> = { ok: true; data: T } | { ok: false; state: "not-connected" | "not-authed" | "forbidden" | "rate-limited" | "offline" | "error"; detail?: string };
 interface AgentDetect { id: string; label: string; status: "ok" | "broken" | "missing"; path?: string; version?: string | null; auth: "authenticated" | "unauthenticated" | "unknown"; install: string | null; tried: { path: string; error: string }[]; url?: string; cmd?: string; choices?: string[]; carriers?: string[]; weak?: boolean; flags?: { ask?: string; edits?: string; auto?: string; full?: string }; env?: Record<string, string> | null }
+interface SpeechModelStatus { id: string; label: string; size: number; errors: Record<string, number>; recommended: string[]; licence: string; installed: boolean; downloading: { done: number; total: number } | null } // #1341 로컬 음성 모델
 type GhResult<T> = { ok: true; data: T } | { ok: false; kind: string; detail?: string };
 interface GhLabel { name: string; color: string }
 type GhMetaField = "reviewer" | "assignee" | "label" | "milestone"; // #1131 사이드바 항목
@@ -66,6 +67,19 @@ interface NunopiDesktopApi {
     comment(provider: TrackerProvider, issue: TrackerIssue, body: string): Promise<TrackerResult<boolean>>;
     syncGet(): Promise<{ start: boolean; pr: boolean; done: boolean }>;
     syncSet(cfg: Partial<{ start: boolean; pr: boolean; done: boolean }>): Promise<{ start: boolean; pr: boolean; done: boolean }>;
+  };
+  dictation?: {
+    available(): Promise<boolean>;
+    start(opts: string | { locale: string; device?: string; engine?: "system" | "local"; modelId?: string; language?: string }): Promise<{ ok: boolean; error?: string; engine?: string; id?: number }>;
+    info?(): Promise<{ available: boolean; local: boolean; devices: { id: string; name: string; default: boolean }[]; models: SpeechModelStatus[] }>;
+    downloadModel?(id: string): Promise<{ ok: boolean; error?: string }>;
+    cancelModel?(id: string): Promise<boolean>;
+    removeModel?(id: string): Promise<boolean>;
+    onModelProgress?(cb: (p: { id: string; done: number; total: number }) => void): () => void;
+    stop(): Promise<boolean>;
+    cancel(): Promise<boolean>;
+    openSettings(which: "mic" | "speech"): Promise<void>;
+    onEvent(cb: (e: { type: "ready" | "level" | "partial" | "final" | "error" | "end"; text?: string; v?: number; code?: string | number; signal?: string; message?: string; sid?: number }) => void): () => void;
   };
   detectAgents?(force?: boolean): Promise<{ ok: true; list: AgentDetect[] } | { ok: false; error: string }>;
   liftAgentArgs?(agent: string, args: string): Promise<{ choice: string; rest: string } | null>; // #1184

@@ -15,10 +15,12 @@ import GhosttyImportRow from "./GhosttyImportRow";
 import NotifySoundRow from "./NotifySoundRow";
 import TerminalRenderSection from "./TerminalRenderSection";
 import TerminalThemeSection from "./TerminalThemeSection";
-import { IconLayoutKanban, IconKeyboard, IconCode, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus, IconSitemap } from "@tabler/icons-react";
+import { IconMessageCircle, IconMicrophone, IconLayoutKanban, IconKeyboard, IconCode, IconRotate, IconWorld, IconRefresh, IconArrowLeft, IconPalette, IconLanguage, IconRobot, IconSparkles, IconTerminal2, IconChevronDown, IconBell, IconShieldHalf, IconFolder, IconGitBranch, IconPlug, IconBrandGithub, IconLoader2, IconBrandGitlab, IconBrandBitbucket, IconBrandAzure, IconActivity, IconDeviceDesktop, IconBolt, IconSearch, IconX, IconMinus, IconPlus, IconSitemap } from "@tabler/icons-react";
 import { useSetting, setSetting, notifSound, TKEYS, TERMINAL_DEFAULTS, type TerminalCursorStyle, NKEYS, NOTIF_DEFAULTS, CKEYS, CONFIRM_DEFAULTS, APKEYS, APPEARANCE_DEFAULTS, type UiFontPref, applyUiZoom, applyUiFont, WKEYS, WORKSPACE_DEFAULTS, GKEYS, GIT_DEFAULTS, CUKEYS, CATCHUP_DEFAULTS, ARCHKEYS, ARCH_DEFAULTS, ARCH_DEPTHS, archDepthsOf, archDefaultOf } from "@mustard/core";
 import TrackerCards from "./TrackerCards";
 import ComputerUseSection from "./ComputerUseSection";
+import ChatSettingsSection from "./ChatSettingsSection";
+import VoiceSection from "./VoiceSection";
 import QuickCommandsSection from "./QuickCommandsSection";
 import { searchSettings } from "./settingsSearchIndex";
 import AgentCatalogSection from "./AgentCatalogSection";
@@ -507,6 +509,8 @@ export default function SettingsDrawer({
     { id: "set-arch", label: t("settings.archSection"), Icon: IconSitemap, show: workspaceSettings, group: t("settings.groupAgents") }, // #1322
     { id: "set-integrations", label: t("settings.integrations"), Icon: IconPlug, show: workspaceSettings, group: t("settings.groupAgents") },
     { id: "set-crew", label: t("crewPerm.section"), Icon: IconLayoutKanban, show: workspaceSettings, group: t("settings.groupAgents") }, // #1279
+    { id: "set-chat", label: t("chatSet.section"), Icon: IconMessageCircle, show: workspaceSettings, group: t("settings.groupAgents") }, // #1341 채팅 모드
+    { id: "set-voice", label: t("voice.section"), Icon: IconMicrophone, show: workspaceSettings && typeof window !== "undefined" && !!(window as unknown as { nunopiDesktop?: { dictation?: unknown } }).nunopiDesktop?.dictation, group: t("settings.groupAgents") }, // #1341 받아쓰기
     { id: "set-computer", label: t("settings.computer"), Icon: IconDeviceDesktop, show: workspaceSettings && typeof window !== "undefined" && !!window.nunopiDesktop?.computer, group: t("settings.groupAgents") }, // #1175
     { id: "set-nunopi", label: t("settings.nunopiModule"), Icon: IconSparkles, show: !!onNunopiEnabledChange, group: t("settings.groupAgents") },
   ];
@@ -1376,6 +1380,10 @@ export default function SettingsDrawer({
 
           {/* Crew 권한(#1279) — 항목별 알아서 허용/물어보기 */}
           {activeSection === "set-crew" && <CrewPermSection />}
+
+          {/* 채팅·음성(#1341) */}
+          {activeSection === "set-chat" && <ChatSettingsSection />}
+          {activeSection === "set-voice" && <VoiceSection />}
 
           {/* 컴퓨터 사용(#1175) — 에이전트의 데스크톱 앱 조작 */}
           {activeSection === "set-computer" && (
