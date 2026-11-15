@@ -12,6 +12,8 @@ assert.strictEqual(isRepeat("웹 빌드 결과 확인", "**빌드(build)** 는 �
 // 같은 제목은 띄어쓰기·기호가 달라도 같은 제목 — 새 개념 없으면 반복, 새 개념 있으면 통과(기본 제목끼리 겹치는 경우)
 assert.strictEqual(isRepeat("도구 실행 전후에 걸리는 훅!", "**훅** 얘기만", past, false), true);
 assert.strictEqual(isRepeat("도구 실행 전후에 걸리는 훅!", "**새것** …", past, false), false);
+// 같은 제목·굵은 말 없음이어도 코드가 바뀌었으면 통과(재리뷰)
+assert.strictEqual(isRepeat("작업 중", "그냥 설명", [{ ts: 1, title: "작업 중", expl: "설명" }], true), false);
 // 코드가 바뀌었으면 개념이 겹쳐도 통과
 assert.strictEqual(isRepeat("훅 설정 파일 고침", "**훅** …", past, true), false);
 assert.deepStrictEqual(memoLines(past, () => "00:43"), ["- [00:43] 도구 실행 전후에 걸리는 훅 — 설명한 개념: 훅, mcp"]);

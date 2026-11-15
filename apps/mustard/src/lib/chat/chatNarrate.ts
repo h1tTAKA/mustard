@@ -51,8 +51,8 @@ export function observeChat(chatId: string, cwd: string, agent: string, ev: Reco
       const full = await gitDiff(cwd);
       const h = full ? djb2(full) : 0;
       const diff = full && h !== st.diffHash ? full : ""; // 코드 그대로면 재전송 안 함
-      if (full) st.diffHash = h;
-      await narrate(cwd, agent, "", diff, Date.now(), { material: materialOf(msgs, st.prompt), signal: AbortSignal.timeout(60_000) });
+      await narrate(cwd, agent, "", diff, Date.now(), { material: materialOf(msgs, st.prompt), timeoutMs: 60_000 });
+      if (full) st.diffHash = h; // 성공한 뒤에야 '보냄'으로(실패면 다음에 다시, 리뷰)
     } catch { /* 구독 미가용·시간 초과 — 다음 묶음에서 */ }
     finally {
       st.busy = false;

@@ -23,7 +23,7 @@ export function isRepeat(title: string, expl: string, past: PastNarration[], has
   const mine = conceptsOf(expl);
   const noNew = [...mine].every((c) => seen.has(c)); // 개념이 없거나 전부 이미 설명함
   const tk = titleKey(title);
-  if (past.some((p) => titleKey(p.title) === tk) && noNew) return true; // 같은 제목 + 새 개념 없음(기본 제목끼리 겹쳐도 새 개념이 있으면 통과 — 리뷰)
+  if (past.some((p) => titleKey(p.title) === tk) && noNew && !hasDiff) return true; // 같은 제목 + 새 개념 없음(기본 제목끼리 겹쳐도 새 개념이 있으면 통과 — 리뷰)
   if (hasDiff || !mine.size) return false; // 진짜 코드가 바뀌었으면 해설할 거리가 있음
   return noNew;
 }

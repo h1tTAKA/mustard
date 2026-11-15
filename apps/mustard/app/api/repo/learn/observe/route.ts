@@ -21,8 +21,8 @@ async function flush(cwd: string, providerId: unknown) {
   if (!hasSubstance(st.msgs)) return; // 해설할 거리(말·작업)가 아직 없음 — 더 모음
   const msgs = st.msgs; st.msgs = []; st.last = Date.now(); st.busy = true;
   const diff = st.diff; st.diff = ""; // 이번에 넘긴 diff는 소비(바뀐 때만 다시 — 리뷰: 옛 diff가 매번 가서 반복 가드가 꺼지던 문제)
-  try { await narrate(cwd, st.agent, "", diff, Date.now(), { providerId, material: materialOf(msgs, st.prompt), signal: AbortSignal.timeout(60_000) }); }
-  catch { /* 구독 미가용·시간 초과 — 다음 묶음에서 */ }
+  try { await narrate(cwd, st.agent, "", diff, Date.now(), { providerId, material: materialOf(msgs, st.prompt), timeoutMs: 60_000 }); }
+  catch { if (diff && !st.diff) st.diff = diff; } // 실패 — diff는 다음 묶음에 다시(리뷰). 구독 미가용·시간 초과는 조용히
   finally {
     st.busy = false;
     if (!st.timer && hasSubstance(st.msgs)) st.timer = setTimeout(() => { st.timer = undefined; void flush(cwd, providerId); }, GAP_MS); // 해설하는 동안 쌓인 것(리뷰)

@@ -96,11 +96,16 @@ function recentNarrations(cwd: string, ts: number): PastNarration[] {
 // 재료(delta·diff) → AI 해설 → 캐치업 방출 + 날짜별 저장. ts = 카드 시각(재생이면 원래 시각). 해설 없음(SKIP 등)이면 false.
 // 실패(구독 미가용·레이트리밋 등)는 throw — 호출부가 조용히 처리.
 // material = 대화 기록 재료(liveTranscript.materialOf) — 있으면 그걸, 없으면 delta(터미널 글자)를 재료로
-export async function narrate(cwd: string, agent: string, delta: string, diff: string, ts: number, opts: { providerId?: unknown; signal?: AbortSignal; material?: string } = {}): Promise<boolean> {
+// timeoutMs = 실제로 시작할 때부터 재는 시간 제한(같은 레포 줄에서 기다린 시간은 안 셈 — 리뷰)
+export async function narrate(cwd: string, agent: string, delta: string, diff: string, ts: number, opts: { providerId?: unknown; signal?: AbortSignal; material?: string; timeoutMs?: number } = {}): Promise<boolean> {
   if (repoPrefOff(cwd, "explainAnalyze")) return false; // #1239 이 레포만 해설 분석 끔(캐치업 창 레포 설정) — observe·backfill 공통 길목
   // #1359 같은 레포 해설은 한 줄로 — 동시에 돌면 둘 다 같은 '앞서 해설한 것'을 보고 같은 개념을 또 설명(리뷰)
   const prev = narrateChains.get(cwd) ?? Promise.resolve();
-  const run = prev.catch(() => {}).then(async () => { const end = beginNarrate(cwd); try { return await narrateOnce(cwd, agent, delta, diff, ts, opts); } finally { end(); } }); // #1240 "만드는 중" 표시
+  const run = prev.catch(() => {}).then(async () => {
+    const end = beginNarrate(cwd); // #1240 "만드는 중" 표시
+    const signal = opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : opts.signal;
+    try { return await narrateOnce(cwd, agent, delta, diff, ts, { ...opts, signal }); } finally { end(); }
+  });
   narrateChains.set(cwd, run);
   try { return await run; } finally { if (narrateChains.get(cwd) === run) narrateChains.delete(cwd); }
 }
