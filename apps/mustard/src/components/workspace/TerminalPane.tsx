@@ -3,7 +3,7 @@
 // 활성 탭만 렌더(전환 시 remount → scrollback 재생). 탭 목록은 레포별 localStorage 영속.
 import { launchOpts, liftStoredArgs } from "@/lib/agentLaunch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconPlus, IconX, IconTerminal2, IconMessageCircle } from "@tabler/icons-react";
+import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
 import { useShortcut, useT, isCurrentTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
 import Terminal from "@/components/workspace/Terminal";
 import ChatPane, { CHAT_HANDOFF_EVENT } from "@/components/workspace/ChatPane";
@@ -262,10 +262,14 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
 
   // #1341 터미널 ↔ 채팅 모드 — 칸 하나에 버튼 하나(유저 결정 11-14). 레포별로 기억. 터미널(pty)은 모드를 바꿔도 main에 살아 있음.
   const modeToggle = (
-    <button type="button" onClick={() => setMode(mode === "chat" ? "term" : "chat")} aria-label={t(mode === "chat" ? "achat.toTerminal" : "achat.toChat")} title={t(mode === "chat" ? "achat.toTerminal" : "achat.toChat")}
-      className="flex shrink-0 items-center px-2.5 text-zinc-400 transition hover:bg-white hover:text-mustard-600 dark:hover:bg-zinc-800 dark:hover:text-mustard-400">
-      {mode === "chat" ? <IconTerminal2 size={15} stroke={2} aria-hidden /> : <IconMessageCircle size={15} stroke={2} aria-hidden />}
-    </button>
+    <div role="tablist" className="my-auto mr-1.5 flex shrink-0 items-center rounded-md bg-zinc-200/70 p-0.5 text-[11.5px] dark:bg-zinc-800">
+      {(["term", "chat"] as const).map((m) => (
+        <button key={m} type="button" role="tab" aria-selected={mode === m} onClick={() => setMode(m)}
+          className={`rounded px-2 py-0.5 transition ${mode === m ? "bg-white font-medium text-zinc-800 shadow-sm dark:bg-zinc-600 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
+          {t(m === "chat" ? "achat.modeChat" : "achat.modeTerminal")}
+        </button>
+      ))}
+    </div>
   );
   if (mode === "chat") return <ChatPane cwd={cwd} modeToggle={modeToggle} />;
 
