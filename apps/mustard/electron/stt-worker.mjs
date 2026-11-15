@@ -15,6 +15,7 @@ touch();
 
 process.stdin.on("data", (b) => {
   if (!active) return;
+  touch(); // 말하는 동안엔 쉬는 타이머를 늦춤(15분 넘게 말해도 안 끊기게, 재리뷰)
   const buf = leftover.length ? Buffer.concat([leftover, b]) : b;
   const n = Math.floor(buf.length / 4);
   leftover = buf.subarray(n * 4);
@@ -36,9 +37,14 @@ async function decode(given) {
   const pcm = given ?? windowPcm();
   if (!given) lastLen = pcm.length;
   if (pcm.length < RATE / 4) return "";
-  const langs = model.capabilities.languages ?? [];
-  const lang = language && (langs.find((c) => c === language) ?? langs.find((c) => c.startsWith(`${language}-`)));
-  const r = await serial(() => session.run(pcm, { timestamps: "none", ...(lang ? { language: lang } : {}) })); // 세션 호출은 늘 하나씩(재리뷰: 동시 실행이 계속 새어 나옴)
+  const lang0 = language;
+  // 모델 올리기도 같은 줄(serial)이라 그 뒤에 돎 — 올리기 전에 부르면 순서대로 기다림(재리뷰)
+  const r = await serial(() => {
+    if (!session) return { text: "" };
+    const langs = model.capabilities.languages ?? [];
+    const lang = lang0 && (langs.find((c) => c === lang0) ?? langs.find((c) => c.startsWith(`${lang0}-`)));
+    return session.run(pcm, { timestamps: "none", ...(lang ? { language: lang } : {}) });
+  }); // 세션 호출은 늘 하나씩(재리뷰: 동시 실행이 계속 새어 나옴)
   return String(r.text ?? "").trim();
 }
 async function step(final) {
@@ -55,7 +61,7 @@ async function step(final) {
   try { return await mine; } finally { if (decoding === mine) decoding = null; } // finish가 건 처리를 지우지 않게(재리뷰)
 }
 setInterval(() => {
-  if (!active || decoding || samples - decodedAt < RATE * 0.6) return;
+  if (!active || !session || decoding || samples - decodedAt < RATE * 0.6) return; // 모델이 올라오기 전엔 중간 글 건너뜀
   const mySid = sid;
   void step(false).then((t) => { if (active && t && mySid === sid) send({ type: "partial", text: t, sid: mySid }); }).catch((e) => send({ type: "error", message: String(e?.message || e), sid: mySid }));
 }, 1200);
@@ -64,14 +70,17 @@ process.on("message", async (m) => {
   touch();
   try {
     if (m.type === "load") {
-      if (modelPath !== m.modelPath || !model) {
+      // 올리기도 인식 호출과 같은 줄 — 겹친 load가 모델을 덮어쓰거나 쓰는 중인 세션을 버리지 않게(재리뷰)
+      await serial(async () => {
+        if (modelPath === m.modelPath && model) return;
         try { session?.dispose(); model?.dispose(); } catch { /* */ }
+        session = null; model = null;
         await tc.initialize();
         model = await tc.TranscribeModel.load(m.modelPath);
         session = model.createSession({ nThreads: 4 });
         modelPath = m.modelPath;
-      }
-      send({ type: "loaded" });
+      });
+      send({ type: "loaded", sid: m.sid });
     } else if (m.type === "start") {
       gen++; sid = m.sid ?? 0; active = true; committed = ""; chunks = []; samples = 0; decodedAt = 0; leftover = Buffer.alloc(0); language = m.language || "";
     } else if (m.type === "finish") {

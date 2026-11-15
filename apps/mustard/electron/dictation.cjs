@@ -7,8 +7,12 @@ const { existsSync } = require("node:fs");
 const { createInterface } = require("node:readline");
 
 let helper = "", workerScript = "", modulesDir = "";
-let proc = null, owner = null, worker = null, workerReady = false, local = null, seq = 0; // local = {id, helperReady, modelReady} — id는 받아쓰기 번호(일꾼 결과와 맞춰 봄)
-const send = (o) => { try { if (owner && !owner.isDestroyed()) owner.send("dictation:event", o); } catch { /* 창 닫힘 */ } };
+let proc = null, owner = null, worker = null, workerReady = false, local = null, seq = 0;
+const finishing = new Map(); // 녹음은 끝났고 최종 글을 기다리는 받아쓰기(id → 창) — 다른 데서 새로 시작해도 이건 결과를 받음(재리뷰) // local = {id, helperReady, modelReady} — id는 받아쓰기 번호(일꾼 결과와 맞춰 봄)
+// 이벤트엔 받아쓰기 번호(sid)를 달아 보냄 — 입력창은 자기 번호만 받음
+const sendTo = (wc, o) => { try { if (wc && !wc.isDestroyed()) wc.send("dictation:event", o); } catch { /* 창 닫힘 */ } };
+let curId = 0;
+const send = (o) => sendTo(owner, { sid: curId, ...o });
 
 function setHelper(p) { helper = p; }
 function setLocalEngine(script, mods) { workerScript = script; modulesDir = mods; }
@@ -24,14 +28,25 @@ function ensureWorker() {
   workerReady = false;
   worker = fork(workerScript, [modulesDir], { execPath: process.execPath, env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, stdio: ["pipe", "ignore", "inherit", "ipc"] });
   worker.on("message", (m) => {
-    if (!local) return;
-    if (m.sid !== undefined && m.sid !== local.id) return; // 옛 받아쓰기의 늦은 결과 — 지금 것에 안 섞음(재리뷰)
+    const fin = finishing.get(m.sid);
+    if (fin && (m.type === "final" || m.type === "error")) { // 최종 글 기다리던 받아쓰기 — 그 창·번호로
+      finishing.delete(m.sid);
+      if (m.type === "final") { sendTo(fin, { sid: m.sid, type: "final", text: m.text }); sendTo(fin, { sid: m.sid, type: "end", code: 0 }); }
+      else sendTo(fin, { sid: m.sid, type: "error", code: "local", message: m.message });
+      return;
+    }
+    if (!local || (m.sid !== undefined && m.sid !== local.id)) return; // 옛 받아쓰기의 늦은 결과 — 지금 것에 안 섞음
     if (m.type === "loaded") { local.modelReady = true; if (local.helperReady) send({ type: "ready" }); }
     else if (m.type === "partial") send({ type: "partial", text: m.text });
-    else if (m.type === "final") { const done = local; local = null; send({ type: "final", text: m.text }); if (done) send({ type: "end", code: 0 }); }
     else if (m.type === "error") { local = null; stopNow(); send({ type: "error", code: "local", message: m.message }); }
   });
-  worker.on("exit", () => { const w = worker; if (w === worker) worker = null; if (local) { local = null; send({ type: "error", code: "local", message: "speech engine stopped" }); } });
+  worker.stdin.on("error", () => { /* 일꾼이 먼저 죽은 뒤의 쓰기(EPIPE) — 메인이 죽지 않게(재리뷰) */ });
+  worker.on("exit", () => {
+    worker = null;
+    for (const [id, wc] of finishing) sendTo(wc, { sid: id, type: "error", code: "local", message: "speech engine stopped" });
+    finishing.clear();
+    if (local) { local = null; stopNow(); send({ type: "error", code: "local", message: "speech engine stopped" }); }
+  });
   return worker;
 }
 
@@ -41,6 +56,7 @@ function start(wc, opts) {
   if (!available()) return { ok: false, error: "unavailable" };
   stopNow();
   owner = wc;
+  curId = ++seq;
   const lc = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(String(o.locale || "")) ? String(o.locale) : "en-US";
   const dev = typeof o.device === "string" && /^[\w:.\-]{1,200}$/.test(o.device) ? ["--device", o.device] : [];
   const useLocal = o.engine === "local" && typeof o.modelPath === "string" && existsSync(o.modelPath) && localAvailable();
@@ -48,8 +64,8 @@ function start(wc, opts) {
   proc = p;
   if (useLocal) {
     const w = ensureWorker();
-    local = { id: ++seq, helperReady: false, modelReady: false };
-    w.send({ type: "load", modelPath: o.modelPath });
+    local = { id: curId, helperReady: false, modelReady: false };
+    w.send({ type: "load", modelPath: o.modelPath, sid: local.id });
     w.send({ type: "start", sid: local.id, language: String(o.language || lc.split("-")[0]) });
     p.stdout.on("data", (b) => { try { if (proc === p) w.stdin.write(b); } catch { /* 일꾼 끝남 */ } });
     createInterface({ input: p.stderr }).on("line", (l) => {
@@ -65,12 +81,12 @@ function start(wc, opts) {
   p.on("close", (code, sig) => { // exit는 stdout을 다 읽기 전에 올 수 있음 — 마지막 소리까지 일꾼에 넘긴 뒤 확정(리뷰)
     if (proc !== p) return;
     proc = null;
-    if (useLocal && local && code === 0) { worker?.send({ type: "finish", sid: local.id }); return; }
+    if (useLocal && local && code === 0) { finishing.set(local.id, owner); worker?.send({ type: "finish", sid: local.id }); local = null; return; } // 최종 글은 finishing으로 받음
     if (useLocal) { local = null; worker?.send({ type: "cancel" }); }
     send({ type: "end", code: code ?? -1, signal: sig || undefined });
   });
   p.on("error", (e) => { if (proc === p) { proc = null; send({ type: "error", code: "spawn", message: String(e?.message || e) }); } });
-  return { ok: true, engine: useLocal ? "local" : "system" };
+  return { ok: true, engine: useLocal ? "local" : "system", id: curId };
 }
 function command(cmd) { try { proc?.stdin.write(`${cmd}\n`); } catch { /* 이미 끝남 */ } }
 function cancel() { if (local) { local = null; worker?.send({ type: "cancel" }); } command("cancel"); }

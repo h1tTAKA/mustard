@@ -81,6 +81,7 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
   const dictRef = useRef<Dict | null>(null);
   const pressAt = useRef(0);
   const keyHeld = useRef(false);
+  const myDictId = useRef(0); // 이 입력창이 시작한 받아쓰기 번호(main이 돌려줌)
   const stoppingRef = useRef(false); // 확정·취소를 눌러서 끝난 건 오류로 안 보여 줌
   const heardAt = useRef(0);
   const startedAt = useRef(0);
@@ -107,6 +108,7 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
     return api.onEvent((e) => {
       const d = dictRef.current;
       if (!d) return;
+      if (myDictId.current && e.sid !== undefined && e.sid !== myDictId.current) return; // 다른 입력창(또는 옛) 받아쓰기 결과 — 무시
       if (e.type === "ready") { const n = { ...d, phase: "listening" as const }; dictRef.current = n; setDict(n); }
       else if (e.type === "level") setLevels((l) => [...l.slice(-60), e.v ?? 0]);
       else if (e.type === "partial") { const n = { ...d, text: e.text ?? "" }; dictRef.current = n; setDict(n); heardAt.current = Date.now(); }
@@ -132,11 +134,12 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
     if (!api || dictRef.current) return;
     const caret = taRef.current?.selectionStart ?? input.length;
     const d: Dict = { phase: "starting", before: input.slice(0, caret), after: input.slice(caret), text: "" };
-    dictRef.current = d; setDict(d); setLevels([]); setNote(""); setNoteAction(null); setMenu(null); stoppingRef.current = false;
+    dictRef.current = d; setDict(d); setLevels([]); setNote(""); setNoteAction(null); setMenu(null); stoppingRef.current = false; myDictId.current = 0;
     heardAt.current = startedAt.current = nowMs();
     const lc = voiceLang ? (DICT_LOCALE[voiceLang] ?? voiceLang) : (DICT_LOCALE[locale] ?? "en-US");
     const r = await api.start({ locale: lc, language: voiceLang || locale, engine: voiceEngine, modelId: voiceModel, ...(voiceDevice ? { device: voiceDevice } : {}) });
-    if (!r.ok) { endDict(null); setNote(t("achat.dictFail", { m: r.error ?? "" })); }
+    if (!r.ok) { endDict(null); setNote(t("achat.dictFail", { m: r.error ?? "" })); return; }
+    myDictId.current = r.id ?? 0;
   };
   const stopDict = () => { stoppingRef.current = true; void window.nunopiDesktop?.dictation?.stop(); };
   const cancelDict = () => { if (!dictRef.current) return; stoppingRef.current = true; endDict(null); void window.nunopiDesktop?.dictation?.cancel(); };

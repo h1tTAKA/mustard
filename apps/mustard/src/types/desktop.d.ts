@@ -70,7 +70,7 @@ interface NunopiDesktopApi {
   };
   dictation?: {
     available(): Promise<boolean>;
-    start(opts: string | { locale: string; device?: string; engine?: "system" | "local"; modelId?: string; language?: string }): Promise<{ ok: boolean; error?: string; engine?: string }>;
+    start(opts: string | { locale: string; device?: string; engine?: "system" | "local"; modelId?: string; language?: string }): Promise<{ ok: boolean; error?: string; engine?: string; id?: number }>;
     info?(): Promise<{ available: boolean; local: boolean; devices: { id: string; name: string; default: boolean }[]; models: SpeechModelStatus[] }>;
     downloadModel?(id: string): Promise<{ ok: boolean; error?: string }>;
     cancelModel?(id: string): Promise<boolean>;
@@ -79,7 +79,7 @@ interface NunopiDesktopApi {
     stop(): Promise<boolean>;
     cancel(): Promise<boolean>;
     openSettings(which: "mic" | "speech"): Promise<void>;
-    onEvent(cb: (e: { type: "ready" | "level" | "partial" | "final" | "error" | "end"; text?: string; v?: number; code?: string | number; signal?: string; message?: string }) => void): () => void;
+    onEvent(cb: (e: { type: "ready" | "level" | "partial" | "final" | "error" | "end"; text?: string; v?: number; code?: string | number; signal?: string; message?: string; sid?: number }) => void): () => void;
   };
   detectAgents?(force?: boolean): Promise<{ ok: true; list: AgentDetect[] } | { ok: false; error: string }>;
   liftAgentArgs?(agent: string, args: string): Promise<{ choice: string; rest: string } | null>; // #1184
