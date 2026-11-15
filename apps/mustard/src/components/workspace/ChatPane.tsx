@@ -24,7 +24,7 @@ function ago(ms: number, t: ReturnType<typeof useT>): string {
   return new Date(ms).toLocaleDateString();
 }
 
-export default function ChatPane({ cwd, modeToggle, initial }: { cwd: string; modeToggle: ReactNode; initial?: { provider: Provider; model?: string } }) {
+export default function ChatPane({ cwd, modeToggle, initial }: { cwd: string; modeToggle: ReactNode; initial?: { provider: Provider; model?: string; text?: string } }) {
   const t = useT();
   const confirm = useConfirm();
   const activeKey = `nunopi:ws-chat-active:${cwd}`;
@@ -37,11 +37,14 @@ export default function ChatPane({ cwd, modeToggle, initial }: { cwd: string; mo
   const providers = PROVIDERS.filter((p) => !installed || installed.has(p.agent));
   const firstProvider = providers[0]?.id ?? "claude-code";
 
-  const create = useCallback(async (provider: Provider, from?: Meta, model?: string) => {
+  const create = useCallback(async (provider: Provider, from?: Meta, model?: string, text?: string) => {
     setMenu(null); setHistoryOpen(false);
     // 새 채팅은 지금 탭의 모델·생각 강도·권한 모드를 이어받음(같은 실행 AI일 때)
     const r = await post("/api/chat/sessions", { root: cwd, op: "create", provider, mode: getSetting(CHATKEYS.newChatMode, CHAT_DEFAULTS.newChatMode), ...(from && from.provider === provider ? { model: from.model, effort: from.effort, mode: from.mode } : {}), ...(model ? { model } : {}) });
-    if (r?.ok) { setChats((p) => [...(p ?? []), r.chat as Meta]); setActiveId(r.chat.id); }
+    if (r?.ok) {
+      setChats((p) => [...(p ?? []), r.chat as Meta]); setActiveId(r.chat.id);
+      if (text) void post("/api/chat/send", { root: cwd, id: r.chat.id, text, images: [] }); // 시작 고르기에서 쓴 첫 메시지
+    }
   }, [cwd]);
   useEffect(() => {
     let alive = true;
@@ -50,7 +53,7 @@ export default function ChatPane({ cwd, modeToggle, initial }: { cwd: string; mo
   }, [cwd]);
   useEffect(() => { void window.nunopiDesktop?.detectAgents?.(false).then((r) => { if (r.ok) setInstalled(new Set(r.list.filter((a) => a.status === "ok" && agentEnabled(a.id)).map((a) => a.id))); }).catch(() => {}); }, []);
   const autoMade = useRef(false); // 하나도 없으면 바로 하나(한 번만 — 개발 모드 이펙트 두 번·느린 응답에 둘 생기지 않게)
-  useEffect(() => { if (chats && !chats.length && !autoMade.current) { autoMade.current = true; void create(initial?.provider ?? firstProvider, undefined, initial?.model).finally(() => { autoMade.current = false; }); } }, [chats, create, firstProvider, initial]); // 시작 고르기에서 고른 실행 AI·모델로
+  useEffect(() => { if (chats && !chats.length && !autoMade.current) { autoMade.current = true; void create(initial?.provider ?? firstProvider, undefined, initial?.model, initial?.text).finally(() => { autoMade.current = false; }); } }, [chats, create, firstProvider, initial]); // 시작 고르기에서 고른 실행 AI·모델로
   const list = chats ?? [];
   const active = list.find((c) => c.id === activeId) ?? list[list.length - 1];
   useEffect(() => { try { if (active) localStorage.setItem(activeKey, active.id); } catch { /* 저장 못 해도 동작 */ } }, [active, activeKey]);

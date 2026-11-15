@@ -64,7 +64,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   const firstOpen = (st: string, mk: string) => { try { return !localStorage.getItem(st) && !localStorage.getItem(mk) && getSetting<string>(CHATKEYS.defaultView, CHAT_DEFAULTS.defaultView) === "ask"; } catch { return false; } };
   const [startState, setStartState] = useState(() => ({ key: store, on: firstOpen(store, modeKey) }));
   const starting = startState.key === store && startState.on;
-  const [chatInit, setChatInit] = useState<{ provider: Provider; model?: string } | undefined>(undefined);
+  const [chatInit, setChatInit] = useState<{ provider: Provider; model?: string; text?: string } | undefined>(undefined);
   const [modeState, setModeState] = useState<{ key: string; mode: "term" | "chat" }>(() => ({ key: modeKey, mode: readMode(modeKey) }));
   const mode = modeState.key === modeKey ? modeState.mode : readMode(modeKey); // 레포(cwd)가 바뀌면 그 레포 모드
   const setMode = (m: "term" | "chat") => { setModeState({ key: modeKey, mode: m }); try { localStorage.setItem(modeKey, m); } catch { /* 저장 못 해도 동작 */ } };
@@ -285,7 +285,7 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
         setStartState({ key: store, on: false }); setMode("term");
         if (agent && active) { markAgentUsed(agent); void window.nunopiDesktop?.terminal?.launchAgent?.({ id: active.id, agent, dark: isCurrentTerminalDark(), ...launchOpts(agent) }); } // 첫 탭에서 바로
       }}
-      onChat={(provider, model) => { setStartState({ key: store, on: false }); setChatInit({ provider, model }); setMode("chat"); }} />
+      onChat={(provider, model, text) => { setStartState({ key: store, on: false }); setChatInit({ provider, model, text }); setMode("chat"); }} />
   );
   if (mode === "chat") return <ChatPane cwd={cwd} modeToggle={modeToggle} initial={chatInit} />;
 
