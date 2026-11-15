@@ -14,7 +14,12 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
   // #1341 받아쓰기(macOS 음성 인식) — start(locale) 뒤 onEvent로 ready·level·partial·final·error·end
   dictation: {
     available: () => ipcRenderer.invoke("dictation:available"),
-    start: (locale) => ipcRenderer.invoke("dictation:start", locale),
+    start: (opts) => ipcRenderer.invoke("dictation:start", opts),
+    info: () => ipcRenderer.invoke("dictation:info"), // {available, local, devices, models}
+    downloadModel: (id) => ipcRenderer.invoke("speech-models:download", id),
+    cancelModel: (id) => ipcRenderer.invoke("speech-models:cancel", id),
+    removeModel: (id) => ipcRenderer.invoke("speech-models:remove", id),
+    onModelProgress: (cb) => { const h = (_e, p) => cb(p); ipcRenderer.on("speech-models:progress", h); return () => ipcRenderer.removeListener("speech-models:progress", h); },
     stop: () => ipcRenderer.invoke("dictation:stop"),
     cancel: () => ipcRenderer.invoke("dictation:cancel"),
     openSettings: (which) => ipcRenderer.invoke("dictation:openSettings", which),

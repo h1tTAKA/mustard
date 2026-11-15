@@ -74,6 +74,7 @@ const full = pkg.dependencies ?? {};
 const minimal = {};
 for (const [k, v] of Object.entries(full)) if (KEEP.has(k)) minimal[k] = v;
 pkg.dependencies = minimal;
+delete pkg.optionalDependencies; // #1341 받아쓰기 엔진(transcribe-cpp·네이티브)은 asar 밖에 extraResources로 — asar 안이면 dlopen 못 함
 writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
 console.log(`[package-app] dependencies ${Object.keys(full).length} → ${Object.keys(minimal).length}개: ${Object.keys(minimal).join(", ")}`);
 

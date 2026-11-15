@@ -517,12 +517,25 @@ const computerUse = require("./computer-use.cjs");
 // #1341 받아쓰기 — macOS 음성 인식 도우미(패키지: Resources/mustard-dictate)
 const dictation = require("./dictation.cjs");
 dictation.setHelper(app.isPackaged ? join(process.resourcesPath, "mustard-dictate") : join(__dirname, "..", "native", "dictation-macos", "dist", "mustard-dictate"));
+// 로컬 모델 일꾼(asar 밖 — ELECTRON_RUN_AS_NODE는 asar를 못 읽음)과 엔진 패키지 위치
+dictation.setLocalEngine(app.isPackaged ? join(process.resourcesPath, "electron", "stt-worker.mjs") : join(__dirname, "stt-worker.mjs"), app.isPackaged ? join(process.resourcesPath, "node_modules") : join(__dirname, "..", "..", "..", "node_modules"));
+const speechModels = require("./speech-models.cjs");
+speechModels.setBase(join(app.getPath("userData"), "speech-models"));
+const broadcastModel = (p) => { for (const w of BrowserWindow.getAllWindows()) { try { w.webContents.send("speech-models:progress", p); } catch { /* 닫힘 */ } } };
 ipcMain.handle("dictation:available", () => dictation.available());
-ipcMain.handle("dictation:start", (e, locale) => dictation.start(e.sender, locale));
+ipcMain.handle("dictation:info", async () => ({ available: dictation.available(), local: dictation.localAvailable(), devices: await dictation.devices(), models: speechModels.status() }));
+ipcMain.handle("dictation:start", (e, opts) => {
+  const o = typeof opts === "string" ? { locale: opts } : { ...(opts || {}) };
+  if (o.engine === "local") { o.modelPath = speechModels.modelPath(String(o.modelId || "")); if (!o.modelPath) o.engine = "system"; } // 모델이 없으면 기본 엔진으로
+  return dictation.start(e.sender, o);
+});
+ipcMain.handle("speech-models:download", (_e, id) => speechModels.download(String(id), broadcastModel));
+ipcMain.handle("speech-models:cancel", (_e, id) => { speechModels.cancel(String(id)); return true; });
+ipcMain.handle("speech-models:remove", (_e, id) => speechModels.remove(String(id)));
 ipcMain.handle("dictation:stop", () => { dictation.stop(); return true; });
 ipcMain.handle("dictation:cancel", () => { dictation.cancel(); return true; });
 ipcMain.handle("dictation:openSettings", (_e, which) => shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${which === "speech" ? "Privacy_SpeechRecognition" : "Privacy_Microphone"}`));
-app.on("will-quit", () => dictation.stopNow());
+app.on("will-quit", () => dictation.shutdown());
 // #1189 내장 도우미 — 패키징 앱은 Resources, 개발 실행은 build-app.mjs 결과(없으면 외부 드라이버)
 computerUse.setHelperApp(app.isPackaged ? join(process.resourcesPath, "Mustard Computer Use.app") : join(__dirname, "..", "native", "computer-use-macos", "dist", "Mustard Computer Use.app"));
 const STOP_KEY = process.platform === "darwin" ? "Control+Alt+Command+." : "Control+Alt+Shift+.";
