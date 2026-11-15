@@ -30,9 +30,9 @@ function dropFront(n) {
 }
 const windowPcm = () => { const out = new Float32Array(samples); let o = 0; for (const c of chunks) { out.set(c, o); o += c.length; } return out; };
 const join2 = (a, b) => (!a ? b : !b ? a : /[぀-ヿ㐀-鿿]$/.test(a) ? a + b : `${a} ${b}`);
-async function decode() {
-  const pcm = windowPcm();
-  lastLen = pcm.length;
+async function decode(given) {
+  const pcm = given ?? windowPcm();
+  if (!given) lastLen = pcm.length;
   if (pcm.length < RATE / 4) return "";
   const langs = model.capabilities.languages ?? [];
   const lang = language && (langs.find((c) => c === language) ?? langs.find((c) => c.startsWith(`${language}-`)));
@@ -71,10 +71,13 @@ process.on("message", async (m) => {
     } else if (m.type === "start") {
       gen++; active = true; committed = ""; chunks = []; samples = 0; decodedAt = 0; leftover = Buffer.alloc(0); language = m.language || "";
     } else if (m.type === "finish") {
-      active = false;
-      const text = await step(true);
-      send({ type: "final", text });
-      committed = "";
+      // 끝 — 지금 소리·확정 글을 떼어 내 그것만으로 최종 글(공용 상태는 바로 비움 → 바로 다시 시작해도 안 섞임, 재리뷰)
+      active = false; gen++;
+      const pcm = windowPcm(), before = committed;
+      committed = ""; chunks = []; samples = 0; decodedAt = 0;
+      if (decoding) await decoding.catch(() => {});
+      const text = await decode(pcm);
+      send({ type: "final", text: join2(before, text) });
     } else if (m.type === "cancel") {
       gen++; active = false; committed = ""; chunks = []; samples = 0;
     }
