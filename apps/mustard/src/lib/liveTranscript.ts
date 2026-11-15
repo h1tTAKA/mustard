@@ -61,7 +61,7 @@ async function readOnce(root: string): Promise<LiveTranscript> {
   const out: { agent: "claude" | "codex"; p: ParsedLine }[] = [];
   let found = false;
   const take = async (agent: "claude" | "codex", file: string, parse: (l: string) => ParsedLine | null) => {
-    const { lines, first } = await newLines(file);
+    const { lines } = await newLines(file);
     for (const l of lines) { const p = parse(l); if (p && p.ts >= since) out.push({ agent, p }); } // 늘 최근 3분만 — 오래 쉬다 읽어도 옛 대화를 '방금'으로 안 봄(리뷰)
   };
   // found = 이 레포에 기록이 있는 에이전트(최근 30분 기록) — 3분 넘는 빌드·테스트 중에도 터미널 글자로 안 떨어지게(리뷰)
