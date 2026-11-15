@@ -13,6 +13,7 @@ const goto = (prefix: string, group: ShortcutGroup, mod: string, labelKey: strin
 export const SHORTCUTS: ShortcutDef[] = [
   { id: "palette", group: "general", labelKey: "shortcut.palette", defaults: ["Mod+K", "Mod+Shift+P"], scope: "global" },
   { id: "settings", group: "general", labelKey: "shortcut.settings", defaults: ["Mod+,"], scope: "global" },
+  { id: "chat.dictate", group: "general", labelKey: "shortcut.chatDictate", defaults: ["Mod+D"], scope: "outsideTerminal" }, // #1341 채팅 입력 받아쓰기(입력창에 있을 때)
   { id: "term.new", group: "tabs", labelKey: "shortcut.termNew", defaults: ["Mod+T"], scope: "global" },
   { id: "term.newAgent", group: "tabs", labelKey: "shortcut.termNewAgent", defaults: ["Mod+Alt+T"], scope: "global" },
   { id: "term.close", group: "tabs", labelKey: "shortcut.termClose", defaults: ["Mod+W"], scope: "global" },

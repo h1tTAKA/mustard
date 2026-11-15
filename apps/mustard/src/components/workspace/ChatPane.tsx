@@ -6,7 +6,7 @@
 // 터미널처럼 채팅이 하나도 없으면 하나를 바로 엶. 활성 탭은 레포별 localStorage.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { IconPlus, IconX, IconLoader2, IconHistory, IconSearch, IconTrash, IconTerminal2, IconDownload } from "@tabler/icons-react";
-import { useT, useConfirm, agentEnabled } from "@mustard/core";
+import { useT, useConfirm, agentEnabled, getSetting, CHATKEYS, CHAT_DEFAULTS } from "@mustard/core";
 import { AgentLogo } from "@/components/workspace/AgentLogo";
 import ChatSession from "@/components/workspace/ChatSession";
 import { P, PROVIDERS, post, type AppCommand, type Meta, type Provider } from "@/components/workspace/ChatComposer";
@@ -40,7 +40,7 @@ export default function ChatPane({ cwd, modeToggle }: { cwd: string; modeToggle:
   const create = useCallback(async (provider: Provider, from?: Meta) => {
     setMenu(null); setHistoryOpen(false);
     // 새 채팅은 지금 탭의 모델·생각 강도·권한 모드를 이어받음(같은 실행 AI일 때)
-    const r = await post("/api/chat/sessions", { root: cwd, op: "create", provider, ...(from && from.provider === provider ? { model: from.model, effort: from.effort, mode: from.mode } : {}) });
+    const r = await post("/api/chat/sessions", { root: cwd, op: "create", provider, mode: getSetting(CHATKEYS.newChatMode, CHAT_DEFAULTS.newChatMode), ...(from && from.provider === provider ? { model: from.model, effort: from.effort, mode: from.mode } : {}) });
     if (r?.ok) { setChats((p) => [...(p ?? []), r.chat as Meta]); setActiveId(r.chat.id); }
   }, [cwd]);
   useEffect(() => {

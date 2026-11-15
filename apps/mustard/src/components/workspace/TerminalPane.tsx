@@ -4,7 +4,7 @@
 import { launchOpts, liftStoredArgs } from "@/lib/agentLaunch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconPlus, IconX, IconTerminal2 } from "@tabler/icons-react";
-import { useShortcut, useT, isCurrentTerminalDark, getSetting, CKEYS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
+import { useShortcut, useT, isCurrentTerminalDark, getSetting, CKEYS, CHATKEYS, CHAT_DEFAULTS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
 import Terminal from "@/components/workspace/Terminal";
 import ChatPane, { CHAT_HANDOFF_EVENT } from "@/components/workspace/ChatPane";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
@@ -56,7 +56,8 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   const [activeId, setActiveId] = useState<string>(initial.activeId);
   const curStore = useRef(store);
   const modeKey = `nunopi:ws-termmode:${cwd}`;
-  const readMode = (k: string): "term" | "chat" => { try { return localStorage.getItem(k) === "chat" ? "chat" : "term"; } catch { return "term"; } };
+  // 레포마다 마지막 모드, 처음이면 설정 > 채팅의 기본 화면
+  const readMode = (k: string): "term" | "chat" => { try { const v = localStorage.getItem(k); return v === "chat" || v === "term" ? v : getSetting(CHATKEYS.defaultView, CHAT_DEFAULTS.defaultView); } catch { return "term"; } };
   const [modeState, setModeState] = useState<{ key: string; mode: "term" | "chat" }>(() => ({ key: modeKey, mode: readMode(modeKey) }));
   const mode = modeState.key === modeKey ? modeState.mode : readMode(modeKey); // 레포(cwd)가 바뀌면 그 레포 모드
   const setMode = (m: "term" | "chat") => { setModeState({ key: modeKey, mode: m }); try { localStorage.setItem(modeKey, m); } catch { /* 저장 못 해도 동작 */ } };

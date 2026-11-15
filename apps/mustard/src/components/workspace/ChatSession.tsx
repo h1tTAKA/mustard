@@ -6,7 +6,7 @@
 // ⌘F 찾기(CSS 하이라이트), 내 말 hover = 복사·다시 보내기·고쳐 쓰기, 답 hover = 복사, 코드 블록 hover = 복사.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconX, IconChevronRight, IconChevronDown, IconChevronUp, IconShieldQuestion, IconAlertTriangle, IconCopy, IconRefresh, IconPencil, IconCheck, IconSend, IconMessageCircle, IconTerminal2, IconFileText, IconPencilCode, IconWorld, IconTool, IconServer, IconFolder, IconGitBranch } from "@tabler/icons-react";
-import { useT, Markdown } from "@mustard/core";
+import { useT, Markdown, useSetting, CHATKEYS, CHAT_DEFAULTS } from "@mustard/core";
 import type { ChatItem } from "@/lib/chat/chatTimeline";
 import ChatComposer, { P, post, type AppCommand, type Img, type Meta, type PROVIDERS } from "@/components/workspace/ChatComposer";
 
@@ -110,14 +110,17 @@ export default function ChatSession({ root, meta, providers, onMeta, onAppComman
   useEffect(() => { const el = scrollRef.current; if (el && stick.current && !find) el.scrollTop = el.scrollHeight; }, [items, streaming, busy, find]);
   const toBottom = () => { const el = scrollRef.current; if (el) { stick.current = true; el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }); } };
 
+  const queueOn = useSetting<boolean>(CHATKEYS.queueWhileBusy, CHAT_DEFAULTS.queueWhileBusy); // 설정 > 채팅
+  const scrollOn = useSetting<boolean>(CHATKEYS.scrollOnSend, CHAT_DEFAULTS.scrollOnSend);
   const sendNow = useCallback(async (text: string, images: Img[]) => {
-    stick.current = true; setNote("");
+    if (scrollOn) stick.current = true;
+    setNote("");
     const r = await post("/api/chat/send", { root, id, text, images: images.map(({ base64, mime }) => ({ base64, mime })) });
     if (!r?.ok && r?.error) setNote(String(r.error));
-  }, [root, id]);
+  }, [root, id, scrollOn]);
   // 일하는 중이면 대기열(⌘Enter면 바로) — 쉬게 되면 맨 앞 하나를 보냄
   const onSend = (text: string, images: Img[], immediate: boolean) => {
-    if (busy && !immediate) { setQueue((q) => [...q, { id: ++qid.current, text, images }]); return; }
+    if (busy && !immediate && queueOn) { setQueue((q) => [...q, { id: ++qid.current, text, images }]); return; }
     void sendNow(text, images);
   };
   useEffect(() => {

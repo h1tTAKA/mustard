@@ -7,7 +7,7 @@
 // 받아쓰는 동안 아래 줄은 [파형][✕][✓], 글은 커서 자리에 실시간으로 들어감(자동 전송 안 함). Enter·✓ = 확정, Esc·✕ = 받아쓴 글만 되돌림.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconPlus, IconX, IconArrowUp, IconPlayerStopFilled, IconChevronDown, IconCheck, IconShield, IconShieldExclamation, IconListCheck, IconMicrophone, IconSearch, IconChevronRight } from "@tabler/icons-react";
-import { useT, useLocale } from "@mustard/core";
+import { useT, useLocale, useSetting, useShortcut, useShortcutHint, VOICEKEYS, VOICE_DEFAULTS } from "@mustard/core";
 import { AgentLogo, type AgentId } from "@/components/workspace/AgentLogo";
 
 export type Provider = "claude-code" | "codex" | "opencode" | "grok" | "cursor";
@@ -31,7 +31,7 @@ type ModelInfo = { id: string; label: string; description?: string; legacy?: boo
 type Menu = { kind: "slash"; q: string } | { kind: "file"; q: string; at: number } | null;
 type Dict = { phase: "starting" | "listening"; before: string; after: string; text: string };
 const nowMs = () => Date.now(); // 이벤트 처리기 안에서만 부름
-const DICT_LOCALE: Record<string, string> = { ko: "ko-KR", ja: "ja-JP", en: "en-US" };
+const DICT_LOCALE: Record<string, string> = { ko: "ko-KR", ja: "ja-JP", en: "en-US", zh: "zh-CN", de: "de-DE", es: "es-ES", fr: "fr-FR" };
 // 받아쓴 글 끼우기 — 중국어·일본어 글자 사이와 구두점 앞엔 띄어쓰기 안 넣음(한국어·영어는 넣음)
 const NO_SPACE = /[\u3040-\u30ff\u3400-\u9fff\uff00-\uffef]/;
 export function joinDictation(before: string, text: string, after: string): string {
@@ -84,6 +84,15 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
   const heardAt = useRef(0);
   const startedAt = useRef(0);
   useEffect(() => { void window.nunopiDesktop?.dictation?.available().then(setCanDictate).catch(() => {}); }, []);
+  // 설정 > 음성 — 켜기·누르는 방식·엔진(로컬 모델)·언어·마이크
+  const voiceOn = useSetting<boolean>(VOICEKEYS.enabled, VOICE_DEFAULTS.enabled);
+  const voiceMode = useSetting<"auto" | "hold" | "toggle">(VOICEKEYS.mode, VOICE_DEFAULTS.mode);
+  const voiceEngine = useSetting<"system" | "local">(VOICEKEYS.engine, VOICE_DEFAULTS.engine);
+  const voiceModel = useSetting<string>(VOICEKEYS.modelId, VOICE_DEFAULTS.modelId);
+  const voiceLang = useSetting<string>(VOICEKEYS.language, VOICE_DEFAULTS.language);
+  const voiceDevice = useSetting<string>(VOICEKEYS.device, VOICE_DEFAULTS.device);
+  const dictateHint = useShortcutHint("chat.dictate");
+  const dictateOk = canDictate && voiceOn;
   const endDict = (finalText: string | null) => {
     const d = dictRef.current;
     dictRef.current = null; setDict(null); setLevels([]);
@@ -124,11 +133,19 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
     const d: Dict = { phase: "starting", before: input.slice(0, caret), after: input.slice(caret), text: "" };
     dictRef.current = d; setDict(d); setLevels([]); setNote(""); setNoteAction(null); setMenu(null); stoppingRef.current = false;
     heardAt.current = startedAt.current = nowMs();
-    const r = await api.start(DICT_LOCALE[locale] ?? "en-US");
+    const lc = voiceLang ? (DICT_LOCALE[voiceLang] ?? voiceLang) : (DICT_LOCALE[locale] ?? "en-US");
+    const r = await api.start({ locale: lc, language: voiceLang || locale, engine: voiceEngine, modelId: voiceModel, ...(voiceDevice ? { device: voiceDevice } : {}) });
     if (!r.ok) { endDict(null); setNote(t("achat.dictFail", { m: r.error ?? "" })); }
   };
   const stopDict = () => { stoppingRef.current = true; void window.nunopiDesktop?.dictation?.stop(); };
   const cancelDict = () => { if (!dictRef.current) return; stoppingRef.current = true; endDict(null); void window.nunopiDesktop?.dictation?.cancel(); };
+  // 받아쓰기 단축키(설정 > 단축키 chat.dictate, 기본 ⌘D) — 이 입력창에 커서가 있거나 받아쓰는 중일 때만. 길게 누르기 모드는 키를 떼면 넣음
+  useShortcut(["chat.dictate"], () => {
+    if (!dictateOk || (document.activeElement !== taRef.current && !dictRef.current)) return false;
+    if (dictRef.current) { stopDict(); return; }
+    void startDict();
+    if (voiceMode === "hold") { const up = () => { window.removeEventListener("keyup", up, true); stopDict(); }; window.addEventListener("keyup", up, true); }
+  });
 
   useEffect(() => { taRef.current?.focus(); }, [meta.id]);
   // 편집(내 말 다시 쓰기)·대기열 편집으로 넘어온 글
@@ -191,14 +208,12 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
   };
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return;
-    const modD = (e.metaKey || e.ctrlKey) && e.code === "KeyD";
-    if (dict) { // 받아쓰는 중 — Enter·⌘D 확정, Esc 취소, 나머지 키는 막음(글은 도우미가 씀)
-      if (e.key === "Enter" || modD) { e.preventDefault(); stopDict(); }
+    if (dict) { // 받아쓰는 중 — Enter 확정(단축키도), Esc 취소, 나머지 키는 막음(글은 도우미가 씀)
+      if (e.key === "Enter") { e.preventDefault(); stopDict(); }
       else if (e.key === "Escape") { e.preventDefault(); cancelDict(); }
       else if (!e.metaKey) e.preventDefault();
       return;
     }
-    if (modD && canDictate) { e.preventDefault(); void startDict(); return; }
     if (menu && options.length) {
       if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => (s + 1) % options.length); return; }
       if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => (s - 1 + options.length) % options.length); return; }
@@ -395,10 +410,10 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
                 <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><circle cx="8" cy="8" r="6" fill="none" strokeWidth="2" className="stroke-black/[.08] dark:stroke-white/[.12]" /><circle cx="8" cy="8" r="6" fill="none" strokeWidth="2" strokeDasharray={`${(pct / 100) * 37.7} 37.7`} transform="rotate(-90 8 8)" strokeLinecap="round" className={pct > 85 ? "stroke-red-500" : pct > 60 ? "stroke-amber-500" : "stroke-zinc-400 dark:stroke-zinc-500"} /></svg>
               </span>
             )}
-            {canDictate && (
-              <button type="button" aria-label={t("achat.dictate")} title={`${t("achat.dictate")} (⌘D)`} className={iconBtn}
+            {dictateOk && (
+              <button type="button" aria-label={t("achat.dictate")} title={dictateHint ? `${t("achat.dictate")} (${dictateHint})` : t("achat.dictate")} className={iconBtn}
                 onPointerDown={() => { pressAt.current = Date.now(); void startDict(); }}
-                onPointerUp={() => { if (Date.now() - pressAt.current > 500) stopDict(); }}>
+                onPointerUp={() => { if (voiceMode === "hold" || (voiceMode === "auto" && Date.now() - pressAt.current > 500)) stopDict(); }}>
                 <IconMicrophone size={16} stroke={1.8} aria-hidden />
               </button>
             )}
