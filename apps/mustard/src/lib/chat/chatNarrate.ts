@@ -53,7 +53,7 @@ export function observeChat(chatId: string, cwd: string, agent: string, ev: Reco
       const diff = full && h !== st.diffHash ? full : ""; // 코드 그대로면 재전송 안 함
       await narrate(cwd, agent, "", diff, Date.now(), { material: materialOf(msgs, st.prompt), timeoutMs: 60_000 });
       if (full) st.diffHash = h; // 성공한 뒤에야 '보냄'으로(실패면 다음에 다시, 리뷰)
-    } catch { /* 구독 미가용·시간 초과 — 다음 묶음에서 */ }
+    } catch { /* 구독 미가용·시간 초과 — 그 묶음은 버림(observe와 같은 이유: 계속 실패할 때 같은 호출 반복 방지), diff는 해시를 안 바꿔 다음에 다시 */ }
     finally {
       st.busy = false;
       if (!st.timer && hasSubstance(st.msgs)) st.timer = setTimeout(() => void fire(), GAP_MS); // 해설하는 동안 쌓인 것(턴 끝 마지막 해설이 묶이지 않게, 리뷰)
