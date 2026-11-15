@@ -1,11 +1,28 @@
-// 터미널 에이전트 실시간 활동 내레이션(#870) — main이 관찰한 터미널 버퍼 델타를 받아
-// SNA 에이전트(구독 CLI)로 "지금 뭘 어떻게 하는지 + 개념/용어"를 초보 눈높이로 생성해 캐치업(구 학습 스트림)에 push.
-// 유저 아키텍처: 머스타드 터미널의 에이전트 동작을 우리 SNA가 관찰하며 실시간 설명.
+// 실시간 해설(#870 → #1359) — main이 터미널 에이전트가 일하는 신호(화면 델타)를 보내면, 그 레포의 **대화 기록**(Claude·Codex jsonl)에서
+// 새로 쌓인 말·작업을 모아 두었다가 덩어리로 해설(에이전트가 말했거나 작업이 3개 넘게 쌓이고, 지난 해설에서 20초 넘게 지났을 때).
+// 신호가 더 안 와도(턴이 끝남) 모인 게 있으면 타이머로 마저 해설. 기록 파일이 없는 에이전트는 예전처럼 터미널 글자로.
 import { isNarrationOn } from "@/lib/narrationConfig";
 import { narrate } from "@/lib/narrate";
+import { readNewMessages, materialOf, hasSubstance } from "@/lib/liveTranscript";
+import type { SessionMsg } from "@/lib/agentSessionParse";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const GAP_MS = 20_000, LATE_MS = 25_000;
+type Pending = { msgs: SessionMsg[]; prompt?: string; agent: string; diff: string; last: number; busy: boolean; timer?: ReturnType<typeof setTimeout> };
+const g = ((globalThis as unknown as { __mustardObserve?: Map<string, Pending> }).__mustardObserve ??= new Map());
+
+async function flush(cwd: string, providerId: unknown) {
+  const st = g.get(cwd);
+  if (!st || st.busy || !st.msgs.length) return;
+  if (st.timer) { clearTimeout(st.timer); st.timer = undefined; }
+  if (!hasSubstance(st.msgs)) return; // 해설할 거리(말·작업)가 아직 없음 — 더 모음
+  const msgs = st.msgs; st.msgs = []; st.last = Date.now(); st.busy = true;
+  try { await narrate(cwd, st.agent, "", st.diff, Date.now(), { providerId, material: materialOf(msgs, st.prompt), signal: AbortSignal.timeout(60_000) }); }
+  catch { /* 구독 미가용·시간 초과 — 다음 묶음에서 */ }
+  finally { st.busy = false; }
+}
 
 export async function POST(req: Request): Promise<Response> {
   let body: { cwd?: unknown; agent?: unknown; delta?: unknown; diff?: unknown; providerId?: unknown };
@@ -14,14 +31,28 @@ export async function POST(req: Request): Promise<Response> {
   const agent = typeof body.agent === "string" && body.agent ? body.agent : "agent";
   const delta = typeof body.delta === "string" ? body.delta.slice(0, 6000) : "";
   const diff = typeof body.diff === "string" ? body.diff.slice(0, 6500) : "";
-  if (!cwd || delta.trim().length < 40) return Response.json({ ok: false, reason: "no cwd/delta" });
+  if (!cwd) return Response.json({ ok: false, reason: "no cwd" });
   if (!isNarrationOn()) return Response.json({ ok: true, skipped: "off" }); // #1062 설정 > 캐치업 > 해설 분석 꺼짐
 
+  // 1) 대화 기록에서 새 말·작업
+  const tx = await readNewMessages(cwd).catch(() => null);
+  if (tx?.found) {
+    let st = g.get(cwd);
+    if (!st) g.set(cwd, (st = { msgs: [], agent, diff: "", last: 0, busy: false }));
+    st.msgs.push(...tx.msgs); st.msgs = st.msgs.slice(-200);
+    if (tx.prompt) st.prompt = tx.prompt;
+    st.agent = agent; if (diff) st.diff = diff;
+    const wait = Math.max(0, st.last + GAP_MS - Date.now());
+    if (!wait && hasSubstance(st.msgs)) { await flush(cwd, body.providerId); return Response.json({ ok: true, source: "transcript" }); }
+    if (!st.timer && st.msgs.length) st.timer = setTimeout(() => { if (g.get(cwd)) g.get(cwd)!.timer = undefined; void flush(cwd, body.providerId); }, Math.max(wait, LATE_MS)); // 신호가 끊겨도 모인 건 해설
+    return Response.json({ ok: true, waiting: st.msgs.length });
+  }
+  // 2) 기록 파일이 없는 에이전트 — 터미널 글자로(예전 방식)
+  if (delta.trim().length < 40) return Response.json({ ok: false, reason: "no delta" });
   try {
     await narrate(cwd, agent, delta, diff, Date.now(), { providerId: body.providerId, signal: req.signal });
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, source: "terminal" });
   } catch (e) {
-    // 구독 미가용·레이트리밋 등 — 조용히 실패(다음 델타서 재시도). 사용자 흐름 안 막음.
-    return Response.json({ ok: false, reason: String((e as Error)?.message || e) });
+    return Response.json({ ok: false, reason: String((e as Error)?.message || e) }); // 구독 미가용·레이트리밋 등 — 다음 델타서 재시도
   }
 }

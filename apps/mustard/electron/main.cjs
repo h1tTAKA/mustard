@@ -1511,7 +1511,9 @@ function stripNoise(text) {
     if (/\(\d+m?\d*s\b[^)]*tokens?\)/i.test(l)) return false;                 // "(9s · ↓ 9.4k tokens)" 라이브 타이머
     if (/…\s*\(\d/.test(l)) return false;                                     // "Actualizing… (9s"
     if (/esc to interrupt|\? *for shortcuts|auto mode on|shift\+tab|for agents/i.test(l)) return false; // 상태줄
-    if (/^[\s✳✱✻✽●○◍◌⏺⠀-⣿]+$/.test(l)) return false;                // 스피너 글리프만(브라유+claude). +/-/*/--- 등 diff·기호는 내용이라 안 버림
+    if (/^[\s✳✱✻✽●○◍◌⏺⠀-⣿]+$/.test(l)) return false;
+    if (/\b(Pre|Post)Tool(Use|Batch)\b|\b(SessionStart|UserPromptSubmit|SubagentStop|Stop|Notification)(:\w+)?\s+(says|hook)|running .*hooks?|hook (error|output)|capture is busy|waiting for recovery/i.test(l)) return false; // #1359 훅 상태 줄(해설이 '훅'만 4번 설명하던 원인)
+    if (/^[✳✱✻✽·*•]?\s*[A-Z][a-z]+(ing|ed)?…\s*$/.test(l)) return false; // "Twisting…" 같은 대기 표시만 있는 줄                // 스피너 글리프만(브라유+claude). +/-/*/--- 등 diff·기호는 내용이라 안 버림
     return true;
   }).join("\n").trim();
 }
