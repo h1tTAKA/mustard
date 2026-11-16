@@ -54,3 +54,6 @@ export function splitTermsSection(note: string): { before: string; terms: Term[]
   if (!terms.length || terms.length !== sec.length) return null;
   return { before: lines.slice(0, start).join("\n").trim(), terms, after: lines.slice(end).join("\n").trim() };
 }
+
+// #1359 카드로 남길 만한 일반 개념인지 — 포트·이슈 번호·경로·파일 이름·해시 같은 이 작업만의 값은 칩 아님(유저 지적: localhost:8797, #68 브랜치)
+export const isCardWorthy = (term: string) => !/^(?=[0-9a-f]*\d)[0-9a-f]{7,40}$/i.test(term.trim()) && !/#\d|:\d|\d{3,}|[\\/]|\.(tsx?|jsx?|json|md|c?js|mjs|py|sh|ya?ml|lock|swift|dart|go|rs)$/i.test(term.trim());

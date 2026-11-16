@@ -14,7 +14,7 @@ import { sendToAgent } from "@/lib/browser/sendToAgent";
 import { formatSessionHandoff } from "@/lib/sessionHandoff";
 import { isDocEdit } from "@/lib/mcpActivity";
 import { isNunopiEnabled } from "@/lib/product";
-import { mergeTerms, parseNarrationTerms, splitTermsSection, type Term } from "@/lib/catchupTerms";
+import { isCardWorthy, mergeTerms, parseNarrationTerms, splitTermsSection, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
@@ -867,16 +867,17 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           return <>
                             {sp.before && <Markdown>{sp.before}</Markdown>}
                             <div className="nunopi-md"><ul>{sp.terms.map((x, i) => { const term = x.term.replace(/`/g, ""); const card = cardOf(term); return (
-                              <li key={`${i}|${term}`}>{card ? (
+                              <li key={`${i}|${term}`}>{!isCardWorthy(term) ? <strong>{term}</strong> : card ? (
                                 <button type="button" onClick={(e) => throwCard(card, e.currentTarget.getBoundingClientRect())} title={t("learn.openCard")}
                                   className="inline-flex items-center gap-0.5 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-semibold transition hover:brightness-110">
                                   <IconCheck size={10} stroke={2.5} className="text-blue-500" aria-hidden /><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{term}</span>
                                 </button>
-                              ) : (
-                                <button type="button" onClick={() => addTerm({ term, def: x.def })} title={t("chat.saveAsCard")}
-                                  className="inline-flex items-center gap-0.5 rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400">
-                                  <IconPlus size={10} stroke={2.5} aria-hidden />{term}
-                                </button>
+                              ) : ( /* 칩 자체가 버튼 — 0.4초 머물면 짧은 안내(바로 뜨면 읽는 중 거슬림) */
+                                <span className="group/chip relative inline-block">
+                                  <button type="button" onClick={() => addTerm({ term, def: x.def })} aria-label={t("learn.chipSaveHint")}
+                                    className="rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400">{term}</button>
+                                  <span className="pointer-events-none absolute left-0 top-full z-50 mt-1 whitespace-nowrap rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-white opacity-0 shadow transition group-hover/chip:opacity-100 group-hover/chip:delay-[400ms] dark:bg-zinc-700" aria-hidden>{t("learn.chipSaveHint")}</span>
+                                </span>
                               )} — <Markdown className="inline [&_p]:inline">{x.def}</Markdown></li> /* 뜻 속 굵게·코드도 마크다운으로(리뷰) */
                             ); })}</ul></div>
                             {sp.after && <Markdown>{sp.after}</Markdown>}
