@@ -207,6 +207,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
       .catch(() => { if (gen === pickGen.current) setPicking(false); }); // 페이지 이동 등으로 스크립트가 끊김
   };
   const togglePick = () => {
+    if (sendState === "sending") return; // 보내는 중엔 새로 고르지 않음(보내기 상태가 풀려 같은 묶음이 두 번 나가지 않게, 리뷰)
     if (picking) { void viewRef.current?.executeJavaScript(PICK_CANCEL).catch(() => {}); return; }
     startPick();
   };
@@ -270,7 +271,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
           <button key={p} type="button" onClick={() => go(`:${p}`)} title={`localhost:${p}`}
             className="shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[10px] text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100">:{p}</button>
         ))}</div>}
-        <button type="button" className={`${btn} ${picking ? "bg-mustard-500/20 text-mustard-700 dark:text-mustard-300" : ""}`} disabled={!ready} aria-pressed={picking} onClick={togglePick} title={t("browser.pick")} aria-label={t("browser.pick")}><IconPointer size={14} stroke={2} aria-hidden /></button>
+        <button type="button" className={`${btn} ${picking ? "bg-mustard-500/20 text-mustard-700 dark:text-mustard-300" : ""}`} disabled={!ready || sendState === "sending"} aria-pressed={picking} onClick={togglePick} title={t("browser.pick")} aria-label={t("browser.pick")}><IconPointer size={14} stroke={2} aria-hidden /></button>
         <button type="button" className={`${btn} ${devtools ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100" : ""}`} disabled={!ready} aria-pressed={devtools} onClick={() => setDevtools((v) => !v)} title={t("browser.devtools")} aria-label={t("browser.devtools")}><IconCode size={14} stroke={2} aria-hidden /></button>
         {onDock && <button type="button" className={btn} onClick={() => onDock(current, devtools)} title={t("browser.dock")} aria-label={t("browser.dock")}><IconArrowsMinimize size={14} stroke={2} aria-hidden /></button>}
         {onDetach && <button type="button" className={btn} onClick={() => onDetach(current, devtools)} title={t("browser.detach")} aria-label={t("browser.detach")}><IconAppWindow size={14} stroke={2} aria-hidden /></button>}
@@ -292,7 +293,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
                 <span className="shrink-0 rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px] leading-none text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">{h.tag}</span>
                 <span className="truncate text-[12px] font-medium">{h.title}</span>
               </div>
-              <textarea autoFocus value={comment} onChange={(e) => { setComment(e.target.value); if (err) setSendState("idle"); }}
+              <textarea autoFocus value={comment} readOnly={sendState === "sending"} onChange={(e) => { setComment(e.target.value); if (err) setSendState("idle"); }}
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (e.shiftKey) addNote(); else void send(); } else if (e.key === "Escape") setPicked(null); }}
                 placeholder={t("browser.pickPlaceholder")}
                 className="h-20 w-full resize-none rounded-md border border-zinc-200 bg-white px-2.5 py-2 text-[12px] leading-relaxed text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-mustard-500 focus:ring-2 focus:ring-mustard-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
@@ -339,7 +340,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
                           <span className="truncate font-medium">{h.title}</span>
                         </div>
                         {editNote?.id === n.id ? (
-                          <textarea autoFocus value={editNote.text} onChange={(e) => setEditNote({ id: n.id, text: e.target.value })}
+                          <textarea autoFocus value={editNote.text} readOnly={sendState === "sending"} onChange={(e) => setEditNote({ id: n.id, text: e.target.value })}
                             onBlur={() => { const v = editNote.text.trim(); if (v) setNotes((xs) => xs.map((x) => (x.id === n.id ? { ...x, comment: v } : x))); setEditNote(null); }}
                             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.currentTarget.blur(); } else if (e.key === "Escape") { e.stopPropagation(); setEditNote(null); } }}
                             className="mt-1 h-16 w-full resize-none rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[12px] text-zinc-800 outline-none focus:border-mustard-500 focus:ring-2 focus:ring-mustard-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />

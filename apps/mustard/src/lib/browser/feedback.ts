@@ -25,11 +25,12 @@ export function sanitizePaste(s: string): string {
 // 줄바꿈을 심어 지시문처럼 보이게 하는 걸 막음(#1361 리뷰). 보통 값은 그대로.
 const one = (s: string, max = 300) => { const x = String(s ?? "").replace(/[\r\n\u2028\u2029`]+/g, " ").trim(); return x.length > max ? `${x.slice(0, max)}…` : x; };
 
-const clean = (p: PickedElement): PickedElement => ({ ...p, url: one(p.url, 500), tag: one(p.tag, 60), selector: one(p.selector),
-  sources: p.sources.map((x) => ({ ...x, file: one(x.file), name: one(x.name, 80) })), components: p.components.map((c) => one(c, 80)) });
+// cap = 길이 상한 배율 — 한 곳 글은 상한 없이(Infinity) 줄바꿈·백틱만 치움(지금 글과 같게, 의도된 차이는 그것뿐), 묶음은 짧게.
+const clean = (p: PickedElement, cap = 1): PickedElement => ({ ...p, url: one(p.url, 500 * cap), tag: one(p.tag, 60 * cap), selector: one(p.selector, 300 * cap),
+  sources: p.sources.map((x) => ({ ...x, file: one(x.file, 300 * cap), name: one(x.name, 80 * cap) })), components: p.components.map((c) => one(c, 80 * cap)) });
 
 export function formatPickFeedback(raw: PickedElement, comment: string, screenshot?: string): string {
-  const p = clean(raw);
+  const p = clean(raw, Infinity);
   if (p.kind === "region") return formatRegion(p, comment, screenshot);
   const path = (() => { try { const u = new URL(p.url); return u.pathname + u.search; } catch { return p.url; } })();
   const attrs = Object.entries(p.attrs).map(([k, v]) => `${k}="${v}"`).join(" ");
