@@ -37,7 +37,7 @@ export function isRepeat(title: string, expl: string, past: PastNarration[], has
     const pl = leadOf(p.expl);
     if (lead.length >= 12 && lead === pl) return true; // 첫 문단이 글자 그대로 같으면 짧아도 반복(리뷰)
     const sim = lead.length >= MIN_LEAD && pl.length >= MIN_LEAD ? similarity(lead, pl) : -1;
-    if (titleKey(p.title) === tk) return sim < 0 ? !lead && !pl : sim >= 0.2; // 같은 제목 — 첫 문단을 비교할 수 있으면 조금이라도 겹칠 때만, 짧아서 못 재면 둘 다 비었을 때만 반복('작업 중' 같은 기본 제목끼리, 리뷰)
+    if (titleKey(p.title) === tk) return sim >= 0.2; // 같은 제목 — 첫 문단이 조금이라도 겹칠 때만 반복, 짧거나 없어서 못 재면 통과('작업 중' 같은 기본 제목·목록으로 시작하는 카드, 리뷰)
     return sim >= SAME;
   });
 }
