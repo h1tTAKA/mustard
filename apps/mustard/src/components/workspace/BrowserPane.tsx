@@ -9,6 +9,7 @@ import { useT, useSetting, appChords, SHORTCUT_OVERRIDES_KEY, type ShortcutOverr
 import { PICK_SCRIPT, PICK_CANCEL, type PickedElement } from "@/lib/browser/pickScript";
 import { formatPickBatch, type PickNote } from "@/lib/browser/feedback";
 import { sendToAgent } from "@/lib/browser/sendToAgent";
+import { markScript } from "@/lib/browser/markScript";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 
 const PARTITION = "persist:mustard-browser";
@@ -69,6 +70,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
   const [notes, setNotes] = useState<Note[]>([]);
   const [notesOpen, setNotesOpen] = useState(false);
   const [editNote, setEditNote] = useState<{ id: number; text: string } | null>(null);
+  const [domTick, setDomTick] = useState(0); // 페이지가 새로 뜰 때마다(새로고침·이동) — 번호 표시 다시 넣기
   const pickGen = useRef(0); // 선택 회차 — 페이지 이동 뒤 늦게 끝난 옛 선택이 상태를 덮지 않게
   const editingRef = useRef(false); // 주소창 입력 중엔 페이지 이동으로 덮어쓰지 않음
   useEffect(() => { editingRef.current = editing; }, [editing]);
@@ -97,7 +99,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
     wv.addEventListener("did-start-loading", () => setLoading(true));
     wv.addEventListener("did-stop-loading", () => setLoading(false));
     // 이동하면 선택 스크립트는 옛 페이지와 함께 사라지고 Promise가 안 끝날 수 있음 → 선택 상태·팝오버 정리(#1037 리뷰).
-    wv.addEventListener("dom-ready", () => { setReady(true); pickGen.current++; setPicking(false); setPicked(null); });
+    wv.addEventListener("dom-ready", () => { setReady(true); pickGen.current++; setPicking(false); setPicked(null); setDomTick((n) => n + 1); });
     wv.addEventListener("page-title-updated", (e) => onTitleRef.current((e as unknown as { title: string }).title));
     host.appendChild(wv);
     viewRef.current = wv;
@@ -169,6 +171,15 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
       if (action === "select") onSelectRef.current(); else if (action === "close") onCloseRef.current();
     });
   }, [ready]);
+
+  // #1361 담은 곳 번호 표시 — 지금 페이지에서 담은 것만, 번호는 전체 목록 순서. 목록·페이지가 바뀔 때마다 다시 넣음(빈 목록이면 지움).
+  const marksKey = JSON.stringify(notes.map((n, i) => n.el.url === current ? [n.id, i + 1, n.el.selector, n.el.rect.x, n.el.rect.y] : null));
+  useEffect(() => {
+    const wv = viewRef.current;
+    if (!ready || !wv) return;
+    const marks = notes.flatMap((n, i) => (n.el.url === current ? [{ id: n.id, n: i + 1, selector: n.el.kind === "region" ? "" : n.el.selector, rect: { x: n.el.rect.x, y: n.el.rect.y } }] : []));
+    void wv.executeJavaScript(markScript(marks)).catch(() => {}); // 붙기 전·이동 중이면 다음 dom-ready에 다시
+  }, [ready, domTick, marksKey]); // eslint-disable-line react-hooks/exhaustive-deps -- notes·current는 marksKey로
 
   // 선택 시작/취소 — 스크립트가 클릭 때까지 기다렸다 요소 정보를 돌려줌(Esc·취소 = null).
   const startPick = () => {
