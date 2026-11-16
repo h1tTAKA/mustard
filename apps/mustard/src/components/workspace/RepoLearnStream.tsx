@@ -14,7 +14,7 @@ import { sendToAgent } from "@/lib/browser/sendToAgent";
 import { formatSessionHandoff } from "@/lib/sessionHandoff";
 import { isDocEdit } from "@/lib/mcpActivity";
 import { isNunopiEnabled } from "@/lib/product";
-import { cardKindOf, isCardWorthy, parseNarrationTerms, splitCardSection, splitTermsSection, type Term } from "@/lib/catchupTerms";
+import { cardKindOf, isCardWorthy, parseNarrationTerms, splitCardSection, splitNames, splitTermsSection, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT, setSetting, openSettings } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
@@ -831,10 +831,20 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           // 해설 끝 '카드로 남길 개념' 칸(위에 없는 배경 개념)은 글 대신 카드 맨 아래 칩 줄. nunopi를 끄면 전부 글 그대로.
                           const { body, items } = splitCardSection(c.expl ?? "");
                           const sp = splitTermsSection(body);
-                          const inWords = new Set((sp?.terms ?? parseNarrationTerms(body)).map((x) => normalizeCardFront(x.term.replace(/`/g, ""))));
+                          const inWords = new Set((sp?.terms ?? parseNarrationTerms(body)).flatMap((x) => splitNames(x.term)).map((n) => normalizeCardFront(n.replace(/`/g, ""))));
                           const known = (term: string) => knownSet.has(normalizeCardFront(term.replace(/`/g, "").trim()));
                           const extra = items.filter((x) => { const n = x.term.replace(/`/g, "").trim(); return x.def && !known(n) && !inWords.has(normalizeCardFront(n)) && (cardOf(n) || isCardWorthy(n)); });
-                          const words = sp ? sp.terms.filter((x) => !known(x.term)) : [];
+                          // #1364 한 줄 이름 여럿("`drag` / `fling`")은 칩 여럿(뜻 공유), 아는 이름은 빼고 하나도 안 남으면 줄째 숨김
+                          const words = sp ? sp.terms.map((x) => ({ ...x, names: splitNames(x.term).filter((n) => !known(n)) })).filter((x) => x.names.length) : [];
+                          // 용어 칸 사족 줄(이름 — 뜻 꼴 아님) — 아는 용어를 언급하면 숨김(해설 제외했으면 아무 말도 안 보이게)
+                          // 아는 용어가 든 줄인지 — 단어 단위(앞뒤가 글자·숫자면 다른 말: pr ≠ prompt, 상태 ≠ 상태관리), 뒤에 붙는 조사(을·가·는…)는 허용, 띄어쓰기는 무시(파일 시스템 = 파일시스템). 괄호 속(영문 병기)은 뺌(리뷰)
+                          const knownIn = (line: string) => { const l = line.replace(/`/g, ""); return knownTerms.some((k) => {
+                            const a = k.replace(/`/g, "").replace(/\([^)]*\)/g, "").trim();
+                            if (a.replace(/\s+/g, "").length < 2) return false;
+                            const body = a.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
+                            return new RegExp(`(?<![\\p{L}\\p{N}])${body}(?:으로|에서|가|이|는|은|를|을|의|에|로|와|과|도|만)?(?![\\p{L}\\p{N}])`, "iu").test(l);
+                          }); };
+                          const rest = sp ? sp.rest.filter((l) => !knownIn(l)) : [];
                           // 용어 칩 — 누르면 풀다운(카드 추가 또는 보기 / 해설 제외). 카드로 저장했으면 ✓·그라데이션. 0.4초 머물면 짧은 안내.
                           const chip = (raw: Term) => { const term = raw.term.replace(/`/g, "").trim(); const card = cardOf(term); return (
                             <span className="group/chip relative inline-block">
@@ -850,10 +860,12 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           return <>
                             {sp ? <>
                               {/* 아는 용어를 빼고 하나도 안 남으면 용어 칸 소제목째 숨김 */}
-                              {(() => { const b = words.length ? sp.before : sp.before.replace(/\n?[^\n]*$/, "").trim(); return b ? <Markdown>{relocalizeFailure(b, t)}</Markdown> : null; })()}
-                              {words.length > 0 && <div className="nunopi-md"><ul>{words.map((x, i) => { const term = x.term.replace(/`/g, ""); return (
-                                <li key={`${i}|${term}`}>{chip(x)} — <Markdown className="inline [&_p]:inline">{x.def}</Markdown></li>
-                              ); })}</ul></div>}
+                              {(() => { const b = words.length || rest.length ? sp.before : sp.before.replace(/\n?[^\n]*$/, "").trim(); return b ? <Markdown>{relocalizeFailure(b, t)}</Markdown> : null; })()}
+                              {(words.length > 0 || rest.length > 0) && <div className="nunopi-md"><ul className="pl-0!">{/* 용어 칩 줄은 본문·소제목과 같은 선에서 시작(목록 기본 들여쓰기 없음) */}{words.map((x, i) => (
+                                <li key={`${i}|${x.term}`}>{x.names.map((n, j) => { const plain = n.replace(/`/g, "").trim(); return (
+                                  <span key={j}>{j > 0 && " / "}{cardOf(plain) || isCardWorthy(plain) ? chip({ term: n, def: x.def }) : <strong>{plain}</strong>}</span>
+                                ); })} — <Markdown className="inline [&_p]:inline">{x.def}</Markdown></li>
+                              ))}{rest.map((l, i) => <li key={`r${i}`}><Markdown className="inline [&_p]:inline">{l}</Markdown></li>)}</ul></div>}
                               {sp.after && <Markdown>{sp.after}</Markdown>}
                             </> : <Markdown>{relocalizeFailure(body, t)}</Markdown>}
                             {extra.length > 0 && <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1">{extra.map((x, i) => <span key={`${i}|${x.term}`} title={x.def}>{chip(x)}</span>)}</div>}
