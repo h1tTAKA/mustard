@@ -39,15 +39,16 @@ export function mergeTerms(prev: Term[], add: Term[], key: (s: string) => string
 
 // #1359 해설 끝 '카드로 남길 개념' 칸 — 화면은 이 칸을 글로 안 보이고 카드 맨 아래 칩 줄로(누르면 nunopi 카드). 칸 이름은 해설 언어별.
 export const CARD_HEADS = { ko: "카드로 남길 개념", ja: "カードにする概念", en: "Concepts to keep" } as const;
-const isCardHead = (l: string) => /^#{1,6}\s/.test(l) && Object.values(CARD_HEADS).some((h) => l.replace(/^#{1,6}\s*/, "").replace(/\*/g, "").trim() === h);
+// "### 이름" / "**이름**" / 끝에 ":" 붙은 것까지(모델 표기 흔들림, 리뷰)
+const isCardHead = (l: string) => (/^#{1,6}\s/.test(l) || /^\*\*[^*]+\*\*\s*[:：]?$/.test(l)) && Object.values(CARD_HEADS).some((h) => l.replace(/^#{1,6}\s*/, "").replace(/\*/g, "").replace(/[:：]\s*$/, "").trim() === h);
 // 본문 → { body: 그 칸을 뺀 본문, names: 칸 속 이름들 }. 칸이 없으면(옛 카드) names 빈 배열.
 export function splitCardSection(note: string): { body: string; names: string[] } {
   const lines = String(note || "").split("\n");
   const start = lines.findIndex((l) => isCardHead(l.trim()));
   if (start < 0) return { body: String(note || ""), names: [] };
   let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) if (/^#{1,6}\s/.test(lines[i].trim())) { end = i; break; }
-  const names = lines.slice(start + 1, end).map((l) => l.trim().match(/^[-*•]\s+(.+)$/)?.[1].replace(/[*`]/g, "").split(/\s+[—–]\s+/)[0].trim() ?? "").filter(Boolean);
+  for (let i = start + 1; i < lines.length; i++) { const l = lines[i].trim(); if (l && !/^[-*•]\s/.test(l)) { end = i; break; } } // 목록 아닌 줄(다음 소제목·팁)에서 끝 — 그 줄은 본문에 남김(리뷰)
+  const names = lines.slice(start + 1, end).map((l) => l.trim().match(/^[-*•]\s+(.+)$/)?.[1].replace(/[*`]/g, "").split(/\s+[—–]\s+|[:：]\s/)[0].trim() ?? "").filter(Boolean);
   return { body: [...lines.slice(0, start), ...lines.slice(end)].join("\n").trim(), names };
 }
 

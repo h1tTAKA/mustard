@@ -863,6 +863,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                         if (!d || !secs) {
                           if (c.kind !== "narration") return <Markdown>{relocalizeFailure(c.expl ?? "", t)}</Markdown>;
                           // #1359 해설 끝 '카드로 남길 개념' 칸은 글 대신 카드 맨 아래 칩 줄 — nunopi를 켠 유저만, 뜻은 위 용어 풀이에서(없으면 칩 안 냄)
+                          // nunopi를 끈 유저도 그 칸은 숨김 — 칸 속 이름은 위 용어 풀이에 이미 있어 잃는 내용 없음(카드용 표시일 뿐)
                           const { body, names } = splitCardSection(c.expl ?? "");
                           const defs = cardsOn && names.length ? parseNarrationTerms(body) : [];
                           const chips = names.map((n) => ({ term: n, def: defs.find((x) => normalizeCardFront(x.term.replace(/`/g, "")) === normalizeCardFront(n))?.def ?? "" }))
