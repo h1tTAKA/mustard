@@ -2,7 +2,7 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconPin, IconPinFilled , IconAdjustmentsHorizontal } from "@tabler/icons-react";
+import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconPin, IconPinFilled , IconAdjustmentsHorizontal, IconCards, IconEyeOff } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
@@ -594,14 +594,14 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
         return ( /* #1359 해설 용어 칩 풀다운 — 다른 메뉴(채팅 탭)와 같은 모양 */
         <>
           <div className="fixed inset-0 z-40" onClick={() => closeChipMenu()} onContextMenu={(e) => { e.preventDefault(); closeChipMenu(); }} aria-hidden />
-          <div role="menu" style={{ position: "fixed", left: Math.min(rc.left, window.innerWidth - 164), top: up ? rc.top - 4 : rc.bottom + 4, transform: up ? "translateY(-100%)" : undefined }}
+          <div role="menu" style={{ position: "fixed", left: Math.min(rc.left, window.innerWidth - 150), top: up ? rc.top - 4 : rc.bottom + 4, transform: up ? "translateY(-100%)" : undefined }}
             onKeyDown={(e) => { if (e.key === "Escape") closeChipMenu(); }}
             onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null) && e.relatedTarget) closeChipMenu(false); }} // 탭으로 메뉴 밖에 나가면 닫음(리뷰)
-            className="z-50 min-w-[160px] rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-[var(--s-pane)]">
+            className="z-50 w-max min-w-[132px] rounded-[12px] border border-black/[0.07] bg-white p-[6px] shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.08)] dark:border-white/[0.09] dark:bg-[var(--s-pane)] dark:shadow-[0_12px_32px_rgba(0,0,0,0.45)]">
             <button type="button" role="menuitem" autoFocus onClick={() => { closeChipMenu(); if (card) throwCard(card, rc); else addTerm({ term, def: r.def }, r.term); }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"><span className="whitespace-nowrap">{t(card ? "learn.openCard" : "learn.termAdd")}</span></button>
+              className="flex w-full cursor-default items-center gap-2 rounded-md px-2.5 py-[5px] text-left text-[13px] leading-4 text-zinc-700 outline-none select-none hover:bg-black/[0.08] focus-visible:bg-black/[0.08] dark:text-zinc-200 dark:hover:bg-white/[0.14] dark:focus-visible:bg-white/[0.14]"><IconCards size={15} stroke={1.5} className="shrink-0 text-zinc-400" aria-hidden /><span className="whitespace-nowrap">{t(card ? "learn.openCard" : "learn.termAdd")}</span></button>
             <button type="button" role="menuitem" onClick={() => { closeChipMenu(false); markKnown(term); }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"><span className="whitespace-nowrap">{t("learn.termHide")}</span></button>
+              className="flex w-full cursor-default items-center gap-2 rounded-md px-2.5 py-[5px] text-left text-[13px] leading-4 text-zinc-700 outline-none select-none hover:bg-black/[0.08] focus-visible:bg-black/[0.08] dark:text-zinc-200 dark:hover:bg-white/[0.14] dark:focus-visible:bg-white/[0.14]"><IconEyeOff size={15} stroke={1.5} className="shrink-0 text-zinc-400" aria-hidden /><span className="whitespace-nowrap">{t("learn.termHide")}</span></button>
           </div>
         </>
       ); })()}
