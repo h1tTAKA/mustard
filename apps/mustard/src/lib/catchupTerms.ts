@@ -44,11 +44,11 @@ const isCardHead = (l: string) => (/^#{1,6}\s/.test(l) || /^\*\*[^*]+\*\*\s*[:�
 // 본문 → { body: 그 칸을 뺀 본문, names: 칸 속 이름들 }. 칸이 없으면(옛 카드) names 빈 배열.
 export function splitCardSection(note: string): { body: string; names: string[] } {
   const lines = String(note || "").split("\n");
-  const start = lines.findIndex((l) => isCardHead(l.trim()));
+  const start = lines.findLastIndex((l) => isCardHead(l.trim())); // 칸은 해설 끝 — 앞 문장 속 굵은 같은 말에 안 걸리게 마지막 것(리뷰)
   if (start < 0) return { body: String(note || ""), names: [] };
   let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) { const l = lines[i].trim(); if (l && !/^[-*•]\s/.test(l)) { end = i; break; } } // 목록 아닌 줄(다음 소제목·팁)에서 끝 — 그 줄은 본문에 남김(리뷰)
-  const names = lines.slice(start + 1, end).map((l) => l.trim().match(/^[-*•]\s+(.+)$/)?.[1].replace(/[*`]/g, "").split(/\s+[—–]\s+|[:：]\s/)[0].trim() ?? "").filter(Boolean);
+  for (let i = start + 1; i < lines.length; i++) { const l = lines[i].trim(); if (l && !/^[-*•]\s/.test(l) && !/^\s/.test(lines[i])) { end = i; break; } } // 목록 아닌 줄(다음 소제목·팁)에서 끝 — 그 줄은 본문에 남김(리뷰)
+  const names = lines.slice(start + 1, end).map((l) => l.trim().match(/^[-*•]\s+(.+)$/)?.[1].replace(/[*`]/g, "").split(/\s+[—–]\s+|[:：](\s|$)/)[0].trim() ?? "").filter(Boolean);
   return { body: [...lines.slice(0, start), ...lines.slice(end)].join("\n").trim(), names };
 }
 

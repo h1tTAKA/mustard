@@ -29,6 +29,7 @@ assert.deepStrictEqual(cs, { body: "첫 문단\n### 나온 말·용어 풀이\n-
 assert.deepStrictEqual(splitCardSection("본문만"), { body: "본문만", names: [] }, "옛 카드는 그대로");
 assert.deepStrictEqual(splitCardSection("a\n## Concepts to keep\n- Hook\n## 다음\nb").names, ["Hook"], "다음 소제목에서 끝, 영어 칸 이름");
 assert.deepStrictEqual(splitCardSection("a\n**카드로 남길 개념**:\n- Hook: 설명\n> 팁"), { body: "a\n> 팁", names: ["Hook"] }, "굵게·콜론 소제목, 이름 뒤 콜론, 뒤따르는 글은 본문에(리뷰)");
+assert.deepStrictEqual(splitCardSection("**카드로 남길 개념** 얘기\n### 카드로 남길 개념\n- Hook — 함수\n  이어진 줄\n- Ref:\n- Memo").names, ["Hook", "Ref", "Memo"], "마지막 칸, 들여쓴 이어짐 줄, 끝 콜론(리뷰)");
 assert.deepStrictEqual(["localhost:8797", "#68 브랜치", "src/a.ts", "narrate.ts", "a1b2c3d", "fix/catchup-x", "package.json", "RepoLearnStream.tsx", "README.md", "8797", "next.config.js"].map(isCardWorthy), Array(11).fill(false), "이 작업만의 값은 칩 아님");
 assert.deepStrictEqual(["localhost", "브랜치", "React Hook", "tsconfig", "Node.js", "Next.js", "CI/CD", "HTTP/2", "HTTP 404", "AES-256", "ISO 8601"].map(isCardWorthy), Array(11).fill(true), "일반 개념은 칩(리뷰)");
 console.log("catchupTerms ok");
