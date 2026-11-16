@@ -861,7 +861,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                             {sp ? <>
                               {/* 아는 용어를 빼고 하나도 안 남으면 용어 칸 소제목째 숨김 */}
                               {(() => { const b = words.length || rest.length ? sp.before : sp.before.replace(/\n?[^\n]*$/, "").trim(); return b ? <Markdown>{relocalizeFailure(b, t)}</Markdown> : null; })()}
-                              {(words.length > 0 || rest.length > 0) && <div className="nunopi-md"><ul>{words.map((x, i) => (
+                              {(words.length > 0 || rest.length > 0) && <div className="nunopi-md"><ul className="pl-0!">{/* 용어 칩 줄은 본문·소제목과 같은 선에서 시작(목록 기본 들여쓰기 없음) */}{words.map((x, i) => (
                                 <li key={`${i}|${x.term}`}>{x.names.map((n, j) => { const plain = n.replace(/`/g, "").trim(); return (
                                   <span key={j}>{j > 0 && " / "}{cardOf(plain) || isCardWorthy(plain) ? chip({ term: n, def: x.def }) : <strong>{plain}</strong>}</span>
                                 ); })} — <Markdown className="inline [&_p]:inline">{x.def}</Markdown></li>
