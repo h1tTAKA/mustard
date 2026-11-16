@@ -13,6 +13,6 @@ export async function POST(req: Request): Promise<Response> {
   if (typeof body.provider === "string") setNarrationProvider(body.provider.slice(0, 40));
   if (typeof body.model === "string") setNarrationModel(body.model.slice(0, 80));
   if (body.locale === "ko" || body.locale === "ja" || body.locale === "en") setNarrationLocale(body.locale); // #1091
-  if (typeof body.beginner === "boolean") setNarrationTerms(body.beginner, Array.isArray(body.known) ? body.known.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 60)).slice(0, 300) : []); // #1359
+  if (typeof body.beginner === "boolean") setNarrationTerms(body.beginner, Array.isArray(body.known) ? body.known.filter((x): x is string => typeof x === "string").map((x) => x.replace(/\s+/g, " ").trim().slice(0, 60)).filter(Boolean).slice(0, 300) : []); // #1359
   return Response.json({ ok: true });
 }
