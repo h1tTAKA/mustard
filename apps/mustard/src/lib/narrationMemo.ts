@@ -11,7 +11,7 @@ export const NAMES_HEADS = { ko: "이 작업의 이름들", ja: "この作業の
 // 첫 문단(제목 밑, 첫 소제목 전) = 지금 무슨 작업 얘기인지
 export function leadOf(expl: string): string {
   const out: string[] = [];
-  for (const l of expl.split("\n")) { const x = l.trim(); if (/^#{1,6}\s/.test(x) || /^\*\*[^*]+\*\*\s*[:：]?$/.test(x)) break; if (x) out.push(x); }
+  for (const l of expl.split("\n")) { const x = l.trim(); if (/^#{1,6}\s/.test(x) || /^\*\*[^*]+\*\*\s*[:：]?$/.test(x)) { if (out.length) break; continue; } if (x) out.push(x); } // 소제목으로 시작하면 그 밑 글부터(리뷰)
   return out.join(" ").replace(/[`*_]/g, "");
 }
 // 글자 두 개씩 묶음의 겹침(0~1) — 말을 조금 바꿔도 같은 얘기면 높음
@@ -26,10 +26,15 @@ export function memoLines(past: PastNarration[], fmt: (ts: number) => string): s
   return past.map((p) => { const l = leadOf(p.expl).slice(0, 90); return `- [${fmt(p.ts)}] ${p.title}${l ? ` — ${l}` : ""}`; });
 }
 const titleKey = (t: string) => t.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase(); // 글자·숫자만(기호·띄어쓰기 무시)
-const SAME = 0.4; // 실측(11-15~16 해설 110쌍): 다른 작업끼리 최대 0.19, 말만 바꾼 같은 얘기 0.8대. 한계: 문턱 하나 — 너무 많이/적게 버려지면 조정
-// 새 카드가 반복인지 — 코드가 안 바뀌었는데 최근 해설과 제목이 같거나 첫 문단(작업 이야기)이 거의 같으면 반복
+const SAME = 0.4, MIN_LEAD = 40; // 짧은 문장끼리는 겹침이 부풀어(리뷰) 둘 다 40자 넘을 때만 비교. 한계: 문턱은 한국어 카드로만 잼(일·영 미검증).
+// 실측(11-15~16 해설 110쌍): 다른 작업끼리 최대 0.19, 말만 바꾼 같은 얘기 0.8대. 한계: 문턱 하나 — 너무 많이/적게 버려지면 조정
+// 새 카드가 반복인지 — 코드가 안 바뀌었는데 최근 해설과 첫 문단(작업 이야기)이 거의 같거나, 제목이 같고 첫 문단도 조금이라도 겹치면 반복
 export function isRepeat(title: string, expl: string, past: PastNarration[], hasDiff: boolean): boolean {
   if (hasDiff) return false; // 진짜 코드가 바뀌었으면 해설할 거리가 있음
   const tk = titleKey(title), lead = leadOf(expl);
-  return past.some((p) => titleKey(p.title) === tk || (lead.length > 20 && similarity(lead, leadOf(p.expl)) >= SAME));
+  return past.some((p) => {
+    const pl = leadOf(p.expl), sim = lead.length >= MIN_LEAD && pl.length >= MIN_LEAD ? similarity(lead, pl) : -1;
+    if (titleKey(p.title) === tk) return sim < 0 || sim >= 0.2; // 같은 제목 — 첫 문단이 아예 다르면('작업 중' 같은 기본 제목끼리) 통과(리뷰)
+    return sim >= SAME;
+  });
 }
