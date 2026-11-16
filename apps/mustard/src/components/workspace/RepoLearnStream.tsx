@@ -876,7 +876,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                                 <span className="group/chip relative inline-block">
                                   <button type="button" onClick={() => addTerm({ term, def: x.def })}
                                     className="rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400">{term}<span className="sr-only"> — {t("learn.chipSaveHint")}</span></button>
-                                  <span className="pointer-events-none absolute left-0 top-full z-50 mt-1 whitespace-nowrap rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-white opacity-0 shadow transition group-hover/chip:opacity-100 group-hover/chip:delay-[400ms] group-focus-within/chip:opacity-100 dark:bg-zinc-700" aria-hidden>{t("learn.chipSaveHint")}</span>
+                                  <span className="pointer-events-none absolute left-0 top-full z-50 mt-1 whitespace-nowrap rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-white opacity-0 shadow transition group-hover/chip:opacity-100 group-hover/chip:delay-[400ms] group-focus-visible/chip:opacity-100 group-focus-visible/chip:delay-[400ms] dark:bg-zinc-700" aria-hidden>{t("learn.chipSaveHint")}</span>
                                 </span>
                               )} — <Markdown className="inline [&_p]:inline">{x.def}</Markdown></li> /* 뜻 속 굵게·코드도 마크다운으로(리뷰) */
                             ); })}</ul></div>

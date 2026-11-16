@@ -60,7 +60,9 @@ export function isCardWorthy(term: string): boolean {
   const x = term.trim();
   if (/^(?=[0-9a-f]*\d)[0-9a-f]{7,40}$/i.test(x)) return false; // 커밋 해시
   if (/#\d|:\d/.test(x)) return false; // 이슈 번호·포트
-  if (/^[a-z0-9._-]+\.(tsx?|jsx?|json|md|c?js|mjs|py|sh|ya?ml|lock|swift|dart|go|rs)$/.test(x)) return false; // 파일 이름(전부 소문자 — Node.js·Next.js는 개념, 리뷰)
+  if (/^\d+$/.test(x)) return false; // 숫자만(포트·상태 번호)
+  if (/\.(tsx?|jsx|json|md|py|sh|ya?ml|lock|swift|dart|go|rs)$/i.test(x)) return false; // 파일 이름(README.md·RepoLearnStream.tsx도)
+  if (/^[a-z0-9._-]+\.[cm]?js$/.test(x)) return false; // .js는 전부 소문자일 때만 파일 — Node.js·Next.js는 개념(한계: three.js 같은 소문자 라이브러리 이름도 빠짐)
   if (/^(\.{0,2}\/|~\/)|^[a-z0-9._-]+(\/[a-z0-9._-]+)+$/.test(x)) return false; // 경로·브랜치(소문자 a/b — CI/CD·HTTP/2는 개념)
   return true; // 한계: 'main 브랜치'처럼 숫자·기호 없는 이 작업만의 이름은 못 거름 — 해설 틀이 용어 칸에 안 넣게 지시
 }
