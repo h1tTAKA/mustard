@@ -1,36 +1,35 @@
-// 실시간 해설 기억(#1359) — 같은 레포의 최근 해설에서 제목·설명한 개념을 뽑아 다음 해설 프롬프트에 넘기고(반복 말고 흐름 잇기),
-// 그래도 새것이 없는 카드는 버림. 개념 = 본문의 **굵은 말**(괄호 영문은 떼고 소문자) — 해설 틀이 개념을 굵게 쓰도록 되어 있음.
+// 실시간 해설 기억(#1359) — 같은 레포의 최근 해설(제목·요지)을 다음 해설 프롬프트에 넘기고(같은 작업 이야기 대신 흐름 잇기),
+// 그래도 같은 작업 이야기를 되풀이한 카드는 버림. 반복 판정 = 작업 내용(제목·첫 문단) 기준 — 용어 풀이는 겹쳐도 됨
+// (유저: 같은 용어를 여러 번 접하며 익히는 게 좋음). 비교 대상은 최근 30분이라 한참 뒤 비슷한 작업은 다시 해설됨.
 // 순수 함수(점검: narrationMemo.check.ts).
 
 export interface PastNarration { ts: number; title: string; expl: string }
 
-const norm = (s: string) => s.replace(/\(.*?\)/g, "").replace(/[`*_]/g, "").trim().toLowerCase();
-// '이 작업의 이름들' 칸(브랜치·localhost·레포 함수 이름) — 개념이 아니라 반복 판정·기억에서 뺌(리뷰). 해설 틀(narrate.ts)도 이 이름을 씀.
+// '이 작업의 이름들' 칸 이름 — 해설 틀(narrate.ts)이 씀. '용어'가 안 들어가야 용어집·칩에서 빠짐.
 export const NAMES_HEADS = { ko: "이 작업의 이름들", ja: "この作業の名前", en: "Names in this work" } as const;
-const isNamesHead = (l: string) => { const x = l.trim(); return (/^#{1,6}\s/.test(x) || /^\*\*[^*]+\*\*\s*[:：]?$/.test(x)) && Object.values(NAMES_HEADS).some((h) => x.replace(/^#{1,6}\s*/, "").replace(/\*/g, "").replace(/[:：]\s*$/, "").trim() === h); };
-const withoutNames = (expl: string) => {
-  let skip = false;
-  return expl.split("\n").filter((l) => { if (isNamesHead(l)) { skip = true; return false; } if (skip && (/^#{1,6}\s/.test(l.trim()) || /^\*\*[^*]+\*\*\s*[:：]?$/.test(l.trim()))) skip = false; return !skip; }).join("\n"); // 다음 소제목(### 또는 **굵은 줄**)에서 끝
-};
-// 본문 속 굵은 말 → 개념 이름 집합
-export function conceptsOf(expl: string): Set<string> {
-  const out = new Set<string>();
-  for (const m of withoutNames(expl).matchAll(/\*\*([^*\n]{1,40})\*\*/g)) { const k = norm(m[1]); if (k && k.length <= 30) out.add(k); }
-  return out;
+
+// 첫 문단(제목 밑, 첫 소제목 전) = 지금 무슨 작업 얘기인지
+export function leadOf(expl: string): string {
+  const out: string[] = [];
+  for (const l of expl.split("\n")) { const x = l.trim(); if (/^#{1,6}\s/.test(x) || /^\*\*[^*]+\*\*\s*[:：]?$/.test(x)) break; if (x) out.push(x); }
+  return out.join(" ").replace(/[`*_]/g, "");
 }
-// 프롬프트에 넣을 '앞서 해설한 것' 줄들 — 오래된 것부터, 개념은 최대 6개
+// 글자 두 개씩 묶음의 겹침(0~1) — 말을 조금 바꿔도 같은 얘기면 높음
+const grams = (s: string) => { const t = s.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase(); const g = new Set<string>(); for (let i = 0; i < t.length - 1; i++) g.add(t.slice(i, i + 2)); return g; };
+export function similarity(a: string, b: string): number {
+  const x = grams(a), y = grams(b); if (!x.size || !y.size) return 0;
+  let n = 0; for (const k of x) if (y.has(k)) n++;
+  return n / (x.size + y.size - n);
+}
+// 프롬프트에 넣을 '앞서 해설한 것' 줄들 — 오래된 것부터, 제목 + 요지(첫 문단 앞부분)
 export function memoLines(past: PastNarration[], fmt: (ts: number) => string): string[] {
-  return past.map((p) => { const c = [...conceptsOf(p.expl)].slice(0, 6); return `- [${fmt(p.ts)}] ${p.title}${c.length ? ` — 설명한 개념: ${c.join(", ")}` : ""}`; });
+  return past.map((p) => { const l = leadOf(p.expl).slice(0, 90); return `- [${fmt(p.ts)}] ${p.title}${l ? ` — ${l}` : ""}`; });
 }
 const titleKey = (t: string) => t.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase(); // 글자·숫자만(기호·띄어쓰기 무시)
-// 새 카드가 반복인지 — 제목이 최근 것과 같거나, 코드 변경 없이 새 개념이 하나도 없으면(이미 다 설명한 것만) 반복
+const SAME = 0.4; // 실측(11-15~16 해설 110쌍): 다른 작업끼리 최대 0.19, 말만 바꾼 같은 얘기 0.8대. 한계: 문턱 하나 — 너무 많이/적게 버려지면 조정
+// 새 카드가 반복인지 — 코드가 안 바뀌었는데 최근 해설과 제목이 같거나 첫 문단(작업 이야기)이 거의 같으면 반복
 export function isRepeat(title: string, expl: string, past: PastNarration[], hasDiff: boolean): boolean {
-  const seen = new Set<string>();
-  for (const p of past) for (const c of conceptsOf(p.expl)) seen.add(c);
-  const mine = conceptsOf(expl);
-  const noNew = [...mine].every((c) => seen.has(c)); // 개념이 없거나 전부 이미 설명함
-  const tk = titleKey(title);
-  if (past.some((p) => titleKey(p.title) === tk) && noNew && !hasDiff) return true; // 같은 제목 + 새 개념 없음(기본 제목끼리 겹쳐도 새 개념이 있으면 통과 — 리뷰)
-  if (hasDiff || !mine.size) return false; // 진짜 코드가 바뀌었으면 해설할 거리가 있음
-  return noNew;
+  if (hasDiff) return false; // 진짜 코드가 바뀌었으면 해설할 거리가 있음
+  const tk = titleKey(title), lead = leadOf(expl);
+  return past.some((p) => titleKey(p.title) === tk || (lead.length > 20 && similarity(lead, leadOf(p.expl)) >= SAME));
 }
