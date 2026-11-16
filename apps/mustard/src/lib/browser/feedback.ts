@@ -21,8 +21,15 @@ function fence(body: string, lang = ""): string {
 export function sanitizePaste(s: string): string {
   return s.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
 }
+// 펜스 밖에 들어가는 페이지 유래 값(URL·선택자·태그·소스 경로·컴포넌트 이름) — 한 줄로, 백틱 없이, 길이 상한.
+// 줄바꿈을 심어 지시문처럼 보이게 하는 걸 막음(#1361 리뷰). 보통 값은 그대로.
+const one = (s: string, max = 300) => { const x = String(s ?? "").replace(/[\r\n\u2028\u2029`]+/g, " ").trim(); return x.length > max ? `${x.slice(0, max)}…` : x; };
 
-export function formatPickFeedback(p: PickedElement, comment: string, screenshot?: string): string {
+const clean = (p: PickedElement): PickedElement => ({ ...p, url: one(p.url, 500), tag: one(p.tag, 60), selector: one(p.selector),
+  sources: p.sources.map((x) => ({ ...x, file: one(x.file), name: one(x.name, 80) })), components: p.components.map((c) => one(c, 80)) });
+
+export function formatPickFeedback(raw: PickedElement, comment: string, screenshot?: string): string {
+  const p = clean(raw);
   if (p.kind === "region") return formatRegion(p, comment, screenshot);
   const path = (() => { try { const u = new URL(p.url); return u.pathname + u.search; } catch { return p.url; } })();
   const attrs = Object.entries(p.attrs).map(([k, v]) => `${k}="${v}"`).join(" ");
@@ -81,11 +88,12 @@ const MAX_BATCH = 20_000; // 한계: 넘으면 페이지 글(펜스)부터 줄�
 export function formatPickBatch(notes: PickNote[]): string {
   if (notes.length === 1) return formatPickFeedback(notes[0].el, notes[0].comment, notes[0].shot);
   const pathOf = (u: string) => { try { const x = new URL(u); return x.pathname + x.search; } catch { return u; } };
-  const pages = [...new Set(notes.map((n) => n.el.url))];
+  const pages = [...new Set(notes.map((n) => one(n.el.url, 500)))];
   const v = notes[0].el.viewport;
   const head = [`## UI feedback (${notes.length} items): ${pages.length === 1 ? pathOf(pages[0]) : `${pages.length} pages`}`, "", ...(pages.length === 1 ? [`- URL: ${pages[0]}`] : []), `- Viewport: ${v.w}x${v.h} @${v.dpr}x`];
   const body: string[] = [], data: string[] = [];
-  notes.forEach(({ el: p, comment, shot }, i) => {
+  notes.forEach(({ el, comment, shot }, i) => {
+    const p = clean(el);
     const n = i + 1, src = p.sources[0];
     const label = p.kind === "region" ? `area ${p.rect.w}x${p.rect.h}` : `\`${p.tag}\``;
     body.push("", `### ${n}. ${label}${src ? ` — ${src.file}:${src.line}` : ""}`, "", `**Request:** ${comment.trim()}`, "");

@@ -181,7 +181,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
   useEffect(() => {
     const wv = viewRef.current;
     if (!ready || !wv) return;
-    const marks = notes.flatMap((n, i) => (n.el.url === current ? [{ id: n.id, n: i + 1, selector: n.el.kind === "region" ? "" : n.el.selector, rect: { x: n.el.rect.x, y: n.el.rect.y } }] : []));
+    const marks = notes.flatMap((n, i) => (n.el.url === current ? [{ id: n.id, n: i + 1, selector: n.el.kind === "region" ? "" : n.el.selector, rect: { x: n.el.rect.x, y: n.el.rect.y }, scroll: n.el.scroll }] : []));
     void wv.executeJavaScript(markScript(marks)).catch(() => {}); // 붙기 전·이동 중이면 다음 dom-ready에 다시
   }, [ready, domTick, marksKey]); // eslint-disable-line react-hooks/exhaustive-deps -- notes·current는 marksKey로
 
@@ -212,7 +212,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
   };
   // #1361 담기 — 목록에 넣고 바로 다음 곳 고르기(Esc·포인터 버튼으로 끝)
   const addNote = () => {
-    if (!picked || !comment.trim()) return;
+    if (!picked || !comment.trim() || sendState === "sending") return; // 보내는 중엔 안 담음(보낸 뒤 목록 정리와 엉키지 않게, 리뷰)
     if (notes.length >= MAX_NOTES) { setSendState("full"); return; }
     setNotes((xs) => [...xs, { id: ++noteSeq, el: picked.el, shot: picked.shot, comment: comment.trim() }]);
     startPick();
@@ -224,10 +224,14 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
     if (picked && !cur.length) return; // 팝오버에서 메모 없이 보내기 X
     const list = [...notes, ...cur];
     if (!list.length) return;
+    if (list.length > MAX_NOTES) { setSendState("full"); return; } // 지금 고른 것까지 10곳(리뷰)
     setSendState("sending");
     const r = await sendToAgent(repo, formatPickBatch(list));
     if (!r.ok) { setSendState(r.reason === "no-agent" ? "no-agent" : "error"); return; } // 데몬 실패를 "터미널 없음"으로 감추지 않게(#1129). 목록은 그대로
-    setPicked(null); setSendState("idle"); setNotes([]); setNotesOpen(false); setEditNote(null);
+    const sent = new Set(list.map((x) => ("id" in x ? x.id : 0)));
+    setNotes((xs) => xs.filter((x) => !sent.has(x.id))); // 보낸 것만 뺌(리뷰)
+    if (notes.every((x) => sent.has(x.id))) setNotesOpen(false);
+    setPicked(null); setSendState("idle"); setEditNote(null);
     if (picking) void viewRef.current?.executeJavaScript(PICK_CANCEL).catch(() => {}); // 띠에서 보냈으면 고르는 중이던 것도 끝
     requestTerminalFocus(repo, r.id); // 보낸 터미널 탭으로 — 에이전트가 받는 걸 보이게
   };
@@ -308,7 +312,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
             </div>
           )}
           {/* #1361 담은 곳 — 브라우저 칸 오른쪽 아래에 뜬 카드. 머리(접기·개수·비우기·보내기) + 펼치면 목록(번호·제목·메모, 올리면 고치기·지우기) */}
-          {notes.length > 0 && (
+          {notes.length > 0 && !picked && ( // 메모 쓰는 동안엔 숨김 — 팝오버와 겹치지 않게(리뷰)
             <div className="absolute bottom-3 right-3 z-10 flex max-h-[45%] w-[min(20rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border border-black/[0.08] bg-white text-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.18)] dark:border-white/[0.1] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[0_20px_44px_rgba(0,0,0,0.42)]">
               <div className="flex items-center gap-1.5 py-1.5 pl-2 pr-1.5">
                 <button type="button" onClick={() => setNotesOpen((v) => !v)} aria-expanded={notesOpen}
@@ -316,8 +320,8 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
                   {notesOpen ? <IconChevronDown size={14} stroke={2} className="shrink-0 text-zinc-400" aria-hidden /> : <IconChevronUp size={14} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />}
                   <span className="truncate">{t("browser.notes", { n: notes.length })}</span>
                 </button>
-                <button type="button" onClick={() => { setNotes([]); setNotesOpen(false); setEditNote(null); if (sendState === "full") setSendState("idle"); }} title={t("browser.notesClear")} aria-label={t("browser.notesClear")}
-                  className="flex size-6 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconTrash size={12} stroke={2} aria-hidden /></button>
+                <button type="button" disabled={sendState === "sending"} onClick={() => { setNotes([]); setNotesOpen(false); setEditNote(null); if (sendState === "full") setSendState("idle"); }} title={t("browser.notesClear")} aria-label={t("browser.notesClear")}
+                  className="flex size-6 disabled:opacity-40 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconTrash size={12} stroke={2} aria-hidden /></button>
                 <button type="button" disabled={sendState === "sending" || !!picked} onClick={() => void send()}
                   className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-mustard-500 px-2 text-[11px] font-medium text-zinc-900 shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition hover:bg-mustard-400 disabled:opacity-40">
                   {sendState === "sending" && !picked ? <IconLoader2 size={12} className="animate-spin" aria-hidden /> : <IconSend size={12} stroke={2} aria-hidden />}{t("browser.pickSend")}
@@ -342,7 +346,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
                         ) : <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap break-words text-zinc-500 dark:text-zinc-400">{n.comment}</p>}
                         {n.el.url !== current && <div className="mt-1 truncate text-[11px] text-zinc-400">{pathOf(n.el.url)}</div>}
                       </div>
-                      {editNote?.id !== n.id && <div className="flex shrink-0 items-start gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                      {editNote?.id !== n.id && sendState !== "sending" && <div className="flex shrink-0 items-start gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                         <button type="button" onClick={() => setEditNote({ id: n.id, text: n.comment })} title={t("browser.noteEdit")} aria-label={t("browser.noteEdit")}
                           className="flex size-6 items-center justify-center rounded-md text-zinc-400 transition hover:bg-white hover:text-zinc-700 dark:hover:bg-zinc-900 dark:hover:text-zinc-200"><IconPencil size={12} stroke={2} aria-hidden /></button>
                         <button type="button" onClick={() => setNotes((xs) => xs.filter((x) => x.id !== n.id))} title={t("browser.noteRemove")} aria-label={t("browser.noteRemove")}

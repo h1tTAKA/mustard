@@ -13,6 +13,7 @@ export interface PickedElement {
   items: PickedItem[]; // region일 때만 채움(최대 8)
   url: string;
   viewport: { w: number; h: number; dpr: number };
+  scroll?: { x: number; y: number }; // 고른 순간의 페이지 스크롤(#1361 번호 원 — rect는 그때 화면 좌표라 페이지 좌표로 바꿀 때)
   tag: string;
   selector: string;
   text: string;
@@ -191,7 +192,7 @@ export const PICK_SCRIPT = `(() => new Promise((resolve) => {
     }
     return { framework: isFlt(el) ? "flutter" : el.tagName === "CANVAS" ? "canvas" : "", names: out }; // Flutter 빈 자리(flutter-view)도 flutter — 글에서 태그로 나눔
   };
-  const base = () => ({ url: location.href, viewport: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio } });
+  const base = () => ({ url: location.href, viewport: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio }, scroll: { x: scrollX, y: scrollY } });
   const textOf = (el) => (el.innerText || el.textContent || el.getAttribute("aria-label") || "").replace(/\\s+/g, " ").trim(); // aria-label = Flutter 접근성 요소의 글자
   // 영역 안에 완전히 들어간 요소 중 바깥쪽(부모는 영역에 안 들어감)만, 보이는 것, 최대 8개.
   const regionResult = (r) => {
