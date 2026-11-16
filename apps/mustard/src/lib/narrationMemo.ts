@@ -5,9 +5,6 @@
 
 export interface PastNarration { ts: number; title: string; expl: string }
 
-// '이 작업의 이름들' 칸 이름 — 해설 틀(narrate.ts)이 씀. '용어'가 안 들어가야 용어집·칩에서 빠짐.
-export const NAMES_HEADS = { ko: "이 작업의 이름들", ja: "この作業の名前", en: "Names in this work" } as const;
-
 // 첫 문단(제목 밑, 첫 소제목 전) = 지금 무슨 작업 얘기인지
 export function leadOf(expl: string): string {
   const out: string[] = [];

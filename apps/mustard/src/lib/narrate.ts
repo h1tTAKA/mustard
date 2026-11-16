@@ -3,7 +3,7 @@ import { snaClaudeProvider, snaCodexProvider, snaOpenCodeProvider } from "@musta
 import type { AgentAnalyzeRequest } from "@mustard/core";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems, repoPrefOff, readDay, dayKey } from "@/lib/catchupStore";
-import { isRepeat, memoLines, NAMES_HEADS, type PastNarration } from "@/lib/narrationMemo";
+import { isRepeat, memoLines, type PastNarration } from "@/lib/narrationMemo";
 import { beginNarrate } from "@/lib/narrateBusy";
 import { narrationProvider, narrationModel, narrationLocale } from "@/lib/narrationConfig";
 import { translate } from "@mustard/core/messages";
@@ -17,7 +17,6 @@ const langRule = (loc: keyof typeof LANG_NAME) => `⚠️ 출력 언어: 제목 
 const HEADS = {
   why: { ko: "왜 그렇게 하냐면", ja: "なぜそうするかというと", en: "Why it does this" },
   words: { ko: "나온 말·용어 풀이", ja: "出てきた言葉・用語", en: "Words & terms" }, // 화면은 이름을 카드 추가 칩으로
-  names: NAMES_HEADS, // '용어'가 안 들어가야 용어집·칩에서 빠짐, 반복 판정에서도 빠짐(narrationMemo)
   cards: CARD_HEADS, // 화면은 이 칸을 글 대신 카드 맨 아래 칩 줄로(catchupTerms.splitCardSection)
 } as const;
 // #1359 해설 = CLI 에이전트가 하는 말·작업을 옆에서 바로 이해하게 — 에이전트 말이 무슨 뜻인지, 왜 그렇게 하는지·그러면 어떻게 되는지,
@@ -34,11 +33,9 @@ function narrationPrompt(agent: string, material: string, fromTranscript: boolea
 ${h("why")}
 에이전트가 왜 그렇게 판단·제안했는지, 그렇게 하면 무엇이 어떻게 되는지(앱·코드·다음 단계에 생기는 일) 1~3문장. 에이전트가 이유를 말했으면 그 이유를 풀고, 안 말했으면 재료에서 보이는 만큼만.
 ${h("words")}
-에이전트 말·작업에 나온 **일반 개념·용어**(언어·프레임워크·도구·개발에서 두루 쓰는 말 — 다른 프로젝트에서도 통하는 것)를 **하나씩** "- **이름** — 쉬운 뜻 + 지금 이 맥락에서 무슨 의미인지" 2~6개. 항목 하나에 이름 하나(A / B로 묶지 마). 코드에 그대로 쓰는 이름(클래스·함수·위젯·명령)은 백틱으로: "- **\`PageController\`** — …". 앞서 해설에서 풀이한 용어도 이번에 또 나왔으면 다시 써(되풀이해 보며 자연스럽게 익히게).
-${h("names")}
-이 레포·이 작업에서만 쓰는 이름(이 레포에서 지은 함수·클래스·변수, 브랜치 이름, localhost·포트, 이슈 번호, 파일)을 이해에 필요한 것만 "- **이름** — 무엇인지" 0~4개. 없으면 소제목째 빼.
+에이전트 말·작업에 나온 **일반 개념·용어**(언어·프레임워크·도구·개발에서 두루 쓰는 말 — 다른 프로젝트에서도 통하는 것)를 **하나씩** "- **이름** — 쉬운 뜻 + 지금 이 맥락에서 무슨 의미인지" 2~6개. 브랜치 이름·localhost·포트·이슈 번호·커밋 해시·파일 이름·이 레포에서 지은 이름·앱 이름은 어디에도 풀이하지 마. 항목 하나에 이름 하나(A / B로 묶지 마). 코드에 그대로 쓰는 이름(클래스·함수·위젯·명령)은 백틱으로: "- **\`PageController\`** — …". 앞서 해설에서 풀이한 용어도 이번에 또 나왔으면 다시 써(되풀이해 보며 자연스럽게 익히게).
 ${h("cards")}
-위 두 칸에 안 나왔지만 지금 일을 이해하는 데 바탕이 되는 일반 개념을 "- **이름** — 짧은 뜻(한 문장)" 0~3개(이름 하나씩, 코드 이름은 백틱). 이 레포에서 지은 이름 금지. 없으면 소제목째 빼.
+위 용어 풀이에 안 나왔지만 지금 일을 이해하는 데 바탕이 되는 일반 개념을 "- **이름** — 짧은 뜻(한 문장)" 0~3개(이름 하나씩, 코드 이름은 백틱). 이 레포에서 지은 이름 금지. 없으면 소제목째 빼.
 
 📏 전체 300~800자로 완결(시작한 문장 끝맺기). 재료에 보이는 사실만 — 짐작·일반론·칭찬 금지.
 ⚠️ 금지:
