@@ -286,7 +286,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
             </div>
           )}
           {picked && h && (
-            <div className="@container absolute z-20 w-[min(320px,calc(100%-8px))] rounded-lg border border-black/[0.08] bg-white p-3 text-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.18)] dark:border-white/[0.1] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[0_20px_44px_rgba(0,0,0,0.42)]"
+            <div className="@container absolute z-20 w-[min(320px,calc(100%_-_8px))] rounded-lg border border-black/[0.08] bg-white p-3 text-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.18)] dark:border-white/[0.1] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[0_20px_44px_rgba(0,0,0,0.42)]"
               style={picked.pos}>
               {/* 머리 — 번호(담은 게 있으면) · 태그 뱃지 · 제목, 긴 선택자는 툴팁 */}
               <div className="mb-2 flex min-w-0 items-center gap-1.5" title={picked.el.selector || undefined}>
@@ -316,7 +316,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
           )}
           {/* #1361 담은 곳 — 브라우저 칸 오른쪽 아래에 뜬 카드. 머리(접기·개수·비우기·보내기) + 펼치면 목록(번호·제목·메모, 올리면 고치기·지우기) */}
           {notes.length > 0 && !picked && ( // 메모 쓰는 동안엔 숨김 — 팝오버와 겹치지 않게(리뷰)
-            <div className="@container absolute bottom-3 right-3 z-10 flex max-h-[45%] w-[min(20rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border border-black/[0.08] bg-white text-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.18)] dark:border-white/[0.1] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[0_20px_44px_rgba(0,0,0,0.42)]">
+            <div className="@container absolute bottom-3 right-3 z-10 flex max-h-[45%] w-[min(20rem,calc(100%_-_1.5rem))] flex-col overflow-hidden rounded-lg border border-black/[0.08] bg-white text-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.18)] dark:border-white/[0.1] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[0_20px_44px_rgba(0,0,0,0.42)]">
               <div className="flex items-center gap-1.5 py-1.5 pl-2 pr-1.5">
                 <button type="button" onClick={() => setNotesOpen((v) => !v)} aria-expanded={notesOpen}
                   className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1 py-0.5 text-left text-[12px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-mustard-500/40">
