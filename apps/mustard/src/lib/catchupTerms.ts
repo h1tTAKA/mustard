@@ -40,7 +40,8 @@ export function mergeTerms(prev: Term[], add: Term[], key: (s: string) => string
 // #1359 해설 카드의 용어 칸을 칩으로 그리려고 본문을 [용어 칸 앞(소제목 포함) | 용어들 | 뒤]로 나눔.
 // 용어 칸에 목록 아닌 줄이 섞였거나 용어가 없으면 null(호출부는 마크다운 그대로).
 // 한계: 첫 용어 칸만 칩 — 용어 칸이 두 번 나오면 둘째는 마크다운 글자로(내용은 그대로, 용어집은 둘 다 모음).
-export function splitTermsSection(note: string): { before: string; terms: Term[]; after: string } | null {
+// #1364 "이름 — 뜻" 꼴이 아닌 목록 줄(모델 사족 등)은 칸 전체를 버리지 않고 rest로 따로(화면이 아는 용어가 든 줄은 숨김). 목록 아닌 글이 섞이면 여전히 null.
+export function splitTermsSection(note: string): { before: string; terms: Term[]; after: string; rest: string[] } | null {
   const lines = String(note || "").split("\n");
   let start = -1, end = lines.length;
   for (let i = 0; i < lines.length; i++) {
@@ -50,9 +51,15 @@ export function splitTermsSection(note: string): { before: string; terms: Term[]
   }
   if (start < 0) return null;
   const sec = lines.slice(start, end).filter((l) => l.trim());
-  const terms = parseNarrationTerms([lines[start - 1], ...sec].join("\n"));
-  if (!terms.length || terms.length !== sec.length) return null;
-  return { before: lines.slice(0, start).join("\n").trim(), terms, after: lines.slice(end).join("\n").trim() };
+  const terms: Term[] = [], rest: string[] = [];
+  for (const l of sec) {
+    const t = parseNarrationTerms(`${lines[start - 1]}\n${l}`);
+    if (t.length) terms.push(t[0]);
+    else if (/^\s*[-*•]\s+/.test(l)) rest.push(l.trim().replace(/^[-*•]\s+/, ""));
+    else return null;
+  }
+  if (!terms.length) return null;
+  return { before: lines.slice(0, start).join("\n").trim(), terms, after: lines.slice(end).join("\n").trim(), rest };
 }
 
 // #1359 해설 끝 '카드로 남길 개념' 칸 — 위 용어 풀이에 없는 배경 개념(- **이름** — 뜻). 화면은 이 칸을 글로 안 보이고 카드 맨 아래 칩 줄로(누르면 nunopi 카드). 칸 이름은 해설 언어별.
@@ -74,6 +81,12 @@ export function splitCardSection(note: string): { body: string; items: Term[] } 
   return { body: [...lines.slice(0, start), ...lines.slice(end)].join("\n").trim(), items };
 }
 
+// #1364 한 항목에 이름 둘("`drag` / `fling`") → 따로 칩. CI/CD처럼 띄어쓰기 없는 /는 한 이름.
+export function splitNames(term: string): string[] {
+  const xs = term.split(/\s+\/\s+/).map((x) => x.trim()).filter(Boolean);
+  return xs.length > 1 && xs.every((x) => x.length <= 40) ? xs : [term];
+}
+
 // #1359 카드로 남길 만한 일반 개념인지 — 포트·이슈 번호·경로·파일 이름·해시 같은 이 작업만의 값은 칩 아님(유저 지적: localhost:8797, #68 브랜치)
 export function isCardWorthy(term: string): boolean {
   const x = term.trim();
@@ -83,6 +96,8 @@ export function isCardWorthy(term: string): boolean {
   if (/\.(tsx?|jsx|json|md|py|sh|ya?ml|lock|swift|dart|go|rs)$/i.test(x)) return false; // 파일 이름(README.md·RepoLearnStream.tsx도)
   if (/^[a-z0-9._-]+\.[cm]?js$/.test(x)) return false; // .js는 전부 소문자일 때만 파일 — Node.js·Next.js는 개념(한계: three.js 같은 소문자 라이브러리 이름도 빠짐)
   if (/^(\.{0,2}\/|~\/)|^[a-z0-9._-]+(\/[a-z0-9._-]+)+$/.test(x)) return false; // 경로·브랜치(소문자 a/b — CI/CD·HTTP/2는 개념)
+  if (/\S의\s/.test(x)) return false; // #1364 "Icon의 size" — 특정 위젯·함수의 속성
+  if (/\d+,\d+|\s-{1,2}[A-Za-z][\w-]*\s+\d/.test(x)) return false; // #1364 이번 작업의 값이 붙은 명령(sed -n 282,400p, head -n 20) — 이름은 일반형이어야 다른 작업에도 쓰임
   return true; // 한계: 'main 브랜치'처럼 숫자·기호 없는 이 작업만의 이름은 못 거름 — 해설 틀이 용어 칸에 안 넣게 지시
 }
 

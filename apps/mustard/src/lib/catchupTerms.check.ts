@@ -1,6 +1,6 @@
 // catchupTerms 점검 — node --experimental-strip-types src/lib/catchupTerms.check.ts
 import assert from "node:assert";
-import { mergeTerms, parseNarrationTerms, splitCardSection, splitTermsSection, isCardWorthy, cardKindOf } from "./catchupTerms.ts";
+import { mergeTerms, parseNarrationTerms, splitCardSection, splitTermsSection, splitNames, isCardWorthy, cardKindOf } from "./catchupTerms.ts";
 
 const note = `순수 함수와 리듀서
 ## 무엇이 바뀌었나
@@ -34,8 +34,18 @@ assert.deepStrictEqual(splitCardSection("**카드로 남길 개념** 얘기\n###
 assert.deepStrictEqual(["localhost:8797", "#68 브랜치", "src/a.ts", "narrate.ts", "a1b2c3d", "fix/catchup-x", "package.json", "RepoLearnStream.tsx", "README.md", "8797", "next.config.js"].map(isCardWorthy), Array(11).fill(false), "이 작업만의 값은 칩 아님");
 assert.deepStrictEqual(["localhost", "브랜치", "React Hook", "tsconfig", "Node.js", "Next.js", "CI/CD", "HTTP/2", "HTTP 404", "AES-256", "ISO 8601"].map(isCardWorthy), Array(11).fill(true), "일반 개념은 칩(리뷰)");
 const sp = splitTermsSection("첫 문단\n### 나온 말·용어 풀이\n- **diff** — 차이\n\n- **npm** — 패키지 관리자\n### 이 작업의 이름들\n- **fix/x** — 브랜치");
-assert.deepStrictEqual(sp, { before: "첫 문단\n### 나온 말·용어 풀이", terms: [{ term: "diff", def: "차이" }, { term: "npm", def: "패키지 관리자" }], after: "### 이 작업의 이름들\n- **fix/x** — 브랜치" }, "용어 칸만 떼고, 이름 칸은 뒤에");
+assert.deepStrictEqual(sp, { before: "첫 문단\n### 나온 말·용어 풀이", terms: [{ term: "diff", def: "차이" }, { term: "npm", def: "패키지 관리자" }], after: "### 이 작업의 이름들\n- **fix/x** — 브랜치", rest: [] }, "용어 칸만 떼고, 이름 칸은 뒤에");
 assert.strictEqual(splitTermsSection("### 용어\n- **a** — b\n설명 문장"), null, "목록 아닌 줄 섞이면 마크다운 그대로");
 assert.deepStrictEqual(["`PageController`", "`dispose`", "PageView.builder", "onPageChanged", "find.widgetWithText()", "integration_test"].map(cardKindOf), Array(6).fill("token"), "코드 이름은 토큰");
 assert.deepStrictEqual(["viewport", "iOS 시뮬레이터", "Node.js", "iOS", "JavaScript", "위젯 트리"].map(cardKindOf), Array(6).fill("term"), "일반 말은 IT용어");
+// #1364 실제 카드(11-17): 사족 줄 하나 때문에 칸 전체가 칩 없이 글자로 나오던 것
+const real = "작업 얘기\n### 나온 말·용어 풀이\n- **`Offset`** — 가로·세로 이동량\n- **`drag` / `fling`** — 끌기와 튕기기\n- **하드코딩(hardcoding)** — 값을 직접 적기\n- **`grep`** 같은 검색은 이미 아시니 생략하고, 결과를 `head`로 앞부분만 본 점만 참고하세요.\n\n### 카드로 남길 개념\n- **회귀(regression)** — 다시 망가짐";
+const rs = splitTermsSection(splitCardSection(real).body);
+assert.ok(rs, "사족 줄이 있어도 칸은 칩으로");
+assert.deepStrictEqual(rs!.terms.map((x) => x.term), ["`Offset`", "`drag` / `fling`", "하드코딩(hardcoding)"]);
+assert.strictEqual(rs!.rest.length, 1); assert.ok(rs!.rest[0].includes("grep"), "읽히지 않는 목록 줄은 rest로");
+assert.deepStrictEqual(splitNames("`drag` / `fling`"), ["`drag`", "`fling`"], "이름 둘은 칩 둘");
+assert.deepStrictEqual(splitNames("CI/CD"), ["CI/CD"], "띄어쓰기 없는 /는 한 이름");
+assert.deepStrictEqual(["Icon의 size", "sed -n 282,400p", "head -n 20", "git log -n 5"].map(isCardWorthy), [false, false, false, false], "속성·값 붙은 명령은 칩 아님");
+assert.deepStrictEqual(["sed -n", "git rebase -i", "의존성 주입", "HTTP 404"].map(isCardWorthy), [true, true, true, true], "일반형 명령·개념은 칩");
 console.log("catchupTerms ok");
