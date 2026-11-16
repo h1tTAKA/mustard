@@ -154,6 +154,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     if (!knownTerms.some((k) => normalizeCardFront(k) === normalizeCardFront(term))) setSetting(CUKEYS.knownTerms, [...knownTerms, term]);
     toast(t("learn.knownAdded", { term }), "success", { label: t("learn.knownUndo"), onClick: () => openSettings("set-catchup") });
   }, [knownTerms, t, toast]);
+  const [chipMenu, setChipMenu] = useState<{ x: number; y: number; raw: Term } | null>(null); // 칩 클릭 → 카드 추가(또는 보기) / 해설 제외
   const addTerm = useCallback((x: Term, raw?: string) => { // raw = 백틱 붙은 원래 이름(코드 이름이면 토큰 카드, #1359)
     const ok = createChatCard(x.code ? "token" : cardKindOf(raw ?? x.term), x.term, x.def, t("card.workspaceSource", { repo: basename(root) }), undefined, { kind: "workspace", sessionId: "catchup:terms", root });
     toast(ok ? t("card.added", { term: x.term }) : t("card.exists"));
@@ -583,6 +584,18 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
 
   return (
     <div ref={rootRef} className="flex h-full min-h-0 w-full flex-col bg-white dark:bg-[var(--s-pane)]">
+      {chipMenu && (() => { const r = chipMenu.raw, term = r.term.replace(/`/g, "").trim(), card = cardOf(term); return ( /* #1359 해설 용어 칩 풀다운 — 다른 메뉴(채팅 탭)와 같은 모양 */
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setChipMenu(null)} onContextMenu={(e) => { e.preventDefault(); setChipMenu(null); }} aria-hidden />
+          <div role="menu" style={{ position: "fixed", left: chipMenu.x, top: chipMenu.y }} onKeyDown={(e) => { if (e.key === "Escape") setChipMenu(null); }}
+            className="z-50 min-w-[160px] rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-[var(--s-pane)]">
+            <button type="button" role="menuitem" autoFocus onClick={(e) => { setChipMenu(null); if (card) throwCard(card, e.currentTarget.getBoundingClientRect()); else addTerm({ term, def: r.def }, r.term); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"><span className="whitespace-nowrap">{t(card ? "learn.openCard" : "learn.termAdd")}</span></button>
+            <button type="button" role="menuitem" onClick={() => { setChipMenu(null); markKnown(term); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"><span className="whitespace-nowrap">{t("learn.termHide")}</span></button>
+          </div>
+        </>
+      ); })()}
       <div className="relative flex shrink-0 items-center gap-1.5 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
         <IconActivity size={14} stroke={2} className="shrink-0 text-mustard-600 dark:text-mustard-400" aria-hidden />
         <span className="truncate text-[13px] font-semibold text-zinc-700 dark:text-zinc-200" title={t("learn.mode")}>{t("learn.title")}</span>
@@ -813,20 +826,16 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           const known = (term: string) => knownSet.has(normalizeCardFront(term.replace(/`/g, "").trim()));
                           const extra = items.filter((x) => { const n = x.term.replace(/`/g, "").trim(); return x.def && !known(n) && !inWords.has(normalizeCardFront(n)) && (cardOf(n) || isCardWorthy(n)); });
                           const words = sp ? sp.terms.filter((x) => !known(x.term)) : [];
-                          // 용어 이름 배지 — 카드로 저장했으면 ✓(누르면 카드 확대), 아니면 그냥 이름
-                          const badge = (raw: Term) => { const term = raw.term.replace(/`/g, "").trim(); const card = cardOf(term); return card ? (
-                            <button type="button" onClick={(e) => throwCard(card, e.currentTarget.getBoundingClientRect())} title={t("learn.openCard")}
-                              className="inline-flex items-center gap-0.5 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-semibold transition hover:brightness-110">
-                              <IconCheck size={10} stroke={2.5} className="text-blue-500" aria-hidden /><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{term}</span>
-                            </button>
-                          ) : <span className="rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 dark:text-mustard-400">{term}</span>; };
-                          // 추가 = 카드로 저장(초록), 제외 = 이미 알아요(빨강). 평소엔 옅은 회색 글자, 올리면 그 색(유저: 눈에 덜 띄게). 바로 눌러 훑어 가며 고르게(유저 요청). 카드로 저장한 건 O 없음.
-                          const ox = (raw: Term) => { const term = raw.term.replace(/`/g, "").trim(); return (
-                            <span className="ml-1.5 inline-flex translate-y-[-1px] gap-0.5 align-middle">
-                              {!cardOf(term) && <button type="button" onClick={() => addTerm({ term, def: raw.def }, raw.term)} title={t("chat.saveAsCard")} aria-label={`${term} ${t("chat.saveAsCard")}`}
-                                className="rounded px-1 text-[10.5px] leading-4 text-zinc-400 transition hover:bg-emerald-500/10 hover:text-emerald-600 dark:text-zinc-500 dark:hover:text-emerald-400">{t("learn.termAdd")}</button>}
-                              <button type="button" onClick={() => markKnown(term)} title={t("learn.chipKnown")} aria-label={`${term} ${t("learn.chipKnown")}`}
-                                className="rounded px-1 text-[10.5px] leading-4 text-zinc-400 transition hover:bg-rose-500/10 hover:text-rose-500 dark:text-zinc-500 dark:hover:text-rose-400">{t("learn.termHide")}</button>
+                          // 용어 칩 — 누르면 풀다운(카드 추가 또는 보기 / 해설 제외). 카드로 저장했으면 ✓·그라데이션. 0.4초 머물면 짧은 안내.
+                          const chip = (raw: Term) => { const term = raw.term.replace(/`/g, "").trim(); const card = cardOf(term); return (
+                            <span className="group/chip relative inline-block">
+                              <button type="button" aria-haspopup="menu" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setChipMenu({ x: Math.min(r.left, window.innerWidth - 204), y: r.bottom + 4, raw }); }}
+                                className={card ? "peer inline-flex items-center gap-0.5 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-semibold transition hover:brightness-110"
+                                  : "peer rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400"}>
+                                {card ? <><IconCheck size={10} stroke={2.5} className="text-blue-500" aria-hidden /><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{term}</span></> : term}
+                                <span className="sr-only"> — {t("learn.chipHint")}</span>
+                              </button>
+                              <span className="pointer-events-none absolute left-0 top-full z-30 mt-1 whitespace-nowrap rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-white opacity-0 shadow transition group-hover/chip:opacity-100 group-hover/chip:delay-[400ms] peer-focus-visible:opacity-100 peer-focus-visible:delay-[400ms] dark:bg-zinc-700" aria-hidden>{t("learn.chipHint")}</span>
                             </span>
                           ); };
                           return <>
@@ -834,11 +843,11 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                               {/* 아는 용어를 빼고 하나도 안 남으면 용어 칸 소제목째 숨김 */}
                               {(() => { const b = words.length ? sp.before : sp.before.replace(/\n?[^\n]*$/, "").trim(); return b ? <Markdown>{relocalizeFailure(b, t)}</Markdown> : null; })()}
                               {words.length > 0 && <div className="nunopi-md"><ul>{words.map((x, i) => { const term = x.term.replace(/`/g, ""); return (
-                                <li key={`${i}|${term}`}>{badge(x)} — <Markdown className="inline [&_p]:inline">{x.def}</Markdown>{ox(x)}</li>
+                                <li key={`${i}|${term}`}>{chip(x)} — <Markdown className="inline [&_p]:inline">{x.def}</Markdown></li>
                               ); })}</ul></div>}
                               {sp.after && <Markdown>{sp.after}</Markdown>}
                             </> : <Markdown>{relocalizeFailure(body, t)}</Markdown>}
-                            {extra.length > 0 && <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1">{extra.map((x, i) => <span key={`${i}|${x.term}`} className="inline-flex items-center" title={x.def}>{badge(x)}{ox(x)}</span>)}</div>}
+                            {extra.length > 0 && <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1">{extra.map((x, i) => <span key={`${i}|${x.term}`} title={x.def}>{chip(x)}</span>)}</div>}
                           </>;
                         }
                         return secs.map((sec, i) => (
