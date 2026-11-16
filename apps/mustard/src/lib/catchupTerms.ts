@@ -54,7 +54,7 @@ export function splitTermsSection(note: string): { before: string; terms: Term[]
   const terms: Term[] = [], rest: string[] = [];
   for (const l of sec) {
     const t = parseNarrationTerms(`${lines[start - 1]}\n${l}`);
-    if (t.length) terms.push(t[0]);
+    if (t.length && (/^\s*[-*•]\s+\*\*/.test(l) || (!/\s/.test(t[0].term) && /\s[—–]\s/.test(l)))) terms.push(t[0]); // 굵은 이름이거나 "한 단어 — 뜻"만 — "- 결과: 성공" 같은 글이 칩이 되지 않게(리뷰)
     else if (/^\s*[-*•]\s+/.test(l)) rest.push(l.trim().replace(/^[-*•]\s+/, ""));
     else return null;
   }
@@ -84,7 +84,7 @@ export function splitCardSection(note: string): { body: string; items: Term[] } 
 // #1364 한 항목에 이름 둘("`drag` / `fling`") → 따로 칩. CI/CD처럼 띄어쓰기 없는 /는 한 이름.
 export function splitNames(term: string): string[] {
   const xs = term.split(/\s+\/\s+/).map((x) => x.trim()).filter(Boolean);
-  return xs.length > 1 && xs.every((x) => x.length <= 40) ? xs : [term];
+  return xs.length > 1 && xs.every((x) => x.length <= 40 && (x.match(/`/g) ?? []).length % 2 === 0) ? xs : [term]; // 백틱 안의 /(`git add -p / --patch`)는 안 나눔(리뷰)
 }
 
 // #1359 카드로 남길 만한 일반 개념인지 — 포트·이슈 번호·경로·파일 이름·해시 같은 이 작업만의 값은 칩 아님(유저 지적: localhost:8797, #68 브랜치)
@@ -95,8 +95,8 @@ export function isCardWorthy(term: string): boolean {
   if (/^\d+$/.test(x)) return false; // 숫자만(포트·상태 번호)
   if (/\.(tsx?|jsx|json|md|py|sh|ya?ml|lock|swift|dart|go|rs)$/i.test(x)) return false; // 파일 이름(README.md·RepoLearnStream.tsx도)
   if (/^[a-z0-9._-]+\.[cm]?js$/.test(x)) return false; // .js는 전부 소문자일 때만 파일 — Node.js·Next.js는 개념(한계: three.js 같은 소문자 라이브러리 이름도 빠짐)
-  if (/^(\.{0,2}\/|~\/)|^[a-z0-9._-]+(\/[a-z0-9._-]+)+$/.test(x)) return false; // 경로·브랜치(소문자 a/b — CI/CD·HTTP/2는 개념)
-  if (/\S의\s/.test(x)) return false; // #1364 "Icon의 size" — 특정 위젯·함수의 속성
+  if (/^(\.{0,2}\/|~\/)/.test(x) || (/^[a-z0-9._-]+(\/[a-z0-9._-]+)+$/.test(x) && /[-_.\d]|\/.*\//.test(x))) return false; // 경로·브랜치(소문자 a/b에 -·_·.·숫자 또는 / 둘 이상 — client/server·CI/CD·HTTP/2는 개념, 리뷰)
+  if (/[A-Za-z0-9_)`]의\s/.test(x)) return false; // #1364 "Icon의 size" — 특정 위젯·함수의 속성
   if (/\d+,\d+|\s-{1,2}[A-Za-z][\w-]*\s+\d/.test(x)) return false; // #1364 이번 작업의 값이 붙은 명령(sed -n 282,400p, head -n 20) — 이름은 일반형이어야 다른 작업에도 쓰임
   return true; // 한계: 'main 브랜치'처럼 숫자·기호 없는 이 작업만의 이름은 못 거름 — 해설 틀이 용어 칸에 안 넣게 지시
 }

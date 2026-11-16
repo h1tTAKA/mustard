@@ -48,4 +48,11 @@ assert.deepStrictEqual(splitNames("`drag` / `fling`"), ["`drag`", "`fling`"], "�
 assert.deepStrictEqual(splitNames("CI/CD"), ["CI/CD"], "띄어쓰기 없는 /는 한 이름");
 assert.deepStrictEqual(["Icon의 size", "sed -n 282,400p", "head -n 20", "git log -n 5"].map(isCardWorthy), [false, false, false, false], "속성·값 붙은 명령은 칩 아님");
 assert.deepStrictEqual(["sed -n", "git rebase -i", "의존성 주입", "HTTP 404"].map(isCardWorthy), [true, true, true, true], "일반형 명령·개념은 칩");
+// 재리뷰 케이스
+const rr = splitTermsSection("### 용어\n- **diff** — 차이\n- 결과: 성공\n- 이건 A — B\n- npm — 패키지");
+assert.deepStrictEqual(rr!.terms.map((x) => x.term), ["diff", "npm"], "굵은 이름·한 단어 이름만 칩");
+assert.deepStrictEqual(rr!.rest, ["결과: 성공", "이건 A — B"], "나머지 글은 rest");
+assert.deepStrictEqual(splitNames("`git add -p / --patch`"), ["`git add -p / --patch`"], "백틱 안 /는 안 나눔");
+assert.deepStrictEqual(["client/server", "request/response", "데이터의 흐름", "상태의 불변성"].map(isCardWorthy), [true, true, true, true], "일반 개념 쌍·한글 '의' 개념은 칩");
+assert.deepStrictEqual(["fix/catchup-x", "feature/a/b", "Widget의 key"].map(isCardWorthy), [false, false, false]);
 console.log("catchupTerms ok");
