@@ -200,7 +200,8 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
         if (gen !== pickGen.current) return;
         // 팝오버 자리 — 고른 요소 바로 아래(모자라면 위), 폭 300이 칸 밖으로 안 나가게. 고를 때 한 번 계산.
         const W = hostRef.current?.clientWidth ?? 400, H = hostRef.current?.clientHeight ?? 400, r = el.rect;
-        const pos = { left: Math.max(4, Math.min(r.x, W - 324)), top: r.y + r.h + 190 < H ? r.y + r.h + 8 : Math.max(4, r.y - 188) }; // 팝오버 320×약 180
+        const pw = Math.min(320, W - 8); // 팝오버 폭 — 칸이 좁으면 칸에 맞춤(아래 className과 같은 식)
+        const pos = { left: Math.max(4, Math.min(r.x, W - pw - 4)), top: r.y + r.h + 190 < H ? r.y + r.h + 8 : Math.max(4, r.y - 188) }; // 팝오버 320×약 180
         setPicked({ el, shot: shot?.ok ? shot.path : undefined, pos });
         setComment("");
       })
@@ -285,7 +286,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
             </div>
           )}
           {picked && h && (
-            <div className="absolute z-20 w-[320px] rounded-lg border border-black/[0.08] bg-white p-3 text-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.18)] dark:border-white/[0.1] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[0_20px_44px_rgba(0,0,0,0.42)]"
+            <div className="@container absolute z-20 w-[min(320px,calc(100%-8px))] rounded-lg border border-black/[0.08] bg-white p-3 text-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.18)] dark:border-white/[0.1] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[0_20px_44px_rgba(0,0,0,0.42)]"
               style={picked.pos}>
               {/* 머리 — 번호(담은 게 있으면) · 태그 뱃지 · 제목, 긴 선택자는 툴팁 */}
               <div className="mb-2 flex min-w-0 items-center gap-1.5" title={picked.el.selector || undefined}>
@@ -298,23 +299,24 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
                 placeholder={t("browser.pickPlaceholder")}
                 className="h-20 w-full resize-none rounded-md border border-zinc-200 bg-white px-2.5 py-2 text-[12px] leading-relaxed text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-mustard-500 focus:ring-2 focus:ring-mustard-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
               {err && <div className="mt-1.5 text-[11px] text-rose-500">{t(sendState === "error" ? "github.sendFailed" : sendState === "full" ? "browser.pickFull" : "browser.pickNoAgent")}</div>}
-              <div className="mt-2.5 flex items-center justify-end gap-1.5">
-                <button type="button" disabled={sendState === "sending"} onClick={() => setPicked(null)} className="h-7 rounded-md disabled:opacity-40 px-2.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">{t("browser.pickCancel")}</button>
-                <button type="button" disabled={!comment.trim() || sendState === "sending"} onClick={addNote} title="⇧⌘↵"
-                  className="inline-flex h-7 items-center gap-1 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-medium text-zinc-700 shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800">
-                  <IconPlus size={12} stroke={2} aria-hidden />{t("browser.pickAdd")}</button>
+              {/* 버튼 줄은 한 줄 고정 — 좁으면 단축키 표시 → 담기 글자(아이콘만) → 취소(Esc로 대신) 순으로 접음, 글자는 줄바꿈 X */}
+              <div className="mt-2.5 flex flex-nowrap items-center justify-end gap-1.5">
+                <button type="button" disabled={sendState === "sending"} onClick={() => setPicked(null)} className="hidden h-7 shrink-0 whitespace-nowrap rounded-md disabled:opacity-40 px-2.5 @[220px]:inline-block text-[12px] text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">{t("browser.pickCancel")}</button>
+                <button type="button" disabled={!comment.trim() || sendState === "sending"} onClick={addNote} title={`${t("browser.pickAdd")} ⇧⌘↵`} aria-label={t("browser.pickAdd")}
+                  className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-medium text-zinc-700 shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800">
+                  <IconPlus size={12} stroke={2} aria-hidden /><span className="hidden @[250px]:inline">{t("browser.pickAdd")}</span></button>
                 <button type="button" disabled={!comment.trim() || sendState === "sending"} onClick={() => void send()}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-md bg-mustard-500 px-2.5 text-[12px] font-medium text-zinc-900 shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition hover:bg-mustard-400 disabled:opacity-40">
-                  {sendState === "sending" ? <IconLoader2 size={12} className="animate-spin" aria-hidden /> : <IconSend size={12} stroke={2} aria-hidden />}
-                  {t("browser.pickSend")}{notes.length > 0 && ` · ${notes.length + 1}`}
-                  <kbd className="ml-0.5 inline-flex items-center gap-0.5 rounded border border-black/15 px-1 py-px font-sans text-[10px] leading-none text-zinc-900/70">⌘<IconCornerDownLeft size={10} stroke={2} aria-hidden /></kbd>
+                  className="inline-flex h-7 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-mustard-500 px-2.5 text-[12px] font-medium text-zinc-900 shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition hover:bg-mustard-400 disabled:opacity-40">
+                  {sendState === "sending" ? <IconLoader2 size={12} className="animate-spin" aria-hidden /> : <IconSend size={12} stroke={2} className="shrink-0" aria-hidden />}
+                  <span className="truncate">{t("browser.pickSend")}{notes.length > 0 && ` · ${notes.length + 1}`}</span>
+                  <kbd className="ml-0.5 hidden shrink-0 @[290px]:inline-flex items-center gap-0.5 rounded border border-black/15 px-1 py-px font-sans text-[10px] leading-none text-zinc-900/70">⌘<IconCornerDownLeft size={10} stroke={2} aria-hidden /></kbd>
                 </button>
               </div>
             </div>
           )}
           {/* #1361 담은 곳 — 브라우저 칸 오른쪽 아래에 뜬 카드. 머리(접기·개수·비우기·보내기) + 펼치면 목록(번호·제목·메모, 올리면 고치기·지우기) */}
           {notes.length > 0 && !picked && ( // 메모 쓰는 동안엔 숨김 — 팝오버와 겹치지 않게(리뷰)
-            <div className="absolute bottom-3 right-3 z-10 flex max-h-[45%] w-[min(20rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border border-black/[0.08] bg-white text-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.18)] dark:border-white/[0.1] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[0_20px_44px_rgba(0,0,0,0.42)]">
+            <div className="@container absolute bottom-3 right-3 z-10 flex max-h-[45%] w-[min(20rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border border-black/[0.08] bg-white text-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.18)] dark:border-white/[0.1] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[0_20px_44px_rgba(0,0,0,0.42)]">
               <div className="flex items-center gap-1.5 py-1.5 pl-2 pr-1.5">
                 <button type="button" onClick={() => setNotesOpen((v) => !v)} aria-expanded={notesOpen}
                   className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1 py-0.5 text-left text-[12px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-mustard-500/40">
@@ -323,9 +325,9 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
                 </button>
                 <button type="button" disabled={sendState === "sending"} onClick={() => { setNotes([]); setNotesOpen(false); setEditNote(null); if (sendState === "full") setSendState("idle"); }} title={t("browser.notesClear")} aria-label={t("browser.notesClear")}
                   className="flex size-6 disabled:opacity-40 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconTrash size={12} stroke={2} aria-hidden /></button>
-                <button type="button" disabled={sendState === "sending" || !!picked} onClick={() => void send()}
-                  className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-mustard-500 px-2 text-[11px] font-medium text-zinc-900 shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition hover:bg-mustard-400 disabled:opacity-40">
-                  {sendState === "sending" && !picked ? <IconLoader2 size={12} className="animate-spin" aria-hidden /> : <IconSend size={12} stroke={2} aria-hidden />}{t("browser.pickSend")}
+                <button type="button" disabled={sendState === "sending" || !!picked} onClick={() => void send()} title={t("browser.pickSend")} aria-label={t("browser.pickSend")}
+                  className="inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-mustard-500 px-2 text-[11px] font-medium text-zinc-900 shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition hover:bg-mustard-400 disabled:opacity-40">
+                  {sendState === "sending" && !picked ? <IconLoader2 size={12} className="animate-spin" aria-hidden /> : <IconSend size={12} stroke={2} aria-hidden />}<span className="hidden @[220px]:inline">{t("browser.pickSend")}</span>
                 </button>
               </div>
               {!picked && (sendState === "no-agent" || sendState === "error") && <div className="border-t border-zinc-100 px-3 py-1.5 text-[11px] text-rose-500 dark:border-zinc-800">{t(sendState === "error" ? "github.sendFailed" : "browser.pickNoAgent")}</div>}
