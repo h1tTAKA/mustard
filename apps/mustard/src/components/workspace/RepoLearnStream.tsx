@@ -2,7 +2,7 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { IconX, IconCircle, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconPin, IconPinFilled , IconAdjustmentsHorizontal } from "@tabler/icons-react";
+import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconPin, IconPinFilled , IconAdjustmentsHorizontal } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
@@ -820,13 +820,13 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                               <IconCheck size={10} stroke={2.5} className="text-blue-500" aria-hidden /><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{term}</span>
                             </button>
                           ) : <span className="rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 dark:text-mustard-400">{term}</span>; };
-                          // O = 카드로 저장(초록), X = 이미 알아요 → 제외(빨강). 꽉 찬 색 버튼 말고 용어 뱃지처럼 옅은 바탕 + 색 아이콘(유저: 머스타드 분위기). 바로 눌러 훑어 가며 고르게(유저 요청). 카드로 저장한 건 O 없음.
+                          // 추가 = 카드로 저장(초록), 제외 = 이미 알아요(빨강). 용어 뱃지처럼 옅은 바탕 + 색 글자(유저: 머스타드 분위기, 아이콘보다 글자). 바로 눌러 훑어 가며 고르게(유저 요청). 카드로 저장한 건 O 없음.
                           const ox = (raw: Term) => { const term = raw.term.replace(/`/g, "").trim(); return (
                             <span className="ml-1.5 inline-flex translate-y-[-1px] gap-0.5 align-middle">
                               {!cardOf(term) && <button type="button" onClick={() => addTerm({ term, def: raw.def }, raw.term)} title={t("chat.saveAsCard")} aria-label={`${term} ${t("chat.saveAsCard")}`}
-                                className="inline-flex h-4 w-4 items-center justify-center rounded bg-emerald-500/10 text-emerald-600 transition hover:bg-emerald-500/25 dark:text-emerald-400"><IconCircle size={9} stroke={2.5} aria-hidden /></button>}
+                                className="rounded px-1 text-[10.5px] font-medium leading-4 text-emerald-700 bg-emerald-500/10 transition hover:bg-emerald-500/20 dark:text-emerald-400">{t("learn.termAdd")}</button>}
                               <button type="button" onClick={() => markKnown(term)} title={t("learn.chipKnown")} aria-label={`${term} ${t("learn.chipKnown")}`}
-                                className="inline-flex h-4 w-4 items-center justify-center rounded bg-rose-500/10 text-rose-500 transition hover:bg-rose-500/25 dark:text-rose-400"><IconX size={10} stroke={2.5} aria-hidden /></button>
+                                className="rounded px-1 text-[10.5px] font-medium leading-4 text-rose-600 bg-rose-500/10 transition hover:bg-rose-500/20 dark:text-rose-400">{t("learn.termHide")}</button>
                             </span>
                           ); };
                           return <>
