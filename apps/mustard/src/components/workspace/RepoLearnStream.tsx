@@ -156,7 +156,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   }, [knownTerms, t, toast]);
   // 칩 클릭 → 카드 추가(또는 보기) / 해설 제외. rect = 칩 자리(카드 날아가는 출발점·메뉴 위치), el = 닫으면 포커스 돌려줄 칩
   const [chipMenu, setChipMenu] = useState<{ rect: DOMRect; el: HTMLElement; raw: Term; ctx: string } | null>(null); // ctx = 연 때의 목록(레포·날짜·필터) — 바뀌면 안 그림(리뷰)
-  const closeChipMenu = useCallback((refocus = true) => setChipMenu((m) => { if (m && refocus) requestAnimationFrame(() => m.el.focus()); return null; }), []);
+  const closeChipMenu = useCallback((refocus = true) => { const el = chipMenu?.el; setChipMenu(null); if (refocus && el?.isConnected) requestAnimationFrame(() => el.focus()); }, [chipMenu]); // 칩이 아직 화면에 있을 때만 포커스 돌려줌(리뷰)
   const addTerm = useCallback((x: Term, raw?: string) => { // raw = 백틱 붙은 원래 이름(코드 이름이면 토큰 카드, #1359)
     const ok = createChatCard(x.code ? "token" : cardKindOf(raw ?? x.term), x.term, x.def, t("card.workspaceSource", { repo: basename(root) }), undefined, { kind: "workspace", sessionId: "catchup:terms", root });
     toast(ok ? t("card.added", { term: x.term }) : t("card.exists"));
@@ -357,6 +357,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const closePrefs = useCallback(() => setPrefsOpen(false), []);
   const [days, setDays] = useState<Set<string>>(() => new Set());
   const [viewDay, setViewDay] = useState<string | null>(null);
+  // 칩 메뉴를 연 뒤 목록(레포·날짜·필터)이 바뀌면 메뉴 상태째 지움 — 렌더 중 조정(같은 목록으로 돌아와도 옛 메뉴가 다시 안 뜨게, 리뷰)
+  const chipCtx = `${root}|${viewDay}|${filter}`;
+  if (chipMenu && chipMenu.ctx !== chipCtx) setChipMenu(null);
   const [dayItems, setDayItems] = useState<Concept[] | null>(null); // null = 로딩 중
   const closeCal = useCallback(() => setCalOpen(false), []);
   const openCal = useCallback(() => {
@@ -586,7 +589,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
 
   return (
     <div ref={rootRef} className="flex h-full min-h-0 w-full flex-col bg-white dark:bg-[var(--s-pane)]">
-      {chipMenu && chipMenu.ctx === `${root}|${viewDay}|${filter}` && (() => { const r = chipMenu.raw, term = r.term.replace(/`/g, "").trim(), card = cardOf(term), rc = chipMenu.rect;
+      {chipMenu && chipMenu.ctx === chipCtx && (() => { const r = chipMenu.raw, term = r.term.replace(/`/g, "").trim(), card = cardOf(term), rc = chipMenu.rect;
         const up = rc.bottom + 80 > window.innerHeight; // 아래 공간 모자라면 칩 위로(리뷰)
         return ( /* #1359 해설 용어 칩 풀다운 — 다른 메뉴(채팅 탭)와 같은 모양 */
         <>
@@ -835,7 +838,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           // 용어 칩 — 누르면 풀다운(카드 추가 또는 보기 / 해설 제외). 카드로 저장했으면 ✓·그라데이션. 0.4초 머물면 짧은 안내.
                           const chip = (raw: Term) => { const term = raw.term.replace(/`/g, "").trim(); const card = cardOf(term); return (
                             <span className="group/chip relative inline-block">
-                              <button type="button" aria-haspopup="menu" onClick={(e) => setChipMenu({ rect: e.currentTarget.getBoundingClientRect(), el: e.currentTarget, raw, ctx: `${root}|${viewDay}|${filter}` })}
+                              <button type="button" aria-haspopup="menu" onClick={(e) => setChipMenu({ rect: e.currentTarget.getBoundingClientRect(), el: e.currentTarget, raw, ctx: chipCtx })}
                                 className={card ? "peer inline-flex items-center gap-0.5 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-semibold transition hover:brightness-110"
                                   : "peer rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400"}>
                                 {card ? <><IconCheck size={10} stroke={2.5} className="text-blue-500" aria-hidden /><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{term}</span></> : term}
