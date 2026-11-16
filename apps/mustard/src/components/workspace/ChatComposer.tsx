@@ -292,8 +292,8 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
           ))}
         </div>
       )}
-      {/* #1363 @container — 도구 줄은 카드(칸) 폭 기준으로 접음: 좁을수록 권한 글자(440) → Plan 글자(380) → 생각 강도(340) → 모델 이름·▾(300, 로고만) → 컨텍스트 원(260) 순으로 숨김 */}
-      <div className="@container rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-sm transition focus-within:border-mustard-400/70 focus-within:ring-4 focus-within:ring-mustard-400/10 dark:border-zinc-700/80 dark:bg-zinc-900/60 dark:focus-within:border-mustard-400/50 dark:focus-within:ring-mustard-400/10"
+      {/* #1363 @container — 도구 줄은 카드(칸) 폭 기준으로 접음: 좁을수록 권한 글자(440) → Plan 글자(380) → 생각 강도(340) → 모델 이름·▾(300, 로고만) → 컨텍스트 원(260) 순으로 숨김. relative = 권한·모델 메뉴의 기준(위 오류 문구와 떨어지지 않게, 리뷰). 한계: 카드 192px 미만이면 줄이 넘침 */}
+      <div className="@container relative rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-sm transition focus-within:border-mustard-400/70 focus-within:ring-4 focus-within:ring-mustard-400/10 dark:border-zinc-700/80 dark:bg-zinc-900/60 dark:focus-within:border-mustard-400/50 dark:focus-within:ring-mustard-400/10"
         onDragOver={(e) => { if ([...e.dataTransfer.items].some((i) => i.type.startsWith("image/"))) e.preventDefault(); }}
         onDrop={(e) => { const fs = [...e.dataTransfer.files]; if (fs.some((f) => f.type.startsWith("image/"))) { e.preventDefault(); addFiles(fs); } }}>
         {images.length > 0 && (
@@ -404,7 +404,7 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
                         </>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 border-t border-black/[.08] px-3 py-2 dark:border-white/[.08]">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-black/[.08] px-3 py-2 dark:border-white/[.08]">
                       <span className="mr-auto text-xs text-zinc-500 dark:text-zinc-400">{t("achat.pickEffort")}</span>
                       {EFFORTS.filter((e) => e.v !== undefined).map((e) => (
                         <button key={e.label} type="button" onClick={() => { onOptions({ effort: meta.effort === e.v ? undefined : e.v }); setPicker(false); }}
