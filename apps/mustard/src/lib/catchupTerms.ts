@@ -56,4 +56,11 @@ export function splitTermsSection(note: string): { before: string; terms: Term[]
 }
 
 // #1359 카드로 남길 만한 일반 개념인지 — 포트·이슈 번호·경로·파일 이름·해시 같은 이 작업만의 값은 칩 아님(유저 지적: localhost:8797, #68 브랜치)
-export const isCardWorthy = (term: string) => !/^(?=[0-9a-f]*\d)[0-9a-f]{7,40}$/i.test(term.trim()) && !/#\d|:\d|\d{3,}|[\\/]|\.(tsx?|jsx?|json|md|c?js|mjs|py|sh|ya?ml|lock|swift|dart|go|rs)$/i.test(term.trim());
+export function isCardWorthy(term: string): boolean {
+  const x = term.trim();
+  if (/^(?=[0-9a-f]*\d)[0-9a-f]{7,40}$/i.test(x)) return false; // 커밋 해시
+  if (/#\d|:\d/.test(x)) return false; // 이슈 번호·포트
+  if (/^[a-z0-9._-]+\.(tsx?|jsx?|json|md|c?js|mjs|py|sh|ya?ml|lock|swift|dart|go|rs)$/.test(x)) return false; // 파일 이름(전부 소문자 — Node.js·Next.js는 개념, 리뷰)
+  if (/^(\.{0,2}\/|~\/)|^[a-z0-9._-]+(\/[a-z0-9._-]+)+$/.test(x)) return false; // 경로·브랜치(소문자 a/b — CI/CD·HTTP/2는 개념)
+  return true; // 한계: 'main 브랜치'처럼 숫자·기호 없는 이 작업만의 이름은 못 거름 — 해설 틀이 용어 칸에 안 넣게 지시
+}

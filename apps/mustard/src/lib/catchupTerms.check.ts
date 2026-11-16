@@ -28,6 +28,6 @@ const sp = splitTermsSection("첫 문단\n### 왜 그렇게 하냐면\n이유\n#
 assert.deepStrictEqual(sp, { before: "첫 문단\n### 왜 그렇게 하냐면\n이유\n### 나온 말·용어 풀이", terms: [{ term: "diff", def: "차이" }, { term: "npm", def: "패키지 관리자" }], after: "> 팁" });
 assert.strictEqual(splitTermsSection("### 용어\n- **a** — b\n설명 문장"), null, "목록 아닌 줄 섞이면 마크다운 그대로");
 assert.strictEqual(splitTermsSection("본문만"), null);
-assert.deepStrictEqual(["localhost:8797", "#68 브랜치", "src/a.ts", "narrate.ts", "a1b2c3d", "localhost", "브랜치", "React Hook", "tsconfig"].map(isCardWorthy),
-  [false, false, false, false, false, true, true, true, true], "이 작업만의 값은 칩 아님");
+assert.deepStrictEqual(["localhost:8797", "#68 브랜치", "src/a.ts", "narrate.ts", "a1b2c3d", "fix/catchup-x", "package.json"].map(isCardWorthy), [false, false, false, false, false, false, false], "이 작업만의 값은 칩 아님");
+assert.deepStrictEqual(["localhost", "브랜치", "React Hook", "tsconfig", "Node.js", "Next.js", "CI/CD", "HTTP/2", "HTTP 404", "AES-256", "ISO 8601"].map(isCardWorthy), Array(11).fill(true), "일반 개념은 칩(리뷰)");
 console.log("catchupTerms ok");
