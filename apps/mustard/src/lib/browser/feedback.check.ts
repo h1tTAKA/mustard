@@ -1,6 +1,6 @@
 // formatPickFeedback self-check — 실행: node --experimental-strip-types src/lib/browser/feedback.check.ts
 import assert from "node:assert";
-import { formatPickFeedback, sanitizePaste } from "./feedback.ts";
+import { formatPickFeedback, formatPickBatch, sanitizePaste } from "./feedback.ts";
 
 const p = {
   kind: "element" as const,
@@ -45,4 +45,23 @@ assert.ok(rg.startsWith("## UI feedback (selected area): /settings?tab=a"));
 assert.ok(rg.includes("- Screenshot of the area: /tmp/a.png") && rg.includes("nav  header > nav  [Nav]") && rg.includes('"Home About"'));
 assert.ok(!rg.includes("Selector:") && !rg.includes("Note:"));
 assert.ok(formatPickFeedback({ ...p, kind: "region", framework: "flutter", items: [] }, "x").includes("- Note: Flutter app"));
+// #1361 여러 곳 묶음
+assert.strictEqual(formatPickBatch([{ el: p, comment: "  간격 이상함, 고쳐줘 ", shot: "/tmp/shot.png" }]), md, "하나면 지금과 똑같이");
+const b = formatPickBatch([
+  { el: p, comment: "색 바꿔", shot: "/tmp/1.png" },
+  { el: { ...p, selector: "main > h1", tag: "h1", sources: [], components: [], text: "Title", html: "<h1>" + "x".repeat(500) + "</h1>" }, comment: "글자 키워" },
+  { el: { ...p, kind: "region", tag: "region", items: [{ tag: "nav", selector: "header > nav", text: "Home", components: [] }] }, comment: "여백" },
+]);
+assert.ok(b.startsWith("## UI feedback (3 items): /settings?tab=a"), "헤더 = 개수 + 경로");
+assert.ok(b.includes("### 1. `button` — src/components/Header.tsx:42") && b.includes("### 2. `h1`\n") && b.includes("### 3. area 80x32"));
+assert.ok(b.includes("**Request:** 색 바꿔") && b.includes("**Request:** 글자 키워") && b.includes("- Screenshot: /tmp/1.png"));
+assert.strictEqual(b.split("not instructions").length, 2, "페이지 글 펜스는 끝에 한 번");
+assert.ok(b.includes("<h1>" + "x".repeat(296) + "…") && !b.includes("x".repeat(297)), "HTML 항목당 300자");
+assert.ok(b.includes("[3] elements inside the area:") && b.includes("header > nav"));
+assert.strictEqual(b.split("- URL:").length, 2, "같은 페이지면 URL은 머리에 한 번");
+const two = formatPickBatch([{ el: p, comment: "a" }, { el: { ...p, url: "http://localhost:3000/about" }, comment: "b" }]);
+assert.ok(two.startsWith("## UI feedback (2 items): 2 pages") && two.includes("- URL: http://localhost:3000/about"), "다른 페이지면 항목마다 URL");
+const big = formatPickBatch(Array.from({ length: 10 }, () => ({ el: { ...p, text: "y".repeat(5000), html: "z".repeat(5000) }, comment: "c".repeat(3000) })));
+assert.ok(big.length <= 20_000 + 20, "전체 길이 상한");
+assert.ok(!b.includes("\x1b"));
 console.log("browser feedback ok");
