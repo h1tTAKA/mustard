@@ -4,14 +4,24 @@
 // <webview>는 React 속성 대신 직접 만든다 — allowpopups·partition은 붙기 전에 있어야 하고, src를 React가 바꾸면 매번 새로 이동해서.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { WebviewTag } from "electron";
-import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld, IconArrowsMinimize, IconPlus, IconPointer, IconLoader2 } from "@tabler/icons-react";
+import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld, IconArrowsMinimize, IconPlus, IconPointer, IconLoader2, IconChevronDown, IconChevronUp } from "@tabler/icons-react";
 import { useT, useSetting, appChords, SHORTCUT_OVERRIDES_KEY, type ShortcutOverrides, getSetting, BROWSER_KEYS, BROWSER_DEFAULTS, browserTarget, normalizeBrowserUrl } from "@mustard/core";
 import { PICK_SCRIPT, PICK_CANCEL, type PickedElement } from "@/lib/browser/pickScript";
-import { formatPickFeedback } from "@/lib/browser/feedback";
+import { formatPickBatch, type PickNote } from "@/lib/browser/feedback";
 import { sendToAgent } from "@/lib/browser/sendToAgent";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 
-const PARTITION = "persist:mustard-browser"; // main의 PARTITION과 같아야 붙음(다르면 거부)
+const PARTITION = "persist:mustard-browser";
+const MAX_NOTES = 10; // #1361 탭마다 담을 수 있는 곳 — 넘으면 담기를 막고 안내(오래된 걸 몰래 버리지 않음)
+type Note = PickNote & { id: number };
+let noteSeq = 0;
+// 고른 곳 한 줄 요약 — 팝오버 머리·담은 목록 공용
+function pickLabel(el: PickedElement, area: string): string {
+  if (el.kind === "region") return `${area} ${el.rect.w}×${el.rect.h}${el.items.length ? ` · ${el.items.length}` : ""}`;
+  if (el.sources[0]) return `${el.sources[0].file.split("/").pop()}:${el.sources[0].line} · ${el.tag}`;
+  return `${el.components[0] ? `${el.components[0]} · ` : ""}${el.tag}${el.text ? ` "${el.text.slice(0, 40)}"` : ""}`;
+}
+const pathOf = (u: string) => { try { const x = new URL(u); return x.pathname + x.search; } catch { return u; } }; // main의 PARTITION과 같아야 붙음(다르면 거부)
 
 // guest가 넘겨준 단축키를 window에 다시 쏴서 기존 dispatcher가 처리 — 창당 한 번만 구독(패널 여러 개여도 중복 X).
 let keySubs = 0;
@@ -54,7 +64,11 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<{ el: PickedElement; shot?: string; pos: { left: number; top: number } } | null>(null);
   const [comment, setComment] = useState("");
-  const [sendState, setSendState] = useState<"idle" | "sending" | "no-agent" | "error">("idle");
+  const [sendState, setSendState] = useState<"idle" | "sending" | "no-agent" | "error" | "full">("idle");
+  // #1361 담은 곳들 — 탭 상태라 페이지를 옮겨도 남음. 보내기에 성공해야 비움.
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [editNote, setEditNote] = useState<{ id: number; text: string } | null>(null);
   const pickGen = useRef(0); // 선택 회차 — 페이지 이동 뒤 늦게 끝난 옛 선택이 상태를 덮지 않게
   const editingRef = useRef(false); // 주소창 입력 중엔 페이지 이동으로 덮어쓰지 않음
   useEffect(() => { editingRef.current = editing; }, [editing]);
@@ -157,10 +171,9 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
   }, [ready]);
 
   // 선택 시작/취소 — 스크립트가 클릭 때까지 기다렸다 요소 정보를 돌려줌(Esc·취소 = null).
-  const togglePick = () => {
+  const startPick = () => {
     const wv = viewRef.current;
     if (!wv || !ready) return;
-    if (picking) { void wv.executeJavaScript(PICK_CANCEL).catch(() => {}); return; }
     setPicked(null); setSendState("idle"); setPicking(true);
     const gen = ++pickGen.current;
     void (wv.executeJavaScript(PICK_SCRIPT, true) as Promise<PickedElement | null>)
@@ -178,12 +191,29 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
       })
       .catch(() => { if (gen === pickGen.current) setPicking(false); }); // 페이지 이동 등으로 스크립트가 끊김
   };
+  const togglePick = () => {
+    if (picking) { void viewRef.current?.executeJavaScript(PICK_CANCEL).catch(() => {}); return; }
+    startPick();
+  };
+  // #1361 담기 — 목록에 넣고 바로 다음 곳 고르기(Esc·포인터 버튼으로 끝)
+  const addNote = () => {
+    if (!picked || !comment.trim()) return;
+    if (notes.length >= MAX_NOTES) { setSendState("full"); return; }
+    setNotes((xs) => [...xs, { id: ++noteSeq, el: picked.el, shot: picked.shot, comment: comment.trim() }]);
+    startPick();
+  };
+  // 보내기 — 담은 곳 + 지금 고른 곳(메모 있으면)을 한 덩어리로. 하나면 지금과 같은 글.
   const send = async () => {
-    if (!picked || !comment.trim() || sendState === "sending") return;
+    if (sendState === "sending") return;
+    const cur = picked && comment.trim() ? [{ el: picked.el, shot: picked.shot, comment }] : [];
+    if (picked && !cur.length) return; // 팝오버에서 메모 없이 보내기 X
+    const list = [...notes, ...cur];
+    if (!list.length) return;
     setSendState("sending");
-    const r = await sendToAgent(repo, formatPickFeedback(picked.el, comment, picked.shot));
-    if (!r.ok) { setSendState(r.reason === "no-agent" ? "no-agent" : "error"); return; } // 데몬 실패를 "터미널 없음"으로 감추지 않게(#1129)
-    setPicked(null); setSendState("idle");
+    const r = await sendToAgent(repo, formatPickBatch(list));
+    if (!r.ok) { setSendState(r.reason === "no-agent" ? "no-agent" : "error"); return; } // 데몬 실패를 "터미널 없음"으로 감추지 않게(#1129). 목록은 그대로
+    setPicked(null); setSendState("idle"); setNotes([]); setNotesOpen(false); setEditNote(null);
+    if (picking) void viewRef.current?.executeJavaScript(PICK_CANCEL).catch(() => {}); // 띠에서 보냈으면 고르는 중이던 것도 끝
     requestTerminalFocus(repo, r.id); // 보낸 터미널 탭으로 — 에이전트가 받는 걸 보이게
   };
 
@@ -235,22 +265,20 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
           {picked && (
             <div className="absolute z-10 w-[300px] rounded-lg border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
               style={picked.pos}>
-              <div className="mb-1 truncate font-mono text-[10px] text-zinc-400">{picked.el.kind === "region"
-                ? `${t("browser.pickArea")} ${picked.el.rect.w}×${picked.el.rect.h}${picked.el.items.length ? ` · ${picked.el.items.length}` : ""}`
-                : picked.el.sources[0]
-                  ? `${picked.el.sources[0].file.split("/").pop()}:${picked.el.sources[0].line} · ${picked.el.tag}`
-                  : `${picked.el.components[0] ? `${picked.el.components[0]} · ` : ""}${picked.el.tag}${picked.el.text ? ` "${picked.el.text.slice(0, 40)}"` : ""}`}</div>
-              <textarea autoFocus value={comment} onChange={(e) => { setComment(e.target.value); if (sendState === "no-agent" || sendState === "error") setSendState("idle"); }}
-                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); } else if (e.key === "Escape") setPicked(null); }}
+              <div className="mb-1 truncate font-mono text-[10px] text-zinc-400">{notes.length > 0 && `${notes.length + 1}. `}{pickLabel(picked.el, t("browser.pickArea"))}</div>
+              <textarea autoFocus value={comment} onChange={(e) => { setComment(e.target.value); if (sendState === "no-agent" || sendState === "error" || sendState === "full") setSendState("idle"); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (e.shiftKey) addNote(); else void send(); } else if (e.key === "Escape") setPicked(null); }}
                 placeholder={t("browser.pickPlaceholder")} rows={3}
                 className="w-full resize-none rounded-md border border-zinc-200 bg-white px-2 py-1 text-[12px] text-zinc-800 outline-none focus:border-mustard-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
               <div className="mt-1.5 flex items-center gap-1.5">
-                {(sendState === "no-agent" || sendState === "error") && <span className="min-w-0 flex-1 truncate text-[10px] text-rose-500">{t(sendState === "error" ? "github.sendFailed" : "browser.pickNoAgent")}</span>}
+                {(sendState === "no-agent" || sendState === "error" || sendState === "full") && <span className="min-w-0 flex-1 truncate text-[10px] text-rose-500" title={t(sendState === "error" ? "github.sendFailed" : sendState === "full" ? "browser.pickFull" : "browser.pickNoAgent")}>{t(sendState === "error" ? "github.sendFailed" : sendState === "full" ? "browser.pickFull" : "browser.pickNoAgent")}</span>}
                 <span className="flex-1" />
                 <button type="button" onClick={() => setPicked(null)} className="rounded-md px-2 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t("browser.pickCancel")}</button>
+                <button type="button" disabled={!comment.trim() || sendState === "sending"} onClick={addNote} title="⇧⌘Enter"
+                  className="rounded-md px-2 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 disabled:opacity-40 dark:hover:bg-zinc-800">{t("browser.pickAdd")}</button>
                 <button type="button" disabled={!comment.trim() || sendState === "sending"} onClick={() => void send()}
                   className="inline-flex items-center gap-1 rounded-md bg-mustard-500 px-2 py-0.5 text-[11px] font-medium text-zinc-900 transition hover:bg-mustard-400 disabled:opacity-40">
-                  {sendState === "sending" && <IconLoader2 size={11} className="animate-spin" aria-hidden />}{t("browser.pickSend")}
+                  {sendState === "sending" && <IconLoader2 size={11} className="animate-spin" aria-hidden />}{t("browser.pickSend")}{notes.length > 0 && ` · ${notes.length + 1}`}
                 </button>
               </div>
             </div>
@@ -259,6 +287,46 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
         {/* 한계: 45% 고정 — 경계 드래그 리사이즈는 필요해지면 */}
         {devtools && ready && <div ref={dtHostRef} className={`shrink-0 border-zinc-200 dark:border-zinc-800 ${wide ? "w-[45%] border-l" : "h-[45%] border-t"}`} />}
       </div>
+      {/* #1361 담은 곳 띠 — 브라우저 칸 아래, 펼치면 번호·요약·메모(눌러서 고치기)·지우기 */}
+      {notes.length > 0 && (
+        <div className="shrink-0 border-t border-zinc-200 bg-white text-[11px] dark:border-zinc-800 dark:bg-[var(--s-pane)]">
+          {notesOpen && (
+            <ol className="nunopi-scroll max-h-40 overflow-y-auto border-b border-zinc-200 py-1 dark:border-zinc-800">
+              {notes.map((n, i) => (
+                <li key={n.id} className="group flex items-start gap-2 px-2 py-1">
+                  <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-mustard-500 text-[10px] font-semibold text-zinc-900">{i + 1}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-mono text-[10px] text-zinc-400">{pickLabel(n.el, t("browser.pickArea"))}{n.el.url !== current && ` · ${pathOf(n.el.url)}`}</div>
+                    {editNote?.id === n.id ? (
+                      <textarea autoFocus value={editNote.text} rows={2} onChange={(e) => setEditNote({ id: n.id, text: e.target.value })}
+                        onBlur={() => { const v = editNote.text.trim(); if (v) setNotes((xs) => xs.map((x) => (x.id === n.id ? { ...x, comment: v } : x))); setEditNote(null); }}
+                        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.currentTarget.blur(); } else if (e.key === "Escape") { e.stopPropagation(); setEditNote(null); } }}
+                        className="mt-0.5 w-full resize-none rounded-md border border-zinc-200 bg-white px-2 py-1 text-[12px] text-zinc-800 outline-none focus:border-mustard-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
+                    ) : (
+                      <button type="button" onClick={() => setEditNote({ id: n.id, text: n.comment })} title={t("browser.noteEdit")}
+                        className="block w-full whitespace-pre-wrap break-words rounded text-left text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">{n.comment}</button>
+                    )}
+                  </div>
+                  <button type="button" className={`${btn} opacity-0 group-hover:opacity-100 focus-visible:opacity-100`} onClick={() => setNotes((xs) => xs.filter((x) => x.id !== n.id))} title={t("browser.noteRemove")} aria-label={t("browser.noteRemove")}><IconX size={12} stroke={2} aria-hidden /></button>
+                </li>
+              ))}
+            </ol>
+          )}
+          <div className="flex items-center gap-1.5 px-2 py-1">
+            <button type="button" onClick={() => setNotesOpen((v) => !v)} aria-expanded={notesOpen}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">
+              {notesOpen ? <IconChevronDown size={12} stroke={2} aria-hidden /> : <IconChevronUp size={12} stroke={2} aria-hidden />}{t("browser.notes", { n: notes.length })}
+            </button>
+            {!picked && (sendState === "no-agent" || sendState === "error") && <span className="min-w-0 truncate text-[10px] text-rose-500">{t(sendState === "error" ? "github.sendFailed" : "browser.pickNoAgent")}</span>}
+            <span className="flex-1" />
+            <button type="button" onClick={() => { setNotes([]); setNotesOpen(false); setEditNote(null); if (sendState === "full") setSendState("idle"); }} className="rounded-md px-2 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t("browser.notesClear")}</button>
+            <button type="button" disabled={sendState === "sending" || !!picked} onClick={() => void send()}
+              className="inline-flex items-center gap-1 rounded-md bg-mustard-500 px-2 py-0.5 text-[11px] font-medium text-zinc-900 transition hover:bg-mustard-400 disabled:opacity-40">
+              {sendState === "sending" && !picked && <IconLoader2 size={11} className="animate-spin" aria-hidden />}{t("browser.pickSend")}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
