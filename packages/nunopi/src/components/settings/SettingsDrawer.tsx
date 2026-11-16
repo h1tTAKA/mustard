@@ -24,7 +24,7 @@ import VoiceSection from "./VoiceSection";
 import QuickCommandsSection from "./QuickCommandsSection";
 import { searchSettings } from "./settingsSearchIndex";
 import AgentCatalogSection from "./AgentCatalogSection";
-import { useLocale, useT, useToast } from "@mustard/core";
+import { useLocale, useT, useToast, OPEN_SETTINGS_EVENT } from "@mustard/core";
 import { LOCALES, type Locale } from "@mustard/core";
 import { THEMES, type ThemeId } from "@mustard/core";
 // 테마 미리보기 스와치(배경/도트) — 피커 버튼용. 실제 색은 globals.css [data-theme] 블록서 온다.
@@ -177,6 +177,11 @@ export default function SettingsDrawer({
   };
   // 터미널 테마(#914) — 앱 테마와 분리. getTerminalThemePref는 localStorage try/catch라 SSR 안전.
   const [activeSection, setActiveSection] = useState("set-appearance"); // 좌측 선택 = 우측 그 섹션만 렌더(#925). 훅은 early-return 위에.
+  useEffect(() => { // #1359 openSettings(섹션) — 그 섹션으로 이동
+    const on = (e: Event) => { const id = (e as CustomEvent<string>).detail; if (typeof id === "string" && id) setActiveSection(id); };
+    window.addEventListener(OPEN_SETTINGS_EVENT, on);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, on);
+  }, []);
   // 모델 목록(#987) — nunopi 섹션 열릴 때 쓰이는 provider만 /api/agent/models로 1회 조회(세션 내 캐시).
   type ModelList = { models: { id: string; label: string; latest?: boolean }[]; defaultModel: string } | "loading" | "error";
   const [modelLists, setModelLists] = useState<Partial<Record<AgentProviderKind, ModelList>>>({});
@@ -259,10 +264,11 @@ export default function SettingsDrawer({
     explainShow: useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow), explainAnalyze: useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze),
     commandsShow: useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow), commandsAnalyze: useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze),
     diffShow: useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow),
-    termsShow: useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow), termsAnalyze: useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze),
+    beginner: useSetting<boolean>(CUKEYS.beginner, CATCHUP_DEFAULTS.beginner), // #1359
     sessionsShow: useSetting<boolean>(CUKEYS.sessionsShow, CATCHUP_DEFAULTS.sessionsShow), sessionsAnalyze: useSetting<boolean>(CUKEYS.sessionsAnalyze, CATCHUP_DEFAULTS.sessionsAnalyze),
     chatCards: useSetting<boolean>(CUKEYS.chatCards, CATCHUP_DEFAULTS.chatCards), // #1081
   };
+  const knownTerms = useSetting<string[]>(CUKEYS.knownTerms, []); // #1359 해설 칩에서 '이미 알아요'로 고른 말
   // 카테고리 → [프로바이더 키, 값, 모델 키, 모델 값] — "" = 워크스페이스 기본 AI / 그 AI 기본 모델(#1062)
   const cuProv: Record<string, [string, string, string, string]> = {
     explain: [CUKEYS.explainProvider, useSetting<string>(CUKEYS.explainProvider, ""), CUKEYS.explainModel, useSetting<string>(CUKEYS.explainModel, "")],
@@ -1173,7 +1179,6 @@ export default function SettingsDrawer({
               { id: "commands", label: t("settings.catchupCommands"), desc: t("settings.catchupCommandsDesc"), show: [CUKEYS.commandsShow, cu.commandsShow], analyze: [CUKEYS.commandsAnalyze, cu.commandsAnalyze] },
               { id: "diff", label: t("settings.catchupDiff"), desc: t("settings.catchupDiffDesc"), show: [CUKEYS.diffShow, cu.diffShow], analyze: [GKEYS.autoExplainCommits, gAutoExplain] },
               { id: "session", label: t("settings.catchupSessions"), desc: t("settings.catchupSessionsDesc"), show: [CUKEYS.sessionsShow, cu.sessionsShow], analyze: [CUKEYS.sessionsAnalyze, cu.sessionsAnalyze] },
-              { id: "terms", label: t("settings.catchupTerms"), desc: t("settings.catchupTermsDesc"), show: [CUKEYS.termsShow, cu.termsShow], analyze: [CUKEYS.termsAnalyze, cu.termsAnalyze] },
               // #1081 질문 화면 — AI·모델 + 카드 추가 칩(표시/분석 대신 스위치 하나)
               { id: "chat", label: t("settings.catchupChat"), desc: t("settings.catchupChatDesc"), toggles: [["cards", t("settings.catchupChatCards"), [CUKEYS.chatCards, cu.chatCards]]] },
             ] as { id: string; label: string; desc: string; show?: [string, boolean]; analyze?: [string, boolean]; toggles?: [string, string, [string, boolean]][] }[]).map((row) => (
@@ -1198,6 +1203,33 @@ export default function SettingsDrawer({
                 </div>
               </div>
             ))}
+            {/* #1359 해설 용어 — 초보면 커밋·PR 같은 기본 말도 풀이, 아는 용어는 해설에 다시 안 나옴 */}
+            <div className={`flex items-center justify-between gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800 ${cuOn ? "" : "opacity-50"}`}>
+              <div className="min-w-0">
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.catchupBeginner")}</span>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.catchupBeginnerDesc")}</p>
+              </div>
+              <button type="button" role="switch" aria-checked={cuOn && cu.beginner} aria-label={t("settings.catchupBeginner")} disabled={!cuOn}
+                onClick={() => setSetting(CUKEYS.beginner, !cu.beginner)}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition ${cuOn && cu.beginner ? "bg-mustard-600 dark:bg-mustard-400" : "bg-zinc-400 dark:bg-zinc-700"}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${cuOn && cu.beginner ? "left-[22px]" : "left-0.5"}`} />
+              </button>
+            </div>
+            <div className={cuOn ? "" : "opacity-50"}>
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t("settings.catchupKnown")}</span>
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.catchupKnownDesc")}</p>
+              {knownTerms.length ? (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {knownTerms.map((k) => (
+                    <span key={k} className="inline-flex items-center gap-0.5 rounded-md bg-zinc-100 py-0.5 pl-1.5 pr-0.5 text-[11px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                      {k}
+                      <button type="button" onClick={() => setSetting(CUKEYS.knownTerms, knownTerms.filter((x) => x !== k))} aria-label={t("settings.catchupKnownRemove", { term: k })}
+                        className="rounded p-0.5 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"><IconX size={11} stroke={2} aria-hidden /></button>
+                    </span>
+                  ))}
+                </div>
+              ) : <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">{t("settings.catchupKnownEmpty")}</p>}
+            </div>
           </section>
           )}
 

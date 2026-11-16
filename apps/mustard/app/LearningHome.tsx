@@ -7,7 +7,7 @@ import ModeSwapToggle from "@/components/brand/ModeSwapToggle";
 import { LearningPanel } from "@mustard/nunopi";
 import { AgentLogo, type AgentId } from "@/components/workspace/AgentLogo";
 import { SettingsDrawer } from "@mustard/nunopi";
-import { ConfirmProvider } from "@mustard/core";
+import { ConfirmProvider, OPEN_SETTINGS_EVENT } from "@mustard/core";
 import { ToastProvider } from "@mustard/core";
 import GlobalCommandPalette from "@/components/ui/GlobalCommandPalette";
 import { isNunopiEnabled, setNunopiEnabled } from "@/lib/product";
@@ -43,6 +43,11 @@ export default function LearningHome() {
   const [providerId, setProviderId] = useState<AgentProviderKind>(DEFAULT_PROVIDER_ID);
   const [providerSettings, setProviderSettings] = useState<ProviderSettings>({});
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  useEffect(() => { // #1359 다른 곳(토스트 등)에서 설정 열기 — 섹션 이동은 설정 창이 같은 이벤트로
+    const on = () => setIsSettingsOpen(true);
+    window.addEventListener(OPEN_SETTINGS_EVENT, on);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, on);
+  }, []);
 
   // 테마(#914 멀티) — data-theme + .dark(base)로 팔레트 재색조. Monaco/Shiki는 .dark MutationObserver로 반응.
   const [theme, setTheme] = useState<ThemeId>(DEFAULT_THEME);

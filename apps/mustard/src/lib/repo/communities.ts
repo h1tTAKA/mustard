@@ -1,7 +1,7 @@
 // 코드 그래프 덩어리(#1331) — 파일끼리 실제 연결(import + 심볼 호출·상속을 파일로 모은 것)로 모듈성 최적화(Louvain 1단계).
 // 새 의존성 없이 결정적(파일 이름순, 동점이면 작은 라벨). 연결 없는 파일은 같은 폴더끼리 한 덩어리.
 // 라벨 = 멤버가 가장 많이 든 폴더(뒤 두 조각). 크기 내림차순으로 id 0..k-1.
-// ponytail: Louvain 집약 단계(덩어리끼리 다시 묶기)는 안 함 — 큰 레포에서 덩어리가 너무 잘면 그때 추가.
+// 한계: Louvain 집약 단계(덩어리끼리 다시 묶기)는 안 함 — 큰 레포에서 덩어리가 너무 잘면 그때 추가.
 import type { Community, RepoEdge, RepoNode } from "./types";
 
 const dirOf = (f: string) => (f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "");

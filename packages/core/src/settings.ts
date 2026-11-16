@@ -222,7 +222,7 @@ export const GKEYS = {
 // 캐치업(#1049) — 명령어 해설 카드·용어집 켜고 끄기.
 // #1062 카테고리마다 표시(캐치업 창에 보이기)·분석(새로 AI 분석) 분리 — 분석 꺼도 예전 내용은 표시로 계속 봄.
 // Diff 분석 = 커밋 자동 설명(GKEYS.autoExplainCommits, git 설정과 같은 키).
-export const CATCHUP_DEFAULTS = { enabled: true, explainShow: true, explainAnalyze: true, commandsShow: true, commandsAnalyze: true, diffShow: true, termsShow: true, termsAnalyze: true, sessionsShow: true, sessionsAnalyze: true, chatCards: true };
+export const CATCHUP_DEFAULTS = { enabled: true, explainShow: true, explainAnalyze: true, commandsShow: true, commandsAnalyze: true, diffShow: true, termsShow: true, termsAnalyze: true, sessionsShow: true, sessionsAnalyze: true, chatCards: true, beginner: false };
 export const CUKEYS = {
   enabled: "catchup.enabled", // 캐치업 전체 — 끄면 패널 숨김 + 모든 분석 중지(카테고리 값은 보존)
   explainShow: "catchup.explainShow", explainAnalyze: "catchup.explainAnalyze",
@@ -237,6 +237,8 @@ export const CUKEYS = {
   explainModel: "catchup.explainModel", commandsModel: "catchup.commandsModel", diffModel: "catchup.diffModel",
   // #1081 질문 화면(캐치업 안) — AI·모델("" = 워크스페이스 기본) + 답변 아래 카드 추가 칩
   chatProvider: "catchup.chatProvider", chatModel: "catchup.chatModel", chatCards: "catchup.chatCards",
+  // #1359 해설 용어 — 초보(커밋·PR·머지 같은 기본 말도 풀이) / 아는 용어(해설 칩에서 '이미 알아요' → 다음 해설부터 안 나옴, string[])
+  beginner: "catchup.beginner", knownTerms: "catchup.knownTerms",
 } as const;
 
 // #1322 아키텍처 분석(설정 > 아키텍처) — AI·모델("" = 워크스페이스 기본) + 설명 깊이.
@@ -346,3 +348,7 @@ export function useSetting<T>(key: keyof MustardSettings & string, fallback: T):
     () => fallback, // 서버 스냅샷 = fallback(하이드레이션 안전)
   );
 }
+
+// #1359 설정 창을 특정 섹션으로 열기(토스트 "설정에서 빼기" 등) — 홈이 열고, 설정 창이 그 섹션으로 감. detail = 섹션 id(예: "set-catchup")
+export const OPEN_SETTINGS_EVENT = "mustard:open-settings";
+export function openSettings(section: string) { if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(OPEN_SETTINGS_EVENT, { detail: section })); }

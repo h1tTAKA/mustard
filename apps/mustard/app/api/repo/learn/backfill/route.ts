@@ -29,7 +29,7 @@ async function backfill(from: number, to: number) {
     const chunks = acts.flatMap((a) => a.chunks.map((c) => ({ ...c, agent: a.agent }))).sort((x, y) => x.ts - y.ts);
     for (const c of chunks) {
       if (!isNarrationOn()) break; // 도중에 꺼면 멈춤
-      try { await narrate(root, c.agent, c.text, "", c.ts, { providerId: c.agent === "codex" ? "codex" : undefined }); } catch { /* 한 덩어리 실패 — 다음 */ }
+      try { await narrate(root, c.agent, c.text, "", c.ts, { providerId: c.agent === "codex" ? "codex" : undefined, material: `## 에이전트가 한 말·작업(시간순)\n${c.text}` }); } catch { /* 한 덩어리 실패 — 다음 */ } // #1359 재료가 대화 기록이라 새 틀로
     }
   }
   console.log(`[backfill] done ${new Date(from).toISOString()} ~ ${new Date(to).toISOString()}`);
