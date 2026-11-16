@@ -10,7 +10,7 @@ export const NAMES_HEADS = { ko: "이 작업의 이름들", ja: "この作業の
 const isNamesHead = (l: string) => { const x = l.trim(); return (/^#{1,6}\s/.test(x) || /^\*\*[^*]+\*\*\s*[:：]?$/.test(x)) && Object.values(NAMES_HEADS).some((h) => x.replace(/^#{1,6}\s*/, "").replace(/\*/g, "").replace(/[:：]\s*$/, "").trim() === h); };
 const withoutNames = (expl: string) => {
   let skip = false;
-  return expl.split("\n").filter((l) => { if (isNamesHead(l)) { skip = true; return false; } if (skip && /^#{1,6}\s/.test(l.trim())) skip = false; return !skip; }).join("\n");
+  return expl.split("\n").filter((l) => { if (isNamesHead(l)) { skip = true; return false; } if (skip && (/^#{1,6}\s/.test(l.trim()) || /^\*\*[^*]+\*\*\s*[:：]?$/.test(l.trim()))) skip = false; return !skip; }).join("\n"); // 다음 소제목(### 또는 **굵은 줄**)에서 끝
 };
 // 본문 속 굵은 말 → 개념 이름 집합
 export function conceptsOf(expl: string): Set<string> {
