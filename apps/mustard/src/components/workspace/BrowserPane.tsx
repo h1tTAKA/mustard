@@ -226,6 +226,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
     const list = [...notes, ...cur];
     if (!list.length) return;
     if (list.length > MAX_NOTES) { setSendState("full"); return; } // 지금 고른 것까지 10곳(리뷰)
+    if (picking) { pickGen.current++; setPicking(false); void viewRef.current?.executeJavaScript(PICK_CANCEL).catch(() => {}); } // 카드에서 보내면 고르던 것 끝 — 보내는 중 고른 곳이 결과에 지워지지 않게(리뷰)
     setSendState("sending");
     const r = await sendToAgent(repo, formatPickBatch(list));
     if (!r.ok) { setSendState(r.reason === "no-agent" ? "no-agent" : "error"); return; } // 데몬 실패를 "터미널 없음"으로 감추지 않게(#1129). 목록은 그대로
@@ -233,7 +234,6 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
     setNotes((xs) => xs.filter((x) => !sent.has(x.id))); // 보낸 것만 뺌(리뷰)
     if (notes.every((x) => sent.has(x.id))) setNotesOpen(false);
     setPicked(null); setSendState("idle"); setEditNote(null);
-    if (picking) void viewRef.current?.executeJavaScript(PICK_CANCEL).catch(() => {}); // 띠에서 보냈으면 고르는 중이던 것도 끝
     requestTerminalFocus(repo, r.id); // 보낸 터미널 탭으로 — 에이전트가 받는 걸 보이게
   };
 
@@ -294,12 +294,12 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
                 <span className="truncate text-[12px] font-medium">{h.title}</span>
               </div>
               <textarea autoFocus value={comment} readOnly={sendState === "sending"} onChange={(e) => { setComment(e.target.value); if (err) setSendState("idle"); }}
-                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (e.shiftKey) addNote(); else void send(); } else if (e.key === "Escape") setPicked(null); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (e.shiftKey) addNote(); else void send(); } else if (e.key === "Escape" && sendState !== "sending") setPicked(null); }}
                 placeholder={t("browser.pickPlaceholder")}
                 className="h-20 w-full resize-none rounded-md border border-zinc-200 bg-white px-2.5 py-2 text-[12px] leading-relaxed text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-mustard-500 focus:ring-2 focus:ring-mustard-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
               {err && <div className="mt-1.5 text-[11px] text-rose-500">{t(sendState === "error" ? "github.sendFailed" : sendState === "full" ? "browser.pickFull" : "browser.pickNoAgent")}</div>}
               <div className="mt-2.5 flex items-center justify-end gap-1.5">
-                <button type="button" onClick={() => setPicked(null)} className="h-7 rounded-md px-2.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">{t("browser.pickCancel")}</button>
+                <button type="button" disabled={sendState === "sending"} onClick={() => setPicked(null)} className="h-7 rounded-md disabled:opacity-40 px-2.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">{t("browser.pickCancel")}</button>
                 <button type="button" disabled={!comment.trim() || sendState === "sending"} onClick={addNote} title="⇧⌘↵"
                   className="inline-flex h-7 items-center gap-1 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-medium text-zinc-700 shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800">
                   <IconPlus size={12} stroke={2} aria-hidden />{t("browser.pickAdd")}</button>
