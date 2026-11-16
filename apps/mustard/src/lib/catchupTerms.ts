@@ -37,22 +37,18 @@ export function mergeTerms(prev: Term[], add: Term[], key: (s: string) => string
   return fresh.length ? [...fresh, ...prev] : prev;
 }
 
-// #1359 해설 카드의 용어 칸을 칩으로 그리려고 본문을 [용어 칸 앞(소제목 포함) | 용어들 | 뒤]로 나눔.
-// 용어 칸에 목록 아닌 줄이 섞였거나 용어가 없으면 null(호출부는 마크다운 그대로).
-// 한계: 첫 용어 칸만 칩 — 용어 칸이 두 번 나오면 둘째는 마크다운 글자로(내용은 그대로, 용어집은 둘 다 모음).
-export function splitTermsSection(note: string): { before: string; terms: Term[]; after: string } | null {
+// #1359 해설 끝 '카드로 남길 개념' 칸 — 화면은 이 칸을 글로 안 보이고 카드 맨 아래 칩 줄로(누르면 nunopi 카드). 칸 이름은 해설 언어별.
+export const CARD_HEADS = { ko: "카드로 남길 개념", ja: "カードにする概念", en: "Concepts to keep" } as const;
+const isCardHead = (l: string) => /^#{1,6}\s/.test(l) && Object.values(CARD_HEADS).some((h) => l.replace(/^#{1,6}\s*/, "").replace(/\*/g, "").trim() === h);
+// 본문 → { body: 그 칸을 뺀 본문, names: 칸 속 이름들 }. 칸이 없으면(옛 카드) names 빈 배열.
+export function splitCardSection(note: string): { body: string; names: string[] } {
   const lines = String(note || "").split("\n");
-  let start = -1, end = lines.length;
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i].trim();
-    if (start < 0) { if (l && isHeading(l) && KEYWORD.test(l)) start = i + 1; continue; }
-    if (l && (isHeading(l) || /^>/.test(l))) { end = i; break; }
-  }
-  if (start < 0) return null;
-  const sec = lines.slice(start, end).filter((l) => l.trim());
-  const terms = parseNarrationTerms([lines[start - 1], ...sec].join("\n"));
-  if (!terms.length || terms.length !== sec.length) return null;
-  return { before: lines.slice(0, start).join("\n").trim(), terms, after: lines.slice(end).join("\n").trim() };
+  const start = lines.findIndex((l) => isCardHead(l.trim()));
+  if (start < 0) return { body: String(note || ""), names: [] };
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) if (/^#{1,6}\s/.test(lines[i].trim())) { end = i; break; }
+  const names = lines.slice(start + 1, end).map((l) => l.trim().match(/^[-*•]\s+(.+)$/)?.[1].replace(/[*`]/g, "").split(/\s+[—–]\s+/)[0].trim() ?? "").filter(Boolean);
+  return { body: [...lines.slice(0, start), ...lines.slice(end)].join("\n").trim(), names };
 }
 
 // #1359 카드로 남길 만한 일반 개념인지 — 포트·이슈 번호·경로·파일 이름·해시 같은 이 작업만의 값은 칩 아님(유저 지적: localhost:8797, #68 브랜치)

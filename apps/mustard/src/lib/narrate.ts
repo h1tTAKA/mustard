@@ -8,6 +8,7 @@ import { beginNarrate } from "@/lib/narrateBusy";
 import { narrationProvider, narrationModel, narrationLocale } from "@/lib/narrationConfig";
 import { translate } from "@mustard/core/messages";
 import { isFailedNote } from "@/lib/failText";
+import { CARD_HEADS } from "@/lib/catchupTerms";
 
 // #1091 출력 언어 — 본문 지시가 한국어라 ko 아니면 맨 앞·끝에 못박음(제목 줄·소제목까지).
 const LANG_NAME = { ko: "한국어", ja: "일본어(日本語)", en: "영어(English)" } as const;
@@ -16,6 +17,7 @@ const langRule = (loc: keyof typeof LANG_NAME) => `⚠️ 출력 언어: 제목 
 const HEADS = {
   why: { ko: "왜 그렇게 하냐면", ja: "なぜそうするかというと", en: "Why it does this" },
   words: { ko: "나온 말·용어 풀이", ja: "出てきた言葉・用語", en: "Words & terms" },
+  cards: CARD_HEADS, // 화면은 이 칸을 글 대신 카드 맨 아래 칩 줄로(catchupTerms.splitCardSection)
 } as const;
 // #1359 해설 = CLI 에이전트가 하는 말·작업을 옆에서 바로 이해하게 — 에이전트 말이 무슨 뜻인지, 왜 그렇게 하는지·그러면 어떻게 되는지,
 // 그 안에 나온 개념·용어 하나하나. 재료는 대화 기록(없으면 터미널 글자), 앞서 해설한 것을 넘겨 반복 대신 흐름을 이음.
@@ -31,7 +33,9 @@ function narrationPrompt(agent: string, material: string, fromTranscript: boolea
 ${h("why")}
 에이전트가 왜 그렇게 판단·제안했는지, 그렇게 하면 무엇이 어떻게 되는지(앱·코드·다음 단계에 생기는 일) 1~3문장. 에이전트가 이유를 말했으면 그 이유를 풀고, 안 말했으면 재료에서 보이는 만큼만.
 ${h("words")}
-에이전트 말·작업에 나온 개념·용어를 **하나씩** "- **이름** — 쉬운 뜻 + 지금 이 맥락에서 무슨 의미인지" 2~6개. 명령어·파일 형식·도구·개념 다 포함. 다른 작업에서도 통하는 일반 개념만(포트 번호·이슈 번호·브랜치 이름·파일 경로 같은 이 작업만의 값은 넣지 말고 위 문단에서 풀어). **아래 '앞서 해설한 것'에 이미 설명한 개념은 다시 쓰지 마**(새로 나온 것만).
+에이전트 말·작업에 나온 개념·용어를 **하나씩** "- **이름** — 쉬운 뜻 + 지금 이 맥락에서 무슨 의미인지" 2~6개. 명령어·파일 형식·도구·개념, 이 레포에서 지은 함수·클래스 이름도 이해에 필요하면 포함. 브랜치 이름·localhost·포트·이슈 번호·파일 경로·커밋 해시 같은 이 작업만의 값은 풀이하지 마(어디에도). **아래 '앞서 해설한 것'에 이미 설명한 개념은 다시 쓰지 마**(새로 나온 것만).
+${h("cards")}
+위 풀이 중 다른 프로젝트에서도 통하는 일반 개념(언어·프레임워크·도구가 주는 것 — 이 레포에서 지은 이름은 제외)만 "- 이름"으로 0~4개, 이름은 위 풀이에 쓴 그대로. 없으면 소제목째 빼.
 
 📏 전체 300~800자로 완결(시작한 문장 끝맺기). 재료에 보이는 사실만 — 짐작·일반론·칭찬 금지.
 ⚠️ 금지:
