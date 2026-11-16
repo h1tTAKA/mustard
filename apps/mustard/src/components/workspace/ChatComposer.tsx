@@ -272,30 +272,30 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
           {noteAction && <button type="button" onClick={() => { noteAction(); setNote(""); setNoteAction(null); }} className="shrink-0 rounded-md bg-black/[.05] px-2 py-0.5 text-xs text-zinc-700 hover:bg-black/[.08] dark:bg-white/[.08] dark:text-zinc-200 dark:hover:bg-white/[.12]">{t("achat.openSettings")}</button>}
         </p>
       )}
-      {/* `/`·`@` 메뉴 — 입력 카드 위. 명령/스킬 묶음 머리, 행은 이름(고정폭)·설명 두 줄 */}
-      {menu && options.length > 0 && (
-        <div className={`${pop} inset-x-0 nunopi-scroll max-h-72 overflow-y-auto`}>
-          {options.map((o, k) => (
-            <div key={`${o.source}:${o.name}`}>
-              {menu.kind === "slash" && (k === 0 || (options[k - 1].source === "skill") !== (o.source === "skill")) && (
-                <p className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">{t(o.source === "skill" ? "achat.menuSkills" : "achat.menuCommands")}</p>
-              )}
-              <button type="button" onMouseDown={(e) => { e.preventDefault(); pick(o.name, o.source); }} onMouseEnter={() => setSel(k)}
-                className={`flex w-full flex-col rounded-lg px-2.5 py-1 text-left ${k === sel ? "bg-black/[.06] dark:bg-white/[.08]" : ""}`}>
-                <span className="flex items-center gap-2 font-mono text-[12.5px] text-zinc-800 dark:text-zinc-100">
-                  {menu.kind === "slash" ? `/${o.name}` : o.name}
-                  {o.source !== "app" && o.source !== "file" && <span className="ml-auto font-sans text-[11px] text-zinc-400 dark:text-zinc-500">{t(`achat.src.${o.source}`)}</span>}
-                </span>
-                {o.description && <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{o.description}</span>}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
       {/* #1363 @container — 도구 줄은 카드(칸) 폭 기준으로 접음: 좁을수록 권한 글자(440) → Plan 글자(380) → 생각 강도(340) → 모델 이름·▾(300, 로고만) → 컨텍스트 원(260) 순으로 숨김. relative = 권한·모델 메뉴의 기준(위 오류 문구와 떨어지지 않게, 리뷰). 한계: 카드 192px 미만이면 줄이 넘침 */}
       <div className="@container relative rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-sm transition focus-within:border-mustard-400/70 focus-within:ring-4 focus-within:ring-mustard-400/10 dark:border-zinc-700/80 dark:bg-zinc-900/60 dark:focus-within:border-mustard-400/50 dark:focus-within:ring-mustard-400/10"
         onDragOver={(e) => { if ([...e.dataTransfer.items].some((i) => i.type.startsWith("image/"))) e.preventDefault(); }}
         onDrop={(e) => { const fs = [...e.dataTransfer.files]; if (fs.some((f) => f.type.startsWith("image/"))) { e.preventDefault(); addFiles(fs); } }}>
+        {/* `/`·`@` 메뉴 — 입력 카드 위(카드 기준, 오류 문구와 안 떨어지게). 명령/스킬 묶음 머리, 행은 이름(고정폭)·설명 두 줄 */}
+        {menu && options.length > 0 && (
+          <div className={`${pop} inset-x-0 nunopi-scroll max-h-72 overflow-y-auto`}>
+            {options.map((o, k) => (
+              <div key={`${o.source}:${o.name}`}>
+                {menu.kind === "slash" && (k === 0 || (options[k - 1].source === "skill") !== (o.source === "skill")) && (
+                  <p className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">{t(o.source === "skill" ? "achat.menuSkills" : "achat.menuCommands")}</p>
+                )}
+                <button type="button" onMouseDown={(e) => { e.preventDefault(); pick(o.name, o.source); }} onMouseEnter={() => setSel(k)}
+                  className={`flex w-full flex-col rounded-lg px-2.5 py-1 text-left ${k === sel ? "bg-black/[.06] dark:bg-white/[.08]" : ""}`}>
+                  <span className="flex items-center gap-2 font-mono text-[12.5px] text-zinc-800 dark:text-zinc-100">
+                    {menu.kind === "slash" ? `/${o.name}` : o.name}
+                    {o.source !== "app" && o.source !== "file" && <span className="ml-auto font-sans text-[11px] text-zinc-400 dark:text-zinc-500">{t(`achat.src.${o.source}`)}</span>}
+                  </span>
+                  {o.description && <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{o.description}</span>}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {images.length > 0 && (
           <div className="flex flex-wrap gap-2 px-1 pb-1 pt-1">
             {images.map((im, k) => (
