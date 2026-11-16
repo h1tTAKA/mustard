@@ -241,7 +241,7 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
   };
 
   // 툴바 — 알약(h-6 rounded-md text-xs)·아이콘 버튼(size-8 rounded-md)·보내기(size-8 rounded-full, 강조색은 여기만)
-  const pill = "flex h-6 min-w-0 items-center gap-1 rounded-md px-2 text-xs text-zinc-600 transition hover:bg-black/[.06] hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[.08] dark:hover:text-zinc-100";
+  const pill = "flex h-6 min-w-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-xs text-zinc-600 transition hover:bg-black/[.06] hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[.08] dark:hover:text-zinc-100";
   const iconBtn = "flex size-8 shrink-0 items-center justify-center rounded-md text-zinc-500 transition hover:bg-black/[.06] hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[.08] dark:hover:text-zinc-100";
   const pop = "absolute bottom-full z-50 mb-1.5 rounded-xl border border-black/[.14] bg-white/90 p-1 shadow-lg backdrop-blur-2xl dark:border-white/[.12] dark:bg-zinc-800/90";
   const model = models?.find((m) => m.id === meta.model);
@@ -292,7 +292,8 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
           ))}
         </div>
       )}
-      <div className="rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-sm transition focus-within:border-mustard-400/70 focus-within:ring-4 focus-within:ring-mustard-400/10 dark:border-zinc-700/80 dark:bg-zinc-900/60 dark:focus-within:border-mustard-400/50 dark:focus-within:ring-mustard-400/10"
+      {/* #1363 @container — 도구 줄은 카드(칸) 폭 기준으로 접음: 좁을수록 권한 글자 → Plan 글자 → 생각 강도 순으로 숨기고 아이콘·모델만 */}
+      <div className="@container rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-sm transition focus-within:border-mustard-400/70 focus-within:ring-4 focus-within:ring-mustard-400/10 dark:border-zinc-700/80 dark:bg-zinc-900/60 dark:focus-within:border-mustard-400/50 dark:focus-within:ring-mustard-400/10"
         onDragOver={(e) => { if ([...e.dataTransfer.items].some((i) => i.type.startsWith("image/"))) e.preventDefault(); }}
         onDrop={(e) => { const fs = [...e.dataTransfer.files]; if (fs.some((f) => f.type.startsWith("image/"))) { e.preventDefault(); addFiles(fs); } }}>
         {images.length > 0 && (
@@ -320,23 +321,23 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
               className="flex size-8 shrink-0 items-center justify-center rounded-full bg-mustard-500 text-white transition hover:bg-mustard-600 active:opacity-70"><IconCheck size={15} stroke={2.5} aria-hidden /></button>
           </div>
         ) : (
-        <div className="flex items-center gap-2 pt-0.5">
-          <div className="flex min-w-0 items-center gap-0.5">
+        <div className="flex flex-nowrap items-center gap-1.5 pt-0.5">
+          <div className="flex shrink-0 items-center gap-0.5">
             <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
             <button type="button" onClick={() => fileRef.current?.click()} aria-label={t("achat.attach")} title={t("achat.attach")} className={iconBtn}>
               <IconPlus size={16} stroke={1.8} aria-hidden />
             </button>
             {/* 권한 모드 — 위로 열리는 목록, 행마다 한 줄 설명. 전체 액세스는 노란 경고 방패 */}
             <div className="relative">
-              <button type="button" onClick={() => setModeMenu((v) => !v)} title={`${t(`achat.modeHint.${permMode}`)} (Shift+Tab)`}
-                className={`${pill} ${permMode === "full" ? "text-yellow-600 hover:text-yellow-700 dark:text-yellow-500 dark:hover:text-yellow-400" : ""}`}>
+              <button type="button" onClick={() => setModeMenu((v) => !v)} title={`${MODE_LABEL[permMode]} — ${t(`achat.modeHint.${permMode}`)} (Shift+Tab)`} aria-label={MODE_LABEL[permMode]}
+                className={`${pill} shrink-0 ${permMode === "full" ? "text-yellow-600 hover:text-yellow-700 dark:text-yellow-500 dark:hover:text-yellow-400" : ""}`}>
                 {permMode === "full" ? <IconShieldExclamation size={14} stroke={1.8} aria-hidden /> : <IconShield size={14} stroke={1.8} aria-hidden />}
-                {MODE_LABEL[permMode]}<IconChevronDown size={12} stroke={2} className="opacity-60" aria-hidden />
+                <span className="hidden @[440px]:inline">{MODE_LABEL[permMode]}</span><IconChevronDown size={12} stroke={2} className="shrink-0 opacity-60" aria-hidden />
               </button>
               {modeMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setModeMenu(false)} aria-hidden />
-                  <div className={`${pop} left-0 w-72`}>
+                  <div className={`${pop} left-0 w-72 max-w-[calc(100vw-2rem)]`}>
                     {(["default", "full"] as const).map((m) => (
                       <button key={m} type="button" onClick={() => { onOptions({ mode: m }); setModeMenu(false); }}
                         className="flex w-full items-start gap-2 rounded-lg px-2.5 py-1.5 text-left transition hover:bg-black/[.05] dark:hover:bg-white/[.08]">
@@ -354,19 +355,19 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
             </div>
             {/* 계획 — 권한과 따로 켜고 끄는 칩(Claude만) */}
             {meta.provider === "claude-code" && (
-              <button type="button" onClick={() => onOptions({ mode: plan ? "default" : "plan" })} title={t("achat.modeHint.plan")}
-                aria-pressed={plan} className={`${pill} ${plan ? "bg-mustard-500/15 font-medium text-mustard-700 hover:bg-mustard-500/20 hover:text-mustard-800 dark:text-mustard-300 dark:hover:text-mustard-200" : ""}`}>
-                <IconListCheck size={14} stroke={1.8} aria-hidden />Plan
+              <button type="button" onClick={() => onOptions({ mode: plan ? "default" : "plan" })} title={`Plan — ${t("achat.modeHint.plan")}`} aria-label="Plan"
+                aria-pressed={plan} className={`${pill} shrink-0 ${plan ? "bg-mustard-500/15 font-medium text-mustard-700 hover:bg-mustard-500/20 hover:text-mustard-800 dark:text-mustard-300 dark:hover:text-mustard-200" : ""}`}>
+                <IconListCheck size={14} stroke={1.8} className="shrink-0" aria-hidden /><span className="hidden @[380px]:inline">Plan</span>
               </button>
             )}
           </div>
-          <div className="ml-auto flex min-w-0 items-center gap-1.5">
+          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1.5">
             {/* 모델 · 추론 수준 — 한 알약, 팝업: 검색·모델(설명)·이전 모델 접기·추론 수준 */}
             <div className="relative min-w-0">
-              <button type="button" onClick={() => setPicker((v) => !v)} className={pill} data-chat-picker>
-                <AgentLogo agent={P(meta.provider).agent} size={13} />
-                <span className="truncate">{modelLabel}</span>
-                {effortLabel && <span className="shrink-0 text-zinc-400 dark:text-zinc-500">{effortLabel}</span>}
+              <button type="button" onClick={() => setPicker((v) => !v)} className={`${pill} max-w-full`} title={[modelLabel, effortLabel].filter(Boolean).join(" · ")} data-chat-picker>
+                <span className="shrink-0"><AgentLogo agent={P(meta.provider).agent} size={13} /></span>
+                <span className="min-w-0 truncate">{modelLabel}</span>
+                {effortLabel && <span className="hidden shrink-0 text-zinc-400 @[340px]:inline dark:text-zinc-500">{effortLabel}</span>}
                 <IconChevronDown size={12} stroke={2} className="shrink-0 opacity-60" aria-hidden />
               </button>
               {picker && (
