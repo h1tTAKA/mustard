@@ -26,3 +26,8 @@ export const setNarrationLocale = (l: "ko" | "ja" | "en") => {
   gl.__mustardNarrationLocale = l;
   try { mkdirSync(dirname(LOCALE_FILE), { recursive: true }); writeFileSync(LOCALE_FILE, l); } catch { /* 메모리 값은 유지 */ }
 };
+// #1359 해설 용어 — 초보면 기본 개발 말(커밋·PR 등)도 풀이, 아는 용어는 풀이·칩에서 빼라고 프롬프트에(설정은 렌더러라 config POST로 받음)
+const gt = globalThis as unknown as { __mustardNarrationBeginner?: boolean; __mustardNarrationKnown?: string[] };
+export const narrationBeginner = () => gt.__mustardNarrationBeginner ?? false;
+export const narrationKnown = () => gt.__mustardNarrationKnown ?? [];
+export const setNarrationTerms = (beginner: boolean, known: string[]) => { gt.__mustardNarrationBeginner = beginner; gt.__mustardNarrationKnown = known; };

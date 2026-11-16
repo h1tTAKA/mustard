@@ -22,7 +22,7 @@ export default function CatchupRepoPrefs({ isOff, set, loaded, onClose }: { isOf
     sessionsShow: useSetting<boolean>(CUKEYS.sessionsShow, CATCHUP_DEFAULTS.sessionsShow), sessionsAnalyze: useSetting<boolean>(CUKEYS.sessionsAnalyze, CATCHUP_DEFAULTS.sessionsAnalyze),
     termsShow: useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow), termsAnalyze: useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze),
   } as Record<RepoPrefKey, boolean>;
-  const rows: [string, string][] = [["explain", t("settings.catchupExplain")], ["commands", t("settings.catchupCommands")], ["diff", t("settings.catchupDiff")], ["sessions", t("settings.catchupSessions")], ["terms", t("settings.catchupTerms")]];
+  const rows: [string, string][] = [["explain", t("settings.catchupExplain")], ["commands", t("settings.catchupCommands")], ["diff", t("settings.catchupDiff")], ["sessions", t("settings.catchupSessions")]];
   const flip = async (k: RepoPrefKey) => { if (!(await set(k, !isOff(k)))) toast(t("learn.repoPrefsFailed")); };
   return (
     <div ref={ref} role="dialog" aria-label={t("learn.repoPrefs")}
