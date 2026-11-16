@@ -37,19 +37,41 @@ export function mergeTerms(prev: Term[], add: Term[], key: (s: string) => string
   return fresh.length ? [...fresh, ...prev] : prev;
 }
 
-// #1359 해설 끝 '카드로 남길 개념' 칸 — 화면은 이 칸을 글로 안 보이고 카드 맨 아래 칩 줄로(누르면 nunopi 카드). 칸 이름은 해설 언어별.
+// #1359 해설 카드의 용어 칸을 칩으로 그리려고 본문을 [용어 칸 앞(소제목 포함) | 용어들 | 뒤]로 나눔.
+// 용어 칸에 목록 아닌 줄이 섞였거나 용어가 없으면 null(호출부는 마크다운 그대로).
+// 한계: 첫 용어 칸만 칩 — 용어 칸이 두 번 나오면 둘째는 마크다운 글자로(내용은 그대로, 용어집은 둘 다 모음).
+export function splitTermsSection(note: string): { before: string; terms: Term[]; after: string } | null {
+  const lines = String(note || "").split("\n");
+  let start = -1, end = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i].trim();
+    if (start < 0) { if (l && isHeading(l) && KEYWORD.test(l)) start = i + 1; continue; }
+    if (l && (isHeading(l) || /^>/.test(l))) { end = i; break; }
+  }
+  if (start < 0) return null;
+  const sec = lines.slice(start, end).filter((l) => l.trim());
+  const terms = parseNarrationTerms([lines[start - 1], ...sec].join("\n"));
+  if (!terms.length || terms.length !== sec.length) return null;
+  return { before: lines.slice(0, start).join("\n").trim(), terms, after: lines.slice(end).join("\n").trim() };
+}
+
+// #1359 해설 끝 '카드로 남길 개념' 칸 — 위 용어 풀이에 없는 배경 개념(- **이름** — 뜻). 화면은 이 칸을 글로 안 보이고 카드 맨 아래 칩 줄로(누르면 nunopi 카드). 칸 이름은 해설 언어별.
 export const CARD_HEADS = { ko: "카드로 남길 개념", ja: "カードにする概念", en: "Concepts to keep" } as const;
 // "### 이름" / "**이름**" / 끝에 ":" 붙은 것까지(모델 표기 흔들림, 리뷰)
 const isCardHead = (l: string) => (/^#{1,6}\s/.test(l) || /^\*\*[^*]+\*\*\s*[:：]?$/.test(l)) && Object.values(CARD_HEADS).some((h) => l.replace(/^#{1,6}\s*/, "").replace(/\*/g, "").replace(/[:：]\s*$/, "").trim() === h);
-// 본문 → { body: 그 칸을 뺀 본문, names: 칸 속 이름들 }. 칸이 없으면(옛 카드) names 빈 배열.
-export function splitCardSection(note: string): { body: string; names: string[] } {
+// 본문 → { body: 그 칸을 뺀 본문, items: 칸 속 이름·뜻(뜻 없으면 "") }. 칸이 없으면(옛 카드) 빈 배열.
+export function splitCardSection(note: string): { body: string; items: Term[] } {
   const lines = String(note || "").split("\n");
   const start = lines.findLastIndex((l) => isCardHead(l.trim())); // 칸은 해설 끝 — 앞 문장 속 굵은 같은 말에 안 걸리게 마지막 것(리뷰)
-  if (start < 0) return { body: String(note || ""), names: [] };
+  if (start < 0) return { body: String(note || ""), items: [] };
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) { const l = lines[i].trim(); if (l && !/^[-*•]\s/.test(l) && !/^\s/.test(lines[i])) { end = i; break; } } // 목록 아닌 줄(다음 소제목·팁)에서 끝 — 그 줄은 본문에 남김(리뷰)
-  const names = lines.slice(start + 1, end).map((l) => l.trim().match(/^[-*•]\s+(.+)$/)?.[1].replace(/[*`]/g, "").split(/\s+[—–]\s+|[:：](\s|$)/)[0].trim() ?? "").filter(Boolean);
-  return { body: [...lines.slice(0, start), ...lines.slice(end)].join("\n").trim(), names };
+  const items = lines.slice(start + 1, end).map((l) => {
+    const raw = l.trim().match(/^[-*•]\s+(.+)$/)?.[1].replace(/[*`]/g, "").trim() ?? "";
+    const m = raw.match(/^(.+?)(?:\s+[—–]\s+|[:：](?:\s+|$))([\s\S]*)$/); // 이름 — 뜻 / 이름: 뜻 / 이름:
+    return m ? { term: m[1].trim(), def: m[2].trim() } : { term: raw, def: "" };
+  }).filter((x) => x.term);
+  return { body: [...lines.slice(0, start), ...lines.slice(end)].join("\n").trim(), items };
 }
 
 // #1359 카드로 남길 만한 일반 개념인지 — 포트·이슈 번호·경로·파일 이름·해시 같은 이 작업만의 값은 칩 아님(유저 지적: localhost:8797, #68 브랜치)

@@ -14,7 +14,7 @@ import { sendToAgent } from "@/lib/browser/sendToAgent";
 import { formatSessionHandoff } from "@/lib/sessionHandoff";
 import { isDocEdit } from "@/lib/mcpActivity";
 import { isNunopiEnabled } from "@/lib/product";
-import { isCardWorthy, mergeTerms, parseNarrationTerms, splitCardSection, type Term } from "@/lib/catchupTerms";
+import { isCardWorthy, mergeTerms, parseNarrationTerms, splitCardSection, splitTermsSection, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
@@ -861,27 +861,34 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                         // #1066 diff 구간별: [N~M번째 줄 ▸ 그 구간 코드 펼치기] + 설명. 한 파일 여러 변경이 한 카드여도 어느 설명이 어느 줄인지 보임
                         const d = c.kind === "diff" ? parseDiffItemKey(c.key) : null; const secs = d ? diffSections(c.expl ?? "") : null;
                         if (!d || !secs) {
-                          if (c.kind !== "narration") return <Markdown>{relocalizeFailure(c.expl ?? "", t)}</Markdown>;
-                          // #1359 해설 끝 '카드로 남길 개념' 칸은 글 대신 카드 맨 아래 칩 줄 — nunopi를 켠 유저만, 뜻은 위 용어 풀이에서(없으면 칩 안 냄)
-                          // nunopi를 끈 유저도 그 칸은 숨김 — 칸 속 이름은 위 용어 풀이에 이미 있어 잃는 내용 없음(카드용 표시일 뿐)
-                          const { body, names } = splitCardSection(c.expl ?? "");
-                          const defs = cardsOn && names.length ? parseNarrationTerms(body) : [];
-                          const chips = names.map((n) => ({ term: n, def: defs.find((x) => normalizeCardFront(x.term.replace(/`/g, "")) === normalizeCardFront(n))?.def ?? "" }))
-                            .filter((x) => x.def && (cardOf(x.term) || isCardWorthy(x.term)));
+                          if (c.kind !== "narration" || !cardsOn) return <Markdown>{relocalizeFailure(c.expl ?? "", t)}</Markdown>;
+                          // #1359 nunopi를 켠 유저 — 용어 풀이 칸은 이름 자체가 카드 추가 칩(등록은 유저가 고름),
+                          // 해설 끝 '카드로 남길 개념' 칸(위에 없는 배경 개념)은 글 대신 카드 맨 아래 칩 줄. nunopi를 끄면 전부 글 그대로.
+                          const { body, items } = splitCardSection(c.expl ?? "");
+                          const sp = splitTermsSection(body);
+                          const inWords = new Set((sp?.terms ?? []).map((x) => normalizeCardFront(x.term.replace(/`/g, ""))));
+                          const extra = items.filter((x) => x.def && !inWords.has(normalizeCardFront(x.term)) && (cardOf(x.term) || isCardWorthy(x.term)));
+                          const chip = (x: Term, key: string) => { const card = cardOf(x.term); return card ? ( /* 추가됨 — 누르면 카드 확대 */
+                            <button key={key} type="button" onClick={(e) => throwCard(card, e.currentTarget.getBoundingClientRect())} title={t("learn.openCard")}
+                              className="inline-flex items-center gap-0.5 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-semibold transition hover:brightness-110">
+                              <IconCheck size={10} stroke={2.5} className="text-blue-500" aria-hidden /><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{x.term}</span>
+                            </button>
+                          ) : ( /* 칩 자체가 버튼 — 0.4초 머물면 짧은 안내(바로 뜨면 읽는 중 거슬림) */
+                            <span key={key} className="group/chip relative inline-block">
+                              <button type="button" onClick={() => addTerm(x)}
+                                className="peer rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400">{x.term}<span className="sr-only"> — {t("learn.chipSaveHint")}</span></button>
+                              <span className="pointer-events-none absolute left-0 top-full z-50 mt-1 whitespace-nowrap rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-white opacity-0 shadow transition group-hover/chip:opacity-100 group-hover/chip:delay-[400ms] peer-focus-visible:opacity-100 peer-focus-visible:delay-[400ms] dark:bg-zinc-700" aria-hidden>{t("learn.chipSaveHint")}</span>
+                            </span>
+                          ); };
                           return <>
-                            <Markdown>{relocalizeFailure(body, t)}</Markdown>
-                            {chips.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{chips.map((x, i) => { const card = cardOf(x.term); return card ? (
-                              <button key={`${i}|${x.term}`} type="button" onClick={(e) => throwCard(card, e.currentTarget.getBoundingClientRect())} title={t("learn.openCard")}
-                                className="inline-flex items-center gap-0.5 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-semibold transition hover:brightness-110">
-                                <IconCheck size={10} stroke={2.5} className="text-blue-500" aria-hidden /><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{x.term}</span>
-                              </button>
-                            ) : ( /* 칩 자체가 버튼 — 0.4초 머물면 짧은 안내(바로 뜨면 읽는 중 거슬림) */
-                              <span key={`${i}|${x.term}`} className="group/chip relative inline-block">
-                                <button type="button" onClick={() => addTerm(x)}
-                                  className="peer rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400">{x.term}<span className="sr-only"> — {t("learn.chipSaveHint")}</span></button>
-                                <span className="pointer-events-none absolute left-0 top-full z-50 mt-1 whitespace-nowrap rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-white opacity-0 shadow transition group-hover/chip:opacity-100 group-hover/chip:delay-[400ms] peer-focus-visible:opacity-100 peer-focus-visible:delay-[400ms] dark:bg-zinc-700" aria-hidden>{t("learn.chipSaveHint")}</span>
-                              </span>
-                            ); })}</div>}
+                            {sp ? <>
+                              {sp.before && <Markdown>{relocalizeFailure(sp.before, t)}</Markdown>}
+                              <div className="nunopi-md"><ul>{sp.terms.map((x, i) => { const term = x.term.replace(/`/g, ""); return (
+                                <li key={`${i}|${term}`}>{chip({ term, def: x.def }, "c")} — <Markdown className="inline [&_p]:inline">{x.def}</Markdown></li>
+                              ); })}</ul></div>
+                              {sp.after && <Markdown>{sp.after}</Markdown>}
+                            </> : <Markdown>{relocalizeFailure(body, t)}</Markdown>}
+                            {extra.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{extra.map((x, i) => chip(x, `${i}|${x.term}`))}</div>}
                           </>;
                         }
                         return secs.map((sec, i) => (
