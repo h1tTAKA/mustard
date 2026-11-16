@@ -292,7 +292,7 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
           ))}
         </div>
       )}
-      {/* #1363 @container — 도구 줄은 카드(칸) 폭 기준으로 접음: 좁을수록 권한 글자 → Plan 글자 → 생각 강도 순으로 숨기고 아이콘·모델만 */}
+      {/* #1363 @container — 도구 줄은 카드(칸) 폭 기준으로 접음: 좁을수록 권한 글자(440) → Plan 글자(380) → 생각 강도(340) → 모델 이름·▾(300, 로고만) → 컨텍스트 원(260) 순으로 숨김 */}
       <div className="@container rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-sm transition focus-within:border-mustard-400/70 focus-within:ring-4 focus-within:ring-mustard-400/10 dark:border-zinc-700/80 dark:bg-zinc-900/60 dark:focus-within:border-mustard-400/50 dark:focus-within:ring-mustard-400/10"
         onDragOver={(e) => { if ([...e.dataTransfer.items].some((i) => i.type.startsWith("image/"))) e.preventDefault(); }}
         onDrop={(e) => { const fs = [...e.dataTransfer.files]; if (fs.some((f) => f.type.startsWith("image/"))) { e.preventDefault(); addFiles(fs); } }}>
@@ -328,16 +328,16 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
               <IconPlus size={16} stroke={1.8} aria-hidden />
             </button>
             {/* 권한 모드 — 위로 열리는 목록, 행마다 한 줄 설명. 전체 액세스는 노란 경고 방패 */}
-            <div className="relative">
+            <div>{/* 메뉴는 카드 기준 위치(바깥 relative) — 좁은 칸에서 카드 밖으로 안 넘치게(리뷰) */}
               <button type="button" onClick={() => setModeMenu((v) => !v)} title={`${MODE_LABEL[permMode]} — ${t(`achat.modeHint.${permMode}`)} (Shift+Tab)`} aria-label={MODE_LABEL[permMode]}
                 className={`${pill} shrink-0 ${permMode === "full" ? "text-yellow-600 hover:text-yellow-700 dark:text-yellow-500 dark:hover:text-yellow-400" : ""}`}>
                 {permMode === "full" ? <IconShieldExclamation size={14} stroke={1.8} aria-hidden /> : <IconShield size={14} stroke={1.8} aria-hidden />}
-                <span className="hidden @[440px]:inline">{MODE_LABEL[permMode]}</span><IconChevronDown size={12} stroke={2} className="shrink-0 opacity-60" aria-hidden />
+                <span className="hidden @[440px]:inline">{MODE_LABEL[permMode]}</span><IconChevronDown size={12} stroke={2} className="hidden shrink-0 opacity-60 @[300px]:block" aria-hidden />
               </button>
               {modeMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setModeMenu(false)} aria-hidden />
-                  <div className={`${pop} left-0 w-72 max-w-[calc(100vw-2rem)]`}>
+                  <div className={`${pop} left-0 w-72 max-w-full`}>
                     {(["default", "full"] as const).map((m) => (
                       <button key={m} type="button" onClick={() => { onOptions({ mode: m }); setModeMenu(false); }}
                         className="flex w-full items-start gap-2 rounded-lg px-2.5 py-1.5 text-left transition hover:bg-black/[.05] dark:hover:bg-white/[.08]">
@@ -363,17 +363,17 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
           </div>
           <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1.5">
             {/* 모델 · 추론 수준 — 한 알약, 팝업: 검색·모델(설명)·이전 모델 접기·추론 수준 */}
-            <div className="relative min-w-0">
-              <button type="button" onClick={() => setPicker((v) => !v)} className={`${pill} max-w-full`} title={[modelLabel, effortLabel].filter(Boolean).join(" · ")} data-chat-picker>
+            <div className="min-w-0">{/* 팝업은 카드 기준 위치(바깥 relative, 리뷰) */}
+              <button type="button" onClick={() => setPicker((v) => !v)} className={`${pill} max-w-full overflow-hidden`} title={[modelLabel, effortLabel].filter(Boolean).join(" · ")} aria-label={[modelLabel, effortLabel].filter(Boolean).join(" · ")} data-chat-picker>
                 <span className="shrink-0"><AgentLogo agent={P(meta.provider).agent} size={13} /></span>
-                <span className="min-w-0 truncate">{modelLabel}</span>
+                <span className="hidden min-w-0 truncate @[300px]:inline">{modelLabel}</span>
                 {effortLabel && <span className="hidden shrink-0 text-zinc-400 @[340px]:inline dark:text-zinc-500">{effortLabel}</span>}
-                <IconChevronDown size={12} stroke={2} className="shrink-0 opacity-60" aria-hidden />
+                <IconChevronDown size={12} stroke={2} className="hidden shrink-0 opacity-60 @[300px]:block" aria-hidden />
               </button>
               {picker && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => { setPicker(false); setModelQ(""); }} aria-hidden />
-                  <div className={`${pop} right-0 w-96 max-w-[calc(100vw-2rem)] p-0`}>
+                  <div className={`${pop} right-0 w-96 max-w-full p-0`}>
                     <div className="flex items-center gap-2 border-b border-black/[.08] px-3 py-2 dark:border-white/[.08]">
                       <IconSearch size={14} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />
                       <input autoFocus value={modelQ} onChange={(e) => setModelQ(e.target.value)} placeholder={t("achat.modelSearch")}
@@ -416,7 +416,7 @@ export default function ChatComposer({ root, meta, providers, busy, history, ctx
               )}
             </div>
             {pct !== null && (
-              <span title={t("achat.ctx", { pct, used: Math.round(ctx!.used / 1000), win: Math.round(ctx!.win / 1000) })} className="flex shrink-0 items-center">
+              <span title={t("achat.ctx", { pct, used: Math.round(ctx!.used / 1000), win: Math.round(ctx!.win / 1000) })} className="hidden shrink-0 items-center @[260px]:flex">
                 <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><circle cx="8" cy="8" r="6" fill="none" strokeWidth="2" className="stroke-black/[.08] dark:stroke-white/[.12]" /><circle cx="8" cy="8" r="6" fill="none" strokeWidth="2" strokeDasharray={`${(pct / 100) * 37.7} 37.7`} transform="rotate(-90 8 8)" strokeLinecap="round" className={pct > 85 ? "stroke-red-500" : pct > 60 ? "stroke-amber-500" : "stroke-zinc-400 dark:stroke-zinc-500"} /></svg>
               </span>
             )}
