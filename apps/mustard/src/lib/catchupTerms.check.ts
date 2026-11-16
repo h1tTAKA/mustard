@@ -54,5 +54,6 @@ assert.deepStrictEqual(rr!.terms.map((x) => x.term), ["diff", "npm"], "굵은 �
 assert.deepStrictEqual(rr!.rest, ["결과: 성공", "이건 A — B"], "나머지 글은 rest");
 assert.deepStrictEqual(splitNames("`git add -p / --patch`"), ["`git add -p / --patch`"], "백틱 안 /는 안 나눔");
 assert.deepStrictEqual(["client/server", "request/response", "데이터의 흐름", "상태의 불변성"].map(isCardWorthy), [true, true, true, true], "일반 개념 쌍·한글 '의' 개념은 칩");
-assert.deepStrictEqual(["fix/catchup-x", "feature/a/b", "Widget의 key"].map(isCardWorthy), [false, false, false]);
+assert.deepStrictEqual(["fix/catchup-x", "feature/a/b", "Widget의 key", "fix/login", "feat/cart"].map(isCardWorthy), [false, false, false, false, false]);
+assert.deepStrictEqual(splitTermsSection("### 용어\n- **`grep`** 같은 검색 — 결과\n- **diff** — 차이")!.terms.map((x) => x.term), ["diff"], "굵은 이름 뒤에 바로 구분자일 때만 칩");
 console.log("catchupTerms ok");

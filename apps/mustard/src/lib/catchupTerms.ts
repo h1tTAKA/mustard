@@ -54,7 +54,7 @@ export function splitTermsSection(note: string): { before: string; terms: Term[]
   const terms: Term[] = [], rest: string[] = [];
   for (const l of sec) {
     const t = parseNarrationTerms(`${lines[start - 1]}\n${l}`);
-    if (t.length && (/^\s*[-*•]\s+\*\*/.test(l) || (!/\s/.test(t[0].term) && /\s[—–]\s/.test(l)))) terms.push(t[0]); // 굵은 이름이거나 "한 단어 — 뜻"만 — "- 결과: 성공" 같은 글이 칩이 되지 않게(리뷰)
+    if (t.length && (/^\s*[-*•]\s+\*\*[^*]+\*\*\s*[—–:-]/.test(l) || (!/\s/.test(t[0].term) && /\s[—–]\s/.test(l)))) terms.push(t[0]); // 굵은 이름이거나 "한 단어 — 뜻"만 — "- 결과: 성공" 같은 글이 칩이 되지 않게(리뷰)
     else if (/^\s*[-*•]\s+/.test(l)) rest.push(l.trim().replace(/^[-*•]\s+/, ""));
     else return null;
   }
@@ -95,6 +95,7 @@ export function isCardWorthy(term: string): boolean {
   if (/^\d+$/.test(x)) return false; // 숫자만(포트·상태 번호)
   if (/\.(tsx?|jsx|json|md|py|sh|ya?ml|lock|swift|dart|go|rs)$/i.test(x)) return false; // 파일 이름(README.md·RepoLearnStream.tsx도)
   if (/^[a-z0-9._-]+\.[cm]?js$/.test(x)) return false; // .js는 전부 소문자일 때만 파일 — Node.js·Next.js는 개념(한계: three.js 같은 소문자 라이브러리 이름도 빠짐)
+  if (/^(feat|feature|fix|bugfix|hotfix|chore|docs|refactor|release|test|style|perf|ci|build)\//.test(x)) return false; // 브랜치 이름(소문자 — CI/CD는 개념, feat/cart, 리뷰)
   if (/^(\.{0,2}\/|~\/)/.test(x) || (/^[a-z0-9._-]+(\/[a-z0-9._-]+)+$/.test(x) && /[-_.\d]|\/.*\//.test(x))) return false; // 경로·브랜치(소문자 a/b에 -·_·.·숫자 또는 / 둘 이상 — client/server·CI/CD·HTTP/2는 개념, 리뷰)
   if (/[A-Za-z0-9_)`]의\s/.test(x)) return false; // #1364 "Icon의 size" — 특정 위젯·함수의 속성
   if (/\d+,\d+|\s-{1,2}[A-Za-z][\w-]*\s+\d/.test(x)) return false; // #1364 이번 작업의 값이 붙은 명령(sed -n 282,400p, head -n 20) — 이름은 일반형이어야 다른 작업에도 쓰임

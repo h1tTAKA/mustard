@@ -838,7 +838,11 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           const words = sp ? sp.terms.map((x) => ({ ...x, names: splitNames(x.term).filter((n) => !known(n)) })).filter((x) => x.names.length) : [];
                           // 용어 칸 사족 줄(이름 — 뜻 꼴 아님) — 아는 용어를 언급하면 숨김(해설 제외했으면 아무 말도 안 보이게)
                           // 영문 이름은 단어 경계로(pr이 prompt에 걸리지 않게, 리뷰), 그 밖(한글 등)은 포함 여부로
-                          const knownIn = (line: string) => { const l = line.replace(/`/g, "").toLowerCase(); return knownTerms.some((k) => { const n = k.replace(/`/g, "").trim().toLowerCase(); if (n.length < 2) return false; return /^[\x20-\x7e]+$/.test(n) ? new RegExp(`(?<![a-z0-9])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-z0-9])`).test(l) : l.includes(n); }); };
+                          const knownIn = (line: string) => { const l = line.replace(/`/g, "").toLowerCase(), ln = normalizeCardFront(line.replace(/`/g, "")); return knownTerms.some((k) => {
+                            const a = k.replace(/`/g, "").replace(/\([^)]*\)/g, "").trim().toLowerCase(), n = normalizeCardFront(k.replace(/`/g, ""));
+                            if (n.length < 2) return false;
+                            return /^[\x20-\x7e]+$/.test(a) ? new RegExp(`(?<![a-z0-9])${a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")}(?![a-z0-9])`).test(l) : ln.includes(n); // 한글 등은 카드 앞면과 같은 정규화(괄호·띄어쓰기 무시, 리뷰)
+                          }); };
                           const rest = sp ? sp.rest.filter((l) => !knownIn(l)) : [];
                           // 용어 칩 — 누르면 풀다운(카드 추가 또는 보기 / 해설 제외). 카드로 저장했으면 ✓·그라데이션. 0.4초 머물면 짧은 안내.
                           const chip = (raw: Term) => { const term = raw.term.replace(/`/g, "").trim(); const card = cardOf(term); return (
