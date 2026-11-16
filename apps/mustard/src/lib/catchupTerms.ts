@@ -36,3 +36,20 @@ export function mergeTerms(prev: Term[], add: Term[], key: (s: string) => string
   }
   return fresh.length ? [...fresh, ...prev] : prev;
 }
+
+// #1359 해설 카드의 용어 칸을 칩으로 그리려고 본문을 [용어 칸 앞(소제목 포함) | 용어들 | 뒤]로 나눔.
+// 용어 칸에 목록 아닌 줄이 섞였거나 용어가 없으면 null(호출부는 마크다운 그대로).
+export function splitTermsSection(note: string): { before: string; terms: Term[]; after: string } | null {
+  const lines = String(note || "").split("\n");
+  let start = -1, end = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i].trim();
+    if (start < 0) { if (l && isHeading(l) && KEYWORD.test(l)) start = i + 1; continue; }
+    if (l && (isHeading(l) || /^>/.test(l))) { end = i; break; }
+  }
+  if (start < 0) return null;
+  const sec = lines.slice(start, end).filter((l) => l.trim());
+  const terms = parseNarrationTerms([lines[start - 1], ...sec].join("\n"));
+  if (!terms.length || terms.length !== sec.length) return null;
+  return { before: lines.slice(0, start).join("\n").trim(), terms, after: lines.slice(end).join("\n").trim() };
+}

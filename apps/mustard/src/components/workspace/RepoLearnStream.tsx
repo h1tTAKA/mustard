@@ -14,7 +14,7 @@ import { sendToAgent } from "@/lib/browser/sendToAgent";
 import { formatSessionHandoff } from "@/lib/sessionHandoff";
 import { isDocEdit } from "@/lib/mcpActivity";
 import { isNunopiEnabled } from "@/lib/product";
-import { mergeTerms, parseNarrationTerms, type Term } from "@/lib/catchupTerms";
+import { mergeTerms, parseNarrationTerms, splitTermsSection, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
@@ -860,7 +860,28 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                       {c.status === "done" ? (() => {
                         // #1066 diff 구간별: [N~M번째 줄 ▸ 그 구간 코드 펼치기] + 설명. 한 파일 여러 변경이 한 카드여도 어느 설명이 어느 줄인지 보임
                         const d = c.kind === "diff" ? parseDiffItemKey(c.key) : null; const secs = d ? diffSections(c.expl ?? "") : null;
-                        if (!d || !secs) return <Markdown>{relocalizeFailure(c.expl ?? "", t)}</Markdown>;
+                        if (!d || !secs) {
+                          // #1359 해설의 용어 칸 — nunopi를 켠 유저면 용어 이름 자체가 칩 버튼(누르면 카드 추가, 추가된 건 카드 확대). 카드가 길어지지 않게 칩 줄을 따로 안 닮
+                          const sp = c.kind === "narration" && cardsOn ? splitTermsSection(c.expl ?? "") : null;
+                          if (!sp) return <Markdown>{relocalizeFailure(c.expl ?? "", t)}</Markdown>;
+                          return <>
+                            {sp.before && <Markdown>{sp.before}</Markdown>}
+                            <div className="nunopi-md"><ul>{sp.terms.map((x) => { const term = x.term.replace(/`/g, ""); const card = cardOf(term); return (
+                              <li key={term}>{card ? (
+                                <button type="button" onClick={(e) => throwCard(card, e.currentTarget.getBoundingClientRect())} title={t("learn.openCard")}
+                                  className="inline-flex items-center gap-0.5 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-semibold transition hover:brightness-110">
+                                  <IconCheck size={10} stroke={2.5} className="text-blue-500" aria-hidden /><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{term}</span>
+                                </button>
+                              ) : (
+                                <button type="button" onClick={() => addTerm({ term, def: x.def })} title={t("chat.saveAsCard")}
+                                  className="inline-flex items-center gap-0.5 rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400">
+                                  <IconPlus size={10} stroke={2.5} aria-hidden />{term}
+                                </button>
+                              )} — {x.def.replace(/`/g, "")}</li>
+                            ); })}</ul></div>
+                            {sp.after && <Markdown>{sp.after}</Markdown>}
+                          </>;
+                        }
                         return secs.map((sec, i) => (
                           <div key={i} className={i > 0 ? "mt-3 border-t border-zinc-200/70 pt-2 dark:border-zinc-800" : ""}>
                             <CatchupDiffCode root={root} hash={d.hash} file={d.file} range={sec}
