@@ -157,7 +157,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const cardByFront = useMemo(() => new Map(cardsOn ? collectCards(["token", "concept", "term"], new Date()).map((c) => [normalizeCardFront(c.front), c] as const) : []), [cardTick, cardsOn]); // eslint-disable-line react-hooks/exhaustive-deps -- cardTick = 저장소 변경 신호
   const cardOf = (term: string) => cardByFront.get(normalizeCardFront(term));
   const addTerm = useCallback((x: Term, raw?: string) => { // raw = 백틱 붙은 원래 이름(코드 이름이면 토큰 카드, #1359)
-    const ok = createChatCard(cardKindOf(raw ?? x.term), x.term, x.def, t("card.workspaceSource", { repo: basename(root) }), undefined, { kind: "workspace", sessionId: "catchup:terms", root });
+    const ok = createChatCard(x.code ? "token" : cardKindOf(raw ?? x.term), x.term, x.def, t("card.workspaceSource", { repo: basename(root) }), undefined, { kind: "workspace", sessionId: "catchup:terms", root });
     toast(ok ? t("card.added", { term: x.term }) : t("card.exists"));
   }, [root, t, toast]);
   // #1049 카테고리 필터 — 해설(실시간 해설·파일/심볼 설명) / 명령어 / 용어. 꺼진 카테고리는 칩도 숨김.

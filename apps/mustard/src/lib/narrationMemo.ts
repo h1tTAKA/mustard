@@ -12,7 +12,7 @@ export const NAMES_HEADS = { ko: "이 작업의 이름들", ja: "この作業の
 export function leadOf(expl: string): string {
   const out: string[] = [];
   let seen = false; // 소제목으로 시작하면 그 밑 글부터 — 둘째 소제목(용어 풀이 등)까지는 안 넘어감(리뷰)
-  for (const l of expl.split("\n")) { const x = l.trim(); if (/^#{1,6}\s/.test(x) || /^\*\*[^*]+\*\*\s*[:：]?$/.test(x)) { if (out.length || seen) break; seen = true; continue; } if (x) out.push(x); }
+  for (const l of expl.split("\n")) { const x = l.trim(); if (/^#{1,6}\s/.test(x) || /^\*\*[^*]+\*\*\s*[:：]?$/.test(x)) { if (out.length || seen) break; seen = true; continue; } if (/^[-*•]\s/.test(x)) break; if (x) out.push(x); } // 목록(용어 풀이 등)은 첫 문단 아님(리뷰)
   return out.join(" ").replace(/[`*_]/g, "");
 }
 // 글자 두 개씩 묶음의 겹침(0~1) — 말을 조금 바꿔도 같은 얘기면 높음
@@ -37,7 +37,7 @@ export function isRepeat(title: string, expl: string, past: PastNarration[], has
     const pl = leadOf(p.expl);
     if (lead.length >= 12 && lead === pl) return true; // 첫 문단이 글자 그대로 같으면 짧아도 반복(리뷰)
     const sim = lead.length >= MIN_LEAD && pl.length >= MIN_LEAD ? similarity(lead, pl) : -1;
-    if (titleKey(p.title) === tk) return sim < 0 ? !lead || !pl : sim >= 0.2; // 같은 제목 — 첫 문단을 비교할 수 있으면 조금이라도 겹칠 때만, 짧아서 못 재면 둘 다 비었을 때만 반복('작업 중' 같은 기본 제목끼리, 리뷰)
+    if (titleKey(p.title) === tk) return sim < 0 ? !lead && !pl : sim >= 0.2; // 같은 제목 — 첫 문단을 비교할 수 있으면 조금이라도 겹칠 때만, 짧아서 못 재면 둘 다 비었을 때만 반복('작업 중' 같은 기본 제목끼리, 리뷰)
     return sim >= SAME;
   });
 }

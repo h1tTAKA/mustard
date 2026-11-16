@@ -1,5 +1,5 @@
 // 캐치업 용어집 보조(#1051) — 실시간 해설(narration) 본문의 "용어" 목록을 용어집으로 + 중복 판정.
-export interface Term { term: string; def: string }
+export interface Term { term: string; def: string; code?: boolean } // code = 원래 `백틱`으로 감싼 코드 이름(토큰 카드, #1359)
 
 // "용어" 제목 줄(## 용어 / ### 핵심 용어 / **용어**: / 용어:) 아래 글머리들. 다른 소제목이 나오면 끝.
 // 모델 표기 흔들림 허용(#1051 리뷰): "- **이름** — 뜻" / "- **이름 — 뜻**" / "- 이름 — 뜻"(구분자 — – :).
@@ -31,7 +31,7 @@ export function mergeTerms(prev: Term[], add: Term[], key: (s: string) => string
   const seen = new Set(prev.map((x) => key(x.term)));
   const fresh: Term[] = [];
   for (const raw of add) {
-    const x = { term: raw.term.replace(/`/g, "").trim(), def: raw.def.trim() }; // 모델이 붙인 코드 백틱 제거(`tsconfig.json`)
+    const x = { term: raw.term.replace(/`/g, "").trim(), def: raw.def.trim(), ...(/^`[^`]+`$/.test(raw.term.trim()) ? { code: true } : {}) }; // 모델이 붙인 코드 백틱 제거(`tsconfig.json`)
     const k = key(x.term); if (!k || seen.has(k)) continue; seen.add(k); fresh.push(x);
   }
   return fresh.length ? [...fresh, ...prev] : prev;
@@ -69,7 +69,7 @@ export function splitCardSection(note: string): { body: string; items: Term[] } 
   const items = lines.slice(start + 1, end).map((l) => {
     const raw = l.trim().match(/^[-*•]\s+(.+)$/)?.[1].replace(/\*/g, "").trim() ?? ""; // 백틱은 남김(코드 이름 표시 — cardKindOf)
     const m = raw.match(/^(.+?)(?:\s+[—–]\s+|[:：](?:\s+|$))([\s\S]*)$/); // 이름 — 뜻 / 이름: 뜻 / 이름:
-    return m ? { term: m[1].trim(), def: m[2].trim() } : { term: raw, def: "" };
+    return m ? { term: m[1].trim(), def: m[2].replace(/`/g, "").trim() } : { term: raw, def: "" }; // 백틱은 이름에만(뜻은 카드 설명이라 지움, 리뷰)
   }).filter((x) => x.term);
   return { body: [...lines.slice(0, start), ...lines.slice(end)].join("\n").trim(), items };
 }

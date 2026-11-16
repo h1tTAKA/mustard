@@ -22,7 +22,7 @@ const k = (s: string) => s.trim().toLowerCase();
 const prev = [{ term: "Git", def: "a" }];
 assert.deepStrictEqual(mergeTerms(prev, [{ term: "git ", def: "b" }, { term: "npm", def: "c" }, { term: "NPM", def: "d" }], k).map((x) => x.term), ["npm", "Git"], "기존·새 목록 안 중복 제거, 새 것 위");
 assert.strictEqual(mergeTerms(prev, [{ term: "GIT", def: "z" }], k), prev, "추가 없으면 같은 배열");
-assert.deepStrictEqual(mergeTerms([], [{ term: "`tsconfig.json`", def: " 설정 " }], k), [{ term: "tsconfig.json", def: "설정" }], "백틱·공백 정리");
+assert.deepStrictEqual(mergeTerms([], [{ term: "`tsconfig.json`", def: " 설정 " }], k), [{ term: "tsconfig.json", def: "설정", code: true }], "백틱·공백 정리, 코드 이름 표시");
 // #1359 '카드로 남길 개념' 칸 — 본문에서 떼어 칩 이름으로
 const cs = splitCardSection("첫 문단\n### 나온 말·용어 풀이\n- **PageController** — 페이지 리모컨\n### 카드로 남길 개념\n- PageController\n- **`setState`**\n");
 assert.deepStrictEqual(cs, { body: "첫 문단\n### 나온 말·용어 풀이\n- **PageController** — 페이지 리모컨", items: [{ term: "PageController", def: "" }, { term: "`setState`", def: "" }] });

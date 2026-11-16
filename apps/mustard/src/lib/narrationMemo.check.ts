@@ -20,7 +20,9 @@ assert.deepStrictEqual(memoLines(past, () => "00:43"), ["- [00:43] 도구 실행
 assert.strictEqual(leadOf("### 지금 하는 일\n본문 첫 줄"), "본문 첫 줄");
 assert.strictEqual(isRepeat("다른 제목", "지금 로그 파일을 읽고 있어요.", [{ ts: 1, title: "x", expl: "지금 설정 파일을 읽고 있어요." }], false), false);
 assert.strictEqual(isRepeat("작업 중", "웹 빌드를 돌려서 화면이 제대로 뜨는지 브라우저에서 확인하는 중이에요. 결과를 보고 다음 단계로 갑니다.", [{ ts: 1, title: "작업 중", expl: "테스트 파일을 새로 만들고 조사 빈칸 퀴즈 함수가 맞게 동작하는지 점검하는 단계예요. 실패하면 고칩니다." }], false), false);
-assert.strictEqual(leadOf("### 용어\n- **a** — b\n### 다음\n- **c** — d"), "- a — b", "둘째 소제목에서 멈춤(재리뷰)");
+assert.strictEqual(leadOf("### 용어\n- **a** — b\n### 다음\n- **c** — d"), "", "용어 목록은 첫 문단 아님(재리뷰)");
+assert.strictEqual(leadOf("### 지금\n본문\n### 다음\n뒤"), "본문", "둘째 소제목에서 멈춤");
+assert.strictEqual(isRepeat("같은 제목", "### 용어\n- **a** — b", [{ ts: 1, title: "같은 제목", expl: "앞 카드는 첫 문단이 있었어요." }], false), false, "한쪽만 첫 문단 없으면 통과(재리뷰)");
 assert.strictEqual(isRepeat("작업 중", "로그를 읽는 중이에요.", [{ ts: 1, title: "작업 중", expl: "테스트를 돌리는 중이에요." }], false), false, "기본 제목 + 짧고 다른 첫 문단은 통과(재리뷰)");
 assert.strictEqual(isRepeat("다른 제목", "지금 설정 파일을 읽고 있어요.", [{ ts: 1, title: "x", expl: "지금 설정 파일을 읽고 있어요." }], false), true, "글자 그대로 같으면 짧아도 반복(재리뷰)");
 console.log("narrationMemo.check ok");
