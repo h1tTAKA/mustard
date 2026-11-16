@@ -866,7 +866,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           // 해설 끝 '카드로 남길 개념' 칸(위에 없는 배경 개념)은 글 대신 카드 맨 아래 칩 줄. nunopi를 끄면 전부 글 그대로.
                           const { body, items } = splitCardSection(c.expl ?? "");
                           const sp = splitTermsSection(body);
-                          const inWords = new Set((sp?.terms ?? []).map((x) => normalizeCardFront(x.term.replace(/`/g, ""))));
+                          const inWords = new Set((sp?.terms ?? parseNarrationTerms(body)).map((x) => normalizeCardFront(x.term.replace(/`/g, ""))));
                           const extra = items.filter((x) => x.def && !inWords.has(normalizeCardFront(x.term)) && (cardOf(x.term) || isCardWorthy(x.term)));
                           const chip = (x: Term, key: string) => { const card = cardOf(x.term); return card ? ( /* 추가됨 — 누르면 카드 확대 */
                             <button key={key} type="button" onClick={(e) => throwCard(card, e.currentTarget.getBoundingClientRect())} title={t("learn.openCard")}

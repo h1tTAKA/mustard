@@ -5,10 +5,17 @@
 export interface PastNarration { ts: number; title: string; expl: string }
 
 const norm = (s: string) => s.replace(/\(.*?\)/g, "").replace(/[`*_]/g, "").trim().toLowerCase();
+// '이 작업의 이름들' 칸(브랜치·localhost·레포 함수 이름) — 개념이 아니라 반복 판정·기억에서 뺌(리뷰). 해설 틀(narrate.ts)도 이 이름을 씀.
+export const NAMES_HEADS = { ko: "이 작업의 이름들", ja: "この作業の名前", en: "Names in this work" } as const;
+const isNamesHead = (l: string) => { const x = l.trim(); return (/^#{1,6}\s/.test(x) || /^\*\*[^*]+\*\*\s*[:：]?$/.test(x)) && Object.values(NAMES_HEADS).some((h) => x.replace(/^#{1,6}\s*/, "").replace(/\*/g, "").replace(/[:：]\s*$/, "").trim() === h); };
+const withoutNames = (expl: string) => {
+  let skip = false;
+  return expl.split("\n").filter((l) => { if (isNamesHead(l)) { skip = true; return false; } if (skip && /^#{1,6}\s/.test(l.trim())) skip = false; return !skip; }).join("\n");
+};
 // 본문 속 굵은 말 → 개념 이름 집합
 export function conceptsOf(expl: string): Set<string> {
   const out = new Set<string>();
-  for (const m of expl.matchAll(/\*\*([^*\n]{1,40})\*\*/g)) { const k = norm(m[1]); if (k && k.length <= 30) out.add(k); }
+  for (const m of withoutNames(expl).matchAll(/\*\*([^*\n]{1,40})\*\*/g)) { const k = norm(m[1]); if (k && k.length <= 30) out.add(k); }
   return out;
 }
 // 프롬프트에 넣을 '앞서 해설한 것' 줄들 — 오래된 것부터, 개념은 최대 6개

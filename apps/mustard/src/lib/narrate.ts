@@ -3,7 +3,7 @@ import { snaClaudeProvider, snaCodexProvider, snaOpenCodeProvider } from "@musta
 import type { AgentAnalyzeRequest } from "@mustard/core";
 import { emitNarration } from "@/lib/mcpActivity";
 import { appendItems, repoPrefOff, readDay, dayKey } from "@/lib/catchupStore";
-import { isRepeat, memoLines, type PastNarration } from "@/lib/narrationMemo";
+import { isRepeat, memoLines, NAMES_HEADS, type PastNarration } from "@/lib/narrationMemo";
 import { beginNarrate } from "@/lib/narrateBusy";
 import { narrationProvider, narrationModel, narrationLocale } from "@/lib/narrationConfig";
 import { translate } from "@mustard/core/messages";
@@ -17,7 +17,7 @@ const langRule = (loc: keyof typeof LANG_NAME) => `⚠️ 출력 언어: 제목 
 const HEADS = {
   why: { ko: "왜 그렇게 하냐면", ja: "なぜそうするかというと", en: "Why it does this" },
   words: { ko: "나온 말·용어 풀이", ja: "出てきた言葉・用語", en: "Words & terms" }, // 화면은 이름을 카드 추가 칩으로
-  names: { ko: "이 작업의 이름들", ja: "この作業の名前", en: "Names in this work" }, // '용어'가 안 들어가야 용어집·칩에서 빠짐
+  names: NAMES_HEADS, // '용어'가 안 들어가야 용어집·칩에서 빠짐, 반복 판정에서도 빠짐(narrationMemo)
   cards: CARD_HEADS, // 화면은 이 칸을 글 대신 카드 맨 아래 칩 줄로(catchupTerms.splitCardSection)
 } as const;
 // #1359 해설 = CLI 에이전트가 하는 말·작업을 옆에서 바로 이해하게 — 에이전트 말이 무슨 뜻인지, 왜 그렇게 하는지·그러면 어떻게 되는지,

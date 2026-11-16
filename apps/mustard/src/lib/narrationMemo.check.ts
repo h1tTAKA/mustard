@@ -17,4 +17,5 @@ assert.strictEqual(isRepeat("작업 중", "그냥 설명", [{ ts: 1, title: "작
 // 코드가 바뀌었으면 개념이 겹쳐도 통과
 assert.strictEqual(isRepeat("훅 설정 파일 고침", "**훅** …", past, true), false);
 assert.deepStrictEqual(memoLines(past, () => "00:43"), ["- [00:43] 도구 실행 전후에 걸리는 훅 — 설명한 개념: 훅, mcp"]);
+assert.deepStrictEqual([...conceptsOf("- **훅** — a\n### 이 작업의 이름들\n- **fix/x** — 브랜치\n### 카드로 남길 개념\n- **위젯** — b")], ["훅", "위젯"], "이름들 칸은 개념 아님(리뷰)");
 console.log("narrationMemo.check ok");
