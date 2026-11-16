@@ -837,11 +837,12 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           // #1364 한 줄 이름 여럿("`drag` / `fling`")은 칩 여럿(뜻 공유), 아는 이름은 빼고 하나도 안 남으면 줄째 숨김
                           const words = sp ? sp.terms.map((x) => ({ ...x, names: splitNames(x.term).filter((n) => !known(n)) })).filter((x) => x.names.length) : [];
                           // 용어 칸 사족 줄(이름 — 뜻 꼴 아님) — 아는 용어를 언급하면 숨김(해설 제외했으면 아무 말도 안 보이게)
-                          // 영문 이름은 단어 경계로(pr이 prompt에 걸리지 않게, 리뷰), 그 밖(한글 등)은 포함 여부로
-                          const knownIn = (line: string) => { const l = line.replace(/`/g, "").toLowerCase(), ln = normalizeCardFront(line.replace(/`/g, "")); return knownTerms.some((k) => {
-                            const a = k.replace(/`/g, "").replace(/\([^)]*\)/g, "").trim().toLowerCase(), n = normalizeCardFront(k.replace(/`/g, ""));
-                            if (n.length < 2) return false;
-                            return /^[\x20-\x7e]+$/.test(a) ? new RegExp(`(?<![a-z0-9])${a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")}(?![a-z0-9])`).test(l) : ln.includes(n); // 한글 등은 카드 앞면과 같은 정규화(괄호·띄어쓰기 무시, 리뷰)
+                          // 아는 용어가 든 줄인지 — 단어 단위(앞뒤가 글자·숫자면 다른 말: pr ≠ prompt, 상태 ≠ 상태관리), 뒤에 붙는 조사(을·가·는…)는 허용, 띄어쓰기는 무시(파일 시스템 = 파일시스템). 괄호 속(영문 병기)은 뺌(리뷰)
+                          const knownIn = (line: string) => { const l = line.replace(/`/g, ""); return knownTerms.some((k) => {
+                            const a = k.replace(/`/g, "").replace(/\([^)]*\)/g, "").trim();
+                            if (a.replace(/\s+/g, "").length < 2) return false;
+                            const body = a.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
+                            return new RegExp(`(?<![\\p{L}\\p{N}])${body}(?:으로|에서|가|이|는|은|를|을|의|에|로|와|과|도|만)?(?![\\p{L}\\p{N}])`, "iu").test(l);
                           }); };
                           const rest = sp ? sp.rest.filter((l) => !knownIn(l)) : [];
                           // 용어 칩 — 누르면 풀다운(카드 추가 또는 보기 / 해설 제외). 카드로 저장했으면 ✓·그라데이션. 0.4초 머물면 짧은 안내.
