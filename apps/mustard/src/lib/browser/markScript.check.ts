@@ -27,7 +27,7 @@ run([{ id: 1, n: 1, selector: "#a", rect: { x: 0, y: 0 } }, { id: 2, n: 2, selec
 assert.ok(S().host && body.children.length === 1, "레이어 하나");
 assert.strictEqual(S().dots[1].style.left, "100px"); assert.strictEqual(S().dots[1].style.top, "50px");
 assert.strictEqual(S().dots[2].style.left, "300px"); assert.strictEqual(S().dots[2].textContent, "2");
-assert.strictEqual(S().dots[3].style.left, "9px", "잘못된 선택자도 죽지 않고 rect로, 가장자리는 9px");
+assert.strictEqual(S().dots[3].style.left, "10px", "잘못된 선택자도 죽지 않고 rect로, 가장자리는 원 반지름만큼 안쪽");
 g.scrollY = 150; run([{ id: 2, n: 1, selector: "", rect: { x: 300, y: 200 } }]);
 assert.strictEqual(S().dots[2].style.top, "50px", "못 찾는 항목은 처음 본 페이지 좌표에서 스크롤만큼 이동");
 assert.strictEqual(S().dots[2].textContent, "1", "번호 갱신");

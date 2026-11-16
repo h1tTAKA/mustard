@@ -25,7 +25,7 @@ export function markScript(marks: Mark[]): string {
       let d = S.dots[m.id];
       if (!d) {
         d = document.createElement("div");
-        d.style.cssText = "position:fixed;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:9px;background:#d4a017;color:#18181b;font:600 11px/18px ui-sans-serif,system-ui,sans-serif;text-align:center;box-shadow:0 0 0 2px #fff,0 2px 6px rgba(0,0,0,.35);pointer-events:none";
+        d.style.cssText = "position:fixed;box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:9999px;border:1.5px solid rgba(255,255,255,.95);background:#d4a017;color:#18181b;font:600 11px/1 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.22),0 1px 2px rgba(0,0,0,.2);pointer-events:none;user-select:none";
         S.root.appendChild(d); S.dots[m.id] = d;
       }
       d.textContent = String(m.n);
@@ -36,10 +36,10 @@ export function markScript(marks: Mark[]): string {
         const a = S.anchors[m.id] || (S.anchors[m.id] = { x: m.rect.x + scrollX, y: m.rect.y + scrollY });
         x = a.x - scrollX; y = a.y - scrollY;
       }
-      const off = y < -9 || y > innerHeight + 9 || x < -9 || x > innerWidth + 9; // 화면 밖이면 숨김(가장자리에 붙이면 엉뚱한 곳을 가리킴)
+      const off = y < -10 || y > innerHeight + 10 || x < -10 || x > innerWidth + 10; // 화면 밖이면 숨김(가장자리에 붙이면 엉뚱한 곳을 가리킴)
       d.style.display = off ? "none" : "";
-      d.style.left = Math.max(9, x) + "px"; // 화면 맨 위·왼쪽 끝 요소도 원이 잘리지 않게
-      d.style.top = Math.max(9, y) + "px";
+      d.style.left = Math.max(10, x) + "px"; // 화면 맨 위·왼쪽 끝 요소도 원이 잘리지 않게
+      d.style.top = Math.max(10, y) + "px";
     }
     for (const id in S.dots) if (!seen[id]) { S.dots[id].remove(); delete S.dots[id]; }
     S.raf = requestAnimationFrame(place);

@@ -4,7 +4,7 @@
 // <webview>는 React 속성 대신 직접 만든다 — allowpopups·partition은 붙기 전에 있어야 하고, src를 React가 바꾸면 매번 새로 이동해서.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { WebviewTag } from "electron";
-import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld, IconArrowsMinimize, IconPlus, IconPointer, IconLoader2, IconChevronDown, IconChevronUp } from "@tabler/icons-react";
+import { IconArrowLeft, IconArrowRight, IconRefresh, IconX, IconCode, IconAppWindow, IconWorld, IconArrowsMinimize, IconPlus, IconPointer, IconLoader2, IconChevronDown, IconChevronUp, IconPencil, IconTrash, IconSend, IconCornerDownLeft } from "@tabler/icons-react";
 import { useT, useSetting, appChords, SHORTCUT_OVERRIDES_KEY, type ShortcutOverrides, getSetting, BROWSER_KEYS, BROWSER_DEFAULTS, browserTarget, normalizeBrowserUrl } from "@mustard/core";
 import { PICK_SCRIPT, PICK_CANCEL, type PickedElement } from "@/lib/browser/pickScript";
 import { formatPickBatch, type PickNote } from "@/lib/browser/feedback";
@@ -16,11 +16,15 @@ const PARTITION = "persist:mustard-browser";
 const MAX_NOTES = 10; // #1361 탭마다 담을 수 있는 곳 — 넘으면 담기를 막고 안내(오래된 걸 몰래 버리지 않음)
 type Note = PickNote & { id: number };
 let noteSeq = 0;
-// 고른 곳 한 줄 요약 — 팝오버 머리·담은 목록 공용
-function pickLabel(el: PickedElement, area: string): string {
-  if (el.kind === "region") return `${area} ${el.rect.w}×${el.rect.h}${el.items.length ? ` · ${el.items.length}` : ""}`;
-  if (el.sources[0]) return `${el.sources[0].file.split("/").pop()}:${el.sources[0].line} · ${el.tag}`;
-  return `${el.components[0] ? `${el.components[0]} · ` : ""}${el.tag}${el.text ? ` "${el.text.slice(0, 40)}"` : ""}`;
+// 고른 곳 머리 — 태그 뱃지 + 제목(소스 파일:줄 > 컴포넌트 > 글자 > 선택자). 팝오버 머리·담은 목록 공용. 긴 선택자는 툴팁으로만.
+function pickHead(el: PickedElement, area: string): { tag: string; title: string } {
+  if (el.kind === "region") return { tag: area, title: `${el.rect.w}×${el.rect.h}${el.items.length ? ` · ${el.items.length}` : ""}` };
+  const src = el.sources[0];
+  return { tag: el.tag, title: src ? `${src.file.split("/").pop()}:${src.line}` : el.components[0] ?? (el.text ? `"${el.text.slice(0, 40)}"` : el.selector) };
+}
+// #1361 숫자 원(목록·팝오버) — 페이지 위 번호 원과 같은 색
+function NoteNum({ n }: { n: number }) {
+  return <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-mustard-500 text-[10px] font-semibold text-zinc-900 shadow-[0_0_0_1px_rgba(255,255,255,0.9)] dark:shadow-none">{n}</span>;
 }
 const pathOf = (u: string) => { try { const x = new URL(u); return x.pathname + x.search; } catch { return u; } }; // main의 PARTITION과 같아야 붙음(다르면 거부)
 
@@ -196,7 +200,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
         if (gen !== pickGen.current) return;
         // 팝오버 자리 — 고른 요소 바로 아래(모자라면 위), 폭 300이 칸 밖으로 안 나가게. 고를 때 한 번 계산.
         const W = hostRef.current?.clientWidth ?? 400, H = hostRef.current?.clientHeight ?? 400, r = el.rect;
-        const pos = { left: Math.max(4, Math.min(r.x, W - 304)), top: r.y + r.h + 150 < H ? r.y + r.h + 6 : Math.max(4, r.y - 146) };
+        const pos = { left: Math.max(4, Math.min(r.x, W - 324)), top: r.y + r.h + 190 < H ? r.y + r.h + 8 : Math.max(4, r.y - 188) }; // 팝오버 320×약 180
         setPicked({ el, shot: shot?.ok ? shot.path : undefined, pos });
         setComment("");
       })
@@ -240,6 +244,8 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
     else wv.src = u; // 아직 안 붙음 — 속성으로 이동(붙을 때 그 주소로)
   };
 
+  const h = picked ? pickHead(picked.el, t("browser.pickArea")) : null; // 팝오버 머리
+  const err = sendState === "no-agent" || sendState === "error" || sendState === "full";
   const btn = "flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-800 disabled:pointer-events-none disabled:opacity-30 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100";
   return (
     <div className={visible ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
@@ -273,71 +279,85 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
               <span>{ports.length ? t("browser.emptyPorts") : t("browser.empty")}</span>
             </div>
           )}
-          {picked && (
-            <div className="absolute z-10 w-[300px] rounded-lg border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+          {picked && h && (
+            <div className="absolute z-20 w-[320px] rounded-lg border border-black/[0.08] bg-white p-3 text-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.18)] dark:border-white/[0.1] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[0_20px_44px_rgba(0,0,0,0.42)]"
               style={picked.pos}>
-              <div className="mb-1 truncate font-mono text-[10px] text-zinc-400">{notes.length > 0 && `${notes.length + 1}. `}{pickLabel(picked.el, t("browser.pickArea"))}</div>
-              <textarea autoFocus value={comment} onChange={(e) => { setComment(e.target.value); if (sendState === "no-agent" || sendState === "error" || sendState === "full") setSendState("idle"); }}
+              {/* 머리 — 번호(담은 게 있으면) · 태그 뱃지 · 제목, 긴 선택자는 툴팁 */}
+              <div className="mb-2 flex min-w-0 items-center gap-1.5" title={picked.el.selector || undefined}>
+                {notes.length > 0 && <NoteNum n={notes.length + 1} />}
+                <span className="shrink-0 rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px] leading-none text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">{h.tag}</span>
+                <span className="truncate text-[12px] font-medium">{h.title}</span>
+              </div>
+              <textarea autoFocus value={comment} onChange={(e) => { setComment(e.target.value); if (err) setSendState("idle"); }}
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (e.shiftKey) addNote(); else void send(); } else if (e.key === "Escape") setPicked(null); }}
-                placeholder={t("browser.pickPlaceholder")} rows={3}
-                className="w-full resize-none rounded-md border border-zinc-200 bg-white px-2 py-1 text-[12px] text-zinc-800 outline-none focus:border-mustard-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
-              <div className="mt-1.5 flex items-center gap-1.5">
-                {(sendState === "no-agent" || sendState === "error" || sendState === "full") && <span className="min-w-0 flex-1 truncate text-[10px] text-rose-500" title={t(sendState === "error" ? "github.sendFailed" : sendState === "full" ? "browser.pickFull" : "browser.pickNoAgent")}>{t(sendState === "error" ? "github.sendFailed" : sendState === "full" ? "browser.pickFull" : "browser.pickNoAgent")}</span>}
-                <span className="flex-1" />
-                <button type="button" onClick={() => setPicked(null)} className="rounded-md px-2 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t("browser.pickCancel")}</button>
-                <button type="button" disabled={!comment.trim() || sendState === "sending"} onClick={addNote} title="⇧⌘Enter"
-                  className="rounded-md px-2 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 disabled:opacity-40 dark:hover:bg-zinc-800">{t("browser.pickAdd")}</button>
+                placeholder={t("browser.pickPlaceholder")}
+                className="h-20 w-full resize-none rounded-md border border-zinc-200 bg-white px-2.5 py-2 text-[12px] leading-relaxed text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-mustard-500 focus:ring-2 focus:ring-mustard-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
+              {err && <div className="mt-1.5 text-[11px] text-rose-500">{t(sendState === "error" ? "github.sendFailed" : sendState === "full" ? "browser.pickFull" : "browser.pickNoAgent")}</div>}
+              <div className="mt-2.5 flex items-center justify-end gap-1.5">
+                <button type="button" onClick={() => setPicked(null)} className="h-7 rounded-md px-2.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">{t("browser.pickCancel")}</button>
+                <button type="button" disabled={!comment.trim() || sendState === "sending"} onClick={addNote} title="⇧⌘↵"
+                  className="inline-flex h-7 items-center gap-1 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-medium text-zinc-700 shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800">
+                  <IconPlus size={12} stroke={2} aria-hidden />{t("browser.pickAdd")}</button>
                 <button type="button" disabled={!comment.trim() || sendState === "sending"} onClick={() => void send()}
-                  className="inline-flex items-center gap-1 rounded-md bg-mustard-500 px-2 py-0.5 text-[11px] font-medium text-zinc-900 transition hover:bg-mustard-400 disabled:opacity-40">
-                  {sendState === "sending" && <IconLoader2 size={11} className="animate-spin" aria-hidden />}{t("browser.pickSend")}{notes.length > 0 && ` · ${notes.length + 1}`}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md bg-mustard-500 px-2.5 text-[12px] font-medium text-zinc-900 shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition hover:bg-mustard-400 disabled:opacity-40">
+                  {sendState === "sending" ? <IconLoader2 size={12} className="animate-spin" aria-hidden /> : <IconSend size={12} stroke={2} aria-hidden />}
+                  {t("browser.pickSend")}{notes.length > 0 && ` · ${notes.length + 1}`}
+                  <kbd className="ml-0.5 inline-flex items-center gap-0.5 rounded border border-black/15 px-1 py-px font-sans text-[10px] leading-none text-zinc-900/70">⌘<IconCornerDownLeft size={10} stroke={2} aria-hidden /></kbd>
                 </button>
               </div>
+            </div>
+          )}
+          {/* #1361 담은 곳 — 브라우저 칸 오른쪽 아래에 뜬 카드. 머리(접기·개수·비우기·보내기) + 펼치면 목록(번호·제목·메모, 올리면 고치기·지우기) */}
+          {notes.length > 0 && (
+            <div className="absolute bottom-3 right-3 z-10 flex max-h-[45%] w-[min(20rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border border-black/[0.08] bg-white text-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.18)] dark:border-white/[0.1] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[0_20px_44px_rgba(0,0,0,0.42)]">
+              <div className="flex items-center gap-1.5 py-1.5 pl-2 pr-1.5">
+                <button type="button" onClick={() => setNotesOpen((v) => !v)} aria-expanded={notesOpen}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1 py-0.5 text-left text-[12px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-mustard-500/40">
+                  {notesOpen ? <IconChevronDown size={14} stroke={2} className="shrink-0 text-zinc-400" aria-hidden /> : <IconChevronUp size={14} stroke={2} className="shrink-0 text-zinc-400" aria-hidden />}
+                  <span className="truncate">{t("browser.notes", { n: notes.length })}</span>
+                </button>
+                <button type="button" onClick={() => { setNotes([]); setNotesOpen(false); setEditNote(null); if (sendState === "full") setSendState("idle"); }} title={t("browser.notesClear")} aria-label={t("browser.notesClear")}
+                  className="flex size-6 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><IconTrash size={12} stroke={2} aria-hidden /></button>
+                <button type="button" disabled={sendState === "sending" || !!picked} onClick={() => void send()}
+                  className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-mustard-500 px-2 text-[11px] font-medium text-zinc-900 shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition hover:bg-mustard-400 disabled:opacity-40">
+                  {sendState === "sending" && !picked ? <IconLoader2 size={12} className="animate-spin" aria-hidden /> : <IconSend size={12} stroke={2} aria-hidden />}{t("browser.pickSend")}
+                </button>
+              </div>
+              {!picked && (sendState === "no-agent" || sendState === "error") && <div className="border-t border-zinc-100 px-3 py-1.5 text-[11px] text-rose-500 dark:border-zinc-800">{t(sendState === "error" ? "github.sendFailed" : "browser.pickNoAgent")}</div>}
+              {notesOpen && (
+                <ol className="nunopi-scroll min-h-0 flex-1 overflow-y-auto border-t border-zinc-100 p-1.5 dark:border-zinc-800">
+                  {notes.map((n, i) => { const h = pickHead(n.el, t("browser.pickArea")); return (
+                    <li key={n.id} className="group flex gap-2 rounded-md px-2 py-1.5 text-[12px] transition-colors hover:bg-zinc-100 focus-within:bg-zinc-100 dark:hover:bg-zinc-800/70 dark:focus-within:bg-zinc-800/70">
+                      <span className="mt-px"><NoteNum n={i + 1} /></span>
+                      <div className="min-w-0 flex-1" title={n.el.selector || undefined}>
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <span className="shrink-0 rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px] leading-none text-zinc-500 group-hover:bg-white dark:bg-zinc-800 dark:text-zinc-400 dark:group-hover:bg-zinc-900">{h.tag}</span>
+                          <span className="truncate font-medium">{h.title}</span>
+                        </div>
+                        {editNote?.id === n.id ? (
+                          <textarea autoFocus value={editNote.text} onChange={(e) => setEditNote({ id: n.id, text: e.target.value })}
+                            onBlur={() => { const v = editNote.text.trim(); if (v) setNotes((xs) => xs.map((x) => (x.id === n.id ? { ...x, comment: v } : x))); setEditNote(null); }}
+                            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.currentTarget.blur(); } else if (e.key === "Escape") { e.stopPropagation(); setEditNote(null); } }}
+                            className="mt-1 h-16 w-full resize-none rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[12px] text-zinc-800 outline-none focus:border-mustard-500 focus:ring-2 focus:ring-mustard-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
+                        ) : <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap break-words text-zinc-500 dark:text-zinc-400">{n.comment}</p>}
+                        {n.el.url !== current && <div className="mt-1 truncate text-[11px] text-zinc-400">{pathOf(n.el.url)}</div>}
+                      </div>
+                      {editNote?.id !== n.id && <div className="flex shrink-0 items-start gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                        <button type="button" onClick={() => setEditNote({ id: n.id, text: n.comment })} title={t("browser.noteEdit")} aria-label={t("browser.noteEdit")}
+                          className="flex size-6 items-center justify-center rounded-md text-zinc-400 transition hover:bg-white hover:text-zinc-700 dark:hover:bg-zinc-900 dark:hover:text-zinc-200"><IconPencil size={12} stroke={2} aria-hidden /></button>
+                        <button type="button" onClick={() => setNotes((xs) => xs.filter((x) => x.id !== n.id))} title={t("browser.noteRemove")} aria-label={t("browser.noteRemove")}
+                          className="flex size-6 items-center justify-center rounded-md text-zinc-400 transition hover:bg-white hover:text-zinc-700 dark:hover:bg-zinc-900 dark:hover:text-zinc-200"><IconTrash size={12} stroke={2} aria-hidden /></button>
+                      </div>}
+                    </li>
+                  ); })}
+                </ol>
+              )}
             </div>
           )}
         </div>
         {/* 한계: 45% 고정 — 경계 드래그 리사이즈는 필요해지면 */}
         {devtools && ready && <div ref={dtHostRef} className={`shrink-0 border-zinc-200 dark:border-zinc-800 ${wide ? "w-[45%] border-l" : "h-[45%] border-t"}`} />}
       </div>
-      {/* #1361 담은 곳 띠 — 브라우저 칸 아래, 펼치면 번호·요약·메모(눌러서 고치기)·지우기 */}
-      {notes.length > 0 && (
-        <div className="shrink-0 border-t border-zinc-200 bg-white text-[11px] dark:border-zinc-800 dark:bg-[var(--s-pane)]">
-          {notesOpen && (
-            <ol className="nunopi-scroll max-h-40 overflow-y-auto border-b border-zinc-200 py-1 dark:border-zinc-800">
-              {notes.map((n, i) => (
-                <li key={n.id} className="group flex items-start gap-2 px-2 py-1">
-                  <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-mustard-500 text-[10px] font-semibold text-zinc-900">{i + 1}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-mono text-[10px] text-zinc-400">{pickLabel(n.el, t("browser.pickArea"))}{n.el.url !== current && ` · ${pathOf(n.el.url)}`}</div>
-                    {editNote?.id === n.id ? (
-                      <textarea autoFocus value={editNote.text} rows={2} onChange={(e) => setEditNote({ id: n.id, text: e.target.value })}
-                        onBlur={() => { const v = editNote.text.trim(); if (v) setNotes((xs) => xs.map((x) => (x.id === n.id ? { ...x, comment: v } : x))); setEditNote(null); }}
-                        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.currentTarget.blur(); } else if (e.key === "Escape") { e.stopPropagation(); setEditNote(null); } }}
-                        className="mt-0.5 w-full resize-none rounded-md border border-zinc-200 bg-white px-2 py-1 text-[12px] text-zinc-800 outline-none focus:border-mustard-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
-                    ) : (
-                      <button type="button" onClick={() => setEditNote({ id: n.id, text: n.comment })} title={t("browser.noteEdit")}
-                        className="block w-full whitespace-pre-wrap break-words rounded text-left text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">{n.comment}</button>
-                    )}
-                  </div>
-                  <button type="button" className={`${btn} opacity-0 group-hover:opacity-100 focus-visible:opacity-100`} onClick={() => setNotes((xs) => xs.filter((x) => x.id !== n.id))} title={t("browser.noteRemove")} aria-label={t("browser.noteRemove")}><IconX size={12} stroke={2} aria-hidden /></button>
-                </li>
-              ))}
-            </ol>
-          )}
-          <div className="flex items-center gap-1.5 px-2 py-1">
-            <button type="button" onClick={() => setNotesOpen((v) => !v)} aria-expanded={notesOpen}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">
-              {notesOpen ? <IconChevronDown size={12} stroke={2} aria-hidden /> : <IconChevronUp size={12} stroke={2} aria-hidden />}{t("browser.notes", { n: notes.length })}
-            </button>
-            {!picked && (sendState === "no-agent" || sendState === "error") && <span className="min-w-0 truncate text-[10px] text-rose-500">{t(sendState === "error" ? "github.sendFailed" : "browser.pickNoAgent")}</span>}
-            <span className="flex-1" />
-            <button type="button" onClick={() => { setNotes([]); setNotesOpen(false); setEditNote(null); if (sendState === "full") setSendState("idle"); }} className="rounded-md px-2 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">{t("browser.notesClear")}</button>
-            <button type="button" disabled={sendState === "sending" || !!picked} onClick={() => void send()}
-              className="inline-flex items-center gap-1 rounded-md bg-mustard-500 px-2 py-0.5 text-[11px] font-medium text-zinc-900 transition hover:bg-mustard-400 disabled:opacity-40">
-              {sendState === "sending" && !picked && <IconLoader2 size={11} className="animate-spin" aria-hidden />}{t("browser.pickSend")}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
