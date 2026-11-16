@@ -39,6 +39,7 @@ export function mergeTerms(prev: Term[], add: Term[], key: (s: string) => string
 
 // #1359 해설 카드의 용어 칸을 칩으로 그리려고 본문을 [용어 칸 앞(소제목 포함) | 용어들 | 뒤]로 나눔.
 // 용어 칸에 목록 아닌 줄이 섞였거나 용어가 없으면 null(호출부는 마크다운 그대로).
+// 한계: 첫 용어 칸만 칩 — 용어 칸이 두 번 나오면 둘째는 마크다운 글자로(내용은 그대로, 용어집은 둘 다 모음).
 export function splitTermsSection(note: string): { before: string; terms: Term[]; after: string } | null {
   const lines = String(note || "").split("\n");
   let start = -1, end = lines.length;

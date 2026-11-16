@@ -866,8 +866,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           if (!sp) return <Markdown>{relocalizeFailure(c.expl ?? "", t)}</Markdown>;
                           return <>
                             {sp.before && <Markdown>{sp.before}</Markdown>}
-                            <div className="nunopi-md"><ul>{sp.terms.map((x) => { const term = x.term.replace(/`/g, ""); const card = cardOf(term); return (
-                              <li key={term}>{card ? (
+                            <div className="nunopi-md"><ul>{sp.terms.map((x, i) => { const term = x.term.replace(/`/g, ""); const card = cardOf(term); return (
+                              <li key={`${i}|${term}`}>{card ? (
                                 <button type="button" onClick={(e) => throwCard(card, e.currentTarget.getBoundingClientRect())} title={t("learn.openCard")}
                                   className="inline-flex items-center gap-0.5 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-semibold transition hover:brightness-110">
                                   <IconCheck size={10} stroke={2.5} className="text-blue-500" aria-hidden /><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{term}</span>
@@ -877,7 +877,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                                   className="inline-flex items-center gap-0.5 rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400">
                                   <IconPlus size={10} stroke={2.5} aria-hidden />{term}
                                 </button>
-                              )} — {x.def.replace(/`/g, "")}</li>
+                              )} — <Markdown className="inline [&_p]:inline">{x.def}</Markdown></li> /* 뜻 속 굵게·코드도 마크다운으로(리뷰) */
                             ); })}</ul></div>
                             {sp.after && <Markdown>{sp.after}</Markdown>}
                           </>;
