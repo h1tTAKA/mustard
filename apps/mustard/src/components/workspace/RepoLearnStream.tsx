@@ -14,7 +14,7 @@ import { sendToAgent } from "@/lib/browser/sendToAgent";
 import { formatSessionHandoff } from "@/lib/sessionHandoff";
 import { isDocEdit } from "@/lib/mcpActivity";
 import { isNunopiEnabled } from "@/lib/product";
-import { isCardWorthy, mergeTerms, parseNarrationTerms, splitCardSection, splitTermsSection, type Term } from "@/lib/catchupTerms";
+import { cardKindOf, isCardWorthy, mergeTerms, parseNarrationTerms, splitCardSection, splitTermsSection, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
@@ -156,8 +156,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   // 카드 앞면(정규화) → 카드 — 매초 리렌더(상대시간)마다 저장소를 읽지 않게 카드 변경 때만 계산.
   const cardByFront = useMemo(() => new Map(cardsOn ? collectCards(["token", "concept", "term"], new Date()).map((c) => [normalizeCardFront(c.front), c] as const) : []), [cardTick, cardsOn]); // eslint-disable-line react-hooks/exhaustive-deps -- cardTick = 저장소 변경 신호
   const cardOf = (term: string) => cardByFront.get(normalizeCardFront(term));
-  const addTerm = useCallback((x: Term) => {
-    const ok = createChatCard("term", x.term, x.def, t("card.workspaceSource", { repo: basename(root) }), undefined, { kind: "workspace", sessionId: "catchup:terms", root });
+  const addTerm = useCallback((x: Term, raw?: string) => { // raw = 백틱 붙은 원래 이름(코드 이름이면 토큰 카드, #1359)
+    const ok = createChatCard(cardKindOf(raw ?? x.term), x.term, x.def, t("card.workspaceSource", { repo: basename(root) }), undefined, { kind: "workspace", sessionId: "catchup:terms", root });
     toast(ok ? t("card.added", { term: x.term }) : t("card.exists"));
   }, [root, t, toast]);
   // #1049 카테고리 필터 — 해설(실시간 해설·파일/심볼 설명) / 명령어 / 용어. 꺼진 카테고리는 칩도 숨김.
@@ -867,15 +867,15 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           const { body, items } = splitCardSection(c.expl ?? "");
                           const sp = splitTermsSection(body);
                           const inWords = new Set((sp?.terms ?? parseNarrationTerms(body)).map((x) => normalizeCardFront(x.term.replace(/`/g, ""))));
-                          const extra = items.filter((x) => x.def && !inWords.has(normalizeCardFront(x.term)) && (cardOf(x.term) || isCardWorthy(x.term)));
-                          const chip = (x: Term, key: string) => { const card = cardOf(x.term); return card ? ( /* 추가됨 — 누르면 카드 확대 */
+                          const extra = items.filter((x) => { const n = x.term.replace(/`/g, "").trim(); return x.def && !inWords.has(normalizeCardFront(n)) && (cardOf(n) || isCardWorthy(n)); });
+                          const chip = (raw: Term, key: string) => { const x = { term: raw.term.replace(/`/g, "").trim(), def: raw.def }; const card = cardOf(x.term); return card ? ( /* 추가됨 — 누르면 카드 확대 */
                             <button key={key} type="button" onClick={(e) => throwCard(card, e.currentTarget.getBoundingClientRect())} title={t("learn.openCard")}
                               className="inline-flex items-center gap-0.5 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-semibold transition hover:brightness-110">
                               <IconCheck size={10} stroke={2.5} className="text-blue-500" aria-hidden /><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{x.term}</span>
                             </button>
                           ) : ( /* 칩 자체가 버튼 — 0.4초 머물면 짧은 안내(바로 뜨면 읽는 중 거슬림) */
                             <span key={key} className="group/chip relative inline-block">
-                              <button type="button" onClick={() => addTerm(x)}
+                              <button type="button" onClick={() => addTerm(x, raw.term)}
                                 className="peer rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400">{x.term}<span className="sr-only"> — {t("learn.chipSaveHint")}</span></button>
                               <span className="pointer-events-none absolute left-0 top-full z-50 mt-1 whitespace-nowrap rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-white opacity-0 shadow transition group-hover/chip:opacity-100 group-hover/chip:delay-[400ms] peer-focus-visible:opacity-100 peer-focus-visible:delay-[400ms] dark:bg-zinc-700" aria-hidden>{t("learn.chipSaveHint")}</span>
                             </span>
@@ -884,7 +884,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                             {sp ? <>
                               {sp.before && <Markdown>{relocalizeFailure(sp.before, t)}</Markdown>}
                               <div className="nunopi-md"><ul>{sp.terms.map((x, i) => { const term = x.term.replace(/`/g, ""); return (
-                                <li key={`${i}|${term}`}>{chip({ term, def: x.def }, "c")} — <Markdown className="inline [&_p]:inline">{x.def}</Markdown></li>
+                                <li key={`${i}|${term}`}>{chip(x, "c")} — <Markdown className="inline [&_p]:inline">{x.def}</Markdown></li>
                               ); })}</ul></div>
                               {sp.after && <Markdown>{sp.after}</Markdown>}
                             </> : <Markdown>{relocalizeFailure(body, t)}</Markdown>}

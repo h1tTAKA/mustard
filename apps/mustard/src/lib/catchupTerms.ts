@@ -67,7 +67,7 @@ export function splitCardSection(note: string): { body: string; items: Term[] } 
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) { const l = lines[i].trim(); if (l && !/^[-*•]\s/.test(l) && !/^\s/.test(lines[i])) { end = i; break; } } // 목록 아닌 줄(다음 소제목·팁)에서 끝 — 그 줄은 본문에 남김(리뷰)
   const items = lines.slice(start + 1, end).map((l) => {
-    const raw = l.trim().match(/^[-*•]\s+(.+)$/)?.[1].replace(/[*`]/g, "").trim() ?? "";
+    const raw = l.trim().match(/^[-*•]\s+(.+)$/)?.[1].replace(/\*/g, "").trim() ?? ""; // 백틱은 남김(코드 이름 표시 — cardKindOf)
     const m = raw.match(/^(.+?)(?:\s+[—–]\s+|[:：](?:\s+|$))([\s\S]*)$/); // 이름 — 뜻 / 이름: 뜻 / 이름:
     return m ? { term: m[1].trim(), def: m[2].trim() } : { term: raw, def: "" };
   }).filter((x) => x.term);
@@ -84,4 +84,16 @@ export function isCardWorthy(term: string): boolean {
   if (/^[a-z0-9._-]+\.[cm]?js$/.test(x)) return false; // .js는 전부 소문자일 때만 파일 — Node.js·Next.js는 개념(한계: three.js 같은 소문자 라이브러리 이름도 빠짐)
   if (/^(\.{0,2}\/|~\/)|^[a-z0-9._-]+(\/[a-z0-9._-]+)+$/.test(x)) return false; // 경로·브랜치(소문자 a/b — CI/CD·HTTP/2는 개념)
   return true; // 한계: 'main 브랜치'처럼 숫자·기호 없는 이 작업만의 이름은 못 거름 — 해설 틀이 용어 칸에 안 넣게 지시
+}
+
+// #1359 칩으로 만드는 카드 종류 — 코드에 쓰는 이름이면 토큰 카드, 아니면 IT용어/개념 카드(유저 지적: PageController·dispose가 IT용어로 들어감).
+// 해설 틀이 코드 이름을 `백틱`으로 감싸게 함 → 그게 1순위. 백틱이 빠졌으면 생김새(점·괄호·밑줄·소문자로 시작하는 camelCase)로.
+// 한계: 백틱 없는 PascalCase(PageController vs JavaScript)·한 단어 소문자(dispose vs viewport)는 생김새로 못 가려 IT용어로.
+export function cardKindOf(raw: string): "token" | "term" {
+  const x = raw.trim();
+  if (/^`[^`]+`$/.test(x)) return "token";
+  const t = x.replace(/`/g, "");
+  if (/\s/.test(t) || /\.(js|ts)$/i.test(t)) return "term"; // 띄어쓰기 있는 말, Node.js 같은 이름
+  if (!/^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*(\(\))?$/.test(t)) return "term";
+  return /\.|\(\)$|_|^[a-z]{2,}[A-Z]/.test(t) ? "token" : "term";
 }

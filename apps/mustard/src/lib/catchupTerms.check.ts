@@ -1,6 +1,6 @@
 // catchupTerms 점검 — node --experimental-strip-types src/lib/catchupTerms.check.ts
 import assert from "node:assert";
-import { mergeTerms, parseNarrationTerms, splitCardSection, splitTermsSection, isCardWorthy } from "./catchupTerms.ts";
+import { mergeTerms, parseNarrationTerms, splitCardSection, splitTermsSection, isCardWorthy, cardKindOf } from "./catchupTerms.ts";
 
 const note = `순수 함수와 리듀서
 ## 무엇이 바뀌었나
@@ -25,7 +25,7 @@ assert.strictEqual(mergeTerms(prev, [{ term: "GIT", def: "z" }], k), prev, "추�
 assert.deepStrictEqual(mergeTerms([], [{ term: "`tsconfig.json`", def: " 설정 " }], k), [{ term: "tsconfig.json", def: "설정" }], "백틱·공백 정리");
 // #1359 '카드로 남길 개념' 칸 — 본문에서 떼어 칩 이름으로
 const cs = splitCardSection("첫 문단\n### 나온 말·용어 풀이\n- **PageController** — 페이지 리모컨\n### 카드로 남길 개념\n- PageController\n- **`setState`**\n");
-assert.deepStrictEqual(cs, { body: "첫 문단\n### 나온 말·용어 풀이\n- **PageController** — 페이지 리모컨", items: [{ term: "PageController", def: "" }, { term: "setState", def: "" }] });
+assert.deepStrictEqual(cs, { body: "첫 문단\n### 나온 말·용어 풀이\n- **PageController** — 페이지 리모컨", items: [{ term: "PageController", def: "" }, { term: "`setState`", def: "" }] });
 assert.deepStrictEqual(splitCardSection("a\n### 카드로 남길 개념\n- **위젯 트리** — 화면 부품의 계층").items, [{ term: "위젯 트리", def: "화면 부품의 계층" }], "뜻 같이");
 assert.deepStrictEqual(splitCardSection("본문만"), { body: "본문만", items: [] }, "옛 카드는 그대로");
 assert.deepStrictEqual(splitCardSection("a\n## Concepts to keep\n- Hook\n## 다음\nb").items.map((x) => x.term), ["Hook"], "다음 소제목에서 끝, 영어 칸 이름");
@@ -36,4 +36,6 @@ assert.deepStrictEqual(["localhost", "브랜치", "React Hook", "tsconfig", "Nod
 const sp = splitTermsSection("첫 문단\n### 나온 말·용어 풀이\n- **diff** — 차이\n\n- **npm** — 패키지 관리자\n### 이 작업의 이름들\n- **fix/x** — 브랜치");
 assert.deepStrictEqual(sp, { before: "첫 문단\n### 나온 말·용어 풀이", terms: [{ term: "diff", def: "차이" }, { term: "npm", def: "패키지 관리자" }], after: "### 이 작업의 이름들\n- **fix/x** — 브랜치" }, "용어 칸만 떼고, 이름 칸은 뒤에");
 assert.strictEqual(splitTermsSection("### 용어\n- **a** — b\n설명 문장"), null, "목록 아닌 줄 섞이면 마크다운 그대로");
+assert.deepStrictEqual(["`PageController`", "`dispose`", "PageView.builder", "onPageChanged", "find.widgetWithText()", "integration_test"].map(cardKindOf), Array(6).fill("token"), "코드 이름은 토큰");
+assert.deepStrictEqual(["viewport", "iOS 시뮬레이터", "Node.js", "iOS", "JavaScript", "위젯 트리"].map(cardKindOf), Array(6).fill("term"), "일반 말은 IT용어");
 console.log("catchupTerms ok");
