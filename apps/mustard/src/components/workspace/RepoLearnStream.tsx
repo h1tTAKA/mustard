@@ -820,13 +820,13 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                               <IconCheck size={10} stroke={2.5} className="text-blue-500" aria-hidden /><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{term}</span>
                             </button>
                           ) : <span className="rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 dark:text-mustard-400">{term}</span>; };
-                          // O = 카드로 저장(초록), X = 이미 알아요 → 제외(빨강). 바로 눌러 훑어 가며 고르게(유저 요청). 카드로 저장한 건 O 없음.
+                          // O = 카드로 저장(초록), X = 이미 알아요 → 제외(빨강). 꽉 찬 색 버튼 말고 용어 뱃지처럼 옅은 바탕 + 색 아이콘(유저: 머스타드 분위기). 바로 눌러 훑어 가며 고르게(유저 요청). 카드로 저장한 건 O 없음.
                           const ox = (raw: Term) => { const term = raw.term.replace(/`/g, "").trim(); return (
-                            <span className="ml-1 inline-flex translate-y-[-1px] gap-1 align-middle">
+                            <span className="ml-1.5 inline-flex translate-y-[-1px] gap-0.5 align-middle">
                               {!cardOf(term) && <button type="button" onClick={() => addTerm({ term, def: raw.def }, raw.term)} title={t("chat.saveAsCard")} aria-label={`${term} ${t("chat.saveAsCard")}`}
-                                className="inline-flex h-5 w-5 items-center justify-center rounded bg-emerald-600 text-white transition hover:bg-emerald-700"><IconCircle size={10} stroke={3} aria-hidden /></button>}
+                                className="inline-flex h-4 w-4 items-center justify-center rounded bg-emerald-500/10 text-emerald-600 transition hover:bg-emerald-500/25 dark:text-emerald-400"><IconCircle size={9} stroke={2.5} aria-hidden /></button>}
                               <button type="button" onClick={() => markKnown(term)} title={t("learn.chipKnown")} aria-label={`${term} ${t("learn.chipKnown")}`}
-                                className="inline-flex h-5 w-5 items-center justify-center rounded bg-rose-500 text-white transition hover:bg-rose-600"><IconX size={11} stroke={3} aria-hidden /></button>
+                                className="inline-flex h-4 w-4 items-center justify-center rounded bg-rose-500/10 text-rose-500 transition hover:bg-rose-500/25 dark:text-rose-400"><IconX size={10} stroke={2.5} aria-hidden /></button>
                             </span>
                           ); };
                           return <>
