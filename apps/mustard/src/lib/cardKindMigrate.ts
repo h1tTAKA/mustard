@@ -10,7 +10,7 @@ const K = {
   token: "nunopi:bookmark-token-details", term: "nunopi:bookmark-term-details", concept: "nunopi:bookmark-concept-details",
   starTok: "nunopi:bookmark-tokens", starTerm: "nunopi:bookmark-terms", starConcept: "nunopi:bookmark-concepts", // 별 표시(이름 문자열 배열, LearningPanel). 저장이 없으면 IT용어·개념은 "전부 별", 토큰은 "없음"으로 봄
   srs: "nunopi:srs-state", explain: "nunopi:card-explain", chat: "nunopi:card-chat", decks: "nunopi:mem-custom-decks",
-  done: "nunopi:migrated-term-token-1369", doneAI: "nunopi:migrated-term-kind-ai-1369", lockAI: "nunopi:migrating-term-kind-ai",
+  done: "nunopi:migrated-term-token-1369", doneAI: "nunopi:migrated-term-kind-ai-1369", lockAI: "nunopi:migrating-term-kind-ai", checkedAI: "nunopi:term-kind-ai-kept", // AI가 IT라고 답한 카드(다음에 다시 안 물음)
 };
 const read = <T,>(s: Store, k: string, d: T): T => { try { const v = s.getItem(k); return v ? (JSON.parse(v) as T) : d; } catch { return d; } };
 const norm = (x: string) => x.trim().toLowerCase().replace(/\([^)]*\)/g, "").replace(/\s+/g, ""); // core normalizeCardFront와 같음
@@ -88,24 +88,27 @@ export function migrateCatchupTermCards(s: Store): number {
 }
 
 // 2차(AI): 대화로 만든 IT용어 카드(캐치업·작업 채팅·질문 — 분석 화면 '글' 모드에서 담은 건 빼고)를 해설 AI가 코드·개념·IT로 다시 나눔.
-// 코드 → 토큰, 개념 → 개념 카드. 80장씩 묻고, 하나라도 실패하면 완료 표시 없이 끝(다음 시작에 남은 것만 다시).
+// 코드 → 토큰, 개념 → 개념 카드, IT → 그대로(기억해 두고 다시 안 물음). 80장씩 묻고, 실패하거나 답이 빠지면 완료 표시 없이 끝(다음 시작에 남은 것만 다시).
 export async function reclassifyTermCards(s: Store, classify: (items: { name: string; def: string }[]) => Promise<(CardKind | null | undefined)[]>): Promise<number> {
   if (s.getItem(K.doneAI)) return 0;
-  const lock = Number(s.getItem(K.lockAI) ?? 0);
-  if (Date.now() - lock < 10 * 60_000) return 0; // 다른 창이 하는 중(10분 넘으면 멈춘 걸로 봄) — 같은 카드로 AI를 여러 번 부르지 않게(리뷰)
-  s.setItem(K.lockAI, String(Date.now()));
-  try { return await reclassifyOnce(s, classify); } finally { s.setItem(K.lockAI, "0"); }
+  const lock = Number(String(s.getItem(K.lockAI) ?? "0").split(":")[0]) || 0;
+  if (lock <= Date.now() && Date.now() - lock < 10 * 60_000) return 0; // 다른 창이 하는 중(10분 넘었거나 시계가 거꾸로면 멈춘 걸로 봄) — 같은 카드로 AI를 여러 번 부르지 않게(리뷰)
+  const mine = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  s.setItem(K.lockAI, mine);
+  try { return await reclassifyOnce(s, classify); } finally { if (s.getItem(K.lockAI) === mine) s.setItem(K.lockAI, "0"); } // 내 잠금일 때만 풂(다른 창이 이어받았으면 그대로, 리뷰)
 }
 async function reclassifyOnce(s: Store, classify: (items: { name: string; def: string }[]) => Promise<(CardKind | null | undefined)[]>): Promise<number> {
-  const all = Object.entries(read<Rec>(s, K.term, {})).filter(([, v]) => v.sourceKind === "workspace" || v.sourceKind === "ask");
-  let moved = 0;
+  const kept = new Set(read<string[]>(s, K.checkedAI, []));
+  const all = Object.entries(read<Rec>(s, K.term, {})).filter(([k, v]) => (v.sourceKind === "workspace" || v.sourceKind === "ask") && !kept.has(k)); // workspace = 캐치업 칩·작업 채팅, ask = 질문 화면. 분석 화면('글' 모드, sourceKind analysis)에서 담은 건 그 화면의 분류라 빼기
+  let moved = 0, missed = false;
   for (let i = 0; i < all.length; i += 80) {
     const chunk = all.slice(i, i + 80);
     const kinds = await classify(chunk.map(([k, v]) => ({ name: k, def: String(v.explanation ?? "") })));
     const picks = new Map<string, "token" | "concept">();
-    chunk.forEach(([k], j) => { const kd = kinds[j]; if (kd === "token" || kd === "concept") picks.set(k, kd); });
+    chunk.forEach(([k], j) => { const kd = kinds[j]; if (kd === "token" || kd === "concept") picks.set(k, kd); else if (kd === "term") kept.add(k); else missed = true; });
     moved += moveTermCards(s, picks);
+    s.setItem(K.checkedAI, JSON.stringify([...kept]));
   }
-  s.setItem(K.doneAI, new Date().toISOString());
+  if (!missed) s.setItem(K.doneAI, new Date().toISOString()); // 답이 빠진 카드가 있으면 완료 표시 없이 — 다음 시작에 그것만 다시(리뷰)
   return moved;
 }
