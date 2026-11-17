@@ -46,4 +46,23 @@ const rd = await new Promise<{ out: string; ms: number }>((res) => {
   p.stdin.end(JSON.stringify({ tool_name: "TodoWrite", tool_input: {} }));
 });
 assert.match(rd.out, /"permissionDecision":"allow"/); assert.ok(rd.ms < 2500, "기다리지 않음");
+// "전부 허용" 모드 채팅은 앱이 없어도 바로 허용(토큰이 맞을 때만) — 훅 옆 폴더의 채팅 파일로 판단
+const id = "11111111-2222-3333-4444-555555555555";
+const sub = join(dir, "abc"); (await import("node:fs")).mkdirSync(sub, { recursive: true });
+writeFileSync(join(sub, `${id}.json`), JSON.stringify({ id, mode: "full", token: "tok" }));
+const runAs = (token: string, tool: string, killMs: number) => new Promise<{ out: string; ms: number }>((res) => {
+  const t0 = Date.now();
+  const p = spawn(process.execPath, [hook, `--url=http://127.0.0.1:${dead}`, `--run=${id}`, `--token=${token}`]);
+  let out = ""; p.stdout.on("data", (c) => (out += c));
+  const k = setTimeout(() => p.kill(), killMs);
+  p.on("close", () => { clearTimeout(k); res({ out, ms: Date.now() - t0 }); });
+  p.stdin.end(JSON.stringify({ tool_name: tool, tool_input: { file_path: "/x" } }));
+});
+const full = await runAs("tok", "Write", 5000);
+assert.match(full.out, /"permissionDecision":"allow"/, "전부 허용 모드는 앱 없이 허용"); assert.ok(full.ms < 2500);
+const wrong = await runAs("bad", "Write", 2500);
+assert.equal(wrong.out, "", "토큰이 다르면 바로 허용 안 함(앱을 기다림)");
+writeFileSync(join(sub, `${id}.json`), JSON.stringify({ id, mode: "default", token: "tok" }));
+const def = await runAs("tok", "Write", 2500);
+assert.equal(def.out, "", "기본 모드는 앱을 기다림");
 console.log("chatHook ok");
