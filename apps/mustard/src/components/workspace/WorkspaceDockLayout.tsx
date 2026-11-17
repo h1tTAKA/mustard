@@ -75,6 +75,9 @@ function setRatioAt(node: DockNode, path: ("a" | "b")[], ratio: number): DockNod
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const MIN_RATIO = 0.12;
+// 이 노드를 폭 w로 그릴 때 가장 좁은 칸의 폭 — 끌어서 줄일 때 안쪽 칸까지 MIN_W 지키는 데 씀(리뷰: 바깥 칸만 보면 안쪽이 230px까지 줆)
+const narrowest = (n: DockNode, w: number): number =>
+  n.t === "leaf" ? w : n.dir === "row" ? Math.min(narrowest(n.a, n.ratio * (w - 4)), narrowest(n.b, (1 - n.ratio) * (w - 4))) : Math.min(narrowest(n.a, w), narrowest(n.b, w));
 const MIN_W = 360; // 좌우 칸 최소 폭(px) — 이보다 좁으면 채팅 입력 도구 줄 등이 지나치게 접힘(#1363 유저 피드백)
 
 // ── 드래그 도킹 트리 조작(#716) ──
@@ -158,10 +161,15 @@ export default function WorkspaceDockLayout({ tree, panels, onTreeChange }: {
       if (!container) return;
       const rect = container.getBoundingClientRect();
       if (!rect.width || !rect.height) return; // 0크기 컨테이너 → 나눗셈 발산 방지
+      let cur = node.ratio;
       const move = (ev: PointerEvent) => {
-        const r = isRow ? (ev.clientX - rect.left) / rect.width : (ev.clientY - rect.top) / rect.height;
-        const lo = isRow ? Math.min(0.5, Math.max(MIN_RATIO, MIN_W / Math.max(1, rect.width - 4))) : MIN_RATIO; // 가운데 손잡이(4px) 뺀 폭 기준, 창이 좁아 양쪽 다 못 지키면 반반까지만
-        onTreeChange(setRatioAt(treeRef.current, path, clamp(r, lo, 1 - lo)));
+        let r = clamp(isRow ? (ev.clientX - rect.left) / rect.width : (ev.clientY - rect.top) / rect.height, MIN_RATIO, 1 - MIN_RATIO);
+        if (isRow) { // 좌우: 안쪽 칸까지 포함해 가장 좁은 칸이 MIN_W 아래로 가면 안 움직임. 창이 좁아 이미 못 지키는 중이면 넓어지는 쪽으로만
+          const ok = (x: number) => { const n = narrowest({ ...node, ratio: x }, rect.width); return n >= MIN_W || n >= narrowest({ ...node, ratio: cur }, rect.width); };
+          if (!ok(r)) { let good = cur; for (let i = 0; i < 16; i++) { const mid = (good + r) / 2; if (ok(mid)) good = mid; else r = mid; } r = good; } // 빨리 끌어도 경계에 딱 붙게(이분 탐색)
+        }
+        cur = r;
+        onTreeChange(setRatioAt(treeRef.current, path, r));
       };
       const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.cursor = ""; document.body.style.userSelect = ""; };
       window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
