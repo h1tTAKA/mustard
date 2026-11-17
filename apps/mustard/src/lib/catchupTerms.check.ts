@@ -92,3 +92,5 @@ assert.deepStrictEqual([["socket.io", "실시간 양방향 통신 라이브러�
 assert.equal(cardKindOf("ScrollBehavior", "Flutter에서 스크롤 방식을 정하는 설정"), "token");
 assert.deepStrictEqual([["Stripe", "결제 API 서비스"], ["Java", "객체지향 프로그래밍 언어"]].map(([x, d]) => cardKindOf(x, d)), ["term", "term"], "제품 이름은 뜻에 코드 낱말이 있어도 IT용어");
 assert.equal(cardKindOf("StreamBuilder", "스트림 상태를 보고 화면을 그리는 패턴"), "token");
+assert.deepStrictEqual([["lang", "문서의 언어를 지정하는 HTML 속성"], ["ServiceWorker", "브라우저 뒤에서 도는 서비스 워커 객체"], ["Object.keys", "JavaScript 언어의 내장 함수"]].map(([x, d]) => cardKindOf(x, d)), ["token", "token", "token"], "뜻 중간의 언어·서비스는 제품 아님");
+assert.equal(cardKindOf("`Java`", "객체지향 프로그래밍 언어"), "term");

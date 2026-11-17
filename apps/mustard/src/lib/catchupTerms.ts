@@ -106,9 +106,11 @@ export function isCardWorthy(term: string): boolean {
 // 해설 틀이 코드 이름을 `백틱`으로 감싸게 함 → 그게 1순위. 백틱이 빠지면(자주 빠짐, #1369) 이름 생김새 + 뜻(def) 낱말로.
 // ponytail: 낱말 목록 휴리스틱 — 뜻 문장이 애매하면 틀릴 수 있음. 더 정확히 하려면 해설 AI가 카드 종류를 직접 표시하게.
 const CODE_DEF = /함수|메서드|메소드|훅|클래스|위젯|컴포넌트|속성|프로퍼티|\bprops?\b|타입|명령|연산자|키워드|설정 파일|객체|생성자|옵션|인자|매개변수|파라미터|예외|에러 클래스|상수|변수|API|모듈|컨트롤러|컨테이너/i;
-const PRODUCT_DEF = /언어|서비스|플랫폼|프로토콜|데이터베이스|운영체제|회사|브라우저 엔진/; // 제품 이름(JavaScript·GitHub·Stripe) — 뜻에 API·객체가 있어도 IT용어
+// 제품 이름(JavaScript·GitHub·Stripe·iOS) — 뜻 첫 문장이 "…언어/서비스/운영체제"로 끝날 때만(머리말). "JavaScript 언어의 내장 함수"(Object.keys)·"서비스 워커"는 해당 없음(리뷰)
+const PRODUCT_HEAD = /(언어|서비스|플랫폼|프로토콜|데이터베이스|운영체제|회사|브라우저 엔진)(이에요|예요|입니다|이다|다)?[.。!]?$/;
 const LIB_DEF = /라이브러리|프레임워크/; // socket.io·PyTorch — 뜻에 코드 낱말(함수·위젯…)이 없을 때만 IT용어(리뷰). 기술·개념·패턴 같은 넓은 말은 안 넣음(StreamBuilder "…그리는 패턴")
-const general = (def: string) => PRODUCT_DEF.test(def) || (LIB_DEF.test(def) && !CODE_DEF.test(def));
+const product = (def: string) => PRODUCT_HEAD.test(def.replace(/`/g, "").trim().split(/(?<=[.。!?])\s+|\n/)[0].trim());
+const general = (def: string) => product(def) || (LIB_DEF.test(def) && !CODE_DEF.test(def));
 function codeKindOne(name: string, def: string): boolean {
   const t = name.replace(/\s*\([^)]+\)\s*$/, "").trim(); // 끝 "(풀이)" 떼기 — assert(단언) → assert, HLS(.m3u8) → HLS. 빈 괄호 dispose()는 그대로
   if (!t || !/^[\x21-\x7e]+( [\x21-\x7e]+)*$/.test(t)) return false; // 한글 섞임·빈 이름 → IT용어
@@ -124,7 +126,7 @@ function codeKindOne(name: string, def: string): boolean {
 }
 export function cardKindOf(raw: string, def = ""): "token" | "term" {
   const x = raw.trim();
-  if (/^`[\x20-\x7e]+`$/.test(x) && !/^`[^`]*`[^`]/.test(x)) return "token"; // 백틱으로 감싼 영문 이름. 한글이 든 것(`정적 파일(static file)`)은 아래 규칙으로
+  if (/^`[\x20-\x7e]+`$/.test(x) && !/^`[^`]*`[^`]/.test(x)) return product(def) ? "term" : "token"; // `Java` — 언어도 백틱으로 올 수 있음(리뷰) // 백틱으로 감싼 영문 이름. 한글이 든 것(`정적 파일(static file)`)은 아래 규칙으로
   const parts = x.replace(/`/g, "").split(/\s+\/\s+/); // "Promise / setTimeout" → 조각마다
   return parts.every((p) => codeKindOne(p, def)) ? "token" : "term";
 }
