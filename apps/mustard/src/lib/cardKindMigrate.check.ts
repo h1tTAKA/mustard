@@ -113,4 +113,8 @@ assert.ok(s9.getItem("nunopi:migrated-term-kind-ai-1369"));
 const s10 = mem({ "nunopi:bookmark-term-details": { a: { term: "a", explanation: "x", ...ws } } });
 await reclassifyTermCards(s10, async () => { s10.setItem("nunopi:migrating-term-kind-ai", "other"); return ["term"]; });
 assert.equal(s10.getItem("nunopi:migrating-term-kind-ai"), "other");
+// 리뷰: 세 번 답이 없으면 포기하고 완료
+const s11 = mem({ "nunopi:bookmark-term-details": { a: { term: "a", explanation: "x", ...ws } } });
+for (let n = 0; n < 3; n++) await reclassifyTermCards(s11, async () => [undefined]);
+assert.ok(s11.getItem("nunopi:migrated-term-kind-ai-1369"));
 console.log("cardKindMigrate ok");

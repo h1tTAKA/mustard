@@ -10,7 +10,7 @@ const K = {
   token: "nunopi:bookmark-token-details", term: "nunopi:bookmark-term-details", concept: "nunopi:bookmark-concept-details",
   starTok: "nunopi:bookmark-tokens", starTerm: "nunopi:bookmark-terms", starConcept: "nunopi:bookmark-concepts", // 별 표시(이름 문자열 배열, LearningPanel). 저장이 없으면 IT용어·개념은 "전부 별", 토큰은 "없음"으로 봄
   srs: "nunopi:srs-state", explain: "nunopi:card-explain", chat: "nunopi:card-chat", decks: "nunopi:mem-custom-decks",
-  done: "nunopi:migrated-term-token-1369", doneAI: "nunopi:migrated-term-kind-ai-1369", lockAI: "nunopi:migrating-term-kind-ai", checkedAI: "nunopi:term-kind-ai-kept", // AI가 IT라고 답한 카드(다음에 다시 안 물음)
+  done: "nunopi:migrated-term-token-1369", doneAI: "nunopi:migrated-term-kind-ai-1369", lockAI: "nunopi:migrating-term-kind-ai", checkedAI: "nunopi:term-kind-ai-kept", missAI: "nunopi:term-kind-ai-miss", // AI가 IT라고 답한 카드(다음에 다시 안 물음) / 답이 빠진 횟수
 };
 const read = <T,>(s: Store, k: string, d: T): T => { try { const v = s.getItem(k); return v ? (JSON.parse(v) as T) : d; } catch { return d; } };
 const norm = (x: string) => x.trim().toLowerCase().replace(/\([^)]*\)/g, "").replace(/\s+/g, ""); // core normalizeCardFront와 같음
@@ -100,12 +100,20 @@ export async function reclassifyTermCards(s: Store, classify: (items: { name: st
 async function reclassifyOnce(s: Store, classify: (items: { name: string; def: string }[]) => Promise<(CardKind | null | undefined)[]>): Promise<number> {
   const kept = new Set(read<string[]>(s, K.checkedAI, []));
   const all = Object.entries(read<Rec>(s, K.term, {})).filter(([k, v]) => (v.sourceKind === "workspace" || v.sourceKind === "ask") && !kept.has(k)); // workspace = 캐치업 칩·작업 채팅, ask = 질문 화면. 분석 화면('글' 모드, sourceKind analysis)에서 담은 건 그 화면의 분류라 빼기
+  const miss = read<Record<string, number>>(s, K.missAI, {});
   let moved = 0, missed = false;
   for (let i = 0; i < all.length; i += 80) {
     const chunk = all.slice(i, i + 80);
     const kinds = await classify(chunk.map(([k, v]) => ({ name: k, def: String(v.explanation ?? "") })));
     const picks = new Map<string, "token" | "concept">();
-    chunk.forEach(([k], j) => { const kd = kinds[j]; if (kd === "token" || kd === "concept") picks.set(k, kd); else if (kd === "term") kept.add(k); else missed = true; });
+    chunk.forEach(([k], j) => {
+      const kd = kinds[j];
+      if (kd === "token" || kd === "concept") picks.set(k, kd);
+      else if (kd === "term") kept.add(k);
+      else if ((miss[k] = (miss[k] ?? 0) + 1) >= 3) kept.add(k); // 세 번 물어도 답이 없으면 IT용어로 둠 — 앱 켤 때마다 AI를 부르지 않게(리뷰)
+      else missed = true;
+    });
+    s.setItem(K.missAI, JSON.stringify(miss));
     moved += moveTermCards(s, picks);
     s.setItem(K.checkedAI, JSON.stringify([...kept]));
   }
