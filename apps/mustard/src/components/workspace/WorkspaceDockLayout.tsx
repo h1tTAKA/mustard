@@ -160,7 +160,7 @@ export default function WorkspaceDockLayout({ tree, panels, onTreeChange }: {
       if (!rect.width || !rect.height) return; // 0크기 컨테이너 → 나눗셈 발산 방지
       const move = (ev: PointerEvent) => {
         const r = isRow ? (ev.clientX - rect.left) / rect.width : (ev.clientY - rect.top) / rect.height;
-        const lo = isRow ? Math.min(0.5, Math.max(MIN_RATIO, MIN_W / rect.width)) : MIN_RATIO; // 창이 좁아 양쪽 다 못 지키면 반반까지만
+        const lo = isRow ? Math.min(0.5, Math.max(MIN_RATIO, MIN_W / Math.max(1, rect.width - 4))) : MIN_RATIO; // 가운데 손잡이(4px) 뺀 폭 기준, 창이 좁아 양쪽 다 못 지키면 반반까지만
         onTreeChange(setRatioAt(treeRef.current, path, clamp(r, lo, 1 - lo)));
       };
       const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.cursor = ""; document.body.style.userSelect = ""; };
