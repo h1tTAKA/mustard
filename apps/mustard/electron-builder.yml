@@ -37,6 +37,9 @@ extraResources:
     to: electron/terminal-env.cjs
   - from: electron/daemon-version.cjs   # #1036 데몬이 require — 빠지면 새 데몬이 켜자마자 죽음(실측)
     to: electron/daemon-version.cjs
+  # #1358 채팅 AI 서버(SNA) 데몬 껍데기 — 터미널 데몬처럼 RUN_AS_NODE로 떼어 띄움(앱을 닫아도 채팅 작업 계속)
+  - from: electron/sna-daemon-host.cjs
+    to: electron/sna-daemon-host.cjs
   # 컴퓨터 사용 도우미(#1189) — 자기 번들 id를 가진 .app이라 macOS 권한이 이 도우미에 붙음. package-app.mjs가 먼저 만듦.
   - from: native/computer-use-macos/dist/Mustard Computer Use.app
     to: Mustard Computer Use.app

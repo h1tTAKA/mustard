@@ -1,6 +1,6 @@
 // chatTimeline 점검 — node --experimental-strip-types src/lib/chat/chatTimeline.check.ts
 import assert from "node:assert";
-import { applyEvent, extractImages, itemsFromClaudeTranscript, type Timeline } from "./chatTimeline.ts";
+import { applyEvent, extractImages, itemsFromClaudeTranscript, takeCursor, type Timeline } from "./chatTimeline.ts";
 
 const saved: string[] = [];
 const save = (b64: string, mime: string) => { saved.push(`${mime}:${b64.length}`); return `img${saved.length}`; };
@@ -84,3 +84,12 @@ const tr = itemsFromClaudeTranscript([
 assert.deepStrictEqual(tr.map((i) => i.k), ["user", "text", "tool", "text"]);
 const rt = tr[2]; assert.ok(rt.k === "tool" && rt.result === "hello" && rt.input === '{"file_path":"a.txt"}');
 console.log("chatTimeline.check ok");
+
+// #1358 다시 붙을 때 중복 거르기 — 이미 접은 번호는 건너뛰고, 번호 없는 이벤트(-1)는 늘 접음
+{
+  const st: { cur?: number } = { cur: 5 };
+  assert.deepEqual([4, 5, 6, -1, 6, 7].map((n) => takeCursor(st, n)), [false, false, true, true, false, true]);
+  assert.equal(st.cur, 7);
+  const fresh: { cur?: number } = {};
+  assert.equal(takeCursor(fresh, 1), true); assert.equal(fresh.cur, 1);
+}

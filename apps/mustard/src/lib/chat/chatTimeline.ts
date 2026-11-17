@@ -128,3 +128,11 @@ export function itemsFromClaudeTranscript(lines: string[], save: SaveImage): Cha
   }
   return items;
 }
+
+// #1358 다시 붙을 때 이벤트 번호(cursor)로 중복 거르기 — 접어야 하면 true + 마지막 번호 갱신. 번호 없는 이벤트(-1: delta·도구 입력 갱신)는 늘 접음.
+export function takeCursor(st: { cur?: number }, cursor: number): boolean {
+  if (!(cursor > 0)) return true;
+  if (st.cur !== undefined && cursor <= st.cur) return false;
+  st.cur = cursor;
+  return true;
+}
