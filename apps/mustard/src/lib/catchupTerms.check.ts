@@ -90,3 +90,5 @@ assert.deepStrictEqual(realTerm.map(([x, d]) => cardKindOf(x, d)), Array(realTer
 // #1369 리뷰: 라이브러리·제품 이름은 생김새가 코드여도 IT용어(뜻에 코드 낱말 없을 때)
 assert.deepStrictEqual([["socket.io", "실시간 양방향 통신 라이브러리"], ["PyTorch", "파이썬 머신러닝 라이브러리"]].map(([x, d]) => cardKindOf(x, d)), ["term", "term"]);
 assert.equal(cardKindOf("ScrollBehavior", "Flutter에서 스크롤 방식을 정하는 설정"), "token");
+assert.deepStrictEqual([["Stripe", "결제 API 서비스"], ["Java", "객체지향 프로그래밍 언어"]].map(([x, d]) => cardKindOf(x, d)), ["term", "term"], "제품 이름은 뜻에 코드 낱말이 있어도 IT용어");
+assert.equal(cardKindOf("StreamBuilder", "스트림 상태를 보고 화면을 그리는 패턴"), "token");

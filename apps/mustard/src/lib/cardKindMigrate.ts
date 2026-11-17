@@ -19,6 +19,7 @@ const norm = (x: string) => x.trim().toLowerCase().replace(/\([^)]*\)/g, "").rep
 export function migrateCatchupTermCards(s: Store): number {
   if (s.getItem(K.done)) return 0;
   const terms = read<Rec>(s, K.term, {}), tokens = read<Rec>(s, K.token, {});
+  const termKeys0 = Object.keys(terms); // 별 표시 저장이 없으면 LearningPanel은 IT용어 카드 전부를 별 켠 것으로 봄 — 옮기기 전 키로 그 기본값 재현(리뷰)
   const tokenKey = new Map(Object.keys(tokens).map((k) => [norm(k), k])); // 정규화 이름 → 실제 토큰 키(대소문자 다른 기존 카드에 맞춰 붙이려고, 리뷰)
   const moves: [string, string][] = []; // [옛 term 키, 새 token 키]
   const movedNames: [string, string][] = []; // [옛 term 이름, 새 token 이름] — 별 표시용
@@ -59,7 +60,7 @@ export function migrateCatchupTermCards(s: Store): number {
       for (const v of Object.values(m)) { const o = typeof v.originCardKey === "string" ? re.get(v.originCardKey) : undefined; if (o) { v.originCardKey = o; ch = true; } }
       if (ch && key !== K.term) s.setItem(key, JSON.stringify(m));
     }
-    const starTerm = read<string[]>(s, K.starTerm, []), starTok = read<string[]>(s, K.starTok, []); // 별 표시도 같이(리뷰)
+    const starTerm = s.getItem(K.starTerm) === null ? termKeys0 : read<string[]>(s, K.starTerm, []), starTok = read<string[]>(s, K.starTok, []); // 별 표시도 같이(리뷰)
     if (Array.isArray(starTerm) && Array.isArray(starTok) && movedNames.some(([a]) => starTerm.includes(a))) {
       for (const [a, b] of movedNames) if (starTerm.includes(a) && !starTok.includes(b)) starTok.push(b);
       s.setItem(K.starTok, JSON.stringify(starTok));

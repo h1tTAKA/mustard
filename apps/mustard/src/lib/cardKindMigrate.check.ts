@@ -59,4 +59,9 @@ assert.ok(s3.get("nunopi:bookmark-term-details").dispose, "IT용어 카드 아�
 fail = false;
 assert.equal(migrateCatchupTermCards(s3), 1);
 assert.deepEqual(s3.get("nunopi:srs-state"), { "token:dispose": { box: 5 } });
+
+// 리뷰: 별 표시 저장이 없으면(=IT용어 전부 별) 옮긴 카드도 별 유지
+const s4 = mem({ "nunopi:bookmark-term-details": { dispose: { term: "dispose", explanation: "자원을 정리하는 메서드", ...ws }, viewport: { term: "viewport", explanation: "화면 크기", ...ws } } });
+migrateCatchupTermCards(s4);
+assert.deepEqual(s4.get("nunopi:bookmark-tokens"), ["dispose"]); assert.deepEqual(s4.get("nunopi:bookmark-terms"), ["viewport"]);
 console.log("cardKindMigrate ok");
