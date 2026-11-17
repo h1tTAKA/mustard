@@ -15,7 +15,7 @@ import { defaultSnaModel } from "@mustard/nunopi/server";
 import { decide, fromAgentRequest } from "@/lib/crew/crewPolicy";
 import { readPerms } from "@/lib/crew/crewPermStore";
 import { HOOK_SRC } from "@/lib/crew/crewRunner";
-import { applyEvent, itemsFromClaudeTranscript, type ChatItem, type Timeline } from "./chatTimeline";
+import { applyEvent, itemsFromClaudeTranscript, takeCursor, type ChatItem, type Timeline } from "./chatTimeline";
 import { projectDirFor } from "@/lib/subagents";
 import { observeChat } from "./chatNarrate";
 
@@ -36,6 +36,8 @@ interface Chat {
   id: string; root: string; cwd: string; provider: ChatProvider; title: string; createdAt: number; updatedAt: number;
   model?: string; effort?: number; mode: ChatMode; archived?: boolean;
   sid?: string; cc?: string; token: string; tl: Timeline; // cc = Claude CLI 대화 id(init 이벤트) — 재시작 뒤 --resume
+  replaying?: boolean; // #1358 다시 붙어 지난 이벤트를 받는 중 — 그 작업은 캐치업 백필(CLI 기록)이 해설하므로 실시간 해설은 건너뜀(두 번 해설 방지)
+  cur?: number; // #1358 마지막으로 접은 SNA 이벤트 번호(cursor) — 앱이 꺼진 동안 쌓인 것을 다시 열 때 이 뒤부터 받아 채움
   stopping?: boolean; // 멈춤을 눌렀음 — 실측: 끊기면 interrupted 대신 error("Unknown error")가 옴 → 멈춤으로 표시
   pending: Map<string, (ok: boolean) => void>; // 사람 답을 기다리는 권한 카드(permId별 — 병렬 도구가 둘 다 물어도 각자 카드)
   handedOff?: boolean; // 터미널로 넘김 — 같은 대화를 두 프로세스가 쓰지 않게 채팅에서 보내기 막음
@@ -76,7 +78,7 @@ function persist(c: Chat, now = false) {
     if (!g.chats.has(c.id)) return; // 닫힌 탭
     const d = rootDir(c.root); mkdirSync(d, { recursive: true });
     const f = join(d, `${c.id}.json`);
-    writeFileSync(`${f}.tmp`, JSON.stringify({ id: c.id, root: c.root, cwd: c.cwd, provider: c.provider, model: c.model, effort: c.effort, mode: c.mode, archived: c.archived, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt, sid: c.sid, cc: c.cc, handedOff: c.handedOff, items: c.tl.items }));
+    writeFileSync(`${f}.tmp`, JSON.stringify({ id: c.id, root: c.root, cwd: c.cwd, provider: c.provider, model: c.model, effort: c.effort, mode: c.mode, archived: c.archived, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt, sid: c.sid, cc: c.cc, cur: c.cur, token: c.token, handedOff: c.handedOff, items: c.tl.items }));
     renameSync(`${f}.tmp`, f);
   };
   const t = g.flush.get(c.id);
@@ -94,10 +96,11 @@ function load(root: string) {
       if (!ID_RE.test(j.id) || g.chats.has(j.id)) continue;
       // 앱이 꺼졌다 켜지면 기다리던 권한 요청은 끝난 것 — 거절로 표시
       const items = (Array.isArray(j.items) ? j.items : []).map((it: ChatItem) => (it.k === "perm" && it.state === "pending" ? { ...it, state: "denied" } : it));
-      g.chats.set(j.id, { id: j.id, root, cwd: j.cwd || root, provider: asProvider(j.provider), model: typeof j.model === "string" ? j.model : undefined, effort: typeof j.effort === "number" ? j.effort : undefined, mode: asMode(j.mode), archived: !!j.archived, title: String(j.title ?? ""), createdAt: Number(j.createdAt) || 0, updatedAt: Number(j.updatedAt) || Number(j.createdAt) || 0, sid: j.sid, cc: typeof j.cc === "string" ? j.cc : undefined, token: randomUUID(), pending: new Map(), handedOff: !!j.handedOff, tl: { items, streaming: "", busy: false } });
+      g.chats.set(j.id, { id: j.id, root, cwd: j.cwd || root, provider: asProvider(j.provider), model: typeof j.model === "string" ? j.model : undefined, effort: typeof j.effort === "number" ? j.effort : undefined, mode: asMode(j.mode), archived: !!j.archived, title: String(j.title ?? ""), createdAt: Number(j.createdAt) || 0, updatedAt: Number(j.updatedAt) || Number(j.createdAt) || 0, sid: j.sid, cc: typeof j.cc === "string" ? j.cc : undefined, cur: Number.isInteger(j.cur) ? j.cur : undefined, token: typeof j.token === "string" && /^[a-f0-9-]{36}$/.test(j.token) ? j.token : randomUUID() /* #1358 앱이 꺼진 동안 살아 있던 claude의 훅이 같은 토큰으로 들어옴 — 매번 새로 만들면 "unknown chat"으로 전부 거부 */, pending: new Map(), handedOff: !!j.handedOff, tl: { items, streaming: "", busy: false } });
       if (j.sid) g.bySid.set(j.sid, j.id);
     } catch { /* 깨진 파일은 건너뜀 */ }
   }
+  void reattach(root).catch(() => {}); // #1358 앱이 꺼진 동안에도 돈 채팅 — 살아 있는 세션에 바로 붙어 빈 구간 채우기
 }
 
 // ── 구독(SSE) ────────────────────────────────────────────────────────
@@ -302,17 +305,18 @@ function wire(): Promise<void> {
 }
 async function wireOnce() {
   const sna = await getSnaClient();
-  sna.agent.onEvent(({ session, event, isHistory }) => {
+  sna.agent.onEvent(({ session, cursor, event, isHistory }) => {
     if (isHistory) return;
     const c = g.chats.get(g.bySid.get(session) ?? "");
     if (!c) return;
+    if (!takeCursor(c, cursor)) return; // #1358 다시 붙을 때 받은 것 중 이미 접은 건 건너뜀
     const wasBusy = c.tl.busy;
     let ev = event as Record<string, unknown>;
     if (ev.type === "init") { const cc = (ev.data as { sessionId?: unknown } | undefined)?.sessionId; if (typeof cc === "string" && cc !== c.cc) { c.cc = cc; persist(c); } }
     if (c.stopping && ev.type === "error") ev = { type: "interrupted" };
     if (ev.type === "complete" || ev.type === "interrupted" || ev.type === "error") c.stopping = false;
     const r = applyEvent(c.tl, ev, saveImage);
-    observeChat(c.id, c.cwd, AGENT_ID[c.provider], ev); // 캐치업 실시간 해설(터미널과 같은 narrate)
+    if (!c.replaying) observeChat(c.id, c.cwd, AGENT_ID[c.provider], ev); // 캐치업 실시간 해설(터미널과 같은 narrate)
     for (const i of r.changed) emit(c.id, { type: "item", i, item: c.tl.items[i] });
     if (r.delta) emit(c.id, { type: "delta", streaming: c.tl.streaming });
     if (wasBusy !== c.tl.busy) emit(c.id, { type: "busy", busy: c.tl.busy });
@@ -327,6 +331,31 @@ async function wireOnce() {
     void ask(c, tool, input).then((ok) => sna.agent.respondPermission(session, ok)).catch(() => {});
   });
   await sna.agent.subscribePermissions().catch(() => {});
+  // #1358 SNA 클라이언트는 끊겼다 붙으면 번호 없이 다시 구독함(그 사이 이벤트 빠짐) → 우리가 마지막 번호부터 다시 구독
+  sna.onConnectionStatus((st) => {
+    if (st !== "connected") return;
+    for (const c of g.chats.values()) if (c.sid && g.subscribed.has(c.sid)) { c.replaying = true; void sna.agent.subscribe(c.sid, sinceOf(c)).catch(() => {}).finally(() => { c.replaying = false; }); }
+  });
+}
+
+// 번호를 아는 채팅만 since로(0을 주면 SNA가 DB 기록 전체를 다른 번호 체계로 다시 보내 겹침) — 번호 없는 옛 채팅은 지금부터만
+const sinceOf = (c: Chat) => (c.cur ? { since: c.cur } : undefined);
+
+// #1358 앱(Next)이 다시 뜨면 — 저장된 채팅 중 SNA 세션이 아직 살아 있는 것(앱이 닫힌 동안에도 일함)에 붙어 그동안의 이벤트를 받아 접음.
+// 한계: SNA는 세션마다 최근 이벤트 500개만 들고 있어 그보다 많이 쌓였으면 앞부분은 화면에 안 채워짐(대화 자체·캐치업 기록은 남음).
+async function reattach(root: string) {
+  const mine = [...g.chats.values()].filter((c) => c.root === root && c.sid && !c.handedOff);
+  if (!mine.length) return;
+  await wire();
+  const sna = await getSnaClient();
+  for (const c of mine) {
+    const sid = c.sid!;
+    const st = await sna.agent.getStatus(sid).catch(() => null);
+    if (!st?.alive) continue; // 꺼진 세션 — 다음 보내기 때 이어 시작(ensureAgent)
+    if (!g.subscribed.has(sid)) { g.subscribed.add(sid); c.replaying = true; await sna.agent.subscribe(sid, sinceOf(c)).catch(() => { g.subscribed.delete(sid); }).finally(() => { c.replaying = false; }); } // 지난 이벤트는 구독 응답 전에 옴
+    setBusy(c, st.agentStatus === "busy");
+    persist(c);
+  }
 }
 
 // 정책 → 허용이면 바로, 아니면 채팅에 카드(최대 10분, 넘으면 거절). 채팅은 사람이 직접 모는 자리라 Crew의 '사람만'(push 등)도 묻기로.
@@ -384,13 +413,13 @@ async function ensureAgentOnce(c: Chat, origin: string) {
   if (isClaude) { mkdirSync(baseDir(), { recursive: true }); writeFileSync(hookPath(), HOOK_SRC.replace("/api/crew/permission", "/api/chat/permission").replace("Mustard Crew PreToolUse", "Mustard chat PreToolUse")); }
   if (c.sid) {
     const st = await sna.agent.getStatus(c.sid).catch(() => null);
-    if (st?.alive) { if (!g.subscribed.has(c.sid)) { await sna.agent.subscribe(c.sid); g.subscribed.add(c.sid); } return; } // 서버만 다시 뜬 경우 — 살아 있는 세션 구독부터
+    if (st?.alive) { if (!g.subscribed.has(c.sid)) { await sna.agent.subscribe(c.sid, sinceOf(c)); g.subscribed.add(c.sid); } return; } // 서버만 다시 뜬 경우 — 살아 있는 세션 구독부터
     g.bySid.delete(c.sid); c.sid = undefined;
   }
   // 앱 재시작 뒤(에이전트 없음) — 새 SNA 세션. Claude는 CLI 대화 id로 이어 시작(--resume, 실측: SNA resume은 맥락이 안 이어짐).
   // 한계: Claude 말고는 이어 시작이 없어 맥락이 처음부터(화면 기록은 남음).
   const { sessionId } = await sna.sessions.create({ label: `chat:${c.title.slice(0, 40) || c.id.slice(0, 8)}`, cwd: c.cwd, meta: { mustardChat: true, root: c.root, chatId: c.id } });
-  c.sid = sessionId; g.bySid.set(sessionId, c.id);
+  c.sid = sessionId; c.cur = undefined; g.bySid.set(sessionId, c.id); // 새 세션은 이벤트 번호가 처음부터
   persist(c, true);
   await sna.agent.subscribe(sessionId); g.subscribed.add(sessionId);
   await sna.agent.start(sessionId, { ...config, ...(isClaude && c.cc ? { extraArgs: ["--resume", c.cc] } : {}), meta: { mustardChat: true, chatId: c.id } });
