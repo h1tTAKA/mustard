@@ -39,7 +39,7 @@ interface Chat {
   model?: string; effort?: number; mode: ChatMode; archived?: boolean;
   sid?: string; cc?: string; token: string; tl: Timeline; // cc = Claude CLI 대화 id(init 이벤트) — 재시작 뒤 --resume
   bg?: number;
-  replaying?: boolean; // #1358 다시 붙어 지난 이벤트를 받는 중 — 그 작업은 캐치업 백필(CLI 기록)이 해설하므로 실시간 해설은 건너뜀(두 번 해설 방지)
+  replaying?: number; // #1358(겹친 구독이 서로의 표시를 지우지 않게 숫자) 다시 붙어 지난 이벤트를 받는 중 — 그 작업은 캐치업 백필(CLI 기록)이 해설하므로 실시간 해설은 건너뜀(두 번 해설 방지)
   cur?: number; // #1358 마지막으로 접은 SNA 이벤트 번호(cursor) — 앱이 꺼진 동안 쌓인 것을 다시 열 때 이 뒤부터 받아 채움
   stopping?: boolean; // 멈춤을 눌렀음 — 실측: 끊기면 interrupted 대신 error("Unknown error")가 옴 → 멈춤으로 표시
   pending: Map<string, (ok: boolean) => void>; // 사람 답을 기다리는 권한 카드(permId별 — 병렬 도구가 둘 다 물어도 각자 카드)
@@ -337,7 +337,7 @@ async function wireOnce() {
   // #1358 SNA 클라이언트는 끊겼다 붙으면 번호 없이 다시 구독함(그 사이 이벤트 빠짐) → 우리가 마지막 번호부터 다시 구독
   sna.onConnectionStatus((st) => {
     if (st !== "connected") return;
-    for (const c of g.chats.values()) if (c.sid && g.subscribed.has(c.sid)) { const sid = c.sid; c.replaying = true; void sna.agent.getStatus(sid).catch(() => undefined).then((st) => sna.agent.subscribe(sid, sinceOf(c, st?.eventCount))).catch(() => {}).finally(() => { c.replaying = false; }); }
+    for (const c of g.chats.values()) if (c.sid && g.subscribed.has(c.sid)) { const sid = c.sid; void sna.agent.getStatus(sid).catch(() => undefined).then((st) => sna.agent.subscribe(sid, sinceOf(c, st?.eventCount))).catch(() => {}); } // 앱이 켜져 있던 동안 끊김 — 백필이 안 덮으니 지난 이벤트도 실시간 해설(리뷰)
   });
 }
 
@@ -345,7 +345,7 @@ async function wireOnce() {
 // SNA는 최근 500개만 들고 있고, since가 그보다 오래되면 받은 이벤트에 번호를 어긋나게 붙임(리뷰) → 간격이 크면 지금부터만 받고 번호를 서버 값으로 맞춤
 const BUF = 450;
 function sinceOf(c: Chat, eventCount?: number) {
-  if (!c.cur) return undefined;
+  if (c.cur === undefined) return undefined; // 0도 아는 번호(리뷰)
   if (eventCount !== undefined && (eventCount - c.cur > BUF || eventCount < c.cur)) { c.cur = eventCount; return undefined; } // 서버 번호가 내 것보다 작음 = 번호가 처음부터 다시 셈 → 내 번호를 맞춤(안 그러면 새 이벤트를 전부 중복으로 버림, 리뷰)
   return { since: c.cur };
 }
@@ -361,7 +361,7 @@ async function reattach(root: string) {
     const sid = c.sid!;
     const st = await sna.agent.getStatus(sid).catch(() => null);
     if (!st?.alive) continue; // 꺼진 세션 — 다음 보내기 때 이어 시작(ensureAgent)
-    if (!g.subscribed.has(sid)) { g.subscribed.add(sid); c.replaying = true; await sna.agent.subscribe(sid, sinceOf(c, st.eventCount)).catch(() => { g.subscribed.delete(sid); }).finally(() => { c.replaying = false; }); } // 지난 이벤트는 구독 응답 전에 옴
+    if (!g.subscribed.has(sid)) { g.subscribed.add(sid); c.replaying = (c.replaying ?? 0) + 1; await sna.agent.subscribe(sid, sinceOf(c, st.eventCount)).catch(() => { g.subscribed.delete(sid); }).finally(() => { c.replaying = (c.replaying ?? 1) - 1; }); } // 지난 이벤트는 구독 응답 전에 옴
     const g0 = c.bg ?? 0, cur0 = c.cur;
     const now = await sna.agent.getStatus(sid).catch(() => null); // 바쁨은 구독(지난 이벤트 접기)이 끝난 뒤 상태로
     if (now && !c.starting && (c.bg ?? 0) === g0 && c.cur === cur0) setBusy(c, now.agentStatus === "busy"); // 묻는 사이 이벤트·보내기로 바뀌었으면 그쪽이 최신(옛 값으로 덮지 않게, 리뷰)
@@ -441,7 +441,7 @@ async function ensureAgentOnce(c: Chat, origin: string) {
   if (isClaude) { mkdirSync(baseDir(), { recursive: true }); writeFileSync(hookPath(), chatHookSrc(HOOK_SRC)); }
   if (c.sid) {
     const st = await sna.agent.getStatus(c.sid).catch(() => null);
-    if (st?.alive) { if (!g.subscribed.has(c.sid)) { await sna.agent.subscribe(c.sid, sinceOf(c, st.eventCount)); g.subscribed.add(c.sid); } return; } // 서버만 다시 뜬 경우 — 살아 있는 세션 구독부터
+    if (st?.alive) { const sid = c.sid; if (!g.subscribed.has(sid)) { g.subscribed.add(sid); c.replaying = (c.replaying ?? 0) + 1; await sna.agent.subscribe(sid, sinceOf(c, st.eventCount)).catch((e) => { g.subscribed.delete(sid); throw e; }).finally(() => { c.replaying = (c.replaying ?? 1) - 1; }); } return; } // 앱이 꺼진 동안 쌓인 것 — 다시 붙기와 같게(리뷰) // 서버만 다시 뜬 경우 — 살아 있는 세션 구독부터
     g.bySid.delete(c.sid); c.sid = undefined;
   }
   // 앱 재시작 뒤(에이전트 없음) — 새 SNA 세션. Claude는 CLI 대화 id로 이어 시작(--resume, 실측: SNA resume은 맥락이 안 이어짐).
