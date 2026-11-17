@@ -133,8 +133,8 @@ function codeKindOne(name: string, def: string): boolean {
 }
 export function cardKindOf(raw: string, def = ""): "token" | "term" {
   const x = raw.trim();
-  if (/^`[\x20-\x7e]+`$/.test(x) && !/^`[^`]*`[^`]/.test(x)) return product(def) ? "term" : "token"; // `Java` — 언어도 백틱으로 올 수 있음(리뷰) // 백틱으로 감싼 영문 이름. 한글이 든 것(`정적 파일(static file)`)은 아래 규칙으로
+  if (/^`[\x20-\x7e]+`$/.test(x) && !/^`[^`]*`[^`]/.test(x)) return general(def) ? "term" : "token"; // `Java`·`socket.io` — 언어·라이브러리도 백틱으로 올 수 있음(리뷰) // 백틱으로 감싼 영문 이름. 한글이 든 것(`정적 파일(static file)`)은 아래 규칙으로
   const parts = x.replace(/`/g, "").split(/\s+\/\s+/); // "Promise / setTimeout" → 조각마다
   const defs = def.split(/\s+\/\s+/); // 뜻도 같은 수로 나뉘면 짝지어("…객체 / …타이머")
-  return parts.every((p, i) => (defs.length === parts.length && codeKindOne(p, defs[i])) || codeKindOne(p, def)) ? "token" : "term"; // 짝 뜻 또는 전체 뜻("…하나라도 / 전부 …검사하는 메서드")
+  return parts.every((p, i) => codeKindOne(p, defs.length === parts.length ? defs[i] : def)) ? "token" : "term"; // 짝 뜻만 — 전체 뜻으로 넘어가면 다른 조각의 "위젯"을 빌려 씀(리뷰). 한계: "하나라도 / 전부 …메서드"처럼 뜻이 엇갈려 나뉘면 IT용어
 }

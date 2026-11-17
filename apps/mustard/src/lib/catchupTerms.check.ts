@@ -98,4 +98,6 @@ assert.deepStrictEqual([["Java", "객체지향 프로그래밍 언어(JVM 위에
 assert.deepStrictEqual([["callback", "다른 함수에 넘기는 함수"], ["closure", "함수와 그 바깥 변수를 묶은 것"], ["middleware", "요청과 응답 사이에 실행되는 함수"], ["state", "컴포넌트가 가진 값"], ["split", "문자열을 구분자 기준으로 잘라 배열로 만드는 함수."]].map(([x, d]) => cardKindOf(x, d)), Array(5).fill("term"));
 assert.equal(cardKindOf("`split`", "문자열을 나누는 함수"), "token");
 assert.equal(cardKindOf("Java", "객체지향 언어(JVM (v8) 위에서)예요."), "term", "중첩 괄호");
-assert.deepStrictEqual([["Pressable", "터치(누름)에 반응하는 React Native 컴포넌트"], ["ffmpeg", "영상·오디오를 변환·중계하는 명령줄 도구"], ["some / every", "배열에서 \"하나라도\" / \"전부\" 조건을 만족하는지 검사하는 메서드"]].map(([x, d]) => cardKindOf(x, d)), ["token", "token", "token"]);
+assert.deepStrictEqual([["Pressable", "터치(누름)에 반응하는 React Native 컴포넌트"], ["ffmpeg", "영상·오디오를 변환·중계하는 명령줄 도구"]].map(([x, d]) => cardKindOf(x, d)), ["token", "token"]);
+// 6차 리뷰: 묶인 이름은 짝 뜻만(다른 조각 뜻을 빌리지 않음), 백틱이어도 라이브러리면 IT용어
+assert.deepStrictEqual([["Stripe / PageView", "결제 API 서비스 / 페이지를 넘기는 위젯"], ["viewport / PageView", "화면 크기 / 페이지를 넘기는 위젯"], ["`socket.io`", "실시간 양방향 통신 라이브러리"], ["`PyTorch`", "파이썬 머신러닝 라이브러리"]].map(([x, d]) => cardKindOf(x, d)), Array(4).fill("term"));
