@@ -145,7 +145,7 @@ async function narrateOnce(cwd: string, agent: string, delta: string, diff: stri
   // #1093 런타임 실패(동시 세션 상한 등)는 summary에 문구를 담아 옴 → 카드로 내지 말고 실패로(호출부가 조용히 처리)
   if (isFailedNote(summary) || res?.warnings?.some((w) => w.code === "PARSE_FAILED")) throw new Error(summary || "runtime failed");
   // 모델이 실제 활동 없다고 판단하면 "SKIP" → 카드 방출 안 함(무의미 내레이션·토큰 낭비 방지).
-  const skip = /^[\s*`_\-•>.:"'“”]*SKIP[\s*`_.!:"'“”]*$/im.test(summary); // SKIP뿐인 줄(**SKIP**·`SKIP`·- SKIP 포함)이 어디 있든 해설 없음 — 끝에 붙여도(#1367). "Skip 버튼…" 같은 제목은 통과
+  const skip = /^[\s*`_\-•>.:"'“”]*SKIP[\s*`_.!:"'“”]*$/m.test(summary) || /^[\s*`_\-•>]*SKIP\s*[—–:(-]/.test(summary); // SKIP뿐인 줄(**SKIP**·`SKIP`·- SKIP 포함)이 어디 있든 해설 없음 — 끝에 붙여도(#1367). 맨 앞 "SKIP — 이유"도. 대문자만 — "Skip 버튼…" 같은 제목은 통과
   if (skip) console.log(`[narration] SKIP ${cwd.split("/").pop()} (delta ${delta.length}B, diff ${diff.length}B)`); // #1045 진단 — 왜 해설이 안 뜨나
   if (!summary || skip || summary.length <= 8) return false;
   const { title, note } = splitNarration(summary);
