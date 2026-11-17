@@ -88,9 +88,13 @@ async function stopSnaDaemon(userData) {
   const p = path.join(userData, "sna-daemon.json");
   let st;
   try { st = JSON.parse(fs.readFileSync(p, "utf8")); } catch { return; }
-  const o = ours(st.pid);
-  if (o === true || (alive(st.pid) && await healthy(st.port))) try { process.kill(st.pid, "SIGTERM"); } catch { /* 이미 꺼짐 */ }
-  try { fs.rmSync(p, { force: true }); } catch { /* ignore */ }
+  const o = ours(st.pid); // ps가 남의 것(false)이라고 하면 포트가 답해도 안 끔(리뷰)
+  if (o === true || ((o === null || process.platform === "win32") && alive(st.pid) && await healthy(st.port))) {
+    try { process.kill(st.pid, "SIGTERM"); } catch { /* 이미 꺼짐 */ }
+    for (let i = 0; i < 50 && alive(st.pid); i++) await sleep(100); // SNA 정리(세션 끄기·서버 닫기, 최대 3초)를 기다림 — 그 사이 다시 켜서 같은 DB로 둘이 뜨지 않게(리뷰)
+    if (alive(st.pid)) try { process.kill(st.pid, "SIGKILL"); } catch { /* ignore */ }
+  }
+  if (!alive(st.pid) || o === false) try { fs.rmSync(p, { force: true }); } catch { /* ignore */ } // 아직 살아 있는(끄지 못한) 우리 데몬이면 상태를 남겨 다음 실행이 그대로 씀
 }
 // 앱이 꺼질 때 — 데몬은 두고 "앱 없음"만 표시(데몬이 스스로 끌 때 판단)
 function detachSnaDaemon(userData) {
