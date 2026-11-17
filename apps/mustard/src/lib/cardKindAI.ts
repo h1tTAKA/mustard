@@ -11,7 +11,7 @@ export function classifyPrompt(items: { name: string; def: string }[]): string {
 // "1 코드" / "2. 개념" / "3: IT" … → 번호별 종류. 빠진 번호는 undefined(호출부가 그 카드는 그대로 둠).
 export function parseKinds(text: string, n: number): (CardKind | undefined)[] {
   const out: (CardKind | undefined)[] = Array(n).fill(undefined);
-  for (const m of String(text || "").matchAll(/^\s*\[?(\d+)\]?[.):\s-]*\s*\[?(코드|개념|IT|code|concept)\]?/gim)) {
+  for (const m of String(text || "").matchAll(/^[\s*#>-]*\[?(\d+)\]?\**[.):\s-](?:.*?[\s—–:\-[(])?\[?(코드|개념|IT|code|concept)\]?\)?[*.。\s]*$/gim)) { // "1 코드"·"1. dispose — 코드"·"**1** [개념]"
     const i = Number(m[1]) - 1, k = m[2].toLowerCase();
     if (i >= 0 && i < n) out[i] = k === "코드" || k === "code" ? "token" : k === "it" ? "term" : "concept";
   }

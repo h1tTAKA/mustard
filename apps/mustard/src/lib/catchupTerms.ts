@@ -2,8 +2,10 @@
 export type CardKind = "token" | "concept" | "term"; // 토큰(코드 이름) · 개념(프로그래밍 개념) — 둘 다 '프로그래밍/개념' 덱 · IT용어(넓은 IT 말)
 export interface Term { term: string; def: string; code?: boolean; kind?: CardKind } // code = 원래 `백틱`으로 감싼 코드 이름(토큰 카드, #1359). kind = 해설 AI가 줄 끝에 단 종류 표시(#1369)
 
-// #1369 해설 AI가 용어 줄 끝에 다는 종류 표시 "[코드]"·"[개념]"·"[IT]"(영문·일문 표기도) → 떼고 kind로. 화면·카드 설명엔 안 보임.
-const KIND_TAG = /\s*[[［](코드|개념|IT|code|concept|コード|概念)[\]］]\s*$/i;
+// #1369 해설 AI가 용어 줄 끝에 다는 종류 표시 "[코드]"·"[개념]"·"[IT]"(영문·일문 표기도) → 떼고 kind로. 카드 설명엔 안 들어가고, 화면은 stripKindTags로 지움.
+const KIND_TAG = /\s*[[［](코드|개념|IT|code|concept|コード|概念)[\]］][.。]?\s*$/i;
+// 화면에 그릴 때 줄 끝 종류 표시를 지움(용어 칸이 칩이 안 되는 옛 꼴·rest 줄·질문 패널 등 — 리뷰). 칩 종류는 원문에서 읽음.
+export const stripKindTags = (text: string) => String(text || "").replace(/[ \t]*[[［](코드|개념|IT|code|concept|コード|概念)[\]］](?=[.。]?[ \t]*$)/gim, "");
 export function takeKind(def: string): { def: string; kind?: CardKind } {
   const m = def.match(KIND_TAG);
   if (!m) return { def };

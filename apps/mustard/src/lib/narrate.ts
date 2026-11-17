@@ -142,8 +142,10 @@ export async function classifyCardKinds(items: { name: string; def: string }[], 
     ...(model ? { providerSettings: { [pid]: { model } } } : {}),
   } as AgentAnalyzeRequest, { signal });
   const text = (res?.summary ?? "").trim();
-  if (!text || isFailedNote(text)) throw new Error(text || "no answer");
-  return parseKinds(text, items.length);
+  if (!text || isFailedNote(text) || res?.warnings?.some((w) => w.code === "PARSE_FAILED")) throw new Error(text || "no answer");
+  const kinds = parseKinds(text, items.length);
+  if (!kinds.some(Boolean)) throw new Error("unparsed answer"); // 하나도 못 읽으면 실패로 — 완료 표시 없이 다음에 다시(리뷰)
+  return kinds;
 }
 
 async function narrateOnce(cwd: string, agent: string, delta: string, diff: string, ts: number, opts: { providerId?: unknown; signal?: AbortSignal; material?: string }): Promise<boolean> {

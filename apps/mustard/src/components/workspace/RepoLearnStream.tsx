@@ -14,7 +14,7 @@ import { sendToAgent } from "@/lib/browser/sendToAgent";
 import { formatSessionHandoff } from "@/lib/sessionHandoff";
 import { isDocEdit } from "@/lib/mcpActivity";
 import { isNunopiEnabled } from "@/lib/product";
-import { cardKindOf, isCardWorthy, parseNarrationTerms, splitCardSection, splitNames, splitTermsSection, type Term } from "@/lib/catchupTerms";
+import { cardKindOf, stripKindTags, isCardWorthy, parseNarrationTerms, splitCardSection, splitNames, splitTermsSection, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT, setSetting, openSettings } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
@@ -826,7 +826,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                         // #1066 diff 구간별: [N~M번째 줄 ▸ 그 구간 코드 펼치기] + 설명. 한 파일 여러 변경이 한 카드여도 어느 설명이 어느 줄인지 보임
                         const d = c.kind === "diff" ? parseDiffItemKey(c.key) : null; const secs = d ? diffSections(c.expl ?? "") : null;
                         if (!d || !secs) {
-                          if (c.kind !== "narration" || !cardsOn) return <Markdown>{relocalizeFailure(c.expl ?? "", t)}</Markdown>;
+                          if (c.kind !== "narration" || !cardsOn) return <Markdown>{relocalizeFailure(stripKindTags(c.expl ?? ""), t)}</Markdown>;
                           // #1359 nunopi를 켠 유저 — 용어 풀이 칸은 이름 자체가 카드 추가 칩(등록은 유저가 고름),
                           // 해설 끝 '카드로 남길 개념' 칸(위에 없는 배경 개념)은 글 대신 카드 맨 아래 칩 줄. nunopi를 끄면 전부 글 그대로.
                           const { body, items } = splitCardSection(c.expl ?? "");
@@ -860,14 +860,14 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           return <>
                             {sp ? <>
                               {/* 아는 용어를 빼고 하나도 안 남으면 용어 칸 소제목째 숨김 */}
-                              {(() => { const b = words.length || rest.length ? sp.before : sp.before.replace(/\n?[^\n]*$/, "").trim(); return b ? <Markdown>{relocalizeFailure(b, t)}</Markdown> : null; })()}
+                              {(() => { const b = words.length || rest.length ? sp.before : sp.before.replace(/\n?[^\n]*$/, "").trim(); return b ? <Markdown>{relocalizeFailure(stripKindTags(b), t)}</Markdown> : null; })()}
                               {(words.length > 0 || rest.length > 0) && <div className="nunopi-md"><ul className="pl-0!">{/* 용어 칩 줄은 본문·소제목과 같은 선에서 시작(목록 기본 들여쓰기 없음) */}{words.map((x, i) => (
                                 <li key={`${i}|${x.term}`}>{x.names.map((n, j) => { const plain = n.replace(/`/g, "").trim(); return (
                                   <span key={j}>{j > 0 && " / "}{cardOf(plain) || isCardWorthy(plain) ? chip({ term: n, def: x.def, kind: x.kind }) : <strong>{plain}</strong>}</span>
                                 ); })} — <Markdown className="inline [&_p]:inline">{x.def}</Markdown></li>
-                              ))}{rest.map((l, i) => <li key={`r${i}`}><Markdown className="inline [&_p]:inline">{l}</Markdown></li>)}</ul></div>}
-                              {sp.after && <Markdown>{sp.after}</Markdown>}
-                            </> : <Markdown>{relocalizeFailure(body, t)}</Markdown>}
+                              ))}{rest.map((l, i) => <li key={`r${i}`}><Markdown className="inline [&_p]:inline">{stripKindTags(l)}</Markdown></li>)}</ul></div>}
+                              {sp.after && <Markdown>{stripKindTags(sp.after)}</Markdown>}
+                            </> : <Markdown>{relocalizeFailure(stripKindTags(body), t)}</Markdown>}
                             {extra.length > 0 && <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1">{extra.map((x, i) => <span key={`${i}|${x.term}`} title={x.def}>{chip(x)}</span>)}</div>}
                           </>;
                         }
@@ -901,7 +901,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           <div role="separator" aria-orientation="horizontal" aria-label={t("learn.askResize")} onPointerDown={startResize}
             className="h-1.5 shrink-0 cursor-row-resize border-t border-zinc-200 bg-zinc-100 hover:bg-mustard-500/30 dark:border-zinc-800 dark:bg-zinc-900" />
           <div className="flex shrink-0 flex-col" style={{ height: askH }}>
-            <CatchupAskPanel root={root} item={{ key: askItem.key, target: askItem.target, expl: askItem.expl ?? "", ts: askItem.ts, kind: askItem.kind }}
+            <CatchupAskPanel root={root} item={{ key: askItem.key, target: askItem.target, expl: stripKindTags(askItem.expl ?? ""), ts: askItem.ts, kind: askItem.kind }}
               providerId={providerId} providerSettings={providerSettings} onClose={() => setAskItem(null)} onCount={onAskCount} />
           </div>
         </>

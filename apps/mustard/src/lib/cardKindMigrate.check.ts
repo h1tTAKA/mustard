@@ -90,4 +90,16 @@ assert.equal(await reclassifyTermCards(s5, fake), 0, "두 번째는 안 함");
 const s6 = mem({ "nunopi:bookmark-term-details": { split: { term: "split", explanation: "함수", ...ws } } });
 await assert.rejects(reclassifyTermCards(s6, async () => { throw new Error("AI 없음"); }));
 assert.equal(s6.getItem("nunopi:migrated-term-kind-ai-1369"), null, "실패하면 다음에 다시");
+// 리뷰: 개념으로 옮긴 카드의 별 — 개념 별 저장이 없으면 기존 개념 전부 별인 상태를 적어 두고 별 있던 것만 더함
+const s7 = mem({
+  "nunopi:bookmark-term-details": { 재귀: { term: "재귀", explanation: "x", ...ws }, 상태: { term: "상태", explanation: "y", ...ws } },
+  "nunopi:bookmark-concept-details": { 클로저: { title: "클로저" } },
+  "nunopi:bookmark-terms": ["재귀"],
+});
+assert.equal(await reclassifyTermCards(s7, async (it) => it.map(() => "concept" as const)), 2);
+assert.deepEqual(s7.get("nunopi:bookmark-concepts"), ["클로저", "재귀"]); // 상태(별 없던 것)는 별 없음
+assert.deepEqual(s7.get("nunopi:bookmark-terms"), []);
+// 리뷰: 다른 창이 하는 중이면 안 함
+const s8 = mem({ "nunopi:bookmark-term-details": { 재귀: { term: "재귀", explanation: "x", ...ws } }, "nunopi:migrating-term-kind-ai": Date.now() });
+assert.equal(await reclassifyTermCards(s8, async () => ["concept"]), 0);
 console.log("cardKindMigrate ok");

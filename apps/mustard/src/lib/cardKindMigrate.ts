@@ -8,9 +8,9 @@ type Store = Pick<Storage, "getItem" | "setItem">;
 type Rec = Record<string, Record<string, unknown>>;
 const K = {
   token: "nunopi:bookmark-token-details", term: "nunopi:bookmark-term-details", concept: "nunopi:bookmark-concept-details",
-  starTok: "nunopi:bookmark-tokens", starTerm: "nunopi:bookmark-terms", // 별 표시(이름 문자열 배열, LearningPanel). 개념은 별 저장소가 따로 없음
+  starTok: "nunopi:bookmark-tokens", starTerm: "nunopi:bookmark-terms", starConcept: "nunopi:bookmark-concepts", // 별 표시(이름 문자열 배열, LearningPanel). 저장이 없으면 IT용어·개념은 "전부 별", 토큰은 "없음"으로 봄
   srs: "nunopi:srs-state", explain: "nunopi:card-explain", chat: "nunopi:card-chat", decks: "nunopi:mem-custom-decks",
-  done: "nunopi:migrated-term-token-1369", doneAI: "nunopi:migrated-term-kind-ai-1369",
+  done: "nunopi:migrated-term-token-1369", doneAI: "nunopi:migrated-term-kind-ai-1369", lockAI: "nunopi:migrating-term-kind-ai",
 };
 const read = <T,>(s: Store, k: string, d: T): T => { try { const v = s.getItem(k); return v ? (JSON.parse(v) as T) : d; } catch { return d; } };
 const norm = (x: string) => x.trim().toLowerCase().replace(/\([^)]*\)/g, "").replace(/\s+/g, ""); // core normalizeCardFront와 같음
@@ -18,10 +18,10 @@ const norm = (x: string) => x.trim().toLowerCase().replace(/\([^)]*\)/g, "").rep
 // IT용어 카드(키 → 갈 곳)를 옮김. 반환: 옮긴 수. 쓰는 순서: 새 카드 → 키 옮기기 → IT용어 카드 지우기(맨 끝) — 중간에 실패해도 다음에 처음부터(키 옮기기는 여러 번 해도 같음, 리뷰)
 export function moveTermCards(s: Store, picks: Map<string, "token" | "concept">): number {
   const terms = read<Rec>(s, K.term, {}), tokens = read<Rec>(s, K.token, {}), concepts = read<Rec>(s, K.concept, {});
-  const termKeys0 = Object.keys(terms); // 별 표시 저장이 없으면 LearningPanel은 IT용어 카드 전부를 별 켠 것으로 봄 — 옮기기 전 키로 그 기본값 재현(리뷰)
+  const termKeys0 = Object.keys(terms), conceptKeys0 = Object.keys(concepts); // 별 표시 저장이 없으면 LearningPanel은 IT용어·개념 카드 전부를 별 켠 것으로 봄 — 옮기기 전 키로 그 기본값 재현(리뷰)
   const has = new Map<string, string>([...Object.keys(concepts).map((k) => [norm(k), `concept:${k}`] as const), ...Object.keys(tokens).map((k) => [norm(k), `token:${k}`] as const)]); // 프로그래밍 덱에 이미 같은 이름이 있으면 그 카드에 붙임(대소문자 달라도, 리뷰)
   const moves: [string, string][] = []; // [옛 카드 키, 새 카드 키]
-  const starMoves: [string, string][] = []; // [옛 IT용어 이름, 새 토큰 이름] — 별 저장소는 토큰만 있음
+  const starMoves: [string, string][] = []; // [옛 IT용어 이름, 새 카드 키] — 별도 토큰·개념 별 저장소로
   for (const [k, to] of picks) {
     const v = terms[k];
     if (!v) continue;
@@ -36,7 +36,7 @@ export function moveTermCards(s: Store, picks: Map<string, "token" | "concept">)
     }
     delete terms[k];
     moves.push([`term:${k}`, key]);
-    if (key.startsWith("token:")) starMoves.push([k, key.slice(6)]);
+    starMoves.push([k, key]);
   }
   if (!moves.length) return 0;
   s.setItem(K.token, JSON.stringify(tokens));
@@ -60,11 +60,15 @@ export function moveTermCards(s: Store, picks: Map<string, "token" | "concept">)
     for (const v of Object.values(m)) { const o = typeof v.originCardKey === "string" ? re.get(v.originCardKey) : undefined; if (o) { v.originCardKey = o; ch = true; } }
     if (ch && key !== K.term) s.setItem(key, JSON.stringify(m));
   }
-  const starTerm = s.getItem(K.starTerm) === null ? termKeys0 : read<string[]>(s, K.starTerm, []), starTok = read<string[]>(s, K.starTok, []); // 별 표시도 같이(리뷰)
-  if (Array.isArray(starTerm) && Array.isArray(starTok) && moves.some(([a]) => starTerm.includes(a.slice(5)))) {
-    for (const [a, b] of starMoves) if (starTerm.includes(a) && !starTok.includes(b)) starTok.push(b);
-    s.setItem(K.starTok, JSON.stringify(starTok));
-    s.setItem(K.starTerm, JSON.stringify(starTerm.filter((x) => !re.has(`term:${x}`))));
+  const starTerm = s.getItem(K.starTerm) === null ? termKeys0 : read<string[]>(s, K.starTerm, []); // 별 표시도 같이(리뷰)
+  const starred = starMoves.filter(([a]) => Array.isArray(starTerm) && starTerm.includes(a));
+  if (Array.isArray(starTerm) && starMoves.length) {
+    const tok = read<string[]>(s, K.starTok, []);
+    const con = s.getItem(K.starConcept) === null ? conceptKeys0 : read<string[]>(s, K.starConcept, []); // 개념 별 저장이 없으면 기존 개념 전부 별 — 그 상태를 적어 두고 옮긴 것만 더함(안 그러면 별 없던 카드가 별로 보임)
+    for (const [, b] of starred) { const [src, name] = [b.slice(0, b.indexOf(":")), b.slice(b.indexOf(":") + 1)]; const arr = src === "token" ? tok : con; if (Array.isArray(arr) && !arr.includes(name)) arr.push(name); }
+    if (Array.isArray(tok) && starred.some(([, b]) => b.startsWith("token:"))) s.setItem(K.starTok, JSON.stringify(tok));
+    if (Array.isArray(con) && (s.getItem(K.starConcept) === null ? starMoves.some(([, b]) => b.startsWith("concept:")) : starred.some(([, b]) => b.startsWith("concept:")))) s.setItem(K.starConcept, JSON.stringify(con));
+    if (starred.length) s.setItem(K.starTerm, JSON.stringify(starTerm.filter((x) => !re.has(`term:${x}`))));
   }
   s.setItem(K.term, JSON.stringify(terms)); // 맨 끝
   return moves.length;
@@ -87,6 +91,12 @@ export function migrateCatchupTermCards(s: Store): number {
 // 코드 → 토큰, 개념 → 개념 카드. 80장씩 묻고, 하나라도 실패하면 완료 표시 없이 끝(다음 시작에 남은 것만 다시).
 export async function reclassifyTermCards(s: Store, classify: (items: { name: string; def: string }[]) => Promise<(CardKind | null | undefined)[]>): Promise<number> {
   if (s.getItem(K.doneAI)) return 0;
+  const lock = Number(s.getItem(K.lockAI) ?? 0);
+  if (Date.now() - lock < 10 * 60_000) return 0; // 다른 창이 하는 중(10분 넘으면 멈춘 걸로 봄) — 같은 카드로 AI를 여러 번 부르지 않게(리뷰)
+  s.setItem(K.lockAI, String(Date.now()));
+  try { return await reclassifyOnce(s, classify); } finally { s.setItem(K.lockAI, "0"); }
+}
+async function reclassifyOnce(s: Store, classify: (items: { name: string; def: string }[]) => Promise<(CardKind | null | undefined)[]>): Promise<number> {
   const all = Object.entries(read<Rec>(s, K.term, {})).filter(([, v]) => v.sourceKind === "workspace" || v.sourceKind === "ask");
   let moved = 0;
   for (let i = 0; i < all.length; i += 80) {
