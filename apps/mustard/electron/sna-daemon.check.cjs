@@ -1,0 +1,54 @@
+// sna-daemon 점검 — node electron/sna-daemon.check.cjs
+// 가짜 SNA(standalone 대신 /health·/agent/sessions만 답하는 작은 서버)로 띄우기 → 다시 붙기 → 설정 바뀜(일 없음) 교체 → 완전히 종료, 그리고 껍데기의 "앱 없음 + 일 없음" 스스로 종료.
+const assert = require("node:assert");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const net = require("node:net");
+const { ensureSnaDaemon, stopSnaDaemon, detachSnaDaemon, decide } = require("./sna-daemon.cjs");
+
+assert.equal(decide(null, {}), "spawn");
+assert.equal(decide({ pid: 1, version: "a" }, { alive: true, healthy: true, version: "a" }), "reuse");
+assert.equal(decide({ pid: 1, version: "a" }, { alive: true, healthy: true, busy: true, version: "b" }), "keep-old");
+assert.equal(decide({ pid: 1, version: "a" }, { alive: true, healthy: true, busy: false, version: "b" }), "replace");
+assert.equal(decide({ pid: 1, version: "a" }, { alive: true, healthy: false, version: "a" }), "spawn");
+
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sna-daemon-"));
+const fake = path.join(dir, "fake-standalone.cjs");
+fs.writeFileSync(fake, `require("node:http").createServer((q, r) => { r.setHeader("content-type","application/json"); r.end(q.url === "/health" ? "{}" : JSON.stringify({ sessions: process.env.FAKE_BUSY ? [{ id: "a", alive: true, agentStatus: "busy", state: "processing" }] : [] })); }).listen(Number(process.env.SNA_PORT), "127.0.0.1");
+process.on("SIGTERM", () => process.exit(0));`);
+const host = path.join(__dirname, "sna-daemon-host.cjs");
+const free = () => new Promise((res) => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => res(p)); }); });
+const isFree = (p) => new Promise((res) => { const s = net.createServer(); s.on("error", () => res(false)); s.listen(p, "127.0.0.1", () => s.close(() => res(true))); });
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const wait = async (f, ms = 5000) => { for (let t = 0; t < ms; t += 50) { if (await f()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+const opts = (env) => ({ userData: dir, hostScript: host, standaloneScript: fake, snaVersion: "t", env, isPortFree: isFree, getFreePort: free });
+
+(async () => {
+  const a = await ensureSnaDaemon(opts({ X: "1" }));
+  assert.equal(a.reused, false);
+  const b = await ensureSnaDaemon(opts({ X: "1" }));
+  assert.equal(b.reused, true); assert.equal(b.pid, a.pid); assert.equal(b.baseUrl, a.baseUrl); assert.equal(b.authToken, a.authToken); // 다시 붙음 — 같은 주소·토큰
+  const st = JSON.parse(fs.readFileSync(path.join(dir, "sna-daemon.json"), "utf8"));
+  assert.equal(st.appPid, process.pid);
+  assert.equal((fs.statSync(path.join(dir, "sna-daemon.json")).mode & 0o777), 0o600);
+  const c = await ensureSnaDaemon(opts({ X: "2" })); // 설정 바뀜 + 일 없음 → 교체
+  assert.notEqual(c.pid, a.pid); assert.equal(c.authToken, a.authToken, "토큰은 유지");
+  assert.ok(await wait(() => !alive(a.pid)), "옛 데몬 꺼짐");
+  stopSnaDaemon(dir);
+  assert.ok(await wait(() => !alive(c.pid)), "완전히 종료");
+
+  // 껍데기 스스로 종료: 앱 없음(appPid 0) + 일 없음이 IDLE 넘으면 끔. 일하는 중이면 안 끔.
+  process.env.MUSTARD_SNA_IDLE_MS = "300"; process.env.MUSTARD_SNA_TICK_MS = "100";
+  const d = await ensureSnaDaemon(opts({ X: "3" }));
+  detachSnaDaemon(dir);
+  assert.ok(await wait(() => !alive(d.pid), 4000), "앱 없고 일 없으면 스스로 끔");
+  process.env.FAKE_BUSY = "1";
+  const e = await ensureSnaDaemon(opts({ X: "4" }));
+  detachSnaDaemon(dir);
+  await new Promise((r) => setTimeout(r, 1200));
+  assert.ok(alive(e.pid), "일하는 중이면 안 끔");
+  stopSnaDaemon(dir);
+  assert.ok(await wait(() => !alive(e.pid)));
+  console.log("sna-daemon ok");
+})().catch((err) => { console.error(err); process.exit(1); });

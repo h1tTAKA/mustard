@@ -13,13 +13,14 @@ require("./claude-env.cjs").stripParentClaudeEnv(process.env);
 const { app, BrowserWindow, Menu, shell, ipcMain, Notification, dialog, clipboard, safeStorage, webContents, WebContentsView, globalShortcut, powerSaveBlocker, nativeImage } = require("electron");
 const { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, cpSync, chmodSync, statSync } = require("node:fs");
 const {
-  startSnaServer,
+  runtimePathsToEnv,
   resolveClaudeCli,
   resolveCodexCli,
   resolveOpenCodeCli,
 } = require("@sna-sdk/core/electron");
 const { spawn } = require("node:child_process");
 const { createDaemonClient } = require("./daemon-client.cjs");
+const { ensureSnaDaemon, stopSnaDaemon, detachSnaDaemon } = require("./sna-daemon.cjs"); // #1358 채팅 AI 서버를 앱과 떼어 돌림
 const { removeRepoHooks } = require("./agent-hooks.cjs");
 const { installClaudeHooks } = require("./claude-hooks.cjs");
 const { getProviderUsage } = require("./provider-usage.cjs");
@@ -97,6 +98,7 @@ async function getStableAppPort() {
 const DEV_URL = process.env.ELECTRON_START_URL; // 있으면 dev 모드
 let serverProc = null;
 let snaHandle = null;
+let quitCompletely = false; // #1358 메뉴 "완전히 종료" — 채팅 AI 서버까지 끔
 let win = null;
 
 // resolver 실패(미설치)를 삼켜 경로만 반환.
@@ -195,15 +197,29 @@ async function startRuntimeServer() {
   const nativeBinding = app.isPackaged
     ? join(process.resourcesPath, "app", "node_modules", "better-sqlite3", "build", "Release", "better_sqlite3.node")
     : undefined;
-  return startSnaServer({
-    appId: "nunopi",
-    port: await getFreePort(), // 3099 고정 대신 빈 포트(충돌 방지)
-    dbPath: join(app.getPath("userData"), "sna.db"),
-    runtimePaths,
-    maxSessions: 8, // #1100 Crew 역할 세션(동시 3) + 분석·해설·질문 대기열(4) + 여유 1 — 기본 5면 Crew가 분석을 굶김
-    ...(nativeBinding ? { nativeBinding } : {}),
-    onLog: (l) => { if (/ready|error|fail/i.test(l)) console.log("[sna]", l); },
+  // #1358 SNA를 앱의 자식이 아니라 떼어 낸 데몬으로 — 앱을 닫아도 채팅 작업이 계속 돌고, 다시 열면 같은 데몬에 붙음.
+  //  설정은 예전 startSnaServer와 같은 SNA_* 환경변수로 넘김(SDK 런처는 fork(IPC)가 고정이라 직접 띄움).
+  const snaElectron = require.resolve("@sna-sdk/core/electron");
+  const snaRoot = join(require("node:path").dirname(snaElectron), "..", "..");
+  let consumerModules;
+  try { consumerModules = join(require.resolve("better-sqlite3/package.json", { paths: [process.cwd()] }), "..", ".."); } catch { /* SDK와 같음 — 없으면 안 넘김 */ }
+  const env = {
+    ...runtimePathsToEnv(runtimePaths),
+    SNA_APP_ID: "nunopi",
+    SNA_ALLOWED_ORIGINS: "",
+    SNA_DB_PATH: join(app.getPath("userData"), "sna.db"),
+    SNA_MAX_SESSIONS: "8", // #1100 Crew 역할 세션(동시 3) + 분석·해설·질문 대기열(4) + 여유 1 — 기본 5면 Crew가 분석을 굶김
+    ...(nativeBinding ? { SNA_SQLITE_NATIVE_BINDING: nativeBinding } : {}),
+    ...(consumerModules ? { SNA_MODULES_PATH: consumerModules } : {}),
+  };
+  const d = await ensureSnaDaemon({
+    userData: app.getPath("userData"),
+    hostScript: app.isPackaged ? join(process.resourcesPath, "electron", "sna-daemon-host.cjs") : join(__dirname, "sna-daemon-host.cjs"),
+    standaloneScript: join(snaRoot, "dist", "server", "standalone.js"),
+    snaVersion: (() => { try { return JSON.parse(readFileSync(join(snaRoot, "package.json"), "utf8")).version; } catch { return "?"; } })(),
+    env, isPortFree, getFreePort, log: (l) => console.log(l),
   });
+  return { connection: { baseUrl: d.baseUrl, authToken: d.authToken } };
 }
 
 // standalone 서버 spawn(prod). extraEnv(런타임 커넥션)를 주입. 준비되면 baseUrl 반환.
@@ -2028,7 +2044,13 @@ function selectAllScoped() {
 function installAppMenu() {
   const mac = process.platform === "darwin";
   const template = [
-    ...(mac ? [{ role: "appMenu" }] : [{ label: "File", submenu: [{ role: "quit" }] }]),
+    // #1358 "완전히 종료" — 보통 종료는 채팅 AI 서버를 남겨 작업을 계속, 이건 그것까지 끔
+    ...(mac ? [{ role: "appMenu", submenu: [
+      { role: "about" }, { type: "separator" }, { role: "services" }, { type: "separator" },
+      { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" },
+      { label: "Quit Completely (stop chat agents)", accelerator: "Alt+Cmd+Q", click: () => { quitCompletely = true; app.quit(); } },
+      { role: "quit" },
+    ] }] : [{ label: "File", submenu: [{ label: "Quit Completely (stop chat agents)", click: () => { quitCompletely = true; app.quit(); } }, { role: "quit" }] }]),
     // #1324 편집 메뉴를 직접 — "전체 선택"(⌘A)만 바꿈: 포커스가 [data-select-all] 영역(코드 탭) 안이면 그 내용만, 아니면 기존 전체 선택.
     // macOS는 메뉴 단축키가 화면 키 처리보다 먼저라 화면에서 막을 수 없음(리뷰). 입력창·터미널·인앱 브라우저는 그대로 selectAll.
     { label: "Edit", submenu: [
@@ -2053,7 +2075,9 @@ app.whenReady().then(boot).catch((e) => { console.error("[electron] boot failed"
     // #1068 정상 종료 = 마지막 생존 시각을 지금으로 → 다음 실행이 "끈 뒤"만 꺼진 구간으로 봄(이미 캐치업된 마지막 작업 재생 X)
     try { const d = process.env.MUSTARD_STREAM_DIR || require("node:path").join(require("node:os").homedir(), ".nunopi", "stream"); require("node:fs").mkdirSync(d, { recursive: true }); require("node:fs").writeFileSync(require("node:path").join(d, "alive.json"), JSON.stringify({ ts: Date.now() })); } catch { /* ignore */ }
     try { serverProc?.kill(); } catch { /* ignore */ }
-    try { snaHandle?.stop(); } catch { /* ignore */ }
+    // #1358 채팅 AI 서버(SNA)는 안 끔 — 시켜 둔 채팅 작업이 계속 돎. "앱 없음"만 표시(데몬이 일 없으면 30분 뒤 스스로 끔). "완전히 종료"만 데몬까지 끔.
+    if (quitCompletely) { try { stopSnaDaemon(app.getPath("userData")); } catch { /* ignore */ } }
+    else { try { detachSnaDaemon(app.getPath("userData")); } catch { /* ignore */ } }
     // 터미널 데몬은 안 죽임 — 세션(프로세스) 생존(#682). 유휴 reap로만 종료.
   });
 }
