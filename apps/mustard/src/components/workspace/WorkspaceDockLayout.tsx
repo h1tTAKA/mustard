@@ -171,7 +171,9 @@ export default function WorkspaceDockLayout({ tree, panels, onTreeChange }: {
           const ok = (x: number) => { const n = narrowest({ ...live, ratio: x }, rect.width); return n >= MIN_W || n >= narrowest({ ...live, ratio: cur }, rect.width); };
           if (!ok(r)) { let good = cur; for (let i = 0; i < 16; i++) { const mid = (good + r) / 2; if (ok(mid)) good = mid; else r = mid; } r = good; } // 빨리 끌어도 경계에 딱 붙게(이분 탐색)
         }
-        onTreeChange(setRatioAt(treeRef.current, path, r));
+        const next = setRatioAt(treeRef.current, path, r);
+        treeRef.current = next; // 다음 move가 렌더 전이어도 방금 값을 보게(리뷰)
+        onTreeChange(next);
       };
       const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.cursor = ""; document.body.style.userSelect = ""; };
       window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
