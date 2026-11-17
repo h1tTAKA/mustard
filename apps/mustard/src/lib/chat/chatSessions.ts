@@ -79,7 +79,7 @@ function persist(c: Chat, now = false) {
     if (!g.chats.has(c.id)) return; // 닫힌 탭
     const d = rootDir(c.root); mkdirSync(d, { recursive: true });
     const f = join(d, `${c.id}.json`);
-    writeFileSync(`${f}.tmp`, JSON.stringify({ id: c.id, root: c.root, cwd: c.cwd, provider: c.provider, model: c.model, effort: c.effort, mode: c.mode, archived: c.archived, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt, sid: c.sid, cc: c.cc, cur: c.cur, token: c.token, handedOff: c.handedOff, items: c.tl.items }));
+    writeFileSync(`${f}.tmp`, JSON.stringify({ id: c.id, root: c.root, cwd: c.cwd, provider: c.provider, model: c.model, effort: c.effort, mode: c.mode, archived: c.archived, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt, sid: c.sid, cc: c.cc, cur: c.cur, token: c.token, handedOff: c.handedOff, items: c.tl.items }), { mode: 0o600 });
     renameSync(`${f}.tmp`, f);
   };
   const t = g.flush.get(c.id);
@@ -335,12 +335,18 @@ async function wireOnce() {
   // #1358 SNA 클라이언트는 끊겼다 붙으면 번호 없이 다시 구독함(그 사이 이벤트 빠짐) → 우리가 마지막 번호부터 다시 구독
   sna.onConnectionStatus((st) => {
     if (st !== "connected") return;
-    for (const c of g.chats.values()) if (c.sid && g.subscribed.has(c.sid)) { c.replaying = true; void sna.agent.subscribe(c.sid, sinceOf(c)).catch(() => {}).finally(() => { c.replaying = false; }); }
+    for (const c of g.chats.values()) if (c.sid && g.subscribed.has(c.sid)) { const sid = c.sid; c.replaying = true; void sna.agent.getStatus(sid).then((st) => sna.agent.subscribe(sid, sinceOf(c, st?.eventCount))).catch(() => {}).finally(() => { c.replaying = false; }); }
   });
 }
 
 // 번호를 아는 채팅만 since로(0을 주면 SNA가 DB 기록 전체를 다른 번호 체계로 다시 보내 겹침) — 번호 없는 옛 채팅은 지금부터만
-const sinceOf = (c: Chat) => (c.cur ? { since: c.cur } : undefined);
+// SNA는 최근 500개만 들고 있고, since가 그보다 오래되면 받은 이벤트에 번호를 어긋나게 붙임(리뷰) → 간격이 크면 지금부터만 받고 번호를 서버 값으로 맞춤
+const BUF = 450;
+function sinceOf(c: Chat, eventCount?: number) {
+  if (!c.cur) return undefined;
+  if (eventCount !== undefined && eventCount - c.cur > BUF) { c.cur = eventCount; return undefined; }
+  return { since: c.cur };
+}
 
 // #1358 앱(Next)이 다시 뜨면 — 저장된 채팅 중 SNA 세션이 아직 살아 있는 것(앱이 닫힌 동안에도 일함)에 붙어 그동안의 이벤트를 받아 접음.
 // 한계: SNA는 세션마다 최근 이벤트 500개만 들고 있어 그보다 많이 쌓였으면 앞부분은 화면에 안 채워짐(대화 자체·캐치업 기록은 남음).
@@ -353,7 +359,7 @@ async function reattach(root: string) {
     const sid = c.sid!;
     const st = await sna.agent.getStatus(sid).catch(() => null);
     if (!st?.alive) continue; // 꺼진 세션 — 다음 보내기 때 이어 시작(ensureAgent)
-    if (!g.subscribed.has(sid)) { g.subscribed.add(sid); c.replaying = true; await sna.agent.subscribe(sid, sinceOf(c)).catch(() => { g.subscribed.delete(sid); }).finally(() => { c.replaying = false; }); } // 지난 이벤트는 구독 응답 전에 옴
+    if (!g.subscribed.has(sid)) { g.subscribed.add(sid); c.replaying = true; await sna.agent.subscribe(sid, sinceOf(c, st.eventCount)).catch(() => { g.subscribed.delete(sid); }).finally(() => { c.replaying = false; }); } // 지난 이벤트는 구독 응답 전에 옴
     setBusy(c, st.agentStatus === "busy");
     persist(c);
     // Codex 등(SNA 승인 흐름): 앱이 닫힌 동안 들어와 SNA가 붙잡고 있는 권한 요청 → 카드로 되살림(Claude는 훅이 다시 물어 옴)
@@ -431,7 +437,7 @@ async function ensureAgentOnce(c: Chat, origin: string) {
   if (isClaude) { mkdirSync(baseDir(), { recursive: true }); writeFileSync(hookPath(), chatHookSrc(HOOK_SRC)); }
   if (c.sid) {
     const st = await sna.agent.getStatus(c.sid).catch(() => null);
-    if (st?.alive) { if (!g.subscribed.has(c.sid)) { await sna.agent.subscribe(c.sid, sinceOf(c)); g.subscribed.add(c.sid); } return; } // 서버만 다시 뜬 경우 — 살아 있는 세션 구독부터
+    if (st?.alive) { if (!g.subscribed.has(c.sid)) { await sna.agent.subscribe(c.sid, sinceOf(c, st.eventCount)); g.subscribed.add(c.sid); } return; } // 서버만 다시 뜬 경우 — 살아 있는 세션 구독부터
     g.bySid.delete(c.sid); c.sid = undefined;
   }
   // 앱 재시작 뒤(에이전트 없음) — 새 SNA 세션. Claude는 CLI 대화 id로 이어 시작(--resume, 실측: SNA resume은 맥락이 안 이어짐).

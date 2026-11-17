@@ -42,8 +42,10 @@ async function ensureSnaDaemon(opts) {
   const write = (st) => { fs.writeFileSync(statePath, JSON.stringify(st), { mode: 0o600 }); try { fs.chmodSync(statePath, 0o600); } catch { /* ignore */ } };
   let st = null;
   try { st = JSON.parse(fs.readFileSync(statePath, "utf8")); } catch { /* 처음 */ }
-  const mine = !!(st && ours(st.pid));
-  const up = mine && await healthy(st.port);
+  const live = !!(st && alive(st.pid));
+  let up = live && await healthy(st.port);
+  for (let i = 0; live && !up && i < 8; i++) { await sleep(1000); up = await healthy(st.port); } // 잠깐 바빠서 못 답했을 수 있음 — 바로 죽이면 일하던 채팅이 죽음(리뷰)
+  const mine = live && (up || ours(st.pid)); // 상태 파일의 포트에서 답하면 우리 데몬(ps 확인이 실패해도 덮어쓰지 않게, 리뷰)
   const action = decide(st, { alive: mine, healthy: up, busy: up && st.version !== version ? await busy(st) : false, version });
   opts.log?.(`[sna-daemon] ${action}${st ? ` (pid ${st.pid}, v${st.version} → v${version})` : ""}`);
   if (action === "reuse" || action === "keep-old") {
@@ -52,7 +54,7 @@ async function ensureSnaDaemon(opts) {
   }
   if (mine) { // 옛 데몬(버전 다름·응답 없음) 정리 — SIGTERM이면 SNA가 세션을 닫고 끔
     try { process.kill(st.pid, "SIGTERM"); } catch { /* ignore */ }
-    for (let i = 0; i < 50 && alive(st.pid); i++) await sleep(100);
+    for (let i = 0; i < 150 && alive(st.pid); i++) await sleep(100); // SNA가 세션을 정리하고 끌 시간(15초) — 넘으면 강제
     if (alive(st.pid)) try { process.kill(st.pid, "SIGKILL"); } catch { /* ignore */ }
   }
   const token = (st && st.token) || crypto.randomBytes(32).toString("hex");

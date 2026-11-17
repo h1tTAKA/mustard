@@ -117,7 +117,7 @@ export async function hookDecision(runId: string, token: string, tool: string, i
   return ok ? { decision: "allow" } : { decision: "deny", reason: "The user denied this action" };
 }
 
-// 앱이 재시작되면 이전 실행의 세션은 사라짐 → 진행 중이던 기록은 실패로 정리하고 카드는 막힘으로(첫 접근 때 한 번).
+// 앱이 재시작되면 이전 실행은 이어 받지 않음 → 진행 중이던 기록은 실패로 정리(살아 있는 세션은 끔)하고 카드는 막힘으로(첫 접근 때 한 번).
 function reconcile(root: string) {
   if (g.reconciled.has(root)) return;
   g.reconciled.add(root);
@@ -125,6 +125,8 @@ function reconcile(root: string) {
   let changed = false;
   for (const r of runs) {
     if (ACTIVE.includes(r.state) && !g.runs.has(r.id)) {
+      // #1358 채팅 AI 서버(SNA)는 이제 앱을 닫아도 살아 있음 → 이 실행의 에이전트가 아무도 안 보는 채 계속 고치지 않게 끔(Crew는 이어 받기 없음 — 예전처럼 실패로 정리)
+      if (r.sessionId) void getSnaClient().then((c) => c.agent.kill(r.sessionId!)).catch(() => {});
       r.state = "failed"; r.error = tr("crew.reason.interrupted"); r.endedAt = Date.now(); changed = true;
       block(root, r.taskId, r.stage ?? 0, tr("crew.reason.interrupted"));
     }

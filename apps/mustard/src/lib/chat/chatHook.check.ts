@@ -35,4 +35,14 @@ srv.close();
 assert.match(a.out, /"permissionDecision":"allow"/, "앱이 늦게 떠도 다시 시도해 허용을 받음");
 assert.ok(a.ms >= 3000, "기다렸다가");
 assert.match(seen, /^\/api\/chat\/permission .*"run":"x".*"token":"y"/);
+// 앱이 없을 때 읽기 도구는 바로 허용(기다리지 않음)
+const dead = await free();
+const rd = await new Promise<{ out: string; ms: number }>((res) => {
+  const t0 = Date.now();
+  const p = spawn(process.execPath, [hook, `--url=http://127.0.0.1:${dead}`, "--run=x", "--token=y"]);
+  let out = ""; p.stdout.on("data", (c) => (out += c));
+  p.on("close", () => res({ out, ms: Date.now() - t0 }));
+  p.stdin.end(JSON.stringify({ tool_name: "Read", tool_input: { file_path: "/x" } }));
+});
+assert.match(rd.out, /"permissionDecision":"allow"/); assert.ok(rd.ms < 2500, "기다리지 않음");
 console.log("chatHook ok");
