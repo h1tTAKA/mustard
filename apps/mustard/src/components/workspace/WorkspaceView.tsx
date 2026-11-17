@@ -30,6 +30,8 @@ import RepoGraphViewer from "@/components/workspace/RepoGraphViewer";
 import { FlyCardProvider } from "@mustard/nunopi";
 import WorkspaceDockLayout, { defaultTree, pruneTree, leavesOf, isDockNode, appendPanel, removePanel, type DockNode, type PanelId } from "@/components/workspace/WorkspaceDockLayout";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
+import { CARDS_CHANGED_EVENT } from "@mustard/core";
+import { migrateCatchupTermCards } from "@/lib/cardKindMigrate";
 import { TERMINAL_LINK_EVENT, type TerminalLinkDetail } from "@/components/workspace/Terminal";
 import { findRepoFile } from "@/lib/terminalLinks";
 const OPEN_ROOTS = new Map<string, number>(); // 지금 열린 레포 화면 수(#1193 터미널 링크 — 가장 깊은 레포만 처리). 같은 레포 화면이 둘이어도 하나 닫힐 때 안 지워지게 개수로(리뷰)
@@ -162,6 +164,11 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   useEffect(() => setMounted(true), []);
   const desktop = mounted ? window.nunopiDesktop : undefined;
 
+  // #1369 캐치업 칩으로 IT용어 카드에 잘못 들어간 코드 이름 → 토큰 카드(한 번만). 옮겼으면 열린 카드 목록 다시 모으게 알림.
+  useEffect(() => {
+    if (!mounted) return;
+    try { if (migrateCatchupTermCards(localStorage) > 0) window.dispatchEvent(new Event(CARDS_CHANGED_EVENT)); } catch { /* 저장소 못 쓰면 다음 시작에 다시 */ }
+  }, [mounted]);
   // 저장된 패널 폭 복원.
   useEffect(() => {
     if (!mounted) return;
