@@ -440,8 +440,10 @@ async function ensureAgentOnce(c: Chat, origin: string) {
   };
   if (isClaude) { mkdirSync(baseDir(), { recursive: true }); writeFileSync(hookPath(), chatHookSrc(HOOK_SRC)); }
   if (c.sid) {
-    const st = await sna.agent.getStatus(c.sid).catch(() => null);
-    if (st?.alive) { const sid = c.sid; if (!g.subscribed.has(sid)) { g.subscribed.add(sid); c.replaying = (c.replaying ?? 0) + 1; await sna.agent.subscribe(sid, sinceOf(c, st.eventCount)).catch((e) => { g.subscribed.delete(sid); throw e; }).finally(() => { c.replaying = (c.replaying ?? 1) - 1; }); } return; } // 앱이 꺼진 동안 쌓인 것 — 다시 붙기와 같게(리뷰) // 서버만 다시 뜬 경우 — 살아 있는 세션 구독부터
+    let st = await sna.agent.getStatus(c.sid).catch(() => null);
+    if (!st) st = await sna.agent.getStatus(c.sid).catch(() => null); // 잠깐 못 물은 것일 수 있어 한 번 더
+    if (!st) throw new Error("chat agent status unavailable — try again"); // 모름을 "꺼짐"으로 보면 살아 있는 대화 옆에 둘째 에이전트가 뜸(리뷰)
+    if (st.alive) { const sid = c.sid; if (!g.subscribed.has(sid)) { g.subscribed.add(sid); c.replaying = (c.replaying ?? 0) + 1; await sna.agent.subscribe(sid, sinceOf(c, st.eventCount)).catch((e) => { g.subscribed.delete(sid); throw e; }).finally(() => { c.replaying = (c.replaying ?? 1) - 1; }); } return; } // 앱이 꺼진 동안 쌓인 것 — 다시 붙기와 같게(리뷰) // 서버만 다시 뜬 경우 — 살아 있는 세션 구독부터
     g.bySid.delete(c.sid); c.sid = undefined;
   }
   // 앱 재시작 뒤(에이전트 없음) — 새 SNA 세션. Claude는 CLI 대화 id로 이어 시작(--resume, 실측: SNA resume은 맥락이 안 이어짐).
