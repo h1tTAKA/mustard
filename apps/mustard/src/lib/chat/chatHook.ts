@@ -9,7 +9,7 @@ export const chatHookSrc = (base: string) => base
   .replace("/api/crew/permission", "/api/chat/permission")
   .replace("Mustard Crew PreToolUse", "Mustard chat PreToolUse")
   .replace("let raw = \"\";", FULL_MODE_SRC + "let raw = \"\";")
-  .replace(/const r = await fetch\(([\s\S]*?)\);\n/, (_m: string, a: string) => `const end = Date.now() + 870000; let r;
+  .replace(/const r = await fetch\(([\s\S]*?)\);\n/, (_m: string, a: string) => `const end = Date.now() + 870000; let r, fm; // fm = 전부 허용 모드인지(한 번만 읽음 — 긴 채팅 파일을 3초마다 다시 읽지 않게, 리뷰)
     for (;;) { try { r = await fetch(${a.replace("AbortSignal.timeout(900000)", "AbortSignal.timeout(Math.max(1000, end - Date.now()))")}); break; }
-      catch (e) { if (input.tool_name === "TodoWrite" || fullMode()) out("allow"); if (Date.now() > end - 3000 || (e && e.name === "TimeoutError")) throw new Error("Mustard app was closed — no one to approve"); await new Promise((s) => setTimeout(s, 3000)); } }
+      catch (e) { if (input.tool_name === "TodoWrite" || (fm ??= fullMode())) out("allow"); if (Date.now() > end - 3000 || (e && e.name === "TimeoutError")) throw new Error("Mustard app was closed — no one to approve"); await new Promise((s) => setTimeout(s, 3000)); } }
 `);

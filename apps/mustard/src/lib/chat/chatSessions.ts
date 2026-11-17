@@ -7,7 +7,7 @@
 // 실행 AI = SNA 런타임 5종(Claude Code·Codex·OpenCode·Grok·Cursor). 모델은 SNA listModels, 생각 강도는 reasoningLevel(0~5),
 // 권한 모드 = plan(Claude만) / default(Crew 정책, 나머지 카드) / full(전부 허용). 탭 닫기 = 보관(기록 패널에서 다시 엶), 지우기는 따로.
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { getSnaClient } from "@mustard/core/sna";
@@ -83,6 +83,7 @@ function persist(c: Chat, now = false) {
     const f = join(d, `${c.id}.json`);
     writeFileSync(`${f}.tmp`, JSON.stringify({ id: c.id, root: c.root, cwd: c.cwd, provider: c.provider, model: c.model, effort: c.effort, mode: c.mode, archived: c.archived, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt, sid: c.sid, cc: c.cc, cur: c.cur, token: c.token, handedOff: c.handedOff, items: c.tl.items }), { mode: 0o600 });
     renameSync(`${f}.tmp`, f);
+    try { chmodSync(f, 0o600); } catch { /* ignore */ } // 옛 빌드가 남긴 .tmp를 이어 받았어도 0600(토큰이 들어 있음, 리뷰)
   };
   const t = g.flush.get(c.id);
   if (now) { if (t) clearTimeout(t); write(); return; }
@@ -96,6 +97,7 @@ function load(root: string) {
   for (const f of files) {
     try {
       const j = JSON.parse(readFileSync(join(rootDir(root), f), "utf8"));
+      try { chmodSync(join(rootDir(root), f), 0o600); } catch { /* ignore */ } // 이번 빌드 전에 저장된 채팅 파일도 0600으로
       if (!ID_RE.test(j.id) || g.chats.has(j.id)) continue;
       // #1358 앱이 꺼진 동안 기다리던 권한 카드는 뺌 — 에이전트가 아직 기다리면 다시 물어 새 카드가 뜸(Claude 훅 재시도·Codex 대기 권한), 끝났으면 의미 없음
       const items = (Array.isArray(j.items) ? j.items : []).filter((it: ChatItem) => !(it.k === "perm" && it.state === "pending"));
@@ -172,6 +174,7 @@ export async function setOptions(root: string, id: string, o: { provider?: unkno
   if (o.mode !== undefined) {
     const before = permModeOf(c);
     c.mode = asMode(o.mode); if (c.provider !== "claude-code" && c.mode === "plan") c.mode = "default";
+    persist(c, true); // 모드는 바로 파일에 — 앱이 꺼진 동안 훅이 이 파일로 "전부 허용"인지 봄(SNA 호출을 기다리다 늦게 쓰이면 옛 모드로 허용될 수 있음, 리뷰)
     if (alive && permModeOf(c) !== before) await sna!.agent.setPermissionMode(c.sid!, permModeOf(c)).catch(() => {});
   }
   if (o.effort !== undefined) {
