@@ -109,9 +109,15 @@ const CODE_DEF = /함수|메서드|메소드|훅|클래스|위젯|컴포넌트|�
 // 제품 이름(JavaScript·GitHub·Stripe·iOS) — 뜻 첫 문장이 "…언어/서비스/운영체제"로 끝날 때만(머리말). "JavaScript 언어의 내장 함수"(Object.keys)·"서비스 워커"는 해당 없음(리뷰)
 const PRODUCT_HEAD = /(언어|서비스|플랫폼|프로토콜|데이터베이스|운영체제|회사|브라우저 엔진)(이에요|예요|입니다|이다|다)?\s*[.。!]?$/;
 const LIB_DEF = /라이브러리|프레임워크/; // socket.io·PyTorch — 뜻에 코드 낱말(함수·위젯…)이 없을 때만 IT용어(리뷰). 기술·개념·패턴 같은 넓은 말은 안 넣음(StreamBuilder "…그리는 패턴")
-const product = (def: string) => // 괄호 풀이는 떼고 첫 문장 끝 머리말만(리뷰: "언어(JVM…)예요")
-   PRODUCT_HEAD.test(def.replace(/`/g, "").replace(/\s*\([^)]*\)/g, "").trim().split(/(?<=[.。!?])\s+|\n/)[0].trim());
+const head = (def: string) => { // 뜻 첫 문장(괄호 풀이 뗌 — 중첩도 안쪽부터, 리뷰)
+  let d = def.replace(/`/g, "");
+  while (/\([^()]*\)/.test(d)) d = d.replace(/\s*\([^()]*\)/g, "");
+  return d.trim().split(/(?<=[.。!?])\s+|\n/)[0].trim();
+};
+const product = (def: string) => PRODUCT_HEAD.test(head(def)); // 제품: 첫 문장이 "…언어/서비스/운영체제"로 끝남
 const general = (def: string) => product(def) || (LIB_DEF.test(def) && !CODE_DEF.test(def));
+// 한 단어 이름(dispose·children·Promise)은 뜻 첫 문장이 구체적인 코드 종류로 끝날 때만 토큰. "…함수"는 너무 흔해 뺌 — callback·middleware("…함수")·closure·state 같은 개념이 토큰으로 가지 않게(리뷰)
+const CODE_HEAD = /(메서드|메소드|훅|명령|명령어|명령줄 도구|키워드|연산자|props?|속성|프로퍼티|위젯|컴포넌트|클래스|생성자|객체|옵션|플래그|예약어)(이에요|예요|입니다|이다|다|야)?\s*[.。!]?$/i;
 function codeKindOne(name: string, def: string): boolean {
   const t = name.replace(/\s*\([^)]+\)\s*$/, "").trim(); // 끝 "(풀이)" 떼기 — assert(단언) → assert, HLS(.m3u8) → HLS. 빈 괄호 dispose()는 그대로
   if (!t || !/^[\x21-\x7e]+( [\x21-\x7e]+)*$/.test(t)) return false; // 한글 섞임·빈 이름 → IT용어
@@ -123,11 +129,12 @@ function codeKindOne(name: string, def: string): boolean {
   if (/^[a-z][a-z0-9]*[A-Z]/.test(t)) return !general(def0); // camelCase(useState·jumpToPage) — iOS·macOS는 뜻에 운영체제
   if (/^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/.test(t)) return !general(def0); // PascalCase(ScrollView) — JavaScript·GitHub 같은 이름은 뜻에 언어·서비스 → IT용어
   if (/^[A-Z0-9]+$/.test(t)) return false; // 전부 대문자 약어(TTS·CI)
-  return CODE_DEF.test(def0) && !general(def0); // 한 단어(dispose·split·Promise) — 뜻에 함수·메서드·위젯 같은 말이 있어야
+  return CODE_HEAD.test(head(def0)) && !general(def0); // 한 단어(dispose·split·Promise) — 뜻에 함수·메서드·위젯 같은 말이 있어야
 }
 export function cardKindOf(raw: string, def = ""): "token" | "term" {
   const x = raw.trim();
   if (/^`[\x20-\x7e]+`$/.test(x) && !/^`[^`]*`[^`]/.test(x)) return product(def) ? "term" : "token"; // `Java` — 언어도 백틱으로 올 수 있음(리뷰) // 백틱으로 감싼 영문 이름. 한글이 든 것(`정적 파일(static file)`)은 아래 규칙으로
   const parts = x.replace(/`/g, "").split(/\s+\/\s+/); // "Promise / setTimeout" → 조각마다
-  return parts.every((p) => codeKindOne(p, def)) ? "token" : "term";
+  const defs = def.split(/\s+\/\s+/); // 뜻도 같은 수로 나뉘면 짝지어("…객체 / …타이머")
+  return parts.every((p, i) => (defs.length === parts.length && codeKindOne(p, defs[i])) || codeKindOne(p, def)) ? "token" : "term"; // 짝 뜻 또는 전체 뜻("…하나라도 / 전부 …검사하는 메서드")
 }

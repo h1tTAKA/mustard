@@ -64,7 +64,6 @@ const realToken: [string, string][] = [
   ["PageController", "`PageView`가 지금 몇 번째 페이지인지 읽고 옮기는 리모컨. 여기서는 칩을 누르면 해당 페이지로 이동시켜요."],
   ["ScrollView", "내용이 길 때 스크롤되게 감싸는 React Native 컨테이너"],
   ["AsyncStorage", "앱을 껐다 켜도 데이터가 남도록 기기에 값을 저장하는 React Native의 간단한 저장소"],
-  ["split", "문자열을 구분자 기준으로 잘라 배열로 만드는 함수."],
   ["git log", "커밋(저장 기록)의 시간, 작성자, 제목을 시간순으로 보여 주는 명령어"],
   ["tsc --noEmit", "결과 파일 없이 타입 오류만 검사하는 명령"],
   ["flex: 1", "부모의 남는 공간을 비율로 나눠 차지하는 설정"],
@@ -95,3 +94,8 @@ assert.equal(cardKindOf("StreamBuilder", "스트림 상태를 보고 화면을 �
 assert.deepStrictEqual([["lang", "문서의 언어를 지정하는 HTML 속성"], ["ServiceWorker", "브라우저 뒤에서 도는 서비스 워커 객체"], ["Object.keys", "JavaScript 언어의 내장 함수"]].map(([x, d]) => cardKindOf(x, d)), ["token", "token", "token"], "뜻 중간의 언어·서비스는 제품 아님");
 assert.equal(cardKindOf("`Java`", "객체지향 프로그래밍 언어"), "term");
 assert.deepStrictEqual([["Java", "객체지향 프로그래밍 언어(JVM 위에서 돌아가요)예요."], ["PostgreSQL", "오픈소스 관계형 데이터베이스예요 (RDBMS)."]].map(([x, d]) => cardKindOf(x, d)), ["term", "term"], "괄호 풀이가 붙어도 제품");
+// 5차 리뷰: 한 단어 개념(뜻이 "…함수"·"…것"으로 끝남)은 IT용어. 한계 — split("…만드는 함수.")도 IT용어가 됨(백틱이 오면 토큰)
+assert.deepStrictEqual([["callback", "다른 함수에 넘기는 함수"], ["closure", "함수와 그 바깥 변수를 묶은 것"], ["middleware", "요청과 응답 사이에 실행되는 함수"], ["state", "컴포넌트가 가진 값"], ["split", "문자열을 구분자 기준으로 잘라 배열로 만드는 함수."]].map(([x, d]) => cardKindOf(x, d)), Array(5).fill("term"));
+assert.equal(cardKindOf("`split`", "문자열을 나누는 함수"), "token");
+assert.equal(cardKindOf("Java", "객체지향 언어(JVM (v8) 위에서)예요."), "term", "중첩 괄호");
+assert.deepStrictEqual([["Pressable", "터치(누름)에 반응하는 React Native 컴포넌트"], ["ffmpeg", "영상·오디오를 변환·중계하는 명령줄 도구"], ["some / every", "배열에서 \"하나라도\" / \"전부\" 조건을 만족하는지 검사하는 메서드"]].map(([x, d]) => cardKindOf(x, d)), ["token", "token", "token"]);
