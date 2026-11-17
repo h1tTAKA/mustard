@@ -101,3 +101,4 @@ assert.equal(cardKindOf("Java", "객체지향 언어(JVM (v8) 위에서)예요."
 assert.deepStrictEqual([["Pressable", "터치(누름)에 반응하는 React Native 컴포넌트"], ["ffmpeg", "영상·오디오를 변환·중계하는 명령줄 도구"]].map(([x, d]) => cardKindOf(x, d)), ["token", "token"]);
 // 6차 리뷰: 묶인 이름은 짝 뜻만(다른 조각 뜻을 빌리지 않음), 백틱이어도 라이브러리면 IT용어
 assert.deepStrictEqual([["Stripe / PageView", "결제 API 서비스 / 페이지를 넘기는 위젯"], ["viewport / PageView", "화면 크기 / 페이지를 넘기는 위젯"], ["`socket.io`", "실시간 양방향 통신 라이브러리"], ["`PyTorch`", "파이썬 머신러닝 라이브러리"]].map(([x, d]) => cardKindOf(x, d)), Array(4).fill("term"));
+assert.equal(cardKindOf("`debounce`", "호출을 지연시키는 라이브러리 기능"), "token", "라이브러리는 머리말일 때만");
