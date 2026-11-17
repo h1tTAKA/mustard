@@ -118,4 +118,9 @@ assert.ok(s9.getItem("nunopi:migrated-term-kind-ai-1369"));
 const s11 = mem({ "nunopi:bookmark-term-details": { a: { term: "a", explanation: "x", ...ws } } });
 for (let n = 0; n < 3; n++) await reclassifyTermCards(s11, async () => [undefined]);
 assert.ok(s11.getItem("nunopi:migrated-term-kind-ai-1369"));
+const s13 = mem({ "nunopi:bookmark-term-details": { a: { term: "a", explanation: "x", ...ws }, b: { term: "b", explanation: "y", ...ws } } });
+for (let n = 0; n < 4; n++) await reclassifyTermCards(s13, async () => { throw new Error("x"); });
+await reclassifyTermCards(s13, async () => ["concept", undefined]); // 한 번 되면 실패 횟수 0부터
+await reclassifyTermCards(s13, async () => { throw new Error("x"); });
+assert.equal(s13.getItem("nunopi:migrated-term-kind-ai-1369"), null, "연속 실패만 셈");
 console.log("cardKindMigrate ok");

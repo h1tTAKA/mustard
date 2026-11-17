@@ -102,12 +102,13 @@ async function reclassifyOnce(s: Store, classify: (items: { name: string; def: s
     const chunk = all.slice(i, i + 80);
     let kinds: (CardKind | null | undefined)[];
     try { kinds = await classify(chunk.map(([k, v]) => ({ name: k, def: String(v.explanation ?? "") }))); }
-    catch { // AI 실패(빈 답·구독 없음 등) — 여기까지 옮긴 수는 돌려줌(열린 카드 목록 갱신). 다섯 번 실패하면 그만(앱 켤 때마다 AI 호출 안 함, 리뷰)
+    catch { // AI 실패(빈 답·구독 없음 등) — 여기까지 옮긴 수는 돌려줌(열린 카드 목록 갱신). 연속 다섯 번 실패하면 그만(앱 켤 때마다 AI 호출 안 함, 리뷰)
       const fails = Number(s.getItem(K.failAI) ?? 0) + 1;
       s.setItem(K.failAI, String(fails));
       if (fails >= 5) s.setItem(K.doneAI, new Date().toISOString());
       return moved;
     }
+    s.setItem(K.failAI, "0"); // 연속 실패만 셈 — 한 번이라도 되면 0부터(리뷰)
     const picks = new Map<string, "token" | "concept">();
     chunk.forEach(([k], j) => {
       const kd = kinds[j];
