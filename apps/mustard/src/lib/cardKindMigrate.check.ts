@@ -1,6 +1,6 @@
 // cardKindMigrate 점검 — node --experimental-strip-types src/lib/cardKindMigrate.check.ts
 import assert from "node:assert";
-import { migrateCatchupTermCards } from "./cardKindMigrate.ts";
+import { migrateCatchupTermCards, reclassifyTermCards } from "./cardKindMigrate.ts";
 
 const mem = (init: Record<string, unknown>) => { const m = new Map(Object.entries(init).map(([k, v]) => [k, JSON.stringify(v)])); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), get: (k: string) => JSON.parse(m.get(k) ?? "null") }; };
 const ws = { sourceKind: "workspace", sourceSessionId: "catchup:terms", sourceRoot: "/r", bookmarkedAt: "2026-11-17T00:00:00Z" };
@@ -64,4 +64,30 @@ assert.deepEqual(s3.get("nunopi:srs-state"), { "token:dispose": { box: 5 } });
 const s4 = mem({ "nunopi:bookmark-term-details": { dispose: { term: "dispose", explanation: "자원을 정리하는 메서드", ...ws }, viewport: { term: "viewport", explanation: "화면 크기", ...ws } } });
 migrateCatchupTermCards(s4);
 assert.deepEqual(s4.get("nunopi:bookmark-tokens"), ["dispose"]); assert.deepEqual(s4.get("nunopi:bookmark-terms"), ["viewport"]);
+
+// 2차(AI): 코드 → 토큰, 개념 → 개념 카드, IT·모름 → 그대로. 분석 화면에서 담은 건 안 물음. 실패하면 완료 표시 없음.
+const s5 = mem({
+  "nunopi:bookmark-term-details": {
+    split: { term: "split", explanation: "문자열을 나누는 함수", ...ws },
+    "재귀(recursion)": { term: "재귀(recursion)", explanation: "자기를 부르는 구조", sourceKind: "ask" },
+    TTS: { term: "TTS", explanation: "글을 소리로", ...ws },
+    Closure: { term: "Closure", explanation: "함수와 변수를 묶은 것", ...ws }, // 개념 카드 이미 있음(대소문자 다름)
+    글분석: { term: "글분석", explanation: "x", sourceKind: "analysis" },
+  },
+  "nunopi:bookmark-concept-details": { closure: { conceptId: "c", title: "closure", description: "기존" } },
+  "nunopi:srs-state": { "term:재귀(recursion)": { box: 2 }, "term:Closure": { box: 1 } },
+});
+let asked: string[] = [];
+const fake = async (items: { name: string }[]) => { asked = items.map((x) => x.name); return items.map((x) => (x.name === "split" ? "token" : x.name === "TTS" ? "term" : "concept")) as ("token" | "concept" | "term")[]; };
+assert.equal(await reclassifyTermCards(s5, fake), 3);
+assert.deepEqual(asked.sort(), ["Closure", "TTS", "split", "재귀(recursion)"]);
+assert.deepEqual(Object.keys(s5.get("nunopi:bookmark-term-details")).sort(), ["TTS", "글분석"]);
+assert.equal(s5.get("nunopi:bookmark-token-details").split.description, "문자열을 나누는 함수");
+const cs = s5.get("nunopi:bookmark-concept-details");
+assert.equal(cs["재귀(recursion)"].title, "재귀(recursion)"); assert.equal(cs["재귀(recursion)"].description, "자기를 부르는 구조"); assert.equal(cs.closure.description, "기존");
+assert.deepEqual(s5.get("nunopi:srs-state"), { "concept:재귀(recursion)": { box: 2 }, "concept:closure": { box: 1 } });
+assert.equal(await reclassifyTermCards(s5, fake), 0, "두 번째는 안 함");
+const s6 = mem({ "nunopi:bookmark-term-details": { split: { term: "split", explanation: "함수", ...ws } } });
+await assert.rejects(reclassifyTermCards(s6, async () => { throw new Error("AI 없음"); }));
+assert.equal(s6.getItem("nunopi:migrated-term-kind-ai-1369"), null, "실패하면 다음에 다시");
 console.log("cardKindMigrate ok");
