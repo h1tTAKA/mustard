@@ -36,8 +36,8 @@ assert.deepStrictEqual(["localhost", "브랜치", "React Hook", "tsconfig", "Nod
 const sp = splitTermsSection("첫 문단\n### 나온 말·용어 풀이\n- **diff** — 차이\n\n- **npm** — 패키지 관리자\n### 이 작업의 이름들\n- **fix/x** — 브랜치");
 assert.deepStrictEqual(sp, { before: "첫 문단\n### 나온 말·용어 풀이", terms: [{ term: "diff", def: "차이" }, { term: "npm", def: "패키지 관리자" }], after: "### 이 작업의 이름들\n- **fix/x** — 브랜치", rest: [] }, "용어 칸만 떼고, 이름 칸은 뒤에");
 assert.strictEqual(splitTermsSection("### 용어\n- **a** — b\n설명 문장"), null, "목록 아닌 줄 섞이면 마크다운 그대로");
-assert.deepStrictEqual(["`PageController`", "`dispose`", "PageView.builder", "onPageChanged", "find.widgetWithText()", "integration_test"].map(cardKindOf), Array(6).fill("token"), "코드 이름은 토큰");
-assert.deepStrictEqual(["viewport", "iOS 시뮬레이터", "Node.js", "iOS", "JavaScript", "위젯 트리"].map(cardKindOf), Array(6).fill("term"), "일반 말은 IT용어");
+assert.deepStrictEqual(["`PageController`", "`dispose`", "PageView.builder", "onPageChanged", "find.widgetWithText()", "integration_test"].map((x) => cardKindOf(x)), Array(6).fill("token"), "코드 이름은 토큰");
+assert.deepStrictEqual([["viewport", "화면에서 보이는 영역"], ["iOS 시뮬레이터", ""], ["Node.js", ""], ["iOS", "애플 스마트폰 운영체제"], ["JavaScript", "웹에서 쓰는 프로그래밍 언어"], ["위젯 트리", ""]].map(([x, d]) => cardKindOf(x, d)), Array(6).fill("term"), "일반 말은 IT용어");
 // #1364 실제 카드(11-17): 사족 줄 하나 때문에 칸 전체가 칩 없이 글자로 나오던 것
 const real = "작업 얘기\n### 나온 말·용어 풀이\n- **`Offset`** — 가로·세로 이동량\n- **`drag` / `fling`** — 끌기와 튕기기\n- **하드코딩(hardcoding)** — 값을 직접 적기\n- **`grep`** 같은 검색은 이미 아시니 생략하고, 결과를 `head`로 앞부분만 본 점만 참고하세요.\n\n### 카드로 남길 개념\n- **회귀(regression)** — 다시 망가짐";
 const rs = splitTermsSection(splitCardSection(real).body);
@@ -57,3 +57,33 @@ assert.deepStrictEqual(["client/server", "request/response", "데이터의 흐�
 assert.deepStrictEqual(["fix/catchup-x", "feature/a/b", "Widget의 key", "fix/login", "feat/cart"].map(isCardWorthy), [false, false, false, false, false]);
 assert.deepStrictEqual(splitTermsSection("### 용어\n- **`grep`** 같은 검색 — 결과\n- **diff** — 차이")!.terms.map((x) => x.term), ["diff"], "굵은 이름 뒤에 바로 구분자일 때만 칩");
 console.log("catchupTerms ok");
+
+// #1369 백틱 없이 온 실제 카드(앱 저장소에서 IT용어로 잘못 들어간 것) — 이름 생김새 + 뜻 낱말로 토큰
+const realToken: [string, string][] = [
+  ["dispose", "화면이 사라질 때 쓰던 자원을 정리하는 메서드. `_pages`를 여기서 해제해요."],
+  ["PageController", "`PageView`가 지금 몇 번째 페이지인지 읽고 옮기는 리모컨. 여기서는 칩을 누르면 해당 페이지로 이동시켜요."],
+  ["ScrollView", "내용이 길 때 스크롤되게 감싸는 React Native 컨테이너"],
+  ["AsyncStorage", "앱을 껐다 켜도 데이터가 남도록 기기에 값을 저장하는 React Native의 간단한 저장소"],
+  ["split", "문자열을 구분자 기준으로 잘라 배열로 만드는 함수."],
+  ["git log", "커밋(저장 기록)의 시간, 작성자, 제목을 시간순으로 보여 주는 명령어"],
+  ["tsc --noEmit", "결과 파일 없이 타입 오류만 검사하는 명령"],
+  ["flex: 1", "부모의 남는 공간을 비율로 나눠 차지하는 설정"],
+  ["Record<K, V>", "키 타입 K와 값 타입 V를 가진 객체를 표현하는 TypeScript 타입"],
+  ["Promise / setTimeout", "비동기 결과를 다루는 객체 / 일정 시간 뒤 실행하는 타이머"],
+  ["children", "컴포넌트 태그 사이에 넣은 내용이 전달되는 특별한 prop"],
+  ["`useCallback`", "함수를 렌더 간에 같은 참조로 유지하는 훅"],
+];
+assert.deepStrictEqual(realToken.map(([x, d]) => cardKindOf(x, d)), Array(realToken.length).fill("token"), "코드 이름은 토큰");
+const realTerm: [string, string][] = [
+  ["viewport", "브라우저 화면 크기예요. 390×844는 스마트폰 화면 크기예요."],
+  ["timeout", "정해진 시간이 지나면 작업을 강제로 끊는 장치"],
+  ["Prettier", "코드 스타일을 자동으로 정리해주는 포맷터"],
+  ["HLS(.m3u8)", "영상을 작은 조각으로 나눠 스트리밍하는 방식과 그 재생목록 파일"],
+  ["`정적 파일(static file)`", "서버가 계산 없이 그대로 전달하는 이미지·폰트 같은 고정 파일"],
+  ["재귀(recursion)", "함수가 자기 자신을 다시 호출하는 구조"],
+  ["429 Too Many Requests", "짧은 시간에 요청을 너무 많이 보냈다는 HTTP 상태 코드(속도 제한)"],
+  ["TTS", "글자로 된 문장을 컴퓨터가 사람 목소리처럼 읽어 주는 음성으로 바꾸는 기술"],
+  ["honeypot", "사람에겐 안 보이고 봇만 채우는 함정 입력칸으로 스팸을 걸러내는 기법"],
+  ["GitHub", "코드를 올려 두고 함께 작업하는 서비스"],
+];
+assert.deepStrictEqual(realTerm.map(([x, d]) => cardKindOf(x, d)), Array(realTerm.length).fill("term"), "일반 개념·제품 이름은 IT용어");

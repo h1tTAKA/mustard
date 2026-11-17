@@ -102,14 +102,27 @@ export function isCardWorthy(term: string): boolean {
   return true; // 한계: 'main 브랜치'처럼 숫자·기호 없는 이 작업만의 이름은 못 거름 — 해설 틀이 용어 칸에 안 넣게 지시
 }
 
-// #1359 칩으로 만드는 카드 종류 — 코드에 쓰는 이름이면 토큰 카드, 아니면 IT용어/개념 카드(유저 지적: PageController·dispose가 IT용어로 들어감).
-// 해설 틀이 코드 이름을 `백틱`으로 감싸게 함 → 그게 1순위. 백틱이 빠졌으면 생김새(점·괄호·밑줄·소문자로 시작하는 camelCase)로.
-// 한계: 백틱 없는 PascalCase(PageController vs JavaScript)·한 단어 소문자(dispose vs viewport)는 생김새로 못 가려 IT용어로.
-export function cardKindOf(raw: string): "token" | "term" {
+// #1359 칩으로 만드는 카드 종류 — 코드에 쓰는 이름이면 토큰 카드, 아니면 IT용어 카드(유저 지적: PageController·dispose가 IT용어로 들어감).
+// 해설 틀이 코드 이름을 `백틱`으로 감싸게 함 → 그게 1순위. 백틱이 빠지면(자주 빠짐, #1369) 이름 생김새 + 뜻(def) 낱말로.
+// ponytail: 낱말 목록 휴리스틱 — 뜻 문장이 애매하면 틀릴 수 있음. 더 정확히 하려면 해설 AI가 카드 종류를 직접 표시하게.
+const CODE_DEF = /함수|메서드|메소드|훅|클래스|위젯|컴포넌트|속성|프로퍼티|\bprops?\b|타입|명령|연산자|키워드|설정 파일|객체|생성자|옵션|인자|매개변수|파라미터|예외|에러 클래스|상수|변수|API|모듈|컨트롤러|컨테이너/i;
+const PRODUCT_DEF = /언어|서비스|플랫폼|프로토콜|데이터베이스|운영체제|회사|브라우저 엔진/;
+function codeKindOne(name: string, def: string): boolean {
+  const t = name.replace(/\s*\([^)]+\)\s*$/, "").trim(); // 끝 "(풀이)" 떼기 — assert(단언) → assert, HLS(.m3u8) → HLS. 빈 괄호 dispose()는 그대로
+  if (!t || !/^[\x21-\x7e]+( [\x21-\x7e]+)*$/.test(t)) return false; // 한글 섞임·빈 이름 → IT용어
+  if (/\.(js|ts)$/i.test(t) && !/[/_]/.test(t) && /^[A-Z]/.test(t)) return false; // Node.js·Next.js 같은 이름
+  const def0 = def.replace(/`/g, "");
+  if (/\s/.test(t)) return /^[A-Za-z_$][\w$]*(<|:\s)/.test(t) // 여러 단어: 타입·스타일 꼴(Record<K, V>·flex: 1)
+    || (/^[a-z.][\w.-]*(\s|$)/.test(t) && (/\s--?[a-z]/i.test(t) || CODE_DEF.test(def0))); // 소문자로 시작하는 명령·구문(git log·tsc --noEmit·import type)
+  if (/[.()<>_:$\[\]]|^-/.test(t)) return true; // 점·괄호·밑줄 등 — 코드 생김새(PageView.builder·dispose()·Record<K, V>)
+  if (/^[a-z][a-z0-9]*[A-Z]/.test(t)) return !PRODUCT_DEF.test(def0); // camelCase(useState·jumpToPage) — iOS·macOS는 뜻에 운영체제
+  if (/^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/.test(t)) return !PRODUCT_DEF.test(def0); // PascalCase(ScrollView) — JavaScript·GitHub 같은 이름은 뜻에 언어·서비스 → IT용어
+  if (/^[A-Z0-9]+$/.test(t)) return false; // 전부 대문자 약어(TTS·CI)
+  return CODE_DEF.test(def0) && !PRODUCT_DEF.test(def0); // 한 단어(dispose·split·Promise) — 뜻에 함수·메서드·위젯 같은 말이 있어야
+}
+export function cardKindOf(raw: string, def = ""): "token" | "term" {
   const x = raw.trim();
-  if (/^`[^`]+`$/.test(x)) return "token";
-  const t = x.replace(/`/g, "");
-  if (/\s/.test(t) || /\.(js|ts)$/i.test(t)) return "term"; // 띄어쓰기 있는 말, Node.js 같은 이름
-  if (!/^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*(\(\))?$/.test(t)) return "term";
-  return /\.|\(\)$|_|^[a-z]{2,}[A-Z]/.test(t) ? "token" : "term";
+  if (/^`[\x20-\x7e]+`$/.test(x) && !/^`[^`]*`[^`]/.test(x)) return "token"; // 백틱으로 감싼 영문 이름. 한글이 든 것(`정적 파일(static file)`)은 아래 규칙으로
+  const parts = x.replace(/`/g, "").split(/\s+\/\s+/); // "Promise / setTimeout" → 조각마다
+  return parts.every((p) => codeKindOne(p, def)) ? "token" : "term";
 }

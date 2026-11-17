@@ -158,7 +158,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const [chipMenu, setChipMenu] = useState<{ rect: DOMRect; el: HTMLElement; raw: Term; ctx: string } | null>(null); // ctx = 연 때의 목록(레포·날짜·필터) — 바뀌면 안 그림(리뷰)
   const closeChipMenu = useCallback((refocus = true) => { const el = chipMenu?.el; setChipMenu(null); if (refocus && el?.isConnected) requestAnimationFrame(() => el.focus()); }, [chipMenu]); // 칩이 아직 화면에 있을 때만 포커스 돌려줌(리뷰)
   const addTerm = useCallback((x: Term, raw?: string) => { // raw = 백틱 붙은 원래 이름(코드 이름이면 토큰 카드, #1359)
-    const ok = createChatCard(x.code ? "token" : cardKindOf(raw ?? x.term), x.term, x.def, t("card.workspaceSource", { repo: basename(root) }), undefined, { kind: "workspace", sessionId: "catchup:terms", root });
+    const ok = createChatCard(x.code ? "token" : cardKindOf(raw ?? x.term, x.def), x.term, x.def, t("card.workspaceSource", { repo: basename(root) }), undefined, { kind: "workspace", sessionId: "catchup:terms", root });
     toast(ok ? t("card.added", { term: x.term }) : t("card.exists"));
   }, [root, t, toast]);
   // #1049 카테고리 필터 — 해설(실시간 해설·파일/심볼 설명) / 명령어 / 용어. 꺼진 카테고리는 칩도 숨김.
