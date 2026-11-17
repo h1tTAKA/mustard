@@ -1,5 +1,17 @@
 // 캐치업 용어집 보조(#1051) — 실시간 해설(narration) 본문의 "용어" 목록을 용어집으로 + 중복 판정.
-export interface Term { term: string; def: string; code?: boolean } // code = 원래 `백틱`으로 감싼 코드 이름(토큰 카드, #1359)
+export type CardKind = "token" | "concept" | "term"; // 토큰(코드 이름) · 개념(프로그래밍 개념) — 둘 다 '프로그래밍/개념' 덱 · IT용어(넓은 IT 말)
+export interface Term { term: string; def: string; code?: boolean; kind?: CardKind } // code = 원래 `백틱`으로 감싼 코드 이름(토큰 카드, #1359). kind = 해설 AI가 줄 끝에 단 종류 표시(#1369)
+
+// #1369 해설 AI가 용어 줄 끝에 다는 종류 표시 "[코드]"·"[개념]"·"[IT]"(영문·일문 표기도) → 떼고 kind로. 카드 설명엔 안 들어가고, 화면은 stripKindTags로 지움.
+const KIND_TAG = /\s*[[［](코드|개념|IT|code|concept|コード|概念)[\]］][.。]?\s*$/i;
+// 화면에 그릴 때 줄 끝 종류 표시를 지움(용어 칸이 칩이 안 되는 옛 꼴·rest 줄·질문 패널 등 — 리뷰). 칩 종류는 원문에서 읽음.
+export const stripKindTags = (text: string) => String(text || "").replace(/[ \t]*[[［](코드|개념|IT|code|concept|コード|概念)[\]］](?=[.。]?[ \t]*$)/gim, "");
+export function takeKind(def: string): { def: string; kind?: CardKind } {
+  const m = def.match(KIND_TAG);
+  if (!m) return { def };
+  const k = m[1].toLowerCase();
+  return { def: def.slice(0, m.index).trim(), kind: k === "코드" || k === "code" || k === "コード" ? "token" : k === "it" ? "term" : "concept" };
+}
 
 // "용어" 제목 줄(## 용어 / ### 핵심 용어 / **용어**: / 용어:) 아래 글머리들. 다른 소제목이 나오면 끝.
 // 모델 표기 흔들림 허용(#1051 리뷰): "- **이름** — 뜻" / "- **이름 — 뜻**" / "- 이름 — 뜻"(구분자 — – :).
@@ -21,7 +33,8 @@ export function parseNarrationTerms(note: string): Term[] {
     const plain = bold ? null : body.replace(/\*\*/g, "").match(/^(.+?)\s+[—–]\s+(.+)$|^([^:]+?):\s+(.+)$/); // 통째 굵게·굵게 없음
     const term = bold ? bold[1] : plain ? (plain[1] ?? plain[3]) : "";
     const def = bold ? bold[2] : plain ? (plain[2] ?? plain[4]) : "";
-    if (term.trim() && def.trim()) out.push({ term: term.trim(), def: def.replace(/\*\*/g, "").trim() });
+    const tk = takeKind(def.replace(/\*\*/g, "").trim());
+    if (term.trim() && tk.def) out.push({ term: term.trim(), def: tk.def, ...(tk.kind ? { kind: tk.kind } : {}) });
   }
   return out;
 }
@@ -31,7 +44,7 @@ export function mergeTerms(prev: Term[], add: Term[], key: (s: string) => string
   const seen = new Set(prev.map((x) => key(x.term)));
   const fresh: Term[] = [];
   for (const raw of add) {
-    const x = { term: raw.term.replace(/`/g, "").trim(), def: raw.def.trim(), ...(/^`[^`]+`$/.test(raw.term.trim()) ? { code: true } : {}) }; // 모델이 붙인 코드 백틱 제거(`tsconfig.json`)
+    const x = { term: raw.term.replace(/`/g, "").trim(), def: raw.def.trim(), ...(/^`[^`]+`$/.test(raw.term.trim()) ? { code: true } : {}), ...(raw.kind ? { kind: raw.kind } : {}) }; // 모델이 붙인 코드 백틱 제거(`tsconfig.json`)
     const k = key(x.term); if (!k || seen.has(k)) continue; seen.add(k); fresh.push(x);
   }
   return fresh.length ? [...fresh, ...prev] : prev;
@@ -76,7 +89,9 @@ export function splitCardSection(note: string): { body: string; items: Term[] } 
   const items = lines.slice(start + 1, end).map((l) => {
     const raw = l.trim().match(/^[-*•]\s+(.+)$/)?.[1].replace(/\*/g, "").trim() ?? ""; // 백틱은 남김(코드 이름 표시 — cardKindOf)
     const m = raw.match(/^(.+?)(?:\s+[—–]\s+|[:：](?:\s+|$))([\s\S]*)$/); // 이름 — 뜻 / 이름: 뜻 / 이름:
-    return m ? { term: m[1].trim(), def: m[2].replace(/`/g, "").trim() } : { term: raw, def: "" }; // 백틱은 이름에만(뜻은 카드 설명이라 지움, 리뷰)
+    if (!m) { const tk = takeKind(raw); return { term: tk.def, def: "", ...(tk.kind ? { kind: tk.kind } : {}) }; }
+    const tk = takeKind(m[2].replace(/`/g, "").trim());
+    return { term: m[1].trim(), def: tk.def, ...(tk.kind ? { kind: tk.kind } : {}) }; // 백틱은 이름에만(뜻은 카드 설명이라 지움, 리뷰)
   }).filter((x) => x.term);
   return { body: [...lines.slice(0, start), ...lines.slice(end)].join("\n").trim(), items };
 }
@@ -102,14 +117,38 @@ export function isCardWorthy(term: string): boolean {
   return true; // 한계: 'main 브랜치'처럼 숫자·기호 없는 이 작업만의 이름은 못 거름 — 해설 틀이 용어 칸에 안 넣게 지시
 }
 
-// #1359 칩으로 만드는 카드 종류 — 코드에 쓰는 이름이면 토큰 카드, 아니면 IT용어/개념 카드(유저 지적: PageController·dispose가 IT용어로 들어감).
-// 해설 틀이 코드 이름을 `백틱`으로 감싸게 함 → 그게 1순위. 백틱이 빠졌으면 생김새(점·괄호·밑줄·소문자로 시작하는 camelCase)로.
-// 한계: 백틱 없는 PascalCase(PageController vs JavaScript)·한 단어 소문자(dispose vs viewport)는 생김새로 못 가려 IT용어로.
-export function cardKindOf(raw: string): "token" | "term" {
+// #1359 칩으로 만드는 카드 종류 — 코드에 쓰는 이름이면 토큰 카드, 아니면 IT용어 카드(유저 지적: PageController·dispose가 IT용어로 들어감).
+// 해설 틀이 코드 이름을 `백틱`으로 감싸게 함 → 그게 1순위. 백틱이 빠지면(자주 빠짐, #1369) 이름 생김새 + 뜻(def) 낱말로.
+// ponytail: 낱말 목록 휴리스틱 — 뜻 문장이 애매하면 틀릴 수 있음. 더 정확히 하려면 해설 AI가 카드 종류를 직접 표시하게.
+const CODE_DEF = /함수|메서드|메소드|훅|클래스|위젯|컴포넌트|속성|프로퍼티|\bprops?\b|타입|명령|연산자|키워드|설정 파일|객체|생성자|옵션|인자|매개변수|파라미터|예외|에러 클래스|상수|변수|API|모듈|컨트롤러|컨테이너/i;
+// 제품 이름(JavaScript·GitHub·Stripe·iOS) — 뜻 첫 문장이 "…언어/서비스/운영체제"로 끝날 때만(머리말). "JavaScript 언어의 내장 함수"(Object.keys)·"서비스 워커"는 해당 없음(리뷰)
+// 라이브러리·프레임워크도 머리말로만 — socket.io·PyTorch "…라이브러리" → IT용어, debounce "…라이브러리 기능" → 토큰(리뷰)
+const PRODUCT_HEAD = /(언어|서비스|플랫폼|프로토콜|데이터베이스|운영체제|회사|브라우저 엔진|라이브러리|프레임워크)(이에요|예요|입니다|이다|다)?\s*[.。!]?$/;
+const head = (def: string) => { // 뜻 첫 문장(괄호 풀이 뗌 — 중첩도 안쪽부터, 리뷰)
+  let d = def.replace(/`/g, "");
+  while (/\([^()]*\)/.test(d)) d = d.replace(/\s*\([^()]*\)/g, "");
+  return d.trim().split(/(?<=[.。!?])\s+|\n/)[0].trim();
+};
+const product = (def: string) => PRODUCT_HEAD.test(head(def)); // 제품: 첫 문장이 "…언어/서비스/운영체제"로 끝남
+// 한 단어 이름(dispose·children·Promise)은 뜻 첫 문장이 구체적인 코드 종류로 끝날 때만 토큰. "…함수"는 너무 흔해 뺌 — callback·middleware("…함수")·closure·state 같은 개념이 토큰으로 가지 않게(리뷰)
+const CODE_HEAD = /(메서드|메소드|훅|명령|명령어|명령줄 도구|키워드|연산자|props?|속성|프로퍼티|위젯|컴포넌트|클래스|생성자|객체|옵션|플래그|예약어)(이에요|예요|입니다|이다|다|야)?\s*[.。!]?$/i;
+function codeKindOne(name: string, def: string): boolean {
+  const t = name.replace(/\s*\([^)]+\)\s*$/, "").trim(); // 끝 "(풀이)" 떼기 — assert(단언) → assert, HLS(.m3u8) → HLS. 빈 괄호 dispose()는 그대로
+  if (!t || !/^[\x21-\x7e]+( [\x21-\x7e]+)*$/.test(t)) return false; // 한글 섞임·빈 이름 → IT용어
+  if (/\.(js|ts)$/i.test(t) && !/[/_]/.test(t) && /^[A-Z]/.test(t)) return false; // Node.js·Next.js 같은 이름
+  const def0 = def.replace(/`/g, "");
+  if (/\s/.test(t)) return /^[A-Za-z_$][\w$]*(<|:\s)/.test(t) // 여러 단어: 타입·스타일 꼴(Record<K, V>·flex: 1)
+    || (/^[a-z.][\w.-]*(\s|$)/.test(t) && (/\s--?[a-z]/i.test(t) || CODE_DEF.test(def0))); // 소문자로 시작하는 명령·구문(git log·tsc --noEmit·import type)
+  if (/[.()<>_:$\[\]]|^-/.test(t)) return !product(def0); // 점·괄호·밑줄 등 — 코드 생김새(PageView.builder·dispose()·Record<K, V>)
+  if (/^[a-z][a-z0-9]*[A-Z]/.test(t)) return !product(def0); // camelCase(useState·jumpToPage) — iOS·macOS는 뜻에 운영체제
+  if (/^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/.test(t)) return !product(def0); // PascalCase(ScrollView) — JavaScript·GitHub 같은 이름은 뜻에 언어·서비스 → IT용어
+  if (/^[A-Z0-9]+$/.test(t)) return false; // 전부 대문자 약어(TTS·CI)
+  return CODE_HEAD.test(head(def0)) && !product(def0); // 한 단어(dispose·split·Promise) — 뜻에 함수·메서드·위젯 같은 말이 있어야
+}
+export function cardKindOf(raw: string, def = ""): "token" | "term" {
   const x = raw.trim();
-  if (/^`[^`]+`$/.test(x)) return "token";
-  const t = x.replace(/`/g, "");
-  if (/\s/.test(t) || /\.(js|ts)$/i.test(t)) return "term"; // 띄어쓰기 있는 말, Node.js 같은 이름
-  if (!/^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*(\(\))?$/.test(t)) return "term";
-  return /\.|\(\)$|_|^[a-z]{2,}[A-Z]/.test(t) ? "token" : "term";
+  if (/^`[\x20-\x7e]+`$/.test(x) && !/^`[^`]*`[^`]/.test(x)) return product(def) ? "term" : "token"; // `Java`·`socket.io` — 언어·라이브러리도 백틱으로 올 수 있음(리뷰) // 백틱으로 감싼 영문 이름. 한글이 든 것(`정적 파일(static file)`)은 아래 규칙으로
+  const parts = x.replace(/`/g, "").split(/\s+\/\s+/); // "Promise / setTimeout" → 조각마다
+  const defs = def.split(/\s+\/\s+/); // 뜻도 같은 수로 나뉘면 짝지어("…객체 / …타이머")
+  return parts.every((p, i) => codeKindOne(p, defs.length === parts.length ? defs[i] : def)) ? "token" : "term"; // 짝 뜻만 — 전체 뜻으로 넘어가면 다른 조각의 "위젯"을 빌려 씀(리뷰). 한계: "하나라도 / 전부 …메서드"처럼 뜻이 엇갈려 나뉘면 IT용어
 }

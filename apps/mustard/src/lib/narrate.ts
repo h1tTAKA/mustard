@@ -9,6 +9,8 @@ import { narrationProvider, narrationModel, narrationLocale, narrationBeginner, 
 import { translate } from "@mustard/core/messages";
 import { isFailedNote } from "@/lib/failText";
 import { CARD_HEADS } from "@/lib/catchupTerms";
+import { KIND_GUIDE, classifyPrompt, parseKinds } from "@/lib/cardKindAI";
+import type { CardKind } from "@/lib/catchupTerms";
 
 // #1091 출력 언어 — 본문 지시가 한국어라 ko 아니면 맨 앞·끝에 못박음(제목 줄·소제목까지).
 const LANG_NAME = { ko: "한국어", ja: "일본어(日本語)", en: "영어(English)" } as const;
@@ -42,9 +44,9 @@ function narrationPrompt(agent: string, material: string, fromTranscript: boolea
 ${h("why")}
 에이전트가 왜 그렇게 판단·제안했는지, 그렇게 하면 무엇이 어떻게 되는지(앱·코드·다음 단계에 생기는 일) 1~3문장. 에이전트가 이유를 말했으면 그 이유를 풀고, 안 말했으면 재료에서 보이는 만큼만.
 ${h("words")}
-에이전트 말·작업에 나온 **일반 개념·용어**(언어·프레임워크·도구·개발에서 두루 쓰는 말 — 다른 프로젝트에서도 통하는 것)를 **하나씩** "- **이름** — 쉬운 뜻 + 지금 이 맥락에서 무슨 의미인지" 0~6개. 처음 보는 사람이 이름만으로는 뜻을 짐작하기 어려운 개념만 — 영어 뜻 그대로인 속성·인자 이름(size·color·width·height·padding·onTap 등)이나 "A의 B"(특정 위젯·함수의 속성)는 풀지 마. 그런 개념이 없으면 소제목째 빼. **이름은 일반형**으로 — 카드로 남겨 다른 작업에서도 쓰니, 이번 작업의 값·파일명·변수명을 이름에 넣지 말고(나쁨: \`sed -n 282,400p\` / 좋음: \`sed -n\`) 그 값은 뜻 쪽에 "여기선 282~400줄"처럼. 브랜치 이름·localhost·포트·이슈 번호·커밋 해시·파일 이름·이 레포에서 지은 이름·앱 이름은 어디에도 풀이하지 마. 항목 하나에 이름 하나(A / B로 묶지 마).${termRules()} 코드에 그대로 쓰는 이름(클래스·함수·위젯·명령)은 백틱으로: "- **\`PageController\`** — …". 앞서 해설에서 풀이한 용어도 이번에 또 나왔으면 다시 써(되풀이해 보며 자연스럽게 익히게).
+에이전트 말·작업에 나온 **일반 개념·용어**(언어·프레임워크·도구·개발에서 두루 쓰는 말 — 다른 프로젝트에서도 통하는 것)를 **하나씩** "- **이름** — 쉬운 뜻 + 지금 이 맥락에서 무슨 의미인지" 0~6개. 처음 보는 사람이 이름만으로는 뜻을 짐작하기 어려운 개념만 — 영어 뜻 그대로인 속성·인자 이름(size·color·width·height·padding·onTap 등)이나 "A의 B"(특정 위젯·함수의 속성)는 풀지 마. 그런 개념이 없으면 소제목째 빼. **이름은 일반형**으로 — 카드로 남겨 다른 작업에서도 쓰니, 이번 작업의 값·파일명·변수명을 이름에 넣지 말고(나쁨: \`sed -n 282,400p\` / 좋음: \`sed -n\`) 그 값은 뜻 쪽에 "여기선 282~400줄"처럼. 브랜치 이름·localhost·포트·이슈 번호·커밋 해시·파일 이름·이 레포에서 지은 이름·앱 이름은 어디에도 풀이하지 마. 항목 하나에 이름 하나(A / B로 묶지 마).${termRules()} 코드에 그대로 쓰는 이름(클래스·함수·메서드·위젯·속성·명령·파일)은 **반드시** 백틱으로 — 빠뜨리면 카드 종류(코드 토큰/IT용어)가 틀림: "- **\`PageController\`** — … [코드]", "- **재귀** — … [개념]". **줄 끝에 종류 표시 하나 필수**: ${KIND_GUIDE} 앞서 해설에서 풀이한 용어도 이번에 또 나왔으면 다시 써(되풀이해 보며 자연스럽게 익히게).
 ${h("cards")}
-위 용어 풀이에 안 나왔지만 지금 일을 이해하는 데 바탕이 되는 일반 개념을 "- **이름** — 짧은 뜻(한 문장)" 0~3개(이름 하나씩·일반형, 코드 이름은 백틱). 이 레포에서 지은 이름·이번 작업의 값 금지, 이름만 봐도 아는 말 금지. 없으면 소제목째 빼.
+위 용어 풀이에 안 나왔지만 지금 일을 이해하는 데 바탕이 되는 일반 개념을 "- **이름** — 짧은 뜻(한 문장)" 0~3개(이름 하나씩·일반형, 코드 이름은 반드시 백틱, 줄 끝에 [코드]·[개념]·[IT] 중 하나). 이 레포에서 지은 이름·이번 작업의 값 금지, 이름만 봐도 아는 말 금지. 없으면 소제목째 빼.
 
 📏 전체 300~800자로 완결(시작한 문장 끝맺기). 재료에 보이는 사실만 — 짐작·일반론·칭찬 금지.
 ⚠️ 금지:
@@ -122,16 +124,36 @@ export async function narrate(cwd: string, agent: string, delta: string, diff: s
 }
 const narrateChains = new Map<string, Promise<boolean>>();
 
+// #1062 설정 > 캐치업 > 해설 AI — SNA(구독 CLI) 3종. 그 밖(openai-compatible 등)은 Claude로, 모델도 그 AI 것만 적용.
+function narrationAI(providerId?: unknown) {
+  const chosen = providerId === "codex" ? "codex-agent" : narrationProvider();
+  const pid: "codex-agent" | "opencode-agent" | "claude-agent" = chosen === "codex-agent" || chosen === "opencode-agent" ? chosen : "claude-agent";
+  const provider = pid === "codex-agent" ? snaCodexProvider : pid === "opencode-agent" ? snaOpenCodeProvider : snaClaudeProvider;
+  const model = pid === chosen ? narrationModel() : ""; // 다른 AI로 대체되면 그 모델 id는 안 맞음 → 기본 모델
+  return { pid, provider, model };
+}
+
+// #1369 저장된 카드 종류를 해설 AI로 다시 나눔(한 번에 최대 80장). 실패하면 throw — 호출부가 다음에 다시.
+export async function classifyCardKinds(items: { name: string; def: string }[], signal?: AbortSignal): Promise<(CardKind | undefined)[]> {
+  const { pid, provider, model } = narrationAI();
+  const res = await provider.analyze({
+    code: "card kinds", locale: "ko", providerId: pid, mode: "chat",
+    messages: [{ role: "user", content: classifyPrompt(items) }],
+    ...(model ? { providerSettings: { [pid]: { model } } } : {}),
+  } as AgentAnalyzeRequest, { signal });
+  const text = (res?.summary ?? "").trim();
+  if (!text || isFailedNote(text) || res?.warnings?.some((w) => w.code === "PARSE_FAILED")) throw new Error(text || "no answer");
+  const kinds = parseKinds(text, items.length);
+  if (!kinds.some(Boolean)) throw new Error("unparsed answer"); // 하나도 못 읽으면 실패로 — 완료 표시 없이 다음에 다시(리뷰)
+  return kinds;
+}
+
 async function narrateOnce(cwd: string, agent: string, delta: string, diff: string, ts: number, opts: { providerId?: unknown; signal?: AbortSignal; material?: string }): Promise<boolean> {
   // #1359 앞서 해설한 것(같은 레포, 최근 30분 6장) — 반복 대신 흐름을 잇게 프롬프트에, 그래도 새것 없는 카드는 버림
   const past: PastNarration[] = recentNarrations(cwd, ts);
   const memo = memoLines(past, (t) => new Date(t).toTimeString().slice(0, 5));
   const material = opts.material ?? `## 터미널 화면(에이전트 출력)\n${delta}`;
-  // #1062 설정 > 캐치업 > 해설 AI — SNA(구독 CLI) 3종. 그 밖(openai-compatible 등)은 Claude로, 모델도 그 AI 것만 적용.
-  const chosen = opts.providerId === "codex" ? "codex-agent" : narrationProvider();
-  const pid = chosen === "codex-agent" || chosen === "opencode-agent" ? chosen : "claude-agent";
-  const provider = pid === "codex-agent" ? snaCodexProvider : pid === "opencode-agent" ? snaOpenCodeProvider : snaClaudeProvider;
-  const model = pid === chosen ? narrationModel() : ""; // 다른 AI로 대체되면 그 모델 id는 안 맞음 → 기본 모델
+  const { pid, provider, model } = narrationAI(opts.providerId);
   const request: AgentAnalyzeRequest = {
     code: "repo terminal activity",
     locale: narrationLocale(), // #1091 앱 언어(본문 지시는 한국어여도 buildChatPrompt 끝 지시가 이김)

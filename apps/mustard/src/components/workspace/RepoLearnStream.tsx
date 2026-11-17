@@ -14,7 +14,7 @@ import { sendToAgent } from "@/lib/browser/sendToAgent";
 import { formatSessionHandoff } from "@/lib/sessionHandoff";
 import { isDocEdit } from "@/lib/mcpActivity";
 import { isNunopiEnabled } from "@/lib/product";
-import { cardKindOf, isCardWorthy, parseNarrationTerms, splitCardSection, splitNames, splitTermsSection, type Term } from "@/lib/catchupTerms";
+import { cardKindOf, stripKindTags, isCardWorthy, parseNarrationTerms, splitCardSection, splitNames, splitTermsSection, type Term } from "@/lib/catchupTerms";
 import { CATCHUP_ITEM_EVENT, parseDiffItemKey } from "@/lib/useAutoCommitExplain";
 import { useT, relocalize, relocalizeFailure, useLocale, useToast, useSetting, withModel, CUKEYS, CATCHUP_DEFAULTS, createChatCard, normalizeCardFront, CARDS_CHANGED_EVENT, setSetting, openSettings } from "@mustard/core";
 import { CREW_ROLES } from "@/lib/crew/crewTypes";
@@ -157,8 +157,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   // 칩 클릭 → 카드 추가(또는 보기) / 해설 제외. rect = 칩 자리(카드 날아가는 출발점·메뉴 위치), el = 닫으면 포커스 돌려줄 칩
   const [chipMenu, setChipMenu] = useState<{ rect: DOMRect; el: HTMLElement; raw: Term; ctx: string } | null>(null); // ctx = 연 때의 목록(레포·날짜·필터) — 바뀌면 안 그림(리뷰)
   const closeChipMenu = useCallback((refocus = true) => { const el = chipMenu?.el; setChipMenu(null); if (refocus && el?.isConnected) requestAnimationFrame(() => el.focus()); }, [chipMenu]); // 칩이 아직 화면에 있을 때만 포커스 돌려줌(리뷰)
-  const addTerm = useCallback((x: Term, raw?: string) => { // raw = 백틱 붙은 원래 이름(코드 이름이면 토큰 카드, #1359)
-    const ok = createChatCard(x.code ? "token" : cardKindOf(raw ?? x.term), x.term, x.def, t("card.workspaceSource", { repo: basename(root) }), undefined, { kind: "workspace", sessionId: "catchup:terms", root });
+  const addTerm = useCallback((x: Term, raw?: string) => { // raw = 백틱 붙은 원래 이름(코드 이름이면 토큰 카드, #1359). kind = 해설 AI가 단 종류(#1369) — 없으면(옛 해설) 이름·뜻으로 추측
+    const ok = createChatCard(x.kind ?? (x.code ? "token" : cardKindOf(raw ?? x.term, x.def)), x.term, x.def, t("card.workspaceSource", { repo: basename(root) }), undefined, { kind: "workspace", sessionId: "catchup:terms", root });
     toast(ok ? t("card.added", { term: x.term }) : t("card.exists"));
   }, [root, t, toast]);
   // #1049 카테고리 필터 — 해설(실시간 해설·파일/심볼 설명) / 명령어 / 용어. 꺼진 카테고리는 칩도 숨김.
@@ -598,7 +598,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
             onKeyDown={(e) => { if (e.key === "Escape") closeChipMenu(); }}
             onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null) && e.relatedTarget) closeChipMenu(false); }} // 탭으로 메뉴 밖에 나가면 닫음(리뷰)
             className="z-50 w-max min-w-[132px] rounded-[12px] border border-black/[0.07] bg-white p-[6px] shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_rgba(0,0,0,0.08)] dark:border-white/[0.09] dark:bg-[var(--s-pane)] dark:shadow-[0_12px_32px_rgba(0,0,0,0.45)]">
-            <button type="button" role="menuitem" autoFocus onClick={() => { closeChipMenu(); if (card) throwCard(card, rc); else addTerm({ term, def: r.def }, r.term); }}
+            <button type="button" role="menuitem" autoFocus onClick={() => { closeChipMenu(); if (card) throwCard(card, rc); else addTerm({ term, def: r.def, kind: r.kind }, r.term); }}
               className="flex w-full cursor-default items-center gap-2 rounded-md px-2.5 py-[5px] text-left text-[13px] leading-4 text-zinc-700 outline-none select-none hover:bg-black/[0.08] focus-visible:bg-black/[0.08] dark:text-zinc-200 dark:hover:bg-white/[0.14] dark:focus-visible:bg-white/[0.14]"><IconCards size={15} stroke={1.5} className="shrink-0 text-zinc-400" aria-hidden /><span className="whitespace-nowrap">{t(card ? "learn.openCard" : "learn.termAdd")}</span></button>
             <button type="button" role="menuitem" onClick={() => { closeChipMenu(false); markKnown(term); }}
               className="flex w-full cursor-default items-center gap-2 rounded-md px-2.5 py-[5px] text-left text-[13px] leading-4 text-zinc-700 outline-none select-none hover:bg-black/[0.08] focus-visible:bg-black/[0.08] dark:text-zinc-200 dark:hover:bg-white/[0.14] dark:focus-visible:bg-white/[0.14]"><IconEyeOff size={15} stroke={1.5} className="shrink-0 text-zinc-400" aria-hidden /><span className="whitespace-nowrap">{t("learn.termHide")}</span></button>
@@ -826,7 +826,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                         // #1066 diff 구간별: [N~M번째 줄 ▸ 그 구간 코드 펼치기] + 설명. 한 파일 여러 변경이 한 카드여도 어느 설명이 어느 줄인지 보임
                         const d = c.kind === "diff" ? parseDiffItemKey(c.key) : null; const secs = d ? diffSections(c.expl ?? "") : null;
                         if (!d || !secs) {
-                          if (c.kind !== "narration" || !cardsOn) return <Markdown>{relocalizeFailure(c.expl ?? "", t)}</Markdown>;
+                          if (c.kind !== "narration" || !cardsOn) return <Markdown>{relocalizeFailure(stripKindTags(c.expl ?? ""), t)}</Markdown>;
                           // #1359 nunopi를 켠 유저 — 용어 풀이 칸은 이름 자체가 카드 추가 칩(등록은 유저가 고름),
                           // 해설 끝 '카드로 남길 개념' 칸(위에 없는 배경 개념)은 글 대신 카드 맨 아래 칩 줄. nunopi를 끄면 전부 글 그대로.
                           const { body, items } = splitCardSection(c.expl ?? "");
@@ -860,14 +860,14 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           return <>
                             {sp ? <>
                               {/* 아는 용어를 빼고 하나도 안 남으면 용어 칸 소제목째 숨김 */}
-                              {(() => { const b = words.length || rest.length ? sp.before : sp.before.replace(/\n?[^\n]*$/, "").trim(); return b ? <Markdown>{relocalizeFailure(b, t)}</Markdown> : null; })()}
+                              {(() => { const b = words.length || rest.length ? sp.before : sp.before.replace(/\n?[^\n]*$/, "").trim(); return b ? <Markdown>{relocalizeFailure(stripKindTags(b), t)}</Markdown> : null; })()}
                               {(words.length > 0 || rest.length > 0) && <div className="nunopi-md"><ul className="pl-0!">{/* 용어 칩 줄은 본문·소제목과 같은 선에서 시작(목록 기본 들여쓰기 없음) */}{words.map((x, i) => (
                                 <li key={`${i}|${x.term}`}>{x.names.map((n, j) => { const plain = n.replace(/`/g, "").trim(); return (
-                                  <span key={j}>{j > 0 && " / "}{cardOf(plain) || isCardWorthy(plain) ? chip({ term: n, def: x.def }) : <strong>{plain}</strong>}</span>
+                                  <span key={j}>{j > 0 && " / "}{cardOf(plain) || isCardWorthy(plain) ? chip({ term: n, def: x.def, kind: x.kind }) : <strong>{plain}</strong>}</span>
                                 ); })} — <Markdown className="inline [&_p]:inline">{x.def}</Markdown></li>
-                              ))}{rest.map((l, i) => <li key={`r${i}`}><Markdown className="inline [&_p]:inline">{l}</Markdown></li>)}</ul></div>}
-                              {sp.after && <Markdown>{sp.after}</Markdown>}
-                            </> : <Markdown>{relocalizeFailure(body, t)}</Markdown>}
+                              ))}{rest.map((l, i) => <li key={`r${i}`}><Markdown className="inline [&_p]:inline">{stripKindTags(l)}</Markdown></li>)}</ul></div>}
+                              {sp.after && <Markdown>{stripKindTags(sp.after)}</Markdown>}
+                            </> : <Markdown>{relocalizeFailure(stripKindTags(body), t)}</Markdown>}
                             {extra.length > 0 && <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1">{extra.map((x, i) => <span key={`${i}|${x.term}`} title={x.def}>{chip(x)}</span>)}</div>}
                           </>;
                         }
@@ -901,7 +901,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           <div role="separator" aria-orientation="horizontal" aria-label={t("learn.askResize")} onPointerDown={startResize}
             className="h-1.5 shrink-0 cursor-row-resize border-t border-zinc-200 bg-zinc-100 hover:bg-mustard-500/30 dark:border-zinc-800 dark:bg-zinc-900" />
           <div className="flex shrink-0 flex-col" style={{ height: askH }}>
-            <CatchupAskPanel root={root} item={{ key: askItem.key, target: askItem.target, expl: askItem.expl ?? "", ts: askItem.ts, kind: askItem.kind }}
+            <CatchupAskPanel root={root} item={{ key: askItem.key, target: askItem.target, expl: stripKindTags(askItem.expl ?? ""), ts: askItem.ts, kind: askItem.kind }}
               providerId={providerId} providerSettings={providerSettings} onClose={() => setAskItem(null)} onCount={onAskCount} />
           </div>
         </>
