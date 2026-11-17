@@ -51,7 +51,7 @@ ${h("cards")}
 - 에이전트 내부 동작 해설 금지: 훅(PreToolUse 등)·도구 검색·기억 조회·스피너·상태 줄은 해설 대상이 아님. 재료가 그것뿐이면 딱 "SKIP".
 - **반복 금지**: '앞서 해설한 것'과 같은 작업 이야기(같은 말·같은 작업)를 되풀이하게 되면 딱 "SKIP". 새로 생긴 말·작업만 다룸(용어가 겹치는 건 괜찮음).
 - 작업 대행 금지(문안·커밋 메시지·코드 작성 X), 사람 이름 금지.
-- 문서 작업(.md 학습정리·작업일지·plan·README 등 작성)만 하고 있으면 딱 "SKIP".
+- **문서 작업·질문 답변뿐이면 딱 "SKIP"** — 문서(.md 학습정리·작업일지·plan·README 등) 읽기·쓰기·정리·형식 확인, 유저 질문·상담에 말로만 답함. 유저가 직접 보고 있어 해설이 필요 없음. 단 코드를 읽고 원인을 찾거나·테스트·빌드로 확인하는 작업은 코드 작업이라 해설함. SKIP일 땐 해설을 쓰다가 끝에 붙이지 말고 "SKIP" 한 단어만 출력.
 ${memo.length ? `\n## 앞서 해설한 것(이 레포, 최근 — 같은 작업 이야기는 되풀이 말고 이어 쓸 것)\n${memo.join("\n")}\n` : ""}
 ${material}
 ${diff.trim() ? `\n## 참고: 지금까지 바뀐 코드(git diff HEAD, 일부)\n\`\`\`diff\n${diff}\n\`\`\`` : ""}
@@ -145,8 +145,9 @@ async function narrateOnce(cwd: string, agent: string, delta: string, diff: stri
   // #1093 런타임 실패(동시 세션 상한 등)는 summary에 문구를 담아 옴 → 카드로 내지 말고 실패로(호출부가 조용히 처리)
   if (isFailedNote(summary) || res?.warnings?.some((w) => w.code === "PARSE_FAILED")) throw new Error(summary || "runtime failed");
   // 모델이 실제 활동 없다고 판단하면 "SKIP" → 카드 방출 안 함(무의미 내레이션·토큰 낭비 방지).
-  if (/^SKIP\b/i.test(summary)) console.log(`[narration] SKIP ${cwd.split("/").pop()} (delta ${delta.length}B, diff ${diff.length}B)`); // #1045 진단 — 왜 해설이 안 뜨나
-  if (!summary || /^SKIP\b/i.test(summary) || summary.length <= 8) return false;
+  const skip = /^[\s*`_\-•>.:"'“”]*SKIP[\s*`_.!:"'“”]*$/m.test(summary) || /^[\s*`_\-•>]*SKIP(?![A-Za-z0-9_-])/.test(summary); // SKIP뿐인 줄(**SKIP**·`SKIP`·- SKIP 포함)이 어디 있든 해설 없음 — 끝에 붙여도(#1367). 맨 앞이 대문자 SKIP 낱말이면("SKIP — 이유"·"SKIP 문서만…") 해설 없음, SKIP-LOCKED·SKIPPED는 통과. 대문자만 — "Skip 버튼…" 같은 제목은 통과
+  if (skip) console.log(`[narration] SKIP ${cwd.split("/").pop()} (delta ${delta.length}B, diff ${diff.length}B)`); // #1045 진단 — 왜 해설이 안 뜨나
+  if (!summary || skip || summary.length <= 8) return false;
   const { title, note } = splitNarration(summary);
   if (isRepeat(title, note, past, diff.trim().length > 0)) { console.log(`[narration] repeat dropped ${cwd.split("/").pop()}: ${title}`); return false; } // #1359 같은 제목·이미 설명한 개념뿐
   const sent = emitNarration(cwd, title, cleanNote(note), ts);
