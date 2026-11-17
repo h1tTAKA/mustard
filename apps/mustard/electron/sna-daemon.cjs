@@ -6,13 +6,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 
-const SNA_DAEMON_VERSION = 1; // 데몬 껍데기·띄우는 방식(env 등)을 바꾸면 올릴 것
+const SNA_DAEMON_VERSION = 2; // 데몬 껍데기·띄우는 방식(env 등)을 바꾸면 올릴 것 — 2 = 앱 생존을 명령줄까지 확인(MUSTARD_APP_EXEC)
 
 const alive = (pid) => { if (!pid) return false; try { process.kill(pid, 0); return true; } catch (e) { return e && e.code === "EPERM"; } };
 // pid가 정말 우리 데몬인지 — 재부팅 뒤 같은 번호를 다른 프로세스가 쓸 수 있어 끄기 전에 명령줄 확인(Windows는 확인 못 해 안 끔)
 function ours(pid) {
   if (!alive(pid)) return false;
-  if (process.platform === "win32") return null; // 확인 못 함
+  if (process.platform === "win32") return false; // 확인 수단이 없음 — 답하는지(/health)로만 판단(재부팅 뒤 같은 번호의 남의 프로세스를 우리 것으로 착각하지 않게, 리뷰)
   try { return require("node:child_process").execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: 2000 }).includes("sna-daemon-host"); } catch { return null; } // ps 실패 = 모름(우리 것일 수 있음 — 같은 DB에 둘을 띄우지 않게, 리뷰)
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -48,13 +48,17 @@ async function ensureSnaDaemon(opts) {
   for (let i = 0; live && !up && i < 8; i++) { await sleep(1000); up = await healthy(st.port); } // 잠깐 바빠서 못 답했을 수 있음 — 바로 죽이면 일하던 채팅이 죽음(리뷰)
   const owned = live && (up || ours(st.pid) !== false); // 상태 파일의 포트에서 답하거나 ps로 우리 것(또는 확인 못 함)이면 우리 데몬
   // 우리 데몬인데 답이 없음 → 죽이지 않고 그대로 씀(일하는 세션이 있을 수 있음 — 같은 DB로 둘을 띄우지도 않음, 리뷰). 멈춰 버렸으면 "완전히 종료"로 끔
-  const action = owned && !up ? "keep-old" : decide(st, { alive: owned, healthy: up, busy: up && st.version !== version ? await busy(st) : false, version });
+  // 답 없는 상태가 10분 넘게 이어지면(여러 번 켜도) 멈춘 것으로 보고 교체 — 영영 못 쓰게 두지 않음(리뷰). 그 전엔 일하는 중일 수 있어 그대로
+  const stuck = owned && !up && st.unhealthySince && Date.now() - st.unhealthySince > 10 * 60_000;
+  if (st && up && st.unhealthySince) delete st.unhealthySince;
+  if (owned && !up && !st.unhealthySince) st.unhealthySince = Date.now();
+  const action = stuck ? "replace" : owned && !up ? "keep-old" : decide(st, { alive: owned, healthy: up, busy: up && st.version !== version ? await busy(st) : false, version });
   opts.log?.(`[sna-daemon] ${action}${st ? ` (pid ${st.pid}, v${st.version} → v${version})` : ""}`);
   if (action === "reuse" || action === "keep-old") {
     write({ ...st, appPid: process.pid });
     return { baseUrl: `http://127.0.0.1:${st.port}`, authToken: st.token, pid: st.pid, reused: true };
   }
-  if (action === "replace") { // 옛 데몬(버전 다름, 일하는 세션 없음 확인함) 정리 — SIGTERM이면 SNA가 세션을 닫고 끔
+  if (action === "replace" && (up || ours(st.pid) === true)) { // 끄는 건 우리 데몬임을 확인했을 때만(답하거나 ps 명령줄) — 옛 데몬(버전 다름, 일하는 세션 없음 확인함) 정리 — SIGTERM이면 SNA가 세션을 닫고 끔
     try { process.kill(st.pid, "SIGTERM"); } catch { /* ignore */ }
     for (let i = 0; i < 150 && alive(st.pid); i++) await sleep(100); // SNA가 세션을 정리하고 끌 시간(15초) — 넘으면 강제
     if (alive(st.pid)) try { process.kill(st.pid, "SIGKILL"); } catch { /* ignore */ }

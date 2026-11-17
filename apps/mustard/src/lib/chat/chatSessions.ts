@@ -360,7 +360,7 @@ async function reattach(root: string) {
     const st = await sna.agent.getStatus(sid).catch(() => null);
     if (!st?.alive) continue; // 꺼진 세션 — 다음 보내기 때 이어 시작(ensureAgent)
     if (!g.subscribed.has(sid)) { g.subscribed.add(sid); c.replaying = true; await sna.agent.subscribe(sid, sinceOf(c, st.eventCount)).catch(() => { g.subscribed.delete(sid); }).finally(() => { c.replaying = false; }); } // 지난 이벤트는 구독 응답 전에 옴
-    setBusy(c, st.agentStatus === "busy");
+    if (!c.starting) setBusy(c, st.agentStatus === "busy"); // 보내기가 겹치면 그쪽이 정한 바쁨을 지우지 않게(리뷰)
     persist(c);
     // Codex 등(SNA 승인 흐름): 앱이 닫힌 동안 들어와 SNA가 붙잡고 있는 권한 요청 → 카드로 되살림(Claude는 훅이 다시 물어 옴)
     if (c.provider !== "claude-code" && !c.pending.size) {
