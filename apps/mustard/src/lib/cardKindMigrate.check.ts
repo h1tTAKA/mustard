@@ -99,20 +99,14 @@ const s7 = mem({
 assert.equal(await reclassifyTermCards(s7, async (it) => it.map(() => "concept" as const)), 2);
 assert.deepEqual(s7.get("nunopi:bookmark-concepts"), ["클로저", "재귀"]); // 상태(별 없던 것)는 별 없음
 assert.deepEqual(s7.get("nunopi:bookmark-terms"), []);
-// 리뷰: 다른 창이 하는 중이면 안 함
-const s8 = mem({ "nunopi:bookmark-term-details": { 재귀: { term: "재귀", explanation: "x", ...ws } }, "nunopi:migrating-term-kind-ai": Date.now() });
-assert.equal(await reclassifyTermCards(s8, async () => ["concept"]), 0);
-// 리뷰: 답이 빠진 카드는 다음에 그것만 다시 / 시계 거꾸로인 잠금은 무시 / 남의 잠금은 안 풂
-const s9 = mem({ "nunopi:bookmark-term-details": { a: { term: "a", explanation: "x", ...ws }, b: { term: "b", explanation: "y", ...ws }, c: { term: "c", explanation: "z", ...ws } }, "nunopi:migrating-term-kind-ai": Date.now() + 365 * 864e5 });
+// 리뷰: 답이 빠진 카드는 다음에 그것만 다시
+const s9 = mem({ "nunopi:bookmark-term-details": { a: { term: "a", explanation: "x", ...ws }, b: { term: "b", explanation: "y", ...ws }, c: { term: "c", explanation: "z", ...ws } } });
 assert.equal(await reclassifyTermCards(s9, async () => ["concept", "term", undefined]), 1);
 assert.equal(s9.getItem("nunopi:migrated-term-kind-ai-1369"), null);
 let asked2: string[] = [];
 assert.equal(await reclassifyTermCards(s9, async (it) => { asked2 = it.map((x) => x.name); return ["concept"]; }), 1);
 assert.deepEqual(asked2, ["c"]); // b(IT라고 답함)는 다시 안 물음
 assert.ok(s9.getItem("nunopi:migrated-term-kind-ai-1369"));
-const s10 = mem({ "nunopi:bookmark-term-details": { a: { term: "a", explanation: "x", ...ws } } });
-await reclassifyTermCards(s10, async () => { s10.setItem("nunopi:migrating-term-kind-ai", "other"); return ["term"]; });
-assert.equal(s10.getItem("nunopi:migrating-term-kind-ai"), "other");
 // 리뷰: 세 번 답이 없으면 포기하고 완료
 const s11 = mem({ "nunopi:bookmark-term-details": { a: { term: "a", explanation: "x", ...ws } } });
 for (let n = 0; n < 3; n++) await reclassifyTermCards(s11, async () => [undefined]);

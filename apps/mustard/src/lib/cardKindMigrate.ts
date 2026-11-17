@@ -10,7 +10,7 @@ const K = {
   token: "nunopi:bookmark-token-details", term: "nunopi:bookmark-term-details", concept: "nunopi:bookmark-concept-details",
   starTok: "nunopi:bookmark-tokens", starTerm: "nunopi:bookmark-terms", starConcept: "nunopi:bookmark-concepts", // 별 표시(이름 문자열 배열, LearningPanel). 저장이 없으면 IT용어·개념은 "전부 별", 토큰은 "없음"으로 봄
   srs: "nunopi:srs-state", explain: "nunopi:card-explain", chat: "nunopi:card-chat", decks: "nunopi:mem-custom-decks",
-  done: "nunopi:migrated-term-token-1369", doneAI: "nunopi:migrated-term-kind-ai-1369", lockAI: "nunopi:migrating-term-kind-ai", checkedAI: "nunopi:term-kind-ai-kept", missAI: "nunopi:term-kind-ai-miss", // AI가 IT라고 답한 카드(다음에 다시 안 물음) / 답이 빠진 횟수
+  done: "nunopi:migrated-term-token-1369", doneAI: "nunopi:migrated-term-kind-ai-1369", checkedAI: "nunopi:term-kind-ai-kept", missAI: "nunopi:term-kind-ai-miss", // AI가 IT라고 답한 카드(다음에 다시 안 물음) / 답이 빠진 횟수
 };
 const read = <T,>(s: Store, k: string, d: T): T => { try { const v = s.getItem(k); return v ? (JSON.parse(v) as T) : d; } catch { return d; } };
 const norm = (x: string) => x.trim().toLowerCase().replace(/\([^)]*\)/g, "").replace(/\s+/g, ""); // core normalizeCardFront와 같음
@@ -91,11 +91,7 @@ export function migrateCatchupTermCards(s: Store): number {
 // 코드 → 토큰, 개념 → 개념 카드, IT → 그대로(기억해 두고 다시 안 물음). 80장씩 묻고, 실패하거나 답이 빠지면 완료 표시 없이 끝(다음 시작에 남은 것만 다시).
 export async function reclassifyTermCards(s: Store, classify: (items: { name: string; def: string }[]) => Promise<(CardKind | null | undefined)[]>): Promise<number> {
   if (s.getItem(K.doneAI)) return 0;
-  const lock = Number(String(s.getItem(K.lockAI) ?? "0").split(":")[0]) || 0;
-  if (lock <= Date.now() && Date.now() - lock < 10 * 60_000) return 0; // 다른 창이 하는 중(10분 넘었거나 시계가 거꾸로면 멈춘 걸로 봄) — 같은 카드로 AI를 여러 번 부르지 않게(리뷰)
-  const mine = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
-  s.setItem(K.lockAI, mine);
-  try { return await reclassifyOnce(s, classify); } finally { if (s.getItem(K.lockAI) === mine) s.setItem(K.lockAI, "0"); } // 내 잠금일 때만 풂(다른 창이 이어받았으면 그대로, 리뷰)
+  return reclassifyOnce(s, classify); // 창 여러 개 동시 실행은 호출부가 Web Locks로 막음(저장소 시각 잠금은 창이 갑자기 닫히면 10분 묶여서 뺌, 리뷰)
 }
 async function reclassifyOnce(s: Store, classify: (items: { name: string; def: string }[]) => Promise<(CardKind | null | undefined)[]>): Promise<number> {
   const kept = new Set(read<string[]>(s, K.checkedAI, []));
