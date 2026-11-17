@@ -18,6 +18,7 @@ import { HOOK_SRC } from "@/lib/crew/crewRunner";
 import { applyEvent, itemsFromClaudeTranscript, takeCursor, type ChatItem, type Timeline } from "./chatTimeline";
 import { projectDirFor } from "@/lib/subagents";
 import { observeChat } from "./chatNarrate";
+import { chatHookSrc } from "./chatHook";
 
 export type ChatProvider = "claude-code" | "codex" | "opencode" | "grok" | "cursor";
 export const CHAT_PROVIDERS: ChatProvider[] = ["claude-code", "codex", "opencode", "grok", "cursor"];
@@ -94,8 +95,8 @@ function load(root: string) {
     try {
       const j = JSON.parse(readFileSync(join(rootDir(root), f), "utf8"));
       if (!ID_RE.test(j.id) || g.chats.has(j.id)) continue;
-      // 앱이 꺼졌다 켜지면 기다리던 권한 요청은 끝난 것 — 거절로 표시
-      const items = (Array.isArray(j.items) ? j.items : []).map((it: ChatItem) => (it.k === "perm" && it.state === "pending" ? { ...it, state: "denied" } : it));
+      // #1358 앱이 꺼진 동안 기다리던 권한 카드는 뺌 — 에이전트가 아직 기다리면 다시 물어 새 카드가 뜸(Claude 훅 재시도·Codex 대기 권한), 끝났으면 의미 없음
+      const items = (Array.isArray(j.items) ? j.items : []).filter((it: ChatItem) => !(it.k === "perm" && it.state === "pending"));
       g.chats.set(j.id, { id: j.id, root, cwd: j.cwd || root, provider: asProvider(j.provider), model: typeof j.model === "string" ? j.model : undefined, effort: typeof j.effort === "number" ? j.effort : undefined, mode: asMode(j.mode), archived: !!j.archived, title: String(j.title ?? ""), createdAt: Number(j.createdAt) || 0, updatedAt: Number(j.updatedAt) || Number(j.createdAt) || 0, sid: j.sid, cc: typeof j.cc === "string" ? j.cc : undefined, cur: Number.isInteger(j.cur) ? j.cur : undefined, token: typeof j.token === "string" && /^[a-f0-9-]{36}$/.test(j.token) ? j.token : randomUUID() /* #1358 앱이 꺼진 동안 살아 있던 claude의 훅이 같은 토큰으로 들어옴 — 매번 새로 만들면 "unknown chat"으로 전부 거부 */, pending: new Map(), handedOff: !!j.handedOff, tl: { items, streaming: "", busy: false } });
       if (j.sid) g.bySid.set(j.sid, j.id);
     } catch { /* 깨진 파일은 건너뜀 */ }
@@ -355,6 +356,12 @@ async function reattach(root: string) {
     if (!g.subscribed.has(sid)) { g.subscribed.add(sid); c.replaying = true; await sna.agent.subscribe(sid, sinceOf(c)).catch(() => { g.subscribed.delete(sid); }).finally(() => { c.replaying = false; }); } // 지난 이벤트는 구독 응답 전에 옴
     setBusy(c, st.agentStatus === "busy");
     persist(c);
+    // Codex 등(SNA 승인 흐름): 앱이 닫힌 동안 들어와 SNA가 붙잡고 있는 권한 요청 → 카드로 되살림(Claude는 훅이 다시 물어 옴)
+    if (c.provider !== "claude-code" && !c.pending.size) {
+      const { pending } = await sna.agent.getPendingPermissions(sid).catch(() => ({ pending: [] as { request: Record<string, unknown> }[] }));
+      const p = pending[0];
+      if (p && !c.pending.size) { const { tool, input } = fromAgentRequest((p.request ?? {}) as Record<string, unknown>); void ask(c, tool, input).then((ok) => sna.agent.respondPermission(sid, ok)).catch(() => {}); }
+    }
   }
 }
 
@@ -386,9 +393,20 @@ export function answerPermission(root: string, id: string, permId: string, allow
 }
 // Claude 훅 창구 — 탭마다 무작위 토큰으로만 통과
 export async function hookDecision(id: string, token: string, tool: string, input: Record<string, unknown>): Promise<{ decision: "allow" | "deny"; reason?: string }> {
-  const c = g.chats.get(id);
+  const c = g.chats.get(id) ?? findChat(id); // #1358 앱이 다시 뜬 직후엔 그 레포 채팅을 아직 안 읽었을 수 있음(읽기는 레포를 열 때) — 훅이 먼저 오면 찾아 읽음
   if (!c || c.token !== token) return { decision: "deny", reason: "unknown chat" };
   return (await ask(c, tool, input)) ? { decision: "allow" } : { decision: "deny", reason: "The user denied this action" };
+}
+
+// 채팅 id로 저장 파일을 찾아 그 레포 채팅을 읽음(훅이 화면보다 먼저 올 때)
+function findChat(id: string): Chat | undefined {
+  if (!ID_RE.test(id)) return undefined;
+  let dirs: string[] = [];
+  try { dirs = readdirSync(baseDir()); } catch { return undefined; }
+  for (const d of dirs) {
+    try { const j = JSON.parse(readFileSync(join(baseDir(), d, `${id}.json`), "utf8")); if (typeof j.root === "string") { load(j.root); return g.chats.get(id); } } catch { /* 이 폴더엔 없음 */ }
+  }
+  return undefined;
 }
 
 const safeOrigin = (o: string) => (/^http:\/\/(127\.0\.0\.1|localhost):\d{2,5}$/.test(o) ? o : `http://127.0.0.1:${Number(process.env.PORT) || 59720}`);
@@ -410,7 +428,7 @@ async function ensureAgentOnce(c: Chat, origin: string) {
     // Codex: 작업 폴더마다 로그인 복사본을 만들면 리프레시 토큰이 서로 깨짐 → 사용자 CODEX_HOME 공유(Crew #1108과 같은 이유)
     ...(c.provider === "codex" ? { configDir: process.env.CODEX_HOME?.trim() || join(homedir(), ".codex") } : {}),
   };
-  if (isClaude) { mkdirSync(baseDir(), { recursive: true }); writeFileSync(hookPath(), HOOK_SRC.replace("/api/crew/permission", "/api/chat/permission").replace("Mustard Crew PreToolUse", "Mustard chat PreToolUse")); }
+  if (isClaude) { mkdirSync(baseDir(), { recursive: true }); writeFileSync(hookPath(), chatHookSrc(HOOK_SRC)); }
   if (c.sid) {
     const st = await sna.agent.getStatus(c.sid).catch(() => null);
     if (st?.alive) { if (!g.subscribed.has(c.sid)) { await sna.agent.subscribe(c.sid, sinceOf(c)); g.subscribed.add(c.sid); } return; } // 서버만 다시 뜬 경우 — 살아 있는 세션 구독부터
