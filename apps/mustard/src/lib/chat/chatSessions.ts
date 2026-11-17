@@ -25,6 +25,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = ["claude-code", "codex", "opencode
 export type ChatMode = "plan" | "default" | "full";
 export const asProvider = (v: unknown): ChatProvider => (CHAT_PROVIDERS.includes(v as ChatProvider) ? (v as ChatProvider) : "claude-code");
 const AGENT_ID: Record<ChatProvider, string> = { "claude-code": "claude", codex: "codex", opencode: "opencode", grok: "grok", cursor: "cursor" };
+const BACKFILLED = new Set<ChatProvider>(["claude-code", "codex", "cursor"]); // #1358 앱이 꺼진 동안의 작업을 캐치업 백필이 CLI 기록에서 해설하는 AI(agentSessions activityForRoot)
 const asMode = (v: unknown): ChatMode => (v === "plan" || v === "full" ? v : "default");
 export interface ChatMeta { id: string; title: string; provider: ChatProvider; model: string; effort?: number; mode: ChatMode; createdAt: number; updatedAt: number; busy: boolean; archived: boolean; count: number; cc?: string; handedOff?: boolean }
 export type ChatPush =
@@ -318,7 +319,7 @@ async function wireOnce() {
     if (c.stopping && ev.type === "error") ev = { type: "interrupted" };
     if (ev.type === "complete" || ev.type === "interrupted" || ev.type === "error") c.stopping = false;
     const r = applyEvent(c.tl, ev, saveImage);
-    if (!c.replaying) observeChat(c.id, c.cwd, AGENT_ID[c.provider], ev); // 캐치업 실시간 해설(터미널과 같은 narrate)
+    if (!c.replaying || !BACKFILLED.has(c.provider)) observeChat(c.id, c.cwd, AGENT_ID[c.provider], ev); // 캐치업 실시간 해설(터미널과 같은 narrate). 다시 붙어 받은 지난 이벤트는 백필이 CLI 기록을 읽는 AI만 건너뜀(리뷰)
     for (const i of r.changed) emit(c.id, { type: "item", i, item: c.tl.items[i] });
     if (r.delta) emit(c.id, { type: "delta", streaming: c.tl.streaming });
     if (wasBusy !== c.tl.busy) emit(c.id, { type: "busy", busy: c.tl.busy });
@@ -345,7 +346,7 @@ async function wireOnce() {
 const BUF = 450;
 function sinceOf(c: Chat, eventCount?: number) {
   if (!c.cur) return undefined;
-  if (eventCount !== undefined && eventCount - c.cur > BUF) { c.cur = eventCount; return undefined; }
+  if (eventCount !== undefined && (eventCount - c.cur > BUF || eventCount < c.cur)) { c.cur = eventCount; return undefined; } // 서버 번호가 내 것보다 작음 = 번호가 처음부터 다시 셈 → 내 번호를 맞춤(안 그러면 새 이벤트를 전부 중복으로 버림, 리뷰)
   return { since: c.cur };
 }
 

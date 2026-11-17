@@ -10,8 +10,12 @@ const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { 
 // 앱이 살아 있나 — 번호만 보면 앱이 비정상 종료한 뒤 그 번호를 다른 프로그램이 써서 영영 안 꺼짐(리뷰) → 명령줄이 앱 실행 파일인지까지
 function appAlive(pid) {
   if (!alive(pid)) return false;
-  if (process.platform === "win32" || !process.env.MUSTARD_APP_EXEC) return true;
-  try { return require("node:child_process").execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: 2000 }).includes(process.env.MUSTARD_APP_EXEC); } catch { return true; }
+  const exe = process.env.MUSTARD_APP_EXEC;
+  if (!exe) return true;
+  try {
+    if (process.platform === "win32") return require("node:child_process").execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], { encoding: "utf8", timeout: 3000 }).toLowerCase().includes(require("node:path").basename(exe).toLowerCase()); // Windows는 실행 파일 이름으로(리뷰)
+    return require("node:child_process").execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: 2000 }).includes(exe);
+  } catch { return true; }
 }
 
 async function working() {
