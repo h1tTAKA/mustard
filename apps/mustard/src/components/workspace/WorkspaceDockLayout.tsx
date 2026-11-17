@@ -73,6 +73,7 @@ function setRatioAt(node: DockNode, path: ("a" | "b")[], ratio: number): DockNod
   return head === "a" ? { ...node, a: setRatioAt(node.a, rest, ratio) } : { ...node, b: setRatioAt(node.b, rest, ratio) };
 }
 
+const nodeAt = (n: DockNode, path: ("a" | "b")[]): DockNode | null => path.reduce<DockNode | null>((x, k) => (x?.t === "split" ? x[k] : null), n);
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const MIN_RATIO = 0.12;
 // 이 노드를 폭 w로 그릴 때 가장 좁은 칸의 폭 — 끌어서 줄일 때 안쪽 칸까지 MIN_W 지키는 데 씀(리뷰: 바깥 칸만 보면 안쪽이 230px까지 줆)
@@ -159,16 +160,17 @@ export default function WorkspaceDockLayout({ tree, panels, onTreeChange }: {
       e.preventDefault();
       const container = e.currentTarget.parentElement;
       if (!container) return;
-      const rect = container.getBoundingClientRect();
-      if (!rect.width || !rect.height) return; // 0크기 컨테이너 → 나눗셈 발산 방지
-      let cur = node.ratio;
+      if (!container.getBoundingClientRect().width) return; // 0크기 컨테이너 → 나눗셈 발산 방지
       const move = (ev: PointerEvent) => {
+        const rect = container.getBoundingClientRect(); // 끄는 중 창 크기·칸 구성이 바뀔 수 있어 매번 새로 읽음(리뷰)
+        const live = nodeAt(treeRef.current, path);
+        if (!rect.width || !rect.height || live?.t !== "split" || live.dir !== node.dir) return; // 끄는 중 칸 구성이 바뀌어 다른 칸이 됐으면 무시
+        const cur = live.ratio;
         let r = clamp(isRow ? (ev.clientX - rect.left) / rect.width : (ev.clientY - rect.top) / rect.height, MIN_RATIO, 1 - MIN_RATIO);
         if (isRow) { // 좌우: 안쪽 칸까지 포함해 가장 좁은 칸이 MIN_W 아래로 가면 안 움직임. 창이 좁아 이미 못 지키는 중이면 넓어지는 쪽으로만
-          const ok = (x: number) => { const n = narrowest({ ...node, ratio: x }, rect.width); return n >= MIN_W || n >= narrowest({ ...node, ratio: cur }, rect.width); };
+          const ok = (x: number) => { const n = narrowest({ ...live, ratio: x }, rect.width); return n >= MIN_W || n >= narrowest({ ...live, ratio: cur }, rect.width); };
           if (!ok(r)) { let good = cur; for (let i = 0; i < 16; i++) { const mid = (good + r) / 2; if (ok(mid)) good = mid; else r = mid; } r = good; } // 빨리 끌어도 경계에 딱 붙게(이분 탐색)
         }
-        cur = r;
         onTreeChange(setRatioAt(treeRef.current, path, r));
       };
       const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.cursor = ""; document.body.style.userSelect = ""; };
