@@ -224,6 +224,7 @@ export async function deleteChat(root: string, id: string): Promise<boolean> {
   await killAgent(c);
   g.chats.delete(id); g.subs.delete(id);
   rmSync(join(rootDir(root), `${id}.json`), { force: true });
+  try { rmSync(join(rootDir(root), `${id}.json.tmp`), { force: true }); } catch { /* 넘김 */ } // 끊긴 저장이 남긴 임시 파일(토큰·기록)도 같이(리뷰)
   return true;
 }
 async function killAgent(c: Chat) {
