@@ -81,7 +81,7 @@ function persist(c: Chat, now = false) {
     if (!g.chats.has(c.id)) return; // 닫힌 탭
     const d = rootDir(c.root); mkdirSync(d, { recursive: true });
     const f = join(d, `${c.id}.json`);
-    rmSync(`${f}.tmp`, { force: true }); // 옛 빌드가 남긴 .tmp(0644)에 이어 쓰지 않게 — 새로 만들어야 0600이 붙음(리뷰)
+    try { rmSync(`${f}.tmp`, { force: true }); } catch { /* 넘김 — 아래 chmod가 막음 */ } // 옛 빌드가 남긴 .tmp(0644)에 이어 쓰지 않게 — 새로 만들어야 0600이 붙음(리뷰)
     writeFileSync(`${f}.tmp`, JSON.stringify({ id: c.id, root: c.root, cwd: c.cwd, provider: c.provider, model: c.model, effort: c.effort, mode: c.mode, archived: c.archived, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt, sid: c.sid, cc: c.cc, cur: c.cur, token: c.token, handedOff: c.handedOff, items: c.tl.items }), { mode: 0o600 });
     renameSync(`${f}.tmp`, f);
     try { chmodSync(f, 0o600); } catch { /* ignore */ } // 옛 빌드가 남긴 .tmp를 이어 받았어도 0600(토큰이 들어 있음, 리뷰)
@@ -94,7 +94,7 @@ function load(root: string) {
   if (g.loaded.has(root)) return;
   g.loaded.add(root);
   let files: string[] = [];
-  try { const all = readdirSync(rootDir(root)); for (const t of all) if (t.endsWith(".json.tmp")) rmSync(join(rootDir(root), t), { force: true }); files = all.filter((f) => f.endsWith(".json")); } catch { return; } // 남은 임시 파일(토큰이 든 채 0644일 수 있음)은 지움(리뷰)
+  try { const all = readdirSync(rootDir(root)); for (const t of all) if (t.endsWith(".json.tmp")) try { chmodSync(join(rootDir(root), t), 0o600); } catch { /* 넘김 */ } files = all.filter((f) => f.endsWith(".json")); } catch { return; } // 남은 임시 파일(토큰이 든 채 0644일 수 있음)은 0600으로 — 지우지 않음(다른 프로세스가 쓰는 중일 수 있음, 리뷰)
   for (const f of files) {
     try {
       const j = JSON.parse(readFileSync(join(rootDir(root), f), "utf8"));
