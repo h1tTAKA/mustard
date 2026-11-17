@@ -46,8 +46,9 @@ async function ensureSnaDaemon(opts) {
   const live = !!(st && alive(st.pid));
   let up = live && await healthy(st.port);
   for (let i = 0; live && !up && i < 8; i++) { await sleep(1000); up = await healthy(st.port); } // 잠깐 바빠서 못 답했을 수 있음 — 바로 죽이면 일하던 채팅이 죽음(리뷰)
-  // 우리 데몬인가: 상태 파일 포트에서 답하거나 / ps 명령줄이 우리 것(확인 실패는 "모름" = 우리 것으로) / Windows는 ps가 없어 그 포트가 아직 잡혀 있는지로
-  const owned = live && (up || (process.platform === "win32" ? !(await opts.isPortFree(st.port)) : ours(st.pid) !== false));
+  // 우리 데몬인가: 상태 파일 포트에서 답하거나 / ps 명령줄이 우리 것(확인 실패는 "모름" = 우리 것으로 — 다음 실행에 다시 확인)
+  // Windows는 ps가 없어 답하는지로만(포트가 잡혀 있다고 우리 것이라 볼 수 없음, 리뷰) — 한계: 답 없는 우리 데몬이 있으면 둘째가 뜰 수 있음
+  const owned = live && (up || ours(st.pid) !== false);
   // 우리 데몬인데 답이 없음 → 절대 죽이지 않고 그대로 씀(일하는 세션이 있을 수 있음, 같은 DB로 둘을 띄우지도 않음, 리뷰). 멈춰 버렸으면 메뉴 "완전히 종료"로 끔
   // ponytail: 멈춘 데몬 자동 교체 없음 — 실제로 멈추는 일이 보이면 "답 없음이 이어진 시간"을 재서 교체 추가
   const action = owned && !up ? "keep-old" : decide(st, { alive: owned, healthy: up, busy: up && st.version !== version ? await busy(st) : false, version });
@@ -83,7 +84,7 @@ async function ensureSnaDaemon(opts) {
 
 // "완전히 종료" — 데몬까지 끔(SIGTERM → 세션 정리)
 function stopSnaDaemon(userData) {
-  try { const st = JSON.parse(fs.readFileSync(path.join(userData, "sna-daemon.json"), "utf8")); if (ours(st.pid) || (process.platform === "win32" && alive(st.pid))) process.kill(st.pid, "SIGTERM"); } catch { /* 없음 */ } // Windows는 명령줄 확인 수단이 없어 상태 파일 번호를 믿음
+  try { const st = JSON.parse(fs.readFileSync(path.join(userData, "sna-daemon.json"), "utf8")); if (process.platform === "win32" ? alive(st.pid) : ours(st.pid) !== false) process.kill(st.pid, "SIGTERM"); } catch { /* 없음 */ } // Windows는 명령줄 확인 수단이 없어 상태 파일 번호를 믿음, ps 확인 실패도 우리 것으로(keep-old와 같은 판단 — 직접 고르는 메뉴라 끔)
 }
 // 앱이 꺼질 때 — 데몬은 두고 "앱 없음"만 표시(데몬이 스스로 끌 때 판단)
 function detachSnaDaemon(userData) {
