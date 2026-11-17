@@ -75,6 +75,7 @@ function setRatioAt(node: DockNode, path: ("a" | "b")[], ratio: number): DockNod
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const MIN_RATIO = 0.12;
+const MIN_W = 360; // 좌우 칸 최소 폭(px) — 이보다 좁으면 채팅 입력 도구 줄 등이 지나치게 접힘(#1363 유저 피드백)
 
 // ── 드래그 도킹 트리 조작(#716) ──
 type Edge = "left" | "right" | "top" | "bottom";
@@ -159,7 +160,8 @@ export default function WorkspaceDockLayout({ tree, panels, onTreeChange }: {
       if (!rect.width || !rect.height) return; // 0크기 컨테이너 → 나눗셈 발산 방지
       const move = (ev: PointerEvent) => {
         const r = isRow ? (ev.clientX - rect.left) / rect.width : (ev.clientY - rect.top) / rect.height;
-        onTreeChange(setRatioAt(treeRef.current, path, clamp(r, MIN_RATIO, 1 - MIN_RATIO)));
+        const lo = isRow ? Math.min(0.5, Math.max(MIN_RATIO, MIN_W / rect.width)) : MIN_RATIO; // 창이 좁아 양쪽 다 못 지키면 반반까지만
+        onTreeChange(setRatioAt(treeRef.current, path, clamp(r, lo, 1 - lo)));
       };
       const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.cursor = ""; document.body.style.userSelect = ""; };
       window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
