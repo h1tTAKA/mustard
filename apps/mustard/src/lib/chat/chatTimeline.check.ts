@@ -93,3 +93,13 @@ console.log("chatTimeline.check ok");
   const fresh: { cur?: number } = {};
   assert.equal(takeCursor(fresh, 1), true); assert.equal(fresh.cur, 1);
 }
+
+// #1374 백그라운드 작업 끝 알림 — 띄운 도구의 description을 이름으로, 없으면 CLI 요약, 실패 표시, 다른 milestone은 무시
+{
+  const t: Timeline = { items: [], streaming: "", busy: false };
+  applyEvent(t, { type: "tool_use", data: { id: "toolu_a", toolName: "Agent", input: { description: "Review PR #78 diff", prompt: "…" } } }, save);
+  applyEvent(t, { type: "milestone", message: "", data: { kind: "task_notification", status: "completed", toolUseId: "toolu_a" } }, save);
+  applyEvent(t, { type: "milestone", message: 'Background command "sleep" completed', data: { kind: "task_notification", status: "failed", toolUseId: "toolu_x" } }, save);
+  applyEvent(t, { type: "milestone", message: "other", data: {} }, save);
+  assert.deepStrictEqual(t.items.slice(1), [{ k: "bg", text: "Review PR #78 diff" }, { k: "bg", text: 'Background command "sleep" completed', failed: true }]);
+}

@@ -10,7 +10,8 @@ export type ChatItem =
   | { k: "perm"; id: string; tool: string; input: string; state: "pending" | "allowed" | "denied" }
   | { k: "done"; inTok?: number; outTok?: number; cost?: number; ms?: number; ctx?: number; win?: number } // ctx = 이번 턴 입력 전체(캐시 포함), win = 컨텍스트 창
   | { k: "error"; text: string }
-  | { k: "stopped" };
+  | { k: "stopped" }
+  | { k: "bg"; text: string; failed?: boolean }; // #1374 백그라운드 작업(서브 에이전트·명령) 끝 알림 — text = 작업 설명
 
 export interface Timeline { items: ChatItem[]; streaming: string; busy: boolean; flushed?: number }
 export type SaveImage = (base64: string, mime: string) => string; // 저장하고 이미지 id(파일명)를 돌려줌
@@ -88,6 +89,13 @@ export function applyEvent(t: Timeline, ev: Record<string, unknown>, save: SaveI
       const n = (k: string) => (typeof data[k] === "number" ? (data[k] as number) : undefined);
       const ctx = (n("inputTokens") ?? 0) + (n("cacheReadTokens") ?? 0) + (n("cacheWriteTokens") ?? 0);
       return { changed: [...ch, push({ k: "done", inTok: n("inputTokens"), outTok: n("outputTokens"), cost: n("costUsd"), ms: n("durationMs"), ...(ctx ? { ctx } : {}), ...(n("contextWindow") ? { win: n("contextWindow") } : {}) })], delta: true };
+    }
+    case "milestone": { // #1374 백그라운드 작업 끝(scripts/patch-sna.mjs가 넘김) — 이름은 그 작업을 띄운 도구의 description, 없으면 CLI 요약
+      if (data.kind !== "task_notification") return { changed: [] };
+      const at = toolAt(str(data.toolUseId)), tool = at >= 0 ? (t.items[at] as Extract<ChatItem, { k: "tool" }>) : undefined;
+      let desc = ""; try { desc = str((JSON.parse(tool?.input ?? "{}") as Record<string, unknown>).description); } catch { /* 잘린 입력 */ }
+      const ch = flush();
+      return { changed: [...ch, push({ k: "bg", text: desc || msg, ...(data.status !== "completed" ? { failed: true } : {}) })], delta: ch.length > 0 };
     }
     case "interrupted": { const ch = flush(); t.flushed = undefined; t.busy = false; return { changed: [...ch, push({ k: "stopped" })], delta: true }; }
     case "error": {
