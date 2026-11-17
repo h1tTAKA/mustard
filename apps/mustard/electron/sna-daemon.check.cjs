@@ -35,8 +35,9 @@ const opts = (env) => ({ userData: dir, hostScript: host, standaloneScript: fake
   const c = await ensureSnaDaemon(opts({ X: "2" })); // 설정 바뀜 + 일 없음 → 교체
   assert.notEqual(c.pid, a.pid); assert.equal(c.authToken, a.authToken, "토큰은 유지");
   assert.ok(await wait(() => !alive(a.pid)), "옛 데몬 꺼짐");
-  stopSnaDaemon(dir);
+  await stopSnaDaemon(dir);
   assert.ok(await wait(() => !alive(c.pid)), "완전히 종료");
+  assert.ok(!fs.existsSync(path.join(dir, "sna-daemon.json")), "끈 뒤 상태 파일 지움(정리 중 다시 켜도 새로 띄움)");
 
   // 껍데기 스스로 종료: 앱 없음(appPid 0) + 일 없음이 IDLE 넘으면 끔. 일하는 중이면 안 끔.
   process.env.MUSTARD_SNA_IDLE_MS = "300"; process.env.MUSTARD_SNA_TICK_MS = "100";
@@ -48,7 +49,7 @@ const opts = (env) => ({ userData: dir, hostScript: host, standaloneScript: fake
   detachSnaDaemon(dir);
   await new Promise((r) => setTimeout(r, 1200));
   assert.ok(alive(e.pid), "일하는 중이면 안 끔");
-  stopSnaDaemon(dir);
+  await stopSnaDaemon(dir);
   assert.ok(await wait(() => !alive(e.pid)));
   console.log("sna-daemon ok");
 })().catch((err) => { console.error(err); process.exit(1); });

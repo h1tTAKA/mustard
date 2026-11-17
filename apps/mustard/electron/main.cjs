@@ -2041,6 +2041,12 @@ function selectAllScoped() {
     const r = document.createRange(); r.selectNodeContents(el.firstElementChild || el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); return true; })()`;
   wc.executeJavaScript(js, true).then((done) => { if (!done) wc.selectAll(); }).catch(() => wc.selectAll());
 }
+// #1358 "완전히 종료" — 채팅 AI 서버까지 끄고(우리 데몬 확인 뒤) 앱 종료
+async function quitAll() {
+  quitCompletely = true;
+  try { await stopSnaDaemon(app.getPath("userData")); } catch { /* ignore */ }
+  app.quit();
+}
 function installAppMenu() {
   const mac = process.platform === "darwin";
   const template = [
@@ -2048,9 +2054,9 @@ function installAppMenu() {
     ...(mac ? [{ role: "appMenu", submenu: [
       { role: "about" }, { type: "separator" }, { role: "services" }, { type: "separator" },
       { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" },
-      { label: "Quit Completely (stop chat agents)", accelerator: "Alt+Cmd+Q", click: () => { quitCompletely = true; app.quit(); } },
+      { label: "Quit Completely (stop chat agents)", accelerator: "Alt+Cmd+Q", click: () => quitAll() },
       { role: "quit" },
-    ] }] : [{ label: "File", submenu: [{ label: "Quit Completely (stop chat agents)", click: () => { quitCompletely = true; app.quit(); } }, { role: "quit" }] }]),
+    ] }] : [{ label: "File", submenu: [{ label: "Quit Completely (stop chat agents)", click: () => quitAll() }, { role: "quit" }] }]),
     // #1324 편집 메뉴를 직접 — "전체 선택"(⌘A)만 바꿈: 포커스가 [data-select-all] 영역(코드 탭) 안이면 그 내용만, 아니면 기존 전체 선택.
     // macOS는 메뉴 단축키가 화면 키 처리보다 먼저라 화면에서 막을 수 없음(리뷰). 입력창·터미널·인앱 브라우저는 그대로 selectAll.
     { label: "Edit", submenu: [
@@ -2076,8 +2082,7 @@ app.whenReady().then(boot).catch((e) => { console.error("[electron] boot failed"
     try { const d = process.env.MUSTARD_STREAM_DIR || require("node:path").join(require("node:os").homedir(), ".nunopi", "stream"); require("node:fs").mkdirSync(d, { recursive: true }); require("node:fs").writeFileSync(require("node:path").join(d, "alive.json"), JSON.stringify({ ts: Date.now() })); } catch { /* ignore */ }
     try { serverProc?.kill(); } catch { /* ignore */ }
     // #1358 채팅 AI 서버(SNA)는 안 끔 — 시켜 둔 채팅 작업이 계속 돎. "앱 없음"만 표시(데몬이 일 없으면 30분 뒤 스스로 끔). "완전히 종료"만 데몬까지 끔.
-    if (quitCompletely) { try { stopSnaDaemon(app.getPath("userData")); } catch { /* ignore */ } }
-    else { try { detachSnaDaemon(app.getPath("userData")); } catch { /* ignore */ } }
+    if (!quitCompletely) { try { detachSnaDaemon(app.getPath("userData")); } catch { /* ignore */ } } // 완전히 종료면 quitAll이 이미 끔
     // 터미널 데몬은 안 죽임 — 세션(프로세스) 생존(#682). 유휴 reap로만 종료.
   });
 }

@@ -82,9 +82,15 @@ async function ensureSnaDaemon(opts) {
   throw new Error(`SNA daemon did not become ready (log: ${logPath})`);
 }
 
-// "완전히 종료" — 데몬까지 끔(SIGTERM → 세션 정리)
-function stopSnaDaemon(userData) {
-  try { const st = JSON.parse(fs.readFileSync(path.join(userData, "sna-daemon.json"), "utf8")); if (process.platform === "win32" ? alive(st.pid) : ours(st.pid) !== false) process.kill(st.pid, "SIGTERM"); } catch { /* 없음 */ } // Windows는 명령줄 확인 수단이 없어 상태 파일 번호를 믿음, ps 확인 실패도 우리 것으로(keep-old와 같은 판단 — 직접 고르는 메뉴라 끔)
+// "완전히 종료" — 데몬까지 끔(SIGTERM → 세션 정리). 우리 데몬이 확실할 때만: ps 명령줄이 우리 것이거나(확인 못 하면) 상태 파일 포트에서 답할 때(리뷰: 재부팅 뒤 같은 번호의 남의 프로세스를 끄지 않게).
+// 끈 뒤 상태 파일을 지움 — 정리하는 몇 초 사이 다시 켜도 죽어 가는 데몬에 붙지 않고 새로 띄움.
+async function stopSnaDaemon(userData) {
+  const p = path.join(userData, "sna-daemon.json");
+  let st;
+  try { st = JSON.parse(fs.readFileSync(p, "utf8")); } catch { return; }
+  const o = ours(st.pid);
+  if (o === true || (alive(st.pid) && await healthy(st.port))) try { process.kill(st.pid, "SIGTERM"); } catch { /* 이미 꺼짐 */ }
+  try { fs.rmSync(p, { force: true }); } catch { /* ignore */ }
 }
 // 앱이 꺼질 때 — 데몬은 두고 "앱 없음"만 표시(데몬이 스스로 끌 때 판단)
 function detachSnaDaemon(userData) {

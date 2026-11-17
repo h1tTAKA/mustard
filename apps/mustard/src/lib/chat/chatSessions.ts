@@ -37,6 +37,7 @@ interface Chat {
   id: string; root: string; cwd: string; provider: ChatProvider; title: string; createdAt: number; updatedAt: number;
   model?: string; effort?: number; mode: ChatMode; archived?: boolean;
   sid?: string; cc?: string; token: string; tl: Timeline; // cc = Claude CLI 대화 id(init 이벤트) — 재시작 뒤 --resume
+  bg?: number;
   replaying?: boolean; // #1358 다시 붙어 지난 이벤트를 받는 중 — 그 작업은 캐치업 백필(CLI 기록)이 해설하므로 실시간 해설은 건너뜀(두 번 해설 방지)
   cur?: number; // #1358 마지막으로 접은 SNA 이벤트 번호(cursor) — 앱이 꺼진 동안 쌓인 것을 다시 열 때 이 뒤부터 받아 채움
   stopping?: boolean; // 멈춤을 눌렀음 — 실측: 끊기면 interrupted 대신 error("Unknown error")가 옴 → 멈춤으로 표시
@@ -118,7 +119,7 @@ export function subscribe(root: string, id: string, f: (p: ChatPush) => void): (
 function pushItem(c: Chat, item: ChatItem) { c.tl.items.push(item); const i = c.tl.items.length - 1; emit(c.id, { type: "item", i, item }); return i; }
 function setItem(c: Chat, i: number, item: ChatItem) { c.tl.items[i] = item; emit(c.id, { type: "item", i, item }); }
 function denyAll(c: Chat) { for (const done of [...c.pending.values()]) done(false); }
-function setBusy(c: Chat, busy: boolean) { if (c.tl.busy !== busy) { c.tl.busy = busy; emit(c.id, { type: "busy", busy }); } }
+function setBusy(c: Chat, busy: boolean) { c.bg = (c.bg ?? 0) + 1; if (c.tl.busy !== busy) { c.tl.busy = busy; emit(c.id, { type: "busy", busy }); } } // bg = 바쁨을 정한 횟수(다시 붙을 때 그 사이 누가 정했는지 보려고)
 
 // ── 목록·만들기·닫기 ────────────────────────────────────────────────
 // Claude 최신 모델 — SNA 고정 목록은 옛 버전(Opus 4.7 등)이라 앞에 직접 둠(실측 11-14: CLI 2.1.325에서 이 id로 실행됨, opus 별칭 = claude-opus-5-5).
@@ -360,9 +361,9 @@ async function reattach(root: string) {
     const st = await sna.agent.getStatus(sid).catch(() => null);
     if (!st?.alive) continue; // 꺼진 세션 — 다음 보내기 때 이어 시작(ensureAgent)
     if (!g.subscribed.has(sid)) { g.subscribed.add(sid); c.replaying = true; await sna.agent.subscribe(sid, sinceOf(c, st.eventCount)).catch(() => { g.subscribed.delete(sid); }).finally(() => { c.replaying = false; }); } // 지난 이벤트는 구독 응답 전에 옴
-    const b0 = c.tl.busy;
+    const g0 = c.bg ?? 0, cur0 = c.cur;
     const now = await sna.agent.getStatus(sid).catch(() => null); // 바쁨은 구독(지난 이벤트 접기)이 끝난 뒤 상태로
-    if (now && !c.starting && c.tl.busy === b0) setBusy(c, now.agentStatus === "busy"); // 묻는 사이 이벤트·보내기로 바뀌었으면 그쪽이 최신(옛 값으로 덮지 않게, 리뷰)
+    if (now && !c.starting && (c.bg ?? 0) === g0 && c.cur === cur0) setBusy(c, now.agentStatus === "busy"); // 묻는 사이 이벤트·보내기로 바뀌었으면 그쪽이 최신(옛 값으로 덮지 않게, 리뷰)
     persist(c);
     // Codex 등(SNA 승인 흐름): 앱이 닫힌 동안 들어와 SNA가 붙잡고 있는 권한 요청 → 카드로 되살림(Claude는 훅이 다시 물어 옴)
     if (c.provider !== "claude-code" && !c.pending.size) {
