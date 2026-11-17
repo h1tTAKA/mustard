@@ -40,6 +40,8 @@ export function run(dist) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = dirname(dirname(fileURLToPath(import.meta.url)));
   const dist = [join(root, "apps", "mustard"), root].map((d) => join(d, "node_modules", "@sna-sdk", "core", "dist")).find(existsSync); // 워크스페이스 설치는 보통 루트로 올라감
-  if (!dist) { console.log("[patch-sna] @sna-sdk/core 없음 — 건너뜀"); process.exit(0); }
-  console.log(`[patch-sna] ${run(dist)}개 파일 확인`);
+  const strict = process.argv.includes("--strict"); // 패키징은 --strict(못 고치면 실패), postinstall은 경고만(SNA를 올렸을 때 npm install·CI 전체를 막지 않게, 리뷰)
+  if (!dist) { console.log("[patch-sna] @sna-sdk/core 없음 — 건너뜀"); process.exit(strict ? 1 : 0); }
+  try { console.log(`[patch-sna] ${run(dist)}개 파일 확인`); }
+  catch (e) { console.warn(`${e.message}${strict ? "" : " (경고만 — 패키징 때는 실패)"}`); process.exit(strict ? 1 : 0); }
 }

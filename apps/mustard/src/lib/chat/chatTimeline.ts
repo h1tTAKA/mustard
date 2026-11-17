@@ -11,7 +11,7 @@ export type ChatItem =
   | { k: "done"; inTok?: number; outTok?: number; cost?: number; ms?: number; ctx?: number; win?: number } // ctx = 이번 턴 입력 전체(캐시 포함), win = 컨텍스트 창
   | { k: "error"; text: string }
   | { k: "stopped" }
-  | { k: "bg"; text: string; failed?: boolean }; // #1374 백그라운드 작업(서브 에이전트·명령) 끝 알림 — text = 작업 설명
+  | { k: "bg"; text: string; state?: "failed" | "stopped" }; // #1374 백그라운드 작업(서브 에이전트·명령) 끝 알림 — text = 작업 설명
 
 export interface Timeline { items: ChatItem[]; streaming: string; busy: boolean; flushed?: number }
 export type SaveImage = (base64: string, mime: string) => string; // 저장하고 이미지 id(파일명)를 돌려줌
@@ -93,9 +93,11 @@ export function applyEvent(t: Timeline, ev: Record<string, unknown>, save: SaveI
     case "milestone": { // #1374 백그라운드 작업 끝(scripts/patch-sna.mjs가 넘김) — 이름은 그 작업을 띄운 도구의 description, 없으면 CLI 요약
       if (data.kind !== "task_notification") return { changed: [] };
       const at = toolAt(str(data.toolUseId)), tool = at >= 0 ? (t.items[at] as Extract<ChatItem, { k: "tool" }>) : undefined;
-      let desc = ""; try { desc = str((JSON.parse(tool?.input ?? "{}") as Record<string, unknown>).description); } catch { /* 잘린 입력 */ }
-      const ch = flush();
-      return { changed: [...ch, push({ k: "bg", text: desc || msg, ...(data.status !== "completed" ? { failed: true } : {}) })], delta: ch.length > 0 };
+      const m = tool?.input?.match(/"description":("(?:[^"\\]|\\.)*")/); // 입력은 2000자로 잘려 있어 통째 JSON.parse는 실패함 — description 칸만 꺼냄(리뷰)
+      let desc = ""; try { desc = m ? str(JSON.parse(m[1])) : ""; } catch { /* 넘김 */ }
+      const ch = flush(); t.flushed = undefined; // 이 줄 뒤에 오는 글이 위의 굳힌 글 자리를 덮지 않게(리뷰)
+      const st = data.status === "failed" ? { state: "failed" as const } : data.status === "stopped" || data.status === "killed" ? { state: "stopped" as const } : {};
+      return { changed: [...ch, push({ k: "bg", text: desc || msg, ...st })], delta: ch.length > 0 };
     }
     case "interrupted": { const ch = flush(); t.flushed = undefined; t.busy = false; return { changed: [...ch, push({ k: "stopped" })], delta: true }; }
     case "error": {

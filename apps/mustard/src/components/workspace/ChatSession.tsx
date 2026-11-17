@@ -258,7 +258,7 @@ export default function ChatSession({ root, meta, providers, onMeta, onAppComman
         </div>);
       case "error": return <div key={i} className="flex items-start gap-2.5 rounded-md border border-black/[.08] bg-zinc-100/20 p-3 text-[13px] text-zinc-700 dark:border-white/[.08] dark:bg-white/[.02] dark:text-zinc-300"><IconAlertTriangle size={15} stroke={1.8} className="mt-0.5 shrink-0 text-red-500" aria-hidden /><span className="whitespace-pre-wrap break-all">{it.text}</span></div>;
       case "stopped": return <div key={i} className="text-[12.5px] text-zinc-400 dark:text-zinc-500">{t("achat.stopped")}</div>;
-      case "bg": return <div key={i} className="truncate text-[12.5px] text-zinc-400 dark:text-zinc-500">{t(it.failed ? "achat.bgFailed" : "achat.bgDone")}{it.text && ` · ${it.text}`}</div>;
+      case "bg": return <div key={i} className="truncate text-[12.5px] text-zinc-400 dark:text-zinc-500">{t(it.state === "failed" ? "achat.bgFailed" : it.state === "stopped" ? "achat.bgStopped" : "achat.bgDone")}{it.text && ` · ${it.text}`}</div>;
     }
   };
 
