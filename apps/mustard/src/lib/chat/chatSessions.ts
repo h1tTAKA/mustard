@@ -335,7 +335,7 @@ async function wireOnce() {
   // #1358 SNA 클라이언트는 끊겼다 붙으면 번호 없이 다시 구독함(그 사이 이벤트 빠짐) → 우리가 마지막 번호부터 다시 구독
   sna.onConnectionStatus((st) => {
     if (st !== "connected") return;
-    for (const c of g.chats.values()) if (c.sid && g.subscribed.has(c.sid)) { const sid = c.sid; c.replaying = true; void sna.agent.getStatus(sid).then((st) => sna.agent.subscribe(sid, sinceOf(c, st?.eventCount))).catch(() => {}).finally(() => { c.replaying = false; }); }
+    for (const c of g.chats.values()) if (c.sid && g.subscribed.has(c.sid)) { const sid = c.sid; c.replaying = true; void sna.agent.getStatus(sid).catch(() => undefined).then((st) => sna.agent.subscribe(sid, sinceOf(c, st?.eventCount))).catch(() => {}).finally(() => { c.replaying = false; }); }
   });
 }
 

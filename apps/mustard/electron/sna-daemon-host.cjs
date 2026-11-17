@@ -7,6 +7,12 @@ const fs = require("node:fs");
 const STATE = process.env.MUSTARD_SNA_STATE;
 const IDLE_MS = Number(process.env.MUSTARD_SNA_IDLE_MS) || 30 * 60_000;
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e && e.code === "EPERM"; } };
+// 앱이 살아 있나 — 번호만 보면 앱이 비정상 종료한 뒤 그 번호를 다른 프로그램이 써서 영영 안 꺼짐(리뷰) → 명령줄이 앱 실행 파일인지까지
+function appAlive(pid) {
+  if (!alive(pid)) return false;
+  if (process.platform === "win32" || !process.env.MUSTARD_APP_EXEC) return true;
+  try { return require("node:child_process").execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: 2000 }).includes(process.env.MUSTARD_APP_EXEC); } catch { return true; }
+}
 
 async function working() {
   try {
@@ -20,7 +26,7 @@ let idleSince = Date.now();
 setInterval(async () => {
   let st = {};
   try { st = JSON.parse(fs.readFileSync(STATE, "utf8")); } catch { /* 파일이 없으면 판단 보류 */ }
-  const busy = (st.pid === process.pid && st.appPid && alive(st.appPid)) || await working();
+  const busy = (st.pid === process.pid && st.appPid && appAlive(st.appPid)) || await working();
   if (st.pid && st.pid !== process.pid) { if (!busy) process.kill(process.pid, "SIGTERM"); return; } // 앱이 새 데몬으로 갈아 끼움 — 일하는 채팅이 끝나면 끔(리뷰: 바로 끄면 일하던 에이전트가 죽음)
   if (busy) idleSince = Date.now();
   else if (Date.now() - idleSince >= IDLE_MS) process.kill(process.pid, "SIGTERM");

@@ -13,6 +13,7 @@ const base = crew.match(/export const HOOK_SRC = `([\s\S]*?)`;\n/)![1];
 const src = chatHookSrc(base);
 assert.ok(src.includes("/api/chat/permission") && !src.includes("/api/crew/permission"));
 assert.ok(src.includes("for (;;)"), "다시 시도 고리가 들어감");
+assert.ok(!/"Read"/.test(src), "읽기 도구는 앱 없이 허용 안 함(비밀 경로)");
 const dir = mkdtempSync(join(tmpdir(), "chat-hook-"));
 const hook = join(dir, "hook.cjs");
 writeFileSync(hook, src);
@@ -35,14 +36,14 @@ srv.close();
 assert.match(a.out, /"permissionDecision":"allow"/, "앱이 늦게 떠도 다시 시도해 허용을 받음");
 assert.ok(a.ms >= 3000, "기다렸다가");
 assert.match(seen, /^\/api\/chat\/permission .*"run":"x".*"token":"y"/);
-// 앱이 없을 때 읽기 도구는 바로 허용(기다리지 않음)
+// 앱이 없을 때 할 일 목록(TodoWrite)만 바로 허용(기다리지 않음) — 읽기는 비밀 경로일 수 있어 기다림
 const dead = await free();
 const rd = await new Promise<{ out: string; ms: number }>((res) => {
   const t0 = Date.now();
   const p = spawn(process.execPath, [hook, `--url=http://127.0.0.1:${dead}`, "--run=x", "--token=y"]);
   let out = ""; p.stdout.on("data", (c) => (out += c));
   p.on("close", () => res({ out, ms: Date.now() - t0 }));
-  p.stdin.end(JSON.stringify({ tool_name: "Read", tool_input: { file_path: "/x" } }));
+  p.stdin.end(JSON.stringify({ tool_name: "TodoWrite", tool_input: {} }));
 });
 assert.match(rd.out, /"permissionDecision":"allow"/); assert.ok(rd.ms < 2500, "기다리지 않음");
 console.log("chatHook ok");

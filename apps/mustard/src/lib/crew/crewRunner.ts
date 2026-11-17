@@ -126,7 +126,7 @@ function reconcile(root: string) {
   for (const r of runs) {
     if (ACTIVE.includes(r.state) && !g.runs.has(r.id)) {
       // #1358 채팅 AI 서버(SNA)는 이제 앱을 닫아도 살아 있음 → 이 실행의 에이전트가 아무도 안 보는 채 계속 고치지 않게 끔(Crew는 이어 받기 없음 — 예전처럼 실패로 정리)
-      if (r.sessionId) void getSnaClient().then((c) => c.agent.kill(r.sessionId!)).catch(() => {});
+      if (r.sessionId) { const sid = r.sessionId; const kill = () => getSnaClient().then((c) => c.agent.kill(sid)); void kill().catch(() => new Promise((ok) => setTimeout(ok, 5000)).then(kill)).catch((e) => console.warn(`[crew] 이전 실행 세션을 못 끔(${sid}) — 에이전트가 계속 돌 수 있음:`, e)); } // 실패하면 한 번 더, 그래도 안 되면 기록(리뷰)
       r.state = "failed"; r.error = tr("crew.reason.interrupted"); r.endedAt = Date.now(); changed = true;
       block(root, r.taskId, r.stage ?? 0, tr("crew.reason.interrupted"));
     }
