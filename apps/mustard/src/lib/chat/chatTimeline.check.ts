@@ -106,10 +106,10 @@ console.log("chatTimeline.check ok");
   applyEvent(t, { type: "tool_use", data: { id: "toolu_b", toolName: "Agent", input: { description: 'Say "hi"', prompt: "x".repeat(5000) } } }, save);
   applyEvent(t, { type: "milestone", message: "", data: { kind: "task_notification", status: "killed", toolUseId: "toolu_b" } }, save);
   assert.deepStrictEqual(t.items.at(-1), { k: "bg", text: 'Say "hi"', state: "stopped" });
-  // 흘러오던 글 중간에 알림 → 뒤에 온 전체 글이 알림 위 굳힌 글을 덮지 않음
+  // 흘러오던 글 중간에 알림 → 뒤에 온 같은 글의 전체본은 굳힌 자리를 덮음(앞부분 중복 없음)
   const u: Timeline = { items: [], streaming: "", busy: true };
   applyEvent(u, { type: "assistant_delta", delta: "앞 글" }, save);
   applyEvent(u, { type: "milestone", message: "m", data: { kind: "task_notification", status: "completed" } }, save);
   applyEvent(u, { type: "assistant", message: "앞 글 이어서" }, save);
-  assert.deepStrictEqual(u.items.map((i) => i.k), ["text", "bg", "text"]);
+  assert.deepStrictEqual(u.items, [{ k: "text", text: "앞 글 이어서" }, { k: "bg", text: "m" }]);
 }
