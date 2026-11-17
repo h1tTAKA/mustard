@@ -106,7 +106,8 @@ export function isCardWorthy(term: string): boolean {
 // 해설 틀이 코드 이름을 `백틱`으로 감싸게 함 → 그게 1순위. 백틱이 빠지면(자주 빠짐, #1369) 이름 생김새 + 뜻(def) 낱말로.
 // ponytail: 낱말 목록 휴리스틱 — 뜻 문장이 애매하면 틀릴 수 있음. 더 정확히 하려면 해설 AI가 카드 종류를 직접 표시하게.
 const CODE_DEF = /함수|메서드|메소드|훅|클래스|위젯|컴포넌트|속성|프로퍼티|\bprops?\b|타입|명령|연산자|키워드|설정 파일|객체|생성자|옵션|인자|매개변수|파라미터|예외|에러 클래스|상수|변수|API|모듈|컨트롤러|컨테이너/i;
-const PRODUCT_DEF = /언어|서비스|플랫폼|프로토콜|데이터베이스|운영체제|회사|브라우저 엔진/;
+const PRODUCT_DEF = /언어|서비스|플랫폼|프로토콜|데이터베이스|운영체제|회사|브라우저 엔진|라이브러리|프레임워크|기술|기법|개념|원칙|패턴/; // 제품·일반 개념 — 뜻에 코드 낱말(함수·위젯…)이 없을 때만 IT용어로(리뷰: socket.io·PyTorch). "방식"은 넣지 않음 — ScrollBehavior 같은 설정 클래스 뜻에 흔함
+const general = (def: string) => PRODUCT_DEF.test(def) && !CODE_DEF.test(def);
 function codeKindOne(name: string, def: string): boolean {
   const t = name.replace(/\s*\([^)]+\)\s*$/, "").trim(); // 끝 "(풀이)" 떼기 — assert(단언) → assert, HLS(.m3u8) → HLS. 빈 괄호 dispose()는 그대로
   if (!t || !/^[\x21-\x7e]+( [\x21-\x7e]+)*$/.test(t)) return false; // 한글 섞임·빈 이름 → IT용어
@@ -114,11 +115,11 @@ function codeKindOne(name: string, def: string): boolean {
   const def0 = def.replace(/`/g, "");
   if (/\s/.test(t)) return /^[A-Za-z_$][\w$]*(<|:\s)/.test(t) // 여러 단어: 타입·스타일 꼴(Record<K, V>·flex: 1)
     || (/^[a-z.][\w.-]*(\s|$)/.test(t) && (/\s--?[a-z]/i.test(t) || CODE_DEF.test(def0))); // 소문자로 시작하는 명령·구문(git log·tsc --noEmit·import type)
-  if (/[.()<>_:$\[\]]|^-/.test(t)) return true; // 점·괄호·밑줄 등 — 코드 생김새(PageView.builder·dispose()·Record<K, V>)
-  if (/^[a-z][a-z0-9]*[A-Z]/.test(t)) return !PRODUCT_DEF.test(def0); // camelCase(useState·jumpToPage) — iOS·macOS는 뜻에 운영체제
-  if (/^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/.test(t)) return !PRODUCT_DEF.test(def0); // PascalCase(ScrollView) — JavaScript·GitHub 같은 이름은 뜻에 언어·서비스 → IT용어
+  if (/[.()<>_:$\[\]]|^-/.test(t)) return !general(def0); // 점·괄호·밑줄 등 — 코드 생김새(PageView.builder·dispose()·Record<K, V>)
+  if (/^[a-z][a-z0-9]*[A-Z]/.test(t)) return !general(def0); // camelCase(useState·jumpToPage) — iOS·macOS는 뜻에 운영체제
+  if (/^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/.test(t)) return !general(def0); // PascalCase(ScrollView) — JavaScript·GitHub 같은 이름은 뜻에 언어·서비스 → IT용어
   if (/^[A-Z0-9]+$/.test(t)) return false; // 전부 대문자 약어(TTS·CI)
-  return CODE_DEF.test(def0) && !PRODUCT_DEF.test(def0); // 한 단어(dispose·split·Promise) — 뜻에 함수·메서드·위젯 같은 말이 있어야
+  return CODE_DEF.test(def0); // 한 단어(dispose·split·Promise) — 뜻에 함수·메서드·위젯 같은 말이 있어야
 }
 export function cardKindOf(raw: string, def = ""): "token" | "term" {
   const x = raw.trim();

@@ -87,3 +87,6 @@ const realTerm: [string, string][] = [
   ["GitHub", "코드를 올려 두고 함께 작업하는 서비스"],
 ];
 assert.deepStrictEqual(realTerm.map(([x, d]) => cardKindOf(x, d)), Array(realTerm.length).fill("term"), "일반 개념·제품 이름은 IT용어");
+// #1369 리뷰: 라이브러리·제품 이름은 생김새가 코드여도 IT용어(뜻에 코드 낱말 없을 때)
+assert.deepStrictEqual([["socket.io", "실시간 양방향 통신 라이브러리"], ["PyTorch", "파이썬 머신러닝 라이브러리"]].map(([x, d]) => cardKindOf(x, d)), ["term", "term"]);
+assert.equal(cardKindOf("ScrollBehavior", "Flutter에서 스크롤 방식을 정하는 설정"), "token");
