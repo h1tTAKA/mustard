@@ -88,8 +88,15 @@ assert.equal(cs["재귀(recursion)"].title, "재귀(recursion)"); assert.equal(c
 assert.deepEqual(s5.get("nunopi:srs-state"), { "concept:재귀(recursion)": { box: 2 }, "concept:closure": { box: 1 } });
 assert.equal(await reclassifyTermCards(s5, fake), 0, "두 번째는 안 함");
 const s6 = mem({ "nunopi:bookmark-term-details": { split: { term: "split", explanation: "함수", ...ws } } });
-await assert.rejects(reclassifyTermCards(s6, async () => { throw new Error("AI 없음"); }));
+assert.equal(await reclassifyTermCards(s6, async () => { throw new Error("AI 없음"); }), 0);
 assert.equal(s6.getItem("nunopi:migrated-term-kind-ai-1369"), null, "실패하면 다음에 다시");
+for (let n = 0; n < 4; n++) await reclassifyTermCards(s6, async () => { throw new Error("AI 없음"); });
+assert.ok(s6.getItem("nunopi:migrated-term-kind-ai-1369"), "다섯 번 실패하면 그만");
+// 리뷰: 둘째 묶음에서 실패해도 첫 묶음에서 옮긴 수는 돌려줌
+const many = Object.fromEntries(Array.from({ length: 90 }, (_, i) => [`t${i}`, { term: `t${i}`, explanation: "x", ...ws }]));
+const s12 = mem({ "nunopi:bookmark-term-details": many });
+let call = 0;
+assert.equal(await reclassifyTermCards(s12, async (it) => { if (call++) throw new Error("x"); return it.map(() => "concept" as const); }), 80);
 // 리뷰: 개념으로 옮긴 카드의 별 — 개념 별 저장이 없으면 기존 개념 전부 별인 상태를 적어 두고 별 있던 것만 더함
 const s7 = mem({
   "nunopi:bookmark-term-details": { 재귀: { term: "재귀", explanation: "x", ...ws }, 상태: { term: "상태", explanation: "y", ...ws } },

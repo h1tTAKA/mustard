@@ -10,7 +10,7 @@ const K = {
   token: "nunopi:bookmark-token-details", term: "nunopi:bookmark-term-details", concept: "nunopi:bookmark-concept-details",
   starTok: "nunopi:bookmark-tokens", starTerm: "nunopi:bookmark-terms", starConcept: "nunopi:bookmark-concepts", // 별 표시(이름 문자열 배열, LearningPanel). 저장이 없으면 IT용어·개념은 "전부 별", 토큰은 "없음"으로 봄
   srs: "nunopi:srs-state", explain: "nunopi:card-explain", chat: "nunopi:card-chat", decks: "nunopi:mem-custom-decks",
-  done: "nunopi:migrated-term-token-1369", doneAI: "nunopi:migrated-term-kind-ai-1369", checkedAI: "nunopi:term-kind-ai-kept", missAI: "nunopi:term-kind-ai-miss", // AI가 IT라고 답한 카드(다음에 다시 안 물음) / 답이 빠진 횟수
+  done: "nunopi:migrated-term-token-1369", doneAI: "nunopi:migrated-term-kind-ai-1369", checkedAI: "nunopi:term-kind-ai-kept", missAI: "nunopi:term-kind-ai-miss", failAI: "nunopi:term-kind-ai-fails", // AI가 IT라고 답한 카드(다음에 다시 안 물음) / 답이 빠진 횟수
 };
 const read = <T,>(s: Store, k: string, d: T): T => { try { const v = s.getItem(k); return v ? (JSON.parse(v) as T) : d; } catch { return d; } };
 const norm = (x: string) => x.trim().toLowerCase().replace(/\([^)]*\)/g, "").replace(/\s+/g, ""); // core normalizeCardFront와 같음
@@ -100,7 +100,14 @@ async function reclassifyOnce(s: Store, classify: (items: { name: string; def: s
   let moved = 0, missed = false;
   for (let i = 0; i < all.length; i += 80) {
     const chunk = all.slice(i, i + 80);
-    const kinds = await classify(chunk.map(([k, v]) => ({ name: k, def: String(v.explanation ?? "") })));
+    let kinds: (CardKind | null | undefined)[];
+    try { kinds = await classify(chunk.map(([k, v]) => ({ name: k, def: String(v.explanation ?? "") }))); }
+    catch { // AI 실패(빈 답·구독 없음 등) — 여기까지 옮긴 수는 돌려줌(열린 카드 목록 갱신). 다섯 번 실패하면 그만(앱 켤 때마다 AI 호출 안 함, 리뷰)
+      const fails = Number(s.getItem(K.failAI) ?? 0) + 1;
+      s.setItem(K.failAI, String(fails));
+      if (fails >= 5) s.setItem(K.doneAI, new Date().toISOString());
+      return moved;
+    }
     const picks = new Map<string, "token" | "concept">();
     chunk.forEach(([k], j) => {
       const kd = kinds[j];
