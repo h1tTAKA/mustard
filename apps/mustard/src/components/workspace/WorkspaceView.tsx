@@ -176,8 +176,10 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       if (off || !j?.ok || !Array.isArray(j.kinds)) throw new Error("card-kinds failed");
       return j.kinds;
     };
-    const run = () => reclassifyTermCards(localStorage, ask); // 창 여러 개가 같은 순간에 시작해도 하나만 — Web Locks(리뷰)
-    const tm = setTimeout(() => { void (navigator.locks ? navigator.locks.request("mustard-term-kind-ai", { ifAvailable: true }, async (l): Promise<number> => (l ? run() : 0)) : run()).then((n) => { if (n > 0) window.dispatchEvent(new Event(CARDS_CHANGED_EVENT)); }).catch(() => { /* 다음 시작에 다시 */ }); }, 15_000); // 앱 뜨는 일 다 끝난 뒤
+    const run = async (): Promise<number> => (navigator.locks // 창 여러 개가 같은 순간에 시작해도 하나만 — Web Locks(리뷰)
+      ? (await navigator.locks.request("mustard-term-kind-ai", { ifAvailable: true }, async (l) => (l ? reclassifyTermCards(localStorage, ask) : 0))) as number
+      : reclassifyTermCards(localStorage, ask));
+    const tm = setTimeout(() => { void run().then((n) => { if (n > 0) window.dispatchEvent(new Event(CARDS_CHANGED_EVENT)); }).catch(() => { /* 다음 시작에 다시 */ }); }, 15_000); // 앱 뜨는 일 다 끝난 뒤
     return () => { off = true; clearTimeout(tm); };
   }, [mounted]);
   // 저장된 패널 폭 복원.
