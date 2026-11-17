@@ -15,6 +15,7 @@
     "build": "npm run build --workspace apps/mustard",
     "dev": "npm run dev --workspace apps/mustard",
     "electron:dev": "npm run electron:dev --workspace apps/mustard",
-    "check": "node scripts/run-checks.mjs"
+    "check": "node scripts/run-checks.mjs",
+    "postinstall": "node scripts/patch-sna.mjs"
   }
 }

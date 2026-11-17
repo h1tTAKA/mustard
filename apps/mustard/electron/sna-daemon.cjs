@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 
-const SNA_DAEMON_VERSION = 2; // 데몬 껍데기·띄우는 방식(env 등)을 바꾸면 올릴 것 — 2 = 앱 생존을 명령줄까지 확인(MUSTARD_APP_EXEC)
+const SNA_DAEMON_VERSION = 3; // 데몬 껍데기·띄우는 방식(env 등)·SNA 패치(scripts/patch-sna.mjs)를 바꾸면 올릴 것 — 2 = 앱 생존을 명령줄까지 확인(MUSTARD_APP_EXEC), 3 = 서브 에이전트 메시지 거르기 패치(#1374)
 
 const alive = (pid) => { if (!pid) return false; try { process.kill(pid, 0); return true; } catch (e) { return e && e.code === "EPERM"; } };
 // pid가 정말 우리 데몬인지 — 재부팅 뒤 같은 번호를 다른 프로세스가 쓸 수 있어 끄기 전에 명령줄 확인(Windows는 확인 못 해 안 끔)
