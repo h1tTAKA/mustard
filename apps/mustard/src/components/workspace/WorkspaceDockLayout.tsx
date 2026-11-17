@@ -73,8 +73,13 @@ function setRatioAt(node: DockNode, path: ("a" | "b")[], ratio: number): DockNod
   return head === "a" ? { ...node, a: setRatioAt(node.a, rest, ratio) } : { ...node, b: setRatioAt(node.b, rest, ratio) };
 }
 
+const nodeAt = (n: DockNode, path: ("a" | "b")[]): DockNode | null => path.reduce<DockNode | null>((x, k) => (x?.t === "split" ? x[k] : null), n);
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const MIN_RATIO = 0.12;
+// 이 노드를 폭 w로 그릴 때 가장 좁은 칸의 폭 — 끌어서 줄일 때 안쪽 칸까지 MIN_W 지키는 데 씀(리뷰: 바깥 칸만 보면 안쪽이 230px까지 줆)
+const narrowest = (n: DockNode, w: number): number =>
+  n.t === "leaf" ? w : n.dir === "row" ? Math.min(narrowest(n.a, n.ratio * (w - 4)), narrowest(n.b, (1 - n.ratio) * (w - 4))) : Math.min(narrowest(n.a, w), narrowest(n.b, w));
+const MIN_W = 360; // 좌우 칸 최소 폭(px) — 이보다 좁으면 채팅 입력 도구 줄 등이 지나치게 접힘(#1363 유저 피드백)
 
 // ── 드래그 도킹 트리 조작(#716) ──
 type Edge = "left" | "right" | "top" | "bottom";
@@ -155,11 +160,20 @@ export default function WorkspaceDockLayout({ tree, panels, onTreeChange }: {
       e.preventDefault();
       const container = e.currentTarget.parentElement;
       if (!container) return;
-      const rect = container.getBoundingClientRect();
-      if (!rect.width || !rect.height) return; // 0크기 컨테이너 → 나눗셈 발산 방지
+      if (!container.getBoundingClientRect().width) return; // 0크기 컨테이너 → 나눗셈 발산 방지
       const move = (ev: PointerEvent) => {
-        const r = isRow ? (ev.clientX - rect.left) / rect.width : (ev.clientY - rect.top) / rect.height;
-        onTreeChange(setRatioAt(treeRef.current, path, clamp(r, MIN_RATIO, 1 - MIN_RATIO)));
+        const rect = container.getBoundingClientRect(); // 끄는 중 창 크기·칸 구성이 바뀔 수 있어 매번 새로 읽음(리뷰)
+        const live = nodeAt(treeRef.current, path);
+        if (!rect.width || !rect.height || live?.t !== "split" || live.dir !== node.dir) return; // 끄는 중 칸 구성이 바뀌어 다른 칸이 됐으면 무시
+        const cur = live.ratio;
+        let r = clamp(isRow ? (ev.clientX - rect.left) / rect.width : (ev.clientY - rect.top) / rect.height, MIN_RATIO, 1 - MIN_RATIO);
+        if (isRow) { // 좌우: 안쪽 칸까지 포함해 가장 좁은 칸이 MIN_W 아래로 가면 안 움직임. 창이 좁아 이미 못 지키는 중이면 넓어지는 쪽으로만
+          const ok = (x: number) => { const n = narrowest({ ...live, ratio: x }, rect.width); return n >= MIN_W || n >= narrowest({ ...live, ratio: cur }, rect.width); };
+          if (!ok(r)) { let good = cur; for (let i = 0; i < 16; i++) { const mid = (good + r) / 2; if (ok(mid)) good = mid; else r = mid; } r = good; } // 빨리 끌어도 경계에 딱 붙게(이분 탐색)
+        }
+        const next = setRatioAt(treeRef.current, path, r);
+        treeRef.current = next; // 다음 move가 렌더 전이어도 방금 값을 보게(리뷰)
+        onTreeChange(next);
       };
       const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); document.body.style.cursor = ""; document.body.style.userSelect = ""; };
       window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
