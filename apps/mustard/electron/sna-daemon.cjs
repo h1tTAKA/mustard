@@ -94,7 +94,7 @@ async function stopSnaDaemon(userData) {
     for (let i = 0; i < 50 && alive(st.pid); i++) await sleep(100); // SNA 정리(세션 끄기·서버 닫기, 최대 3초)를 기다림 — 그 사이 다시 켜서 같은 DB로 둘이 뜨지 않게(리뷰)
     if (alive(st.pid)) try { process.kill(st.pid, "SIGKILL"); } catch { /* ignore */ }
   }
-  if (!alive(st.pid) || o === false) try { fs.rmSync(p, { force: true }); } catch { /* ignore */ } // 아직 살아 있는(끄지 못한) 우리 데몬이면 상태를 남겨 다음 실행이 그대로 씀
+  if (!alive(st.pid) || (o === false && process.platform !== "win32")) try { fs.rmSync(p, { force: true }); } catch { /* ignore */ } // 아직 살아 있는(끄지 못한) 우리 데몬이면 상태를 남겨 다음 실행이 그대로 씀(Windows의 false는 "확인 못 함"이라 지우지 않음)
 }
 // 앱이 꺼질 때 — 데몬은 두고 "앱 없음"만 표시(데몬이 스스로 끌 때 판단)
 function detachSnaDaemon(userData) {
