@@ -43,7 +43,11 @@ setInterval(async () => {
 
 // 앱이 새 데몬으로 갈아 끼울지 볼 때 쓰라고 백그라운드 작업 수를 파일로 — 바뀔 때만 씀(5초마다 확인, 메모리 값이라 가벼움)
 const BG = require("node:path").join(require("node:path").dirname(STATE || "."), "sna-daemon-bg.json");
-let lastBg = -1;
-setInterval(() => { const n = bg(); if (n !== lastBg) { lastBg = n; try { fs.writeFileSync(BG, JSON.stringify({ pid: process.pid, bg: n })); } catch { /* 다음에 */ } } }, 5000);
+// 임시 파일에 쓰고 이름 바꾸기 — 앱이 쓰는 도중의 반쪽 파일을 읽어 "작업 없음"으로 보지 않게(리뷰)
+const writeBg = (n) => { try { fs.writeFileSync(`${BG}.tmp`, JSON.stringify({ pid: process.pid, bg: n })); fs.renameSync(`${BG}.tmp`, BG); } catch { /* 다음에 */ } };
+let lastBg = 0;
+writeBg(0); // 뜨자마자 — 죽은 옛 데몬이 남긴 파일(번호 재사용 시 잘못 믿음)을 바로 덮음(리뷰)
+setInterval(() => { const n = bg(); if (n !== lastBg) { lastBg = n; writeBg(n); } }, 5000);
+process.on("exit", () => { try { if (JSON.parse(fs.readFileSync(BG, "utf8")).pid === process.pid) fs.unlinkSync(BG); } catch { /* 없음 */ } }); // 내 파일일 때만 — 갈아 끼운 새 데몬 것은 둠
 
 require(process.env.MUSTARD_SNA_STANDALONE);

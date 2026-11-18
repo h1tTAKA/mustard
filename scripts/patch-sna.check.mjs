@@ -1,6 +1,9 @@
 // #1374 patch-sna 점검 — 한 번만 고치는지, 서브 에이전트 메시지는 버리고 백그라운드 끝 알림은 milestone으로 넘기는지, 백그라운드 작업 수를 세는지
 import assert from "node:assert/strict";
-import { patch } from "./patch-sna.mjs";
+import { patch, run } from "./patch-sna.mjs";
+import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const src = `class P {\n  normalizeEvent(msg) {\n    return { type: "orig", msg };\n  }\n}\nP;`;
 const out = patch(src);
@@ -27,7 +30,17 @@ p2.normalizeEvent({ type: "system", subtype: "background_tasks_changed", tasks: 
 assert.equal(globalThis.__mustardSnaBg(), 3);
 p1.normalizeEvent({ type: "system", subtype: "background_tasks_changed", tasks: [] });
 assert.equal(globalThis.__mustardSnaBg(), 2, "끝난 작업은 빠짐");
+p2.__mustardBgAt -= 7 * 3600e3;
+assert.equal(globalThis.__mustardSnaBg(), 0, "6시간 넘게 안 바뀐 목록은 안 셈");
+p2.normalizeEvent({ type: "system", subtype: "background_tasks_changed", tasks: [{ task_id: "b" }] });
+assert.equal(globalThis.__mustardSnaBg(), 1);
 p2.alive = false;
 assert.equal(globalThis.__mustardSnaBg(), 0, "죽은 CLI의 작업은 안 셈");
 assert.equal(patch(src.replace("normalizeEvent(msg) {", "normalizeEvent(msg) { /* mustard-patch:sna-subagent v1 */")), null, "옛 패치 위에 또 끼우지 않음");
+
+// 하나라도 못 고치면 아무것도 안 씀
+const d = mkdtempSync(join(tmpdir(), "patch-sna-"));
+writeFileSync(join(d, "a.js"), src); writeFileSync(join(d, "b.js"), src + src);
+assert.throws(() => run(d));
+assert.equal(readFileSync(join(d, "a.js"), "utf8"), src, "실패하면 a.js도 그대로");
 console.log("patch-sna ok");

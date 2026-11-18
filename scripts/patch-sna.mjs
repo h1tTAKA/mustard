@@ -3,6 +3,7 @@
 // 2) 백그라운드 작업 끝 알림(system/task_notification)을 milestone 이벤트로 넘김 — SNA는 버림(이벤트 종류가 정해져 있어 milestone을 씀).
 // 3) CLI별 "아직 도는 백그라운드 작업 수"(system/background_tasks_changed가 매번 전체 목록을 줌)를 globalThis.__mustardSnaBg()로 셈
 //    — 데몬 껍데기(sna-daemon-host.cjs, 같은 프로세스)가 메인 턴이 끝난 뒤 도는 서브 에이전트를 일하는 중으로 보게. 죽은 CLI는 뺌.
+//    ponytail: 목록이 6시간 안 바뀌면 안 셈 — 끝나지 않는 백그라운드 명령(개발 서버 등)이 데몬 교체·종료를 영영 막지 않게(리뷰). 더 긴 작업이 실제로 있으면 늘릴 것
 // ponytail: 고친 SNA를 배포하기 전까지의 임시 패치 — SNA가 직접 처리하면 이 파일과 postinstall을 지울 것.
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -13,7 +14,7 @@ const OLD = "/* mustard-patch:sna-subagent"; // 옛 버전 표시 — 그 위에
 const ANCHOR = "normalizeEvent(msg) {";
 const INSERT = `${ANCHOR} ${MARK}
     if (msg?.parent_tool_use_id) return null;
-    if (msg?.type === "system" && msg.subtype === "background_tasks_changed") { const g = globalThis, ps = (g.__mustardSnaProcs ??= new Set()); this.__mustardBg = Array.isArray(msg.tasks) ? msg.tasks.length : 0; ps.add(this); g.__mustardSnaBg ??= () => { let n = 0; for (const p of ps) { if (!p.alive || !p.__mustardBg) ps.delete(p); else n += p.__mustardBg; } return n; }; return null; }
+    if (msg?.type === "system" && msg.subtype === "background_tasks_changed") { const g = globalThis, ps = (g.__mustardSnaProcs ??= new Set()); this.__mustardBg = Array.isArray(msg.tasks) ? msg.tasks.length : 0; this.__mustardBgAt = Date.now(); ps.add(this); g.__mustardSnaBg ??= () => { let n = 0; for (const p of ps) { if (!p.alive || !p.__mustardBg || Date.now() - p.__mustardBgAt > 6 * 3600e3) ps.delete(p); else n += p.__mustardBg; } return n; }; return null; }
     if (msg?.type === "system" && msg.subtype === "task_notification") return { type: "milestone", message: msg.summary_is_report ? "" : String(msg.summary ?? ""), data: { kind: "task_notification", status: msg.status, toolUseId: msg.tool_use_id, taskId: msg.task_id }, timestamp: Date.now() };`;
 
 // 파일 내용을 고친 결과 — 이미 고쳤으면 그대로, 고칠 자리가 정확히 하나가 아니거나 옛 버전 패치가 들어 있으면 null
@@ -28,18 +29,19 @@ function files(dir) {
   return readdirSync(dir).flatMap((f) => { const p = join(dir, f); return statSync(p).isDirectory() ? files(p) : /\.(c?js)$/.test(f) ? [p] : []; });
 }
 
+// 전부 고쳐 본 뒤 하나라도 못 고치면 아무것도 안 씀 — 일부만 고친 섞인 SNA가 남지 않게(리뷰)
 export function run(dist) {
-  let n = 0;
+  const outs = [];
   for (const f of files(dist)) {
     const src = readFileSync(f, "utf8");
     if (!src.includes(ANCHOR)) continue;
     const out = patch(src);
     if (out === null) throw new Error(`[patch-sna] 고칠 자리가 하나가 아니거나 옛 패치가 들어 있음: ${f} — SNA 버전이 바뀌었으면 이 패치를 확인, 옛 패치면 @sna-sdk/core 다시 설치`);
-    if (out !== src) writeFileSync(f, out);
-    n++;
+    outs.push([f, src, out]);
   }
-  if (!n) throw new Error(`[patch-sna] ${ANCHOR}를 못 찾음 — SNA 버전이 바뀌었으면 이 패치를 확인`);
-  return n;
+  if (!outs.length) throw new Error(`[patch-sna] ${ANCHOR}를 못 찾음 — SNA 버전이 바뀌었으면 이 패치를 확인`);
+  for (const [f, src, out] of outs) if (out !== src) writeFileSync(f, out);
+  return outs.length;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
