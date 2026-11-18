@@ -41,7 +41,7 @@ export function markScript(marks: Mark[]): string {
         x = a.x - scrollX; y = a.y - scrollY;
       }
       const off = y < -10 || y > innerHeight + 10 || x < -10 || x > innerWidth + 10; // 화면 밖이면 숨김(가장자리에 붙이면 엉뚱한 곳을 가리킴)
-      d.style.display = off ? "none" : "";
+      d.style.display = off ? "none" : "flex"; // ""로 두면 cssText의 display:flex까지 지워져 숫자가 원 왼쪽 위로 샘(#1378 중 유저 지적)
       d.style.left = Math.max(10, x) + "px"; // 화면 맨 위·왼쪽 끝 요소도 원이 잘리지 않게
       d.style.top = Math.max(10, y) + "px";
     }
