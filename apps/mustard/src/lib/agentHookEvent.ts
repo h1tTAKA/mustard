@@ -1,8 +1,8 @@
 // 에이전트 훅 이벤트 공통(#764·#989) — status 라우트(화면 보고)와 hook 라우트(Claude 관리형 훅)가 공유.
 import type { AgentState } from "@mustard/nunopi/agent";
 
-// 코드 편집·실행 툴만 학습 신호로(#857). Read/Grep/Glob 등 탐색은 노이즈라 제외(그래프 툴이 커버).
-export const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "Update", "Bash"]);
+// 코드 편집 툴만 학습 신호로(#857). Read/Grep/Glob 등 탐색은 노이즈라 제외(그래프 툴이 커버). #1373 Bash(명령어 해설)는 없앰.
+export const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "Update"]);
 
 // tool_input을 짧은 한 줄로 — Bash=command, Edit/Write/Read=file_path 등.
 export function shortToolInput(input: unknown): string | undefined {
