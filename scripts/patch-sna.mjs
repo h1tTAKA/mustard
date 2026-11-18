@@ -3,7 +3,8 @@
 // 2) 백그라운드 작업 끝 알림(system/task_notification)을 milestone 이벤트로 넘김 — SNA는 버림(이벤트 종류가 정해져 있어 milestone을 씀).
 // 3) CLI별 "아직 도는 백그라운드 작업 수"(system/background_tasks_changed가 매번 전체 목록을 줌)를 globalThis.__mustardSnaBg()로 셈
 //    — 데몬 껍데기(sna-daemon-host.cjs, 같은 프로세스)가 메인 턴이 끝난 뒤 도는 서브 에이전트를 일하는 중으로 보게. 죽은 CLI는 뺌.
-//    ponytail: 목록이 6시간 안 바뀌면 안 셈 — 끝나지 않는 백그라운드 명령(개발 서버 등)이 데몬 교체·종료를 영영 막지 않게(리뷰). 더 긴 작업이 실제로 있으면 늘릴 것
+//    ponytail: 목록이 6시간 안 바뀌면 안 셈 — 끝나지 않는 백그라운드 명령(개발 서버 등)이 데몬 교체·종료를 영영 막지 않게(리뷰).
+//    대가: 6시간 넘게 도는 진짜 작업도 그 뒤 데몬 교체·스스로 종료 때 같이 꺼짐. 그런 작업이 실제로 있으면 늘릴 것
 // ponytail: 고친 SNA를 배포하기 전까지의 임시 패치 — SNA가 직접 처리하면 이 파일과 postinstall을 지울 것.
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -40,7 +41,9 @@ export function run(dist) {
     outs.push([f, src, out]);
   }
   if (!outs.length) throw new Error(`[patch-sna] ${ANCHOR}를 못 찾음 — SNA 버전이 바뀌었으면 이 패치를 확인`);
-  for (const [f, src, out] of outs) if (out !== src) writeFileSync(f, out);
+  const done = [];
+  try { for (const [f, src, out] of outs) if (out !== src) { writeFileSync(f, out); done.push([f, src]); } }
+  catch (e) { for (const [f, src] of done) try { writeFileSync(f, src); } catch { /* 되돌리기도 실패 — 다시 설치 */ } throw e; } // 쓰다 실패하면(권한·디스크) 쓴 것도 되돌림(리뷰)
   return outs.length;
 }
 

@@ -34,6 +34,7 @@ const working = (s, now = Date.now()) => s.id !== "default" && s.alive && (s.age
 // 메인 턴이 끝난 뒤 도는 백그라운드 작업(서브 에이전트 등) 수 — 데몬 껍데기가 적어 둠(scripts/patch-sna.mjs가 셈)
 const bgPath = (statePath) => path.join(path.dirname(statePath), "sna-daemon-bg.json");
 async function busy(st, statePath) {
+  // ponytail: v3 이하 데몬은 이 파일을 안 씀 → 그 데몬에서 v4로 처음 올릴 때만 턴 뒤 백그라운드 작업을 못 봄(한 번, 그때 돌던 서브는 꺼짐). 막으려면 옛 데몬을 영영 못 바꾸게 돼서 받아들임
   try { const b = JSON.parse(fs.readFileSync(bgPath(statePath), "utf8")); if (b.pid === st.pid && b.bg > 0) return true; } catch { /* 없음 = 옛 데몬이거나 작업 없음 */ }
   try {
     const r = await fetch(`http://127.0.0.1:${st.port}/agent/sessions`, { headers: { authorization: `Bearer ${st.token}` }, signal: AbortSignal.timeout(3000) });
