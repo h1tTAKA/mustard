@@ -30,15 +30,15 @@ export function useShiki(code: string, lang: string | undefined): Painted | null
   const [painted, setPainted] = useState<Painted | null>(null);
   useEffect(() => {
     let live = true; // 글이 바뀌면(스트리밍) 늦게 끝난 옛 결과는 버림
-    (async () => {
+    const timer = setTimeout(() => void (async () => { // 스트리밍 중 글자 늘 때마다 다시 칠하지 않게 잠깐 멈췄을 때만(리뷰)
       const name = lang;
       if (!name || !code.trim()) return;
       const { codeToTokens, bundledLanguages, bundledLanguagesAlias } = await import("shiki");
       if (!(name in bundledLanguages) && !(name in (bundledLanguagesAlias as Record<string, unknown>))) return; // shiki가 모르는 언어 → highlight.js 그대로
       const r = await codeToTokens(code.replace(/\n$/, ""), { lang: name as never, theme: dark ? "github-dark" : "github-light" });
       if (live) setPainted({ key, lines: r.tokens });
-    })().catch(() => { /* 실패 → highlight.js 그대로 */ });
-    return () => { live = false; };
+    })().catch(() => { /* 실패 → highlight.js 그대로 */ }), 150);
+    return () => { live = false; clearTimeout(timer); };
   }, [key, code, lang, dark]);
   return painted?.key === key ? painted : null;
 }
