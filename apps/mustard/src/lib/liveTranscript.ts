@@ -7,7 +7,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { projectDirFor } from "@/lib/subagents";
-import { parseClaudeLine, parseCodexLine, type ParsedLine, type SessionMsg } from "@/lib/agentSessionParse";
+import { parseClaudeLine, parseCodexLine, editMaterial, type ParsedLine, type SessionMsg } from "@/lib/agentSessionParse";
 
 const FRESH_MS = 3 * 60_000, FIRST_BYTES = 256 * 1024, MAX_READ = 4 * 1024 * 1024;
 type G = { offsets: Map<string, number>; codexCwd: Map<string, string> };
@@ -91,10 +91,10 @@ export function materialOf(msgs: SessionMsg[], prompt?: string): string {
     if (m.role === "user") { lines.push(`[유저] ${m.text.slice(0, 600)}`); continue; }
     if (m.role === "assistant") { lines.push(`[에이전트] ${m.text.slice(0, 1500)}`); continue; }
     const isCall = m.text.startsWith("▸ ");
-    if (isCall) { skipResult = INTERNAL.test(m.text); if (!skipResult) lines.push(`[작업] ${m.text.slice(2, 400)}`); }
+    if (isCall) { skipResult = INTERNAL.test(m.text); if (!skipResult) lines.push(editMaterial(m.text) ?? `[작업] ${m.text.slice(2, 400)}`); } // #1378 코드 수정은 바꾸기 전/뒤까지
     else if (!skipResult) lines.push(`[결과] ${m.text.replace(/\s+/g, " ").slice(0, 300)}`);
   }
-  const body = lines.join("\n").slice(-9000);
+  const body = lines.join("\n").slice(-12000); // #1378 코드 수정 칸이 말을 밀어내지 않게 9000 → 12000
   return `${prompt ? `## 유저가 맡긴 일(최근 요청)\n> ${prompt.replace(/\s+/g, " ").slice(0, 600)}\n\n` : ""}## 에이전트가 방금 한 말·작업(시간순)\n${body}`;
 }
 export const hasSubstance = (msgs: SessionMsg[]) => msgs.some((m) => m.role === "assistant" && m.text.trim().length > 20) || msgs.filter((m) => m.role === "tool" && m.text.startsWith("▸ ") && !INTERNAL.test(m.text)).length >= 3;

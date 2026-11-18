@@ -19,6 +19,7 @@ async function gitDiff(cwd: string): Promise<string> {
     return stdout.length > 6000 ? `${stdout.slice(0, 6000)}\n…(diff 생략)` : stdout;
   } catch { return ""; }
 }
+const EDIT_NAMES = new Set(["Edit", "MultiEdit", "Write", "Update", "NotebookEdit"]);
 const brief = (input: unknown) => {
   const o = (input ?? {}) as Record<string, unknown>;
   const v = o.command ?? o.file_path ?? o.path ?? o.pattern ?? o.url ?? o.query;
@@ -29,7 +30,7 @@ export function eventMsg(ev: Record<string, unknown>): SessionMsg | null {
   const data = (ev.data ?? {}) as Record<string, unknown>, ts = Date.now();
   if (ev.type === "user_message" && typeof ev.message === "string") return { role: "user", text: ev.message, ts };
   if (ev.type === "assistant" && typeof ev.message === "string" && ev.message.trim()) return { role: "assistant", text: ev.message, ts };
-  if (ev.type === "tool_use" && data.update) return { role: "tool", text: `▸ ${String(data.toolName ?? "tool")}: ${brief(data.input)}`, ts };
+  if (ev.type === "tool_use" && data.update) { const name = String(data.toolName ?? "tool"); return { role: "tool", text: `▸ ${name}: ${EDIT_NAMES.has(name) ? JSON.stringify(data.input ?? {}) : brief(data.input)}`, ts }; } // #1378 코드 수정은 입력 전체(해설 재료가 바꾸기 전/뒤로 풂)
   if (ev.type === "tool_result") return { role: "tool", text: String(ev.message ?? "").replace(/data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+/g, "[image]").replace(/"data":"[A-Za-z0-9+/=]{200,}"/g, '"data":"[image]"').slice(0, 600), ts };
   return null;
 }

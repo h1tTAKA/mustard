@@ -250,3 +250,23 @@ export function parseAntigravitySteps(steps: AntigravityStep[]): { lines: Parsed
   }
   return { lines, cwd };
 }
+
+// #1378 해설 재료 — 코드 수정 도구 줄("▸ Edit: {입력 JSON}")을 "[코드 수정] 파일 + 바꾸기 전/바꾼 뒤"로 풀기(해설이 어떤 코드를 어떻게 바꿨는지 설명하게).
+// 코드 수정 도구가 아니면 null. 입력을 못 읽으면(기록 줄이 4000자에서 잘려 JSON이 깨짐·Codex 패치 글) 앞 1500자 그대로.
+const EDIT_TOOL = /^▸ (Edit|MultiEdit|Write|Update|NotebookEdit|apply_patch): ?/;
+export function editMaterial(line: string, max = 700): string | null {
+  const m = EDIT_TOOL.exec(line);
+  if (!m) return null;
+  const rest = line.slice(m[0].length);
+  const cut = (s: unknown) => { const t = typeof s === "string" ? s : ""; return t.length > max ? `${t.slice(0, max)}\n…` : t; };
+  let o: Record<string, unknown> | null = null;
+  try { const v = JSON.parse(rest); if (v && typeof v === "object") o = v as Record<string, unknown>; } catch { /* 잘린 JSON·패치 글 */ }
+  if (!o) return `[코드 수정] ${rest.slice(0, 1500)}`;
+  const file = String(o.file_path ?? o.notebook_path ?? o.path ?? "");
+  const pairs = Array.isArray(o.edits) ? (o.edits as Record<string, unknown>[]) : [o];
+  const parts = pairs.flatMap((e) => typeof e?.old_string === "string" || typeof e?.new_string === "string"
+    ? [`바꾸기 전:\n${cut(e.old_string)}\n바꾼 뒤:\n${cut(e.new_string)}`]
+    : typeof e?.content === "string" ? [`새로 쓴 내용(앞부분):\n${cut(e.content)}`]
+    : typeof e?.new_source === "string" ? [`바꾼 뒤:\n${cut(e.new_source)}`] : []);
+  return `[코드 수정] ${file}${parts.length ? `\n${parts.slice(0, 3).join("\n")}` : ""}`;
+}

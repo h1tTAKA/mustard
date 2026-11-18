@@ -1,6 +1,6 @@
 // agentSessionParse 점검 — node --experimental-strip-types src/lib/agentSessionParse.check.ts
 import assert from "node:assert";
-import { parseClaudeLine, parseCodexLine, segmentForCommit, COMMIT_RE, activityInWindow, parseCursorMessages, parseAntigravitySteps, cursorTimestamp, asIs } from "./agentSessionParse.ts";
+import { parseClaudeLine, parseCodexLine, segmentForCommit, COMMIT_RE, activityInWindow, parseCursorMessages, parseAntigravitySteps, cursorTimestamp, asIs, editMaterial } from "./agentSessionParse.ts";
 
 const iso = (s: number) => new Date(s * 1000).toISOString();
 const T = 1_800_000_000; // 커밋 시각(초)
@@ -137,4 +137,10 @@ assert.strictEqual(ag.cwd, "/r", "워크스페이스 file:// → 경로");
 const agSeg = segmentForCommit(ag.lines, asIs, T0 + 6)!;
 assert.deepStrictEqual(agSeg.msgs.map((m) => m.text), ["커밋해줘", "확인 중", "▸ run_command: git add a && git commit -m x", "exited 0", "커밋 완료"], "Antigravity 프롬프트 ~ 커밋 완료");
 assert.strictEqual(agSeg.callTs, (T0 + 5) * 1000);
+// #1378 해설 재료 — 코드 수정 도구 줄을 바꾸기 전/뒤로
+assert.strictEqual(editMaterial(`▸ Edit: ${JSON.stringify({ file_path: "/r/a.dart", old_string: "drag(x, 80)", new_string: "moveBy(10)" })}`), "[코드 수정] /r/a.dart\n바꾸기 전:\ndrag(x, 80)\n바꾼 뒤:\nmoveBy(10)", "Edit");
+assert.strictEqual(editMaterial(`▸ MultiEdit: ${JSON.stringify({ file_path: "b.ts", edits: [{ old_string: "a", new_string: "b" }, { old_string: "c", new_string: "d" }] })}`), "[코드 수정] b.ts\n바꾸기 전:\na\n바꾼 뒤:\nb\n바꾸기 전:\nc\n바꾼 뒤:\nd", "MultiEdit 여러 개");
+assert.strictEqual(editMaterial(`▸ Write: ${JSON.stringify({ file_path: "c.py", content: "x".repeat(800) })}`, 5), "[코드 수정] c.py\n새로 쓴 내용(앞부분):\nxxxxx\n…", "Write 앞부분만");
+assert.strictEqual(editMaterial('▸ Edit: {"file_path":"d.ts","old_string":"abc'), '[코드 수정] {"file_path":"d.ts","old_string":"abc', "잘린 JSON은 원문 그대로");
+assert.strictEqual(editMaterial("▸ Bash: npm test"), null, "코드 수정 아님");
 console.log("agentSessionParse ok");
