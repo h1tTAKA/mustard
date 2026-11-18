@@ -37,6 +37,9 @@ if (process.platform === "darwin") {
   if (d.status !== 0) { console.error("[package-app] 받아쓰기 도우미 빌드 실패 — Xcode 명령줄 도구(swiftc)를 확인하세요"); process.exit(d.status ?? 1); }
 }
 
+// 0.5) #1374 SNA 패치(서브 에이전트 메시지 거르기) — postinstall이 안 돈 설치본이면 여기서 넣고, 못 넣으면 패키징 중단(데몬 버전만 오르고 옛 SNA가 실리지 않게, 리뷰)
+{ const r = spawnSync("node", [join(repoRoot, "scripts", "patch-sna.mjs"), "--strict"], { stdio: "inherit" }); if (r.status !== 0) { console.error("[package-app] SNA 패치 실패 — scripts/patch-sna.mjs 확인"); process.exit(r.status ?? 1); } }
+
 // 1) 네이티브를 electron ABI로 소스빌드(루트 node_modules — 소스가 있는 곳).
 for (const mod of NATIVE) {
   const dir = join(repoRoot, "node_modules", mod);

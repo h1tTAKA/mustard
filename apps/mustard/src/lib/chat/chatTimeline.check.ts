@@ -93,3 +93,23 @@ console.log("chatTimeline.check ok");
   const fresh: { cur?: number } = {};
   assert.equal(takeCursor(fresh, 1), true); assert.equal(fresh.cur, 1);
 }
+
+// #1374 백그라운드 작업 끝 알림 — 띄운 도구의 description을 이름으로, 없으면 CLI 요약, 실패 표시, 다른 milestone은 무시
+{
+  const t: Timeline = { items: [], streaming: "", busy: false };
+  applyEvent(t, { type: "tool_use", data: { id: "toolu_a", toolName: "Agent", input: { description: "Review PR #78 diff", prompt: "…" } } }, save);
+  applyEvent(t, { type: "milestone", message: "", data: { kind: "task_notification", status: "completed", toolUseId: "toolu_a" } }, save);
+  applyEvent(t, { type: "milestone", message: 'Background command "sleep" completed', data: { kind: "task_notification", status: "failed", toolUseId: "toolu_x" } }, save);
+  applyEvent(t, { type: "milestone", message: "other", data: {} }, save);
+  assert.deepStrictEqual(t.items.slice(1), [{ k: "bg", text: "Review PR #78 diff" }, { k: "bg", text: 'Background command "sleep" completed', state: "failed" }]);
+  // 입력이 2000자로 잘린 긴 프롬프트여도 이름을 꺼냄, 멈춤 상태
+  applyEvent(t, { type: "tool_use", data: { id: "toolu_b", toolName: "Agent", input: { description: 'Say "hi"', prompt: "x".repeat(5000) } } }, save);
+  applyEvent(t, { type: "milestone", message: "", data: { kind: "task_notification", status: "killed", toolUseId: "toolu_b" } }, save);
+  assert.deepStrictEqual(t.items.at(-1), { k: "bg", text: 'Say "hi"', state: "stopped" });
+  // 흘러오던 글 중간에 알림 → 뒤에 온 같은 글의 전체본은 굳힌 자리를 덮음(앞부분 중복 없음)
+  const u: Timeline = { items: [], streaming: "", busy: true };
+  applyEvent(u, { type: "assistant_delta", delta: "앞 글" }, save);
+  applyEvent(u, { type: "milestone", message: "m", data: { kind: "task_notification", status: "completed" } }, save);
+  applyEvent(u, { type: "assistant", message: "앞 글 이어서" }, save);
+  assert.deepStrictEqual(u.items, [{ k: "text", text: "앞 글 이어서" }, { k: "bg", text: "m" }]);
+}

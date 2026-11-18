@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 
-const SNA_DAEMON_VERSION = 2; // 데몬 껍데기·띄우는 방식(env 등)을 바꾸면 올릴 것 — 2 = 앱 생존을 명령줄까지 확인(MUSTARD_APP_EXEC)
+const SNA_DAEMON_VERSION = 4; // 데몬 껍데기·띄우는 방식(env 등)·SNA 패치(scripts/patch-sna.mjs)를 바꾸면 올릴 것 — 2 = 앱 생존을 명령줄까지 확인(MUSTARD_APP_EXEC), 3 = 서브 에이전트 메시지 거르기 패치(#1374), 4 = waiting은 쉬는 중·턴 뒤 백그라운드 작업 수 파일(#1374)
 
 const alive = (pid) => { if (!pid) return false; try { process.kill(pid, 0); return true; } catch (e) { return e && e.code === "EPERM"; } };
 // pid가 정말 우리 데몬인지 — 재부팅 뒤 같은 번호를 다른 프로세스가 쓸 수 있어 끄기 전에 명령줄 확인(Windows는 확인 못 해 안 끔)
@@ -27,11 +27,19 @@ function decide(st, now) {
 async function healthy(port) {
   try { const r = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(2000) }); return r.ok; } catch { return false; }
 }
-async function busy(st) {
+// 일하는 세션인가 — waiting은 답을 끝내고 다음 말을 기다리는 쉬는 상태(SNA가 complete·error·interrupted 뒤 붙임)라 뺌.
+// processing(답하는 중)·permission(권한 대답 대기)만 일하는 중. 단 시작·이어 붙이기 직후(첫 글자 전)도 waiting이라 띄운 지 30초 안이면 일하는 중(리뷰).
+// sna-daemon-host.cjs에도 글자 그대로 같은 줄(따로 복사돼 배포돼서 require 못 함, 점검이 비교)
+const working = (s) => s.id !== "default" && s.alive && (s.agentStatus === "busy" || s.state === "processing" || s.state === "permission" || (s.state === "waiting" && Date.now() - (s.lastActivityAt || 0) < 30_000));
+// 메인 턴이 끝난 뒤 도는 백그라운드 작업(서브 에이전트 등) 수 — 데몬 껍데기가 적어 둠(scripts/patch-sna.mjs가 셈)
+const bgPath = (statePath) => path.join(path.dirname(statePath), "sna-daemon-bg.json");
+async function busy(st, statePath) {
+  // 한계: v3 이하 데몬은 이 파일을 안 씀 → 그 데몬에서 v4로 처음 올릴 때만 턴 뒤 백그라운드 작업을 못 봄(한 번, 그때 돌던 서브는 꺼짐). 막으려면 옛 데몬을 영영 못 바꾸게 돼서 받아들임
+  try { const b = JSON.parse(fs.readFileSync(bgPath(statePath), "utf8")); if (b.pid === st.pid && b.bg > 0) return true; } catch { /* 없음 = 옛 데몬이거나 작업 없음 */ }
   try {
     const r = await fetch(`http://127.0.0.1:${st.port}/agent/sessions`, { headers: { authorization: `Bearer ${st.token}` }, signal: AbortSignal.timeout(3000) });
     const j = await r.json();
-    return (j.sessions || []).some((s) => s.id !== "default" && s.alive && (s.agentStatus === "busy" || (s.state && s.state !== "idle")));
+    return (j.sessions || []).some(working);
   } catch { return true; } // 모르면 일하는 중으로(작업을 죽이지 않게)
 }
 
@@ -50,8 +58,8 @@ async function ensureSnaDaemon(opts) {
   // Windows는 ps가 없어 답하는지로만(포트가 잡혀 있다고 우리 것이라 볼 수 없음, 리뷰) — 한계: 답 없는 우리 데몬이 있으면 둘째가 뜰 수 있음
   const owned = live && (up || ours(st.pid) !== false);
   // 우리 데몬인데 답이 없음 → 절대 죽이지 않고 그대로 씀(일하는 세션이 있을 수 있음, 같은 DB로 둘을 띄우지도 않음, 리뷰). 멈춰 버렸으면 메뉴 "완전히 종료"로 끔
-  // ponytail: 멈춘 데몬 자동 교체 없음 — 실제로 멈추는 일이 보이면 "답 없음이 이어진 시간"을 재서 교체 추가
-  const action = owned && !up ? "keep-old" : decide(st, { alive: owned, healthy: up, busy: up && st.version !== version ? await busy(st) : false, version });
+  // 한계: 멈춘 데몬 자동 교체 없음 — 실제로 멈추는 일이 보이면 "답 없음이 이어진 시간"을 재서 교체 추가
+  const action = owned && !up ? "keep-old" : decide(st, { alive: owned, healthy: up, busy: up && st.version !== version ? await busy(st, statePath) : false, version });
   opts.log?.(`[sna-daemon] ${action}${st ? ` (pid ${st.pid}, v${st.version} → v${version})` : ""}`);
   if (action === "reuse" || action === "keep-old") {
     write({ ...st, appPid: process.pid });
@@ -102,4 +110,4 @@ function detachSnaDaemon(userData) {
   try { const st = JSON.parse(fs.readFileSync(p, "utf8")); if (st.appPid === process.pid) fs.writeFileSync(p, JSON.stringify({ ...st, appPid: 0 }), { mode: 0o600 }); } catch { /* 없음 */ }
 }
 
-module.exports = { ensureSnaDaemon, stopSnaDaemon, detachSnaDaemon, decide, SNA_DAEMON_VERSION };
+module.exports = { ensureSnaDaemon, stopSnaDaemon, detachSnaDaemon, decide, working, bgPath, SNA_DAEMON_VERSION };

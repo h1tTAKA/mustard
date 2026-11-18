@@ -10,7 +10,8 @@ export type ChatItem =
   | { k: "perm"; id: string; tool: string; input: string; state: "pending" | "allowed" | "denied" }
   | { k: "done"; inTok?: number; outTok?: number; cost?: number; ms?: number; ctx?: number; win?: number } // ctx = 이번 턴 입력 전체(캐시 포함), win = 컨텍스트 창
   | { k: "error"; text: string }
-  | { k: "stopped" };
+  | { k: "stopped" }
+  | { k: "bg"; text: string; state?: "failed" | "stopped" }; // #1374 백그라운드 작업(서브 에이전트·명령) 끝 알림 — text = 작업 설명
 
 export interface Timeline { items: ChatItem[]; streaming: string; busy: boolean; flushed?: number }
 export type SaveImage = (base64: string, mime: string) => string; // 저장하고 이미지 id(파일명)를 돌려줌
@@ -88,6 +89,16 @@ export function applyEvent(t: Timeline, ev: Record<string, unknown>, save: SaveI
       const n = (k: string) => (typeof data[k] === "number" ? (data[k] as number) : undefined);
       const ctx = (n("inputTokens") ?? 0) + (n("cacheReadTokens") ?? 0) + (n("cacheWriteTokens") ?? 0);
       return { changed: [...ch, push({ k: "done", inTok: n("inputTokens"), outTok: n("outputTokens"), cost: n("costUsd"), ms: n("durationMs"), ...(ctx ? { ctx } : {}), ...(n("contextWindow") ? { win: n("contextWindow") } : {}) })], delta: true };
+    }
+    case "milestone": { // #1374 백그라운드 작업 끝(scripts/patch-sna.mjs가 넘김) — 이름은 그 작업을 띄운 도구의 description, 없으면 CLI 요약
+      if (data.kind !== "task_notification") return { changed: [] };
+      const at = toolAt(str(data.toolUseId)), tool = at >= 0 ? (t.items[at] as Extract<ChatItem, { k: "tool" }>) : undefined;
+      const m = tool?.input?.match(/"description":("(?:[^"\\]|\\.)*")/); // 입력은 2000자로 잘려 있어 통째 JSON.parse는 실패함 — description 칸만 꺼냄(리뷰)
+      let desc = ""; try { desc = m ? str(JSON.parse(m[1])) : ""; } catch { /* 넘김 */ }
+      const ch = flush(); // flushed는 그대로 — 흘러오던 글의 전체본은 알림 줄 위 그 자리를 덮음(같은 글, 지우면 앞부분이 두 번 나옴, 재리뷰)
+      // 한계: 이벤트에 메시지 id가 없어 "같은 글의 전체본"과 "같은 말로 시작하는 새 글"을 못 가림 — 후자면 새 글이 알림 줄 위로 감(드묾, 기존 덮기 규칙과 같은 한계). SNA가 메시지 id를 주면 그걸로
+      const st = data.status === "failed" ? { state: "failed" as const } : data.status === "stopped" || data.status === "killed" ? { state: "stopped" as const } : {};
+      return { changed: [...ch, push({ k: "bg", text: desc || msg, ...st })], delta: ch.length > 0 };
     }
     case "interrupted": { const ch = flush(); t.flushed = undefined; t.busy = false; return { changed: [...ch, push({ k: "stopped" })], delta: true }; }
     case "error": {

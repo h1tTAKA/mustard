@@ -5,17 +5,30 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const net = require("node:net");
-const { ensureSnaDaemon, stopSnaDaemon, detachSnaDaemon, decide } = require("./sna-daemon.cjs");
+const { ensureSnaDaemon, stopSnaDaemon, detachSnaDaemon, decide, working, bgPath } = require("./sna-daemon.cjs");
 
 assert.equal(decide(null, {}), "spawn");
 assert.equal(decide({ pid: 1, version: "a" }, { alive: true, healthy: true, version: "a" }), "reuse");
 assert.equal(decide({ pid: 1, version: "a" }, { alive: true, healthy: true, busy: true, version: "b" }), "keep-old");
 assert.equal(decide({ pid: 1, version: "a" }, { alive: true, healthy: true, busy: false, version: "b" }), "replace");
 assert.equal(decide({ pid: 1, version: "a" }, { alive: true, healthy: false, version: "a" }), "spawn");
+const w = (state, agentStatus = "idle") => working({ id: "x", alive: true, state, agentStatus });
+assert.equal(w("waiting"), false, "답 끝나고 기다리는 채팅은 쉬는 중 — 데몬 교체를 막지 않음");
+assert.equal(w("idle"), false);
+assert.equal(w("processing"), true);
+assert.equal(w("permission"), true);
+assert.equal(w("waiting", "busy"), true);
+assert.equal(working({ id: "x", alive: false, state: "processing" }), false, "죽은 세션은 빼");
+assert.equal(working({ id: "x", alive: true, state: "waiting", lastActivityAt: Date.now() - 5000 }), true, "시작 직후 첫 글자 전은 일하는 중");
+assert.equal(working({ id: "x", alive: true, state: "waiting", lastActivityAt: Date.now() - 60_000 }), false);
+assert.equal([{ id: "x", alive: true, state: "waiting", lastActivityAt: Date.now() - 60_000 }].some(working), false, ".some(working)처럼 넘겨도(두 번째 인자 = 번호) 쉬는 중"); // 실제 앱에서 터진 버그
+const hostSrc = fs.readFileSync(path.join(__dirname, "sna-daemon-host.cjs"), "utf8");
+assert.ok(hostSrc.includes(`const working = ${working.toString()};`), "껍데기의 판정 줄이 sna-daemon.cjs와 같음");
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sna-daemon-"));
 const fake = path.join(dir, "fake-standalone.cjs");
 fs.writeFileSync(fake, `require("node:http").createServer((q, r) => { r.setHeader("content-type","application/json"); r.end(q.url === "/health" ? "{}" : JSON.stringify({ sessions: process.env.FAKE_BUSY ? [{ id: "a", alive: true, agentStatus: "busy", state: "processing" }] : [] })); }).listen(Number(process.env.SNA_PORT), "127.0.0.1");
+if (process.env.FAKE_BG) globalThis.__mustardSnaBg = () => 1; // 패치된 SNA 대신 — 턴 뒤 백그라운드 작업 1개
 process.on("SIGTERM", () => process.exit(0));`);
 const host = path.join(__dirname, "sna-daemon-host.cjs");
 const free = () => new Promise((res) => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => res(p)); }); });
@@ -51,5 +64,18 @@ const opts = (env) => ({ userData: dir, hostScript: host, standaloneScript: fake
   assert.ok(alive(e.pid), "일하는 중이면 안 끔");
   await stopSnaDaemon(dir);
   assert.ok(await wait(() => !alive(e.pid)));
+
+  // 턴 뒤 백그라운드 작업(세션은 쉬는 중): 껍데기가 수를 파일에 적고 → 버전 바뀌어도 교체 안 함, 앱 없어도 안 끔
+  delete process.env.FAKE_BUSY; process.env.FAKE_BG = "1";
+  const f = await ensureSnaDaemon(opts({ X: "5" }));
+  const bgFile = bgPath(path.join(dir, "sna-daemon.json"));
+  assert.ok(await wait(() => { try { const b = JSON.parse(fs.readFileSync(bgFile, "utf8")); return b.pid === f.pid && b.bg === 1; } catch { return false; } }, 7000), "껍데기가 백그라운드 작업 수를 적음");
+  const g = await ensureSnaDaemon(opts({ X: "6" }));
+  assert.equal(g.pid, f.pid, "백그라운드 작업이 돌면 교체 안 함");
+  detachSnaDaemon(dir);
+  await new Promise((r) => setTimeout(r, 1200));
+  assert.ok(alive(f.pid), "백그라운드 작업이 돌면 앱 없어도 안 끔");
+  await stopSnaDaemon(dir);
+  assert.ok(await wait(() => !alive(f.pid)));
   console.log("sna-daemon ok");
 })().catch((err) => { console.error(err); process.exit(1); });
