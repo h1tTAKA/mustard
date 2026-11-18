@@ -60,14 +60,8 @@ function conceptPrompt(repo: string, kind: ConceptKind, target: string, loc: str
     + `코드·카드·JSON·메타 발언 금지. 설명은 흐르는 문장으로(사전식 나열 말고).`;
 }
 
-// 명령어 카드(#1049) — 에이전트가 왜 했는지 말고 명령 자체를 풀이. 첫 줄 한 문장 요약 + 명령·옵션별 목록.
+// #1373 명령어 해설 카드 없앰(캐치업 해설 하나로) — 예전에 저장된 명령어 카드(Bash 실행)는 숨김
 const isCommand = (c: { kind: ConceptKind; tool: string }) => c.kind === "edit" && c.tool === "Bash";
-function commandPrompt(command: string, loc: string): string {
-  return `터미널 명령어 하나를 개발 초보에게 풀이해줘:\n${command}\n\n`
-    + `첫 줄: 이 명령 전체가 무슨 일을 하는지 ${LANG_NAME[loc] ?? "한국어"} 한 문장(목록의 뜻도 같은 언어로).\n`
-    + `그 다음: 쓰인 명령·옵션을 나온 순서대로 "- \`cd\` — 폴더 이동"처럼 한 줄씩(이름은 백틱, 뜻은 짧게). 같은 명령이 반복되면 한 번만.\n`
-    + `에이전트가 왜 실행했는지·결과 추측·메타 발언 금지. 코드블록·JSON 금지.`;
-}
 
 // 응답 → {설명, 용어[]}. "[용어]" 기준 분리, 카드/펜스 제거.
 function parseConcept(raw: string): { expl: string; terms: Term[] } {
@@ -124,14 +118,10 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const repoPrefs = useCatchupRepoPrefs(root);
   const explainShow = useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow) && !repoPrefs.isOff("explainShow");
   const explainAnalyze = useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze) && !repoPrefs.isOff("explainAnalyze");
-  const showCommands = useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow) && !repoPrefs.isOff("commandsShow");
-  const commandsAnalyze = useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze) && !repoPrefs.isOff("commandsAnalyze");
   const diffShow = useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow) && !repoPrefs.isOff("diffShow");
   const sessionsShow = useSetting<boolean>(CUKEYS.sessionsShow, CATCHUP_DEFAULTS.sessionsShow) && !repoPrefs.isOff("sessionsShow"); // #1064
   const explainProvider = useSetting<string>(CUKEYS.explainProvider, ""); // #1062 카테고리별 AI("" = 워크스페이스 기본)
-  const commandsProvider = useSetting<string>(CUKEYS.commandsProvider, "");
   const explainModel = useSetting<string>(CUKEYS.explainModel, ""); // "" = 그 프로바이더 기본 모델
-  const commandsModel = useSetting<string>(CUKEYS.commandsModel, "");
   // (실시간 해설 서버 플래그는 WorkspaceView가 보냄 — 캐치업을 끄면 이 패널이 안 떠도 꺼짐을 알려야 해서)
   // #1051 용어 → nunopi 카드 추가. 카드(암기)는 nunopi 학습모듈 기능이라 꺼져 있으면 버튼 없음.
   // 추가는 한 방향(카드 삭제는 갤러리에서) → 토글 아이콘 대신 "+ 추가" / "✓ 카드" 표시, 추가된 건 누르면 카드 확대.
@@ -162,7 +152,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     toast(ok ? t("card.added", { term: x.term }) : t("card.exists"));
   }, [root, t, toast]);
   // #1049 카테고리 필터 — 해설(실시간 해설·파일/심볼 설명) / 명령어 / 용어. 꺼진 카테고리는 칩도 숨김.
-  const [filterSel, setFilter] = useState<"all" | "explain" | "commands" | "diff" | "session" | "crew" | "ask" | "star">("all"); // #1238 ask·star = 질문·별표 있는 카드(전체 날짜)
+  const [filterSel, setFilter] = useState<"all" | "explain" | "diff" | "session" | "crew" | "ask" | "star">("all"); // #1238 ask·star = 질문·별표 있는 카드(전체 날짜)
   // #1049 검색 — 서버가 전체 날짜에서 제목·설명을 찾음(입력 멈춘 뒤 250ms). 용어집은 화면에서 거름.
   const [q, setQ] = useState("");
   const [searchOpen, setSearchOpen] = useState(false); // #1088 돋보기 버튼 → 입력칸
@@ -202,7 +192,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   // #1281 Crew 탭 = 크루 작업 기록(세션 카드·역할 보고)만 — diff는 diff 탭에서 Crew 칩으로 구분(유저: 크루 탭은 그 커밋을 크루가 어떻게 만들었나 기록)
   // tool: diff = "브랜치 · 커밋 제목", 세션 = "에이전트 · 브랜치" — 브랜치 자리만 봄(커밋 제목에 "crew/"가 있어도 안 걸리게, 리뷰)
   const hasCrew = concepts.some((c) => c.tool.startsWith("crew|") || (c.kind === "session" && c.tool.split(" · ")[1]?.startsWith("crew/")));
-  const filter = (filterSel === "explain" && !explainShow) || (filterSel === "commands" && !showCommands) || (filterSel === "diff" && !diffShow) || (filterSel === "session" && !sessionsShow) || (filterSel === "crew" && !hasCrew) || (filterSel === "ask" && !hasAsk) || (filterSel === "star" && !hasStar) ? "all" : filterSel;
+  const filter = (filterSel === "explain" && !explainShow) || (filterSel === "diff" && !diffShow) || (filterSel === "session" && !sessionsShow) || (filterSel === "crew" && !hasCrew) || (filterSel === "ask" && !hasAsk) || (filterSel === "star" && !hasStar) ? "all" : filterSel;
   // #1238 질문·별표 칩 — 서버에서 전체 날짜로(별표·질문이 바뀌면 다시). 받는 사이엔 지금 목록에서 거른 것도 합쳐 바로 반영.
   const onlyKind = filter === "ask" || filter === "star" ? filter : null;
   const onlyPred = (c: { key: string }) => (onlyKind === "star" ? !!stars[c.key] : (askCounts[c.key] ?? 0) > 0);
@@ -227,24 +217,24 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   const queueRef = useRef<string[]>([]);
   const busyRef = useRef(false);
   const metaRef = useRef(new Map<string, { kind: ConceptKind; target: string; tool: string }>());
-  const cfgRef = useRef({ prefsLoaded: repoPrefs.loaded, providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel });
-  useEffect(() => { cfgRef.current = { prefsLoaded: repoPrefs.loaded, providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel }; }, [repoPrefs.loaded, providerId, providerSettings, locale, explainAnalyze, commandsAnalyze, explainProvider, commandsProvider, explainModel, commandsModel]);
+  const cfgRef = useRef({ prefsLoaded: repoPrefs.loaded, providerId, providerSettings, locale, explainAnalyze, explainProvider, explainModel });
+  useEffect(() => { cfgRef.current = { prefsLoaded: repoPrefs.loaded, providerId, providerSettings, locale, explainAnalyze, explainProvider, explainModel }; }, [repoPrefs.loaded, providerId, providerSettings, locale, explainAnalyze, explainProvider, explainModel]);
 
   const explainOne = useCallback(async (key: string) => {
     const meta = metaRef.current.get(key); const { locale: loc } = cfgRef.current;
     if (!meta) return;
     const c = cfgRef.current;
     // #1239 줄에 선 뒤·카드 펼치기로 들어와도 지금 분석 꺼짐이면 안 함. 레포 설정 받기 전이면 미뤄 둠 — seen에서 빼서 다시 줄 설 수 있게(리뷰)
-    if (!c.prefsLoaded || !(isCommand(meta) ? c.commandsAnalyze : c.explainAnalyze)) { seenRef.current.delete(key); return; }
-    const pid = ((isCommand(meta) ? c.commandsProvider : c.explainProvider) || c.providerId) as AgentProviderKind | undefined; // #1062 카테고리별 AI
+    if (!c.prefsLoaded || !c.explainAnalyze) { seenRef.current.delete(key); return; }
+    const pid = (c.explainProvider || c.providerId) as AgentProviderKind | undefined; // #1062 카테고리별 AI
     if (!pid) return;
-    const ps = withModel(c.providerSettings, pid, isCommand(meta) ? c.commandsModel : c.explainModel); // 카테고리별 모델
+    const ps = withModel(c.providerSettings, pid, c.explainModel); // 카테고리별 모델
     setConcepts((p) => p.map((c) => (c.key === key ? { ...c, status: "loading" } : c)));
-    const endBusy = beginBusy(root, isCommand(meta) ? "commands" : "explain"); // #1240 "만드는 중" — #1252 명령어는 명령어 칩
+    const endBusy = beginBusy(root, "explain"); // #1240 "만드는 중"
     try {
       const res = await fetch("/api/agent/analyze", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerId: pid, request: { code: `레포: ${basename(root)}`, locale: loc, providerId: pid, mode: "chat", messages: [{ role: "user", content: isCommand(meta) ? commandPrompt(meta.target, loc) : conceptPrompt(basename(root), meta.kind, meta.target, loc) }], providerSettings: ps } }),
+        body: JSON.stringify({ providerId: pid, request: { code: `레포: ${basename(root)}`, locale: loc, providerId: pid, mode: "chat", messages: [{ role: "user", content: conceptPrompt(basename(root), meta.kind, meta.target, loc) }], providerSettings: ps } }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       const reader = res.body.getReader(); const dec = new TextDecoder();
@@ -267,8 +257,8 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
   // #1239 레포 설정을 받은 뒤·분석을 다시 켰을 때 — 미뤄 둔(아직 설명 없는) 카드를 다시 줄에(그 사이 들어온 실시간 카드가 영영 idle로 안 남게)
   useEffect(() => {
     if (!repoPrefs.loaded) return;
-    for (const c of concepts) if (c.status === "idle" && !c.expl && metaRef.current.has(c.key) && (isCommand(c) ? commandsAnalyze : explainAnalyze)) enqueue(c.key);
-  }, [repoPrefs.loaded, explainAnalyze, commandsAnalyze]); // eslint-disable-line react-hooks/exhaustive-deps -- 켜지는 순간만(목록 바뀔 때마다 아님)
+    for (const c of concepts) if (c.status === "idle" && !c.expl && metaRef.current.has(c.key) && !isCommand(c) && explainAnalyze) enqueue(c.key);
+  }, [repoPrefs.loaded, explainAnalyze]); // eslint-disable-line react-hooks/exhaustive-deps -- 켜지는 순간만(목록 바뀔 때마다 아님)
 
   // 실시간 연결은 "보고 있거나 에이전트가 작업 중"일 때만(#1043) — 같은 주소 동시 연결은 6개까지라, 방문한 레포마다
   // 열어두면 늦게 연 연결이 대기열에 멈춤(레포 5개 + 상태 스트림 = 6 → "패널 갔다 와야 뜸").
@@ -316,7 +306,7 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
           : [{ key: nkey, kind: "narration" as const, target: ev.target, tool: ev.tool || "narration", status: "done" as const, ts: ev.ts, expl: ev.note }, ...prev].sort(byNewest).slice(0, MAX_ITEMS))); // #1068 꺼진 동안 재생분은 원래 시각 자리에
         return;
       }
-      if (isCommand(ev) ? !cfgRef.current.commandsAnalyze : !cfgRef.current.explainAnalyze) return; // #1062 분석 끔 → 새 카드·설명 안 만듦
+      if (isCommand(ev) || !cfgRef.current.explainAnalyze) return; // #1062 분석 끔 → 새 카드·설명 안 만듦, #1373 명령어 카드는 안 만듦
       const key = `${ev.kind}|${ev.target}`;
       metaRef.current.set(key, { kind: ev.kind, target: ev.target, tool: ev.tool });
       setConcepts((prev) => { const found = prev.find((c) => c.key === key); if (found) return ev.ts < found.ts ? prev : [{ ...found, tool: ev.tool, ts: ev.ts }, ...prev.filter((c) => c.key !== key)]; /* 재생분(옛 시각)이 최근 카드를 끌어내리지 않게 */ return [{ key, kind: ev.kind, target: ev.target, tool: ev.tool, status: "idle" as const, ts: ev.ts }, ...prev].sort(byNewest).slice(0, MAX_ITEMS); });
@@ -490,9 +480,9 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
     onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggleTag(t2); } } });
   const chipOn = (t2: Tag) => (tag && tag.type === t2.type && tag.value === t2.value ? " ring-1 ring-mustard-500/70" : "");
   // #1238 날짜 보기 중 칩은 그날 안에서만(바 문구와 같게, 리뷰), 아니면 칩·질문·별표는 서버 전체 날짜 결과
-  const shown = (query ? (found ?? []) : viewDay ? (dayItems ?? []) : tagSource ?? onlySource ?? concepts).filter((c) => (onlyKind || ((isCommand(c) ? showCommands : c.kind === "diff" ? diffShow : c.kind === "session" ? sessionsShow : explainShow) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)))) // #1062 표시 끔 = 분석된 것도 숨김, 문서 편집 카드는 항상 숨김(#1049)
+  const shown = (query ? (found ?? []) : viewDay ? (dayItems ?? []) : tagSource ?? onlySource ?? concepts).filter((c) => (onlyKind || ((isCommand(c) ? false : c.kind === "diff" ? diffShow : c.kind === "session" ? sessionsShow : explainShow) && !(c.kind === "edit" && isDocEdit(c.tool, c.target)))) // #1062 표시 끔 = 분석된 것도 숨김, 문서 편집 카드는 항상 숨김(#1049)
     // #1285 질문·핀 칩은 직접 고른 카드라 표시 끔·문서 편집 숨김과 무관 — 검색·날짜·칩 필터와 겹쳐도 같은 규칙(칩 개수 hasAsk·hasStar도 종류를 안 봄)
-    && (filter === "all" || (filter === "ask" || filter === "star" ? onlyPred(c) : filter === "crew" ? (c.kind === "session" || c.kind === "narration") && !!crewTask(c) : filter === "commands" ? isCommand(c) : filter === "diff" ? c.kind === "diff" : filter === "session" ? c.kind === "session" : filter === "explain" && !isCommand(c) && c.kind !== "diff" && c.kind !== "session"))).filter(tagMatch);
+    && (filter === "all" || (filter === "ask" || filter === "star" ? onlyPred(c) : filter === "crew" ? (c.kind === "session" || c.kind === "narration") && !!crewTask(c) : filter === "diff" ? c.kind === "diff" : filter === "session" ? c.kind === "session" : filter === "explain" && !isCommand(c) && c.kind !== "diff" && c.kind !== "session"))).filter(tagMatch);
   // #1064 세션 → 에이전트로 넘기기(인앱 브라우저 피드백과 같은 경로). 카드 하나에 요청 입력창.
   const [handoffKey, setHandoffKey] = useState<string | null>(null);
   const [handoffText, setHandoffText] = useState("");
@@ -633,12 +623,12 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
       <div className={chatOpen ? "hidden" : "contents"}>
       {/* #1049 카테고리 필터 칩 */}
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
-        {([["all", t("learn.filterAll")], ...(explainShow ? [["explain", t("learn.filterExplain")]] : []), ...(showCommands ? [["commands", t("learn.filterCommands")]] : []), ...(diffShow ? [["diff", t("learn.filterDiff")]] : []), ...(sessionsShow ? [["session", t("learn.filterSessions")]] : []), ...(hasCrew ? [["crew", t("learn.filterCrew")]] : []), ...(hasAsk ? [["ask", t("learn.filterAsk")]] : []), ...(hasStar ? [["star", t("learn.filterStar")]] : [])] as [typeof filterSel, string][]).map(([id, label]) => (
+        {([["all", t("learn.filterAll")], ...(explainShow ? [["explain", t("learn.filterExplain")]] : []), ...(diffShow ? [["diff", t("learn.filterDiff")]] : []), ...(sessionsShow ? [["session", t("learn.filterSessions")]] : []), ...(hasCrew ? [["crew", t("learn.filterCrew")]] : []), ...(hasAsk ? [["ask", t("learn.filterAsk")]] : []), ...(hasStar ? [["star", t("learn.filterStar")]] : [])] as [typeof filterSel, string][]).map(([id, label]) => (
           <button key={id} type="button" onClick={() => setFilter(id)} aria-pressed={filter === id}
             className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition ${filter === id ? "bg-mustard-500/15 text-mustard-700 dark:text-mustard-400" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"}`}>
             {label}
             {/* #1252 이 카테고리 만드는 중 — 도는 아이콘 + 개수 */}
-            {(id === "explain" || id === "commands" || id === "diff" || id === "session") && busy[id] > 0 && (
+            {(id === "explain" || id === "diff" || id === "session") && busy[id] > 0 && (
               <span className="ml-1 inline-flex items-center gap-0.5 align-middle text-[10px] tabular-nums" title={t("learn.busy")}>
                 <IconLoader2 size={11} stroke={2} className="animate-spin text-mustard-600 dark:text-mustard-400" aria-hidden />{busy[id]}
               </span>

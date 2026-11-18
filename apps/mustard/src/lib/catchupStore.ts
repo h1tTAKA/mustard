@@ -307,7 +307,7 @@ export function askCounts(root: string): Record<string, number> {
 
 // ── 레포별 캐치업 설정(#1239) — prefs.json = { off: [끈 항목] }. 전역 설정에서 켠 것 중 이 레포만 끔(전역 켜면 끄지 않은 건 따라 켜짐).
 //  서버 해설(narrate)도 봐야 해서 서버 저장(창이 안 열려도 레포마다 끌 수 있게).
-export const REPO_PREF_KEYS = ["explainShow", "explainAnalyze", "commandsShow", "commandsAnalyze", "diffShow", "diffAnalyze", "termsShow", "termsAnalyze", "sessionsShow", "sessionsAnalyze"] as const;
+export const REPO_PREF_KEYS = ["explainShow", "explainAnalyze", "diffShow", "diffAnalyze", "termsShow", "termsAnalyze", "sessionsShow", "sessionsAnalyze"] as const;
 export type RepoPrefKey = (typeof REPO_PREF_KEYS)[number];
 const prefFile = (root: string) => join(repoDir(root), "prefs.json");
 export function readRepoPrefs(root: string): { off: RepoPrefKey[] } {

@@ -19,5 +19,5 @@ export function useCatchupBusy(root: string, poll: boolean): BusyCounts & { tota
     return () => { alive = false; clearInterval(id); };
   }, [poll, root]);
   const explain = local.explain + (poll && srv.root === root ? srv.n : 0); // 안 물어보는 동안·다른 레포 값은 안 셈
-  return { ...local, explain, total: explain + local.commands + local.diff + local.session };
+  return { ...local, explain, total: explain + local.diff + local.session };
 }
