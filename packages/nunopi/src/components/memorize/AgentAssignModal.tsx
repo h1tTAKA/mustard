@@ -11,6 +11,7 @@ import { DECK_SOURCES, type Card } from "@mustard/core";
 import { cardFrame } from "../../lib/srs/cardFrame";
 import { useFlyCard } from "./FlyCard";
 import type { AgentProviderKind, ChatMessage, ProviderSettings } from "../../lib/agent";
+import { CardTitle } from "./CardTitle";
 
 const SYMBOL = "/brand/nunopi-symbol-darkeye-transparent.png";
 type StreamEvent = { type: "progress"; line: string } | { type: "thinking"; line: string } | { type: "result"; response: { summary: string } } | { type: "error"; message: string };
@@ -36,7 +37,7 @@ function MiniTile({ card, dimmed, check, onToggle, throwCard, t }: {
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-2.5 text-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={SYMBOL} alt="" className="h-5 w-5 object-contain" />
-        <span className="line-clamp-3 text-[11px] font-bold leading-tight text-zinc-900">{card.front}</span>
+        <CardTitle text={card.front} className="line-clamp-3 text-[11px] font-bold leading-tight text-zinc-900" />
       </div>
       <button type="button" aria-label={card.front} aria-pressed={check} onClick={onToggle} className="absolute inset-0 z-10 cursor-pointer rounded-2xl" />
       {dimmed && <span className="pointer-events-none absolute inset-0 z-20 rounded-2xl bg-zinc-900/45" />}

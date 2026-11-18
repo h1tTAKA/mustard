@@ -3,6 +3,7 @@
 import { useT } from "@mustard/core";
 import { cardFrame } from "../../lib/srs/cardFrame";
 import type { SrsSource } from "@mustard/core";
+import { CardTitle } from "./CardTitle";
 
 interface FlashCardProps {
   front: string;
@@ -35,7 +36,7 @@ export default function FlashCard({ front, back, source, flipped, onFlip, reduce
           <span className={`pointer-events-none absolute inset-[14px] rounded-lg border ${f.inner}`} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={SYMBOL} alt="" className="relative h-12 w-12 object-contain" />
-          <span className="relative text-xl font-bold text-zinc-900">{front}</span>
+          <CardTitle text={front} className="relative text-xl font-bold text-zinc-900" />
           <span className="relative text-xs text-zinc-400">{t("mem.flipHint")}</span>
         </span>
         {/* 뒷면 — 심볼(제목 위 중앙) + 용어 + 설명. 앞면과 같은 배치. */}
@@ -44,7 +45,7 @@ export default function FlashCard({ front, back, source, flipped, onFlip, reduce
           <span className={`pointer-events-none absolute inset-[14px] rounded-lg border ${f.inner}`} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={SYMBOL} alt="" className="relative h-12 w-12 object-contain" />
-          <span className="relative text-lg font-bold text-zinc-900">{front}</span>
+          <CardTitle text={front} className="relative text-lg font-bold text-zinc-900" />
           <span className="relative whitespace-pre-wrap text-sm leading-relaxed text-zinc-600">
             {back || t("mem.noExplanation")}
           </span>
