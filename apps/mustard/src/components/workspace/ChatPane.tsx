@@ -10,6 +10,7 @@ import { useT, useConfirm, agentEnabled, getSetting, CHATKEYS, CHAT_DEFAULTS } f
 import { AgentLogo } from "@/components/workspace/AgentLogo";
 import ChatSession from "@/components/workspace/ChatSession";
 import { P, PROVIDERS, post, type AppCommand, type Meta, type Provider } from "@/components/workspace/ChatComposer";
+import { CHAT_FOCUS_EVENT } from "@/lib/browser/sendTarget";
 
 const MENU_W = 200;
 export const CHAT_HANDOFF_EVENT = "mustard:chat-handoff";
@@ -58,6 +59,12 @@ export default function ChatPane({ cwd, modeToggle, initial }: { cwd: string; mo
   const list = chats ?? [];
   const active = list.find((c) => c.id === activeId) ?? list[list.length - 1];
   useEffect(() => { try { if (active) localStorage.setItem(activeKey, active.id); } catch { /* 저장 못 해도 동작 */ } }, [active, activeKey]);
+  // #1372 인앱 브라우저가 이 채팅으로 보냄 → 그 탭으로(TerminalPane이 채팅 모드로 바꾼 뒤 보냄)
+  useEffect(() => {
+    const h = (e: Event) => { const d = (e as CustomEvent<{ cwd: string; id: string }>).detail; if (d?.cwd === cwd && d.id) setActiveId(d.id); };
+    window.addEventListener(CHAT_FOCUS_EVENT, h);
+    return () => window.removeEventListener(CHAT_FOCUS_EVENT, h);
+  }, [cwd]);
 
   const close = async (id: string) => {
     setMenu(null);

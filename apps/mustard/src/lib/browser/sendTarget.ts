@@ -1,5 +1,6 @@
 // #1372 인앱 브라우저 '에이전트로 보내기' 받을 곳 — 이 레포의 터미널 에이전트 탭 + 열린 채팅 탭.
 // 하나면 바로, 여럿이면 고르게. 터미널 쪽 "셸이면 안 보냄"은 main이 보낼 때 다시 확인(목록은 보여 주기만).
+export const CHAT_FOCUS_EVENT = "mustard:focus-chat"; // 보낸 채팅 탭으로(TerminalPane → ChatPane)
 export type SendTarget = { kind: "term"; id: string; name: string; agent: string | null } | { kind: "chat"; id: string; name: string; provider: string };
 
 // 순수 조립(점검용) — 터미널은 탭 순서(이름 = 직접 붙인 이름 → 세션 제목, 없으면 ""), 채팅은 열린 순서(터미널로 넘긴 채팅은 못 받아서 뺌)

@@ -7,6 +7,7 @@ import { IconPlus, IconX, IconTerminal2, IconMessageCircle } from "@tabler/icons
 import { useShortcut, useT, isCurrentTerminalDark, getSetting, CKEYS, CHATKEYS, CHAT_DEFAULTS, useConfirm, pickDefaultAgent, agentEnabled, sortAgents, markAgentUsed } from "@mustard/core";
 import Terminal from "@/components/workspace/Terminal";
 import ChatPane, { CHAT_HANDOFF_EVENT } from "@/components/workspace/ChatPane";
+import { CHAT_FOCUS_EVENT } from "@/lib/browser/sendTarget";
 import PaneStart from "@/components/workspace/PaneStart";
 import type { Provider } from "@/components/workspace/ChatComposer";
 import { AgentLogo, AGENT_META, type AgentId } from "@/components/workspace/AgentLogo";
@@ -43,9 +44,9 @@ function loadTabs(store: string, firstTitle: string): { tabs: Tab[]; activeId: s
 
 // #989 알림 클릭 → 그 레포의 그 터미널 탭으로. 패널이 이미 떠 있으면 이벤트로, 아직 안 떴으면(첫 방문) 마운트 때 소비.
 const FOCUS_EVENT = "mustard:focus-term";
-const pendingFocus = new Map<string, string>(); // cwd → 터미널 id
-export function requestTerminalFocus(cwd: string, termId: string) {
-  pendingFocus.set(cwd, termId);
+const pendingFocus = new Map<string, { id: string; kind: "term" | "chat" }>(); // cwd → 탭 id(#1372 채팅 탭도)
+export function requestTerminalFocus(cwd: string, termId: string, kind: "term" | "chat" = "term") {
+  pendingFocus.set(cwd, { id: termId, kind });
   window.dispatchEvent(new CustomEvent(FOCUS_EVENT, { detail: { cwd } }));
 }
 
@@ -83,16 +84,22 @@ export default function TerminalPane({ cwd, active: paneActive = true }: { cwd: 
   // #989 알림 클릭 포커스 — 마운트 시 + 이벤트 시 대기 요청 소비(그 cwd에 그 탭이 있을 때만).
   useEffect(() => {
     const take = () => {
-      const id = pendingFocus.get(cwd);
-      if (!id) return;
+      const p = pendingFocus.get(cwd);
+      if (!p) return;
       pendingFocus.delete(cwd);
-      if (tabs.some((x) => x.id === id)) setActiveId(id);
+      if (p.kind === "chat") { // #1372 채팅 탭으로 — 채팅 모드로 바꾸고 그 채팅을 활성으로(ChatPane이 이미 떠 있으면 이벤트로)
+        try { localStorage.setItem(`nunopi:ws-chat-active:${cwd}`, p.id); } catch { /* 이벤트로 */ }
+        setMode("chat");
+        window.dispatchEvent(new CustomEvent(CHAT_FOCUS_EVENT, { detail: { cwd, id: p.id } }));
+        return;
+      }
+      if (tabs.some((x) => x.id === p.id)) { setMode("term"); setActiveId(p.id); }
     };
     take();
     const h = (e: Event) => { if ((e as CustomEvent<{ cwd: string }>).detail?.cwd === cwd) take(); };
     window.addEventListener(FOCUS_EVENT, h);
     return () => window.removeEventListener(FOCUS_EVENT, h);
-  }, [cwd, tabs]);
+  }, [cwd, tabs]); // eslint-disable-line react-hooks/exhaustive-deps -- setMode는 cwd(modeKey)에만 기대고 cwd는 이미 있음
 
   // 탭 목록 영속.
   useEffect(() => {
