@@ -194,7 +194,8 @@ interface NunopiDesktopApi {
     openDevTools(guestId: number, rect: { x: number; y: number; w: number; h: number }): Promise<{ ok: boolean }>;
     devtoolsBounds(guestId: number, rect: { x: number; y: number; w: number; h: number }): void;
     closeDevTools(guestId: number): Promise<{ ok: boolean }>;
-    sendToAgent(payload: { cwd: string; preferId?: string; text: string; ids?: string[] }): Promise<{ ok: true; id: string } | { ok: false; reason: string }>;
+    sendToAgent(payload: { cwd: string; preferId?: string; text: string; ids?: string[]; exact?: boolean }): Promise<{ ok: true; id: string } | { ok: false; reason: string }>;
+    agentTargets(payload: { cwd: string; ids?: string[] }): Promise<{ ok: boolean; list: { id: string; agent: string | null; title: string }[] }>;
     register(guestId: number, repo: string, visible: boolean): void;
     unregister(guestId: number): void;
     onOpenRequest(cb: (p: { cwd: string; url: string; reqId: string }) => void): () => void;
