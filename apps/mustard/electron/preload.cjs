@@ -159,6 +159,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
     devtoolsBounds: (guestId, rect) => ipcRenderer.send("browser:devtools-bounds", { guestId, rect: zoomRect(rect) }),
     closeDevTools: (guestId) => ipcRenderer.invoke("browser:devtools-close", { guestId }),
     sendToAgent: (payload) => ipcRenderer.invoke("browser:send-to-agent", payload), // #1037 셸이면 안 보냄(main 판정)
+    agentTargets: (payload) => ipcRenderer.invoke("browser:agent-targets", payload), // #1372 받을 곳 고르기
     register: (guestId, repo, visible) => ipcRenderer.send("browser:register", { guestId, repo, visible }), // #1041 에이전트가 이 탭을 찾게
     unregister: (guestId) => ipcRenderer.send("browser:unregister", { guestId }),
     // 열기 요청(#1041): 각 레포 화면이 "내가 그 cwd 레포"라고 손들고(claimOpen), main이 가장 깊은 레포 하나에만 grant.

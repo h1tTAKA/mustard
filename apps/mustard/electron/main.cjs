@@ -1904,17 +1904,27 @@ ipcMain.handle("terminal:list", async (_e, opts) => {
 
 // 인앱 브라우저 피드백 → 에이전트 터미널(#1037 리뷰). 페이지 글이 들어가므로 **지금 포그라운드가 셸이면 절대 안 보냄**
 // (에이전트가 죽고 zsh로 돌아왔는데 신원만 남은 경우 → 붙여넣기+Enter가 셸 명령으로 실행됨). 판단은 main이 직전에.
-ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, ids, text } = {}) => {
+// 이 레포 탭의 에이전트 세션(셸 아님·에이전트로 판정) — 보내기와 받을 곳 목록(#1372)이 같은 판정을 씀
+function liveAgents(cwd, ids) {
   const root = String(cwd || "").replace(/\/+$/, "");
   const allow = Array.isArray(ids) ? new Set(ids.filter((x) => typeof x === "string")) : null; // #1211 이 레포 탭의 세션만(닫힌 레포 세션 제외)
-  if (!root || typeof text !== "string" || !text.trim()) return { ok: false, reason: "bad-args" };
-  const live = async () => (await termClient.list()).filter((s) => {
+  return async () => (await termClient.list()).filter((s) => {
     const c = String(s.cwd || "").replace(/\/+$/, "");
-    return (c === root || c.startsWith(root + "/")) && (!allow || allow.has(s.id)) && s.process !== undefined && !isShellProc(s.process) && agentForId(s.id, s.process, s.screen);
+    return root && (c === root || c.startsWith(root + "/")) && (!allow || allow.has(s.id)) && s.process !== undefined && !isShellProc(s.process) && agentForId(s.id, s.process, s.screen);
   });
+}
+// #1372 받을 곳 고르기 — 보낼 수 있는 터미널 에이전트(이름은 렌더러가 탭 이름으로). 실제 보낼 땐 send-to-agent가 다시 확인
+ipcMain.handle("browser:agent-targets", async (_e, { cwd, ids } = {}) => {
+  try { return { ok: true, list: (await liveAgents(cwd, ids)()).map((s) => ({ id: s.id, agent: agentForId(s.id, s.process, s.screen), title: sessionTitleFor(s.id, s.process, s.screen) })) }; }
+  catch { return { ok: false, list: [] }; }
+});
+ipcMain.handle("browser:send-to-agent", async (_e, { cwd, preferId, ids, text, exact } = {}) => {
+  const root = String(cwd || "").replace(/\/+$/, "");
+  if (!root || typeof text !== "string" || !text.trim()) return { ok: false, reason: "bad-args" };
+  const live = liveAgents(root, ids);
   let ss;
   try { ss = await live(); } catch { return { ok: false, reason: "error" }; } // 데몬·목록 실패는 "터미널 없음"과 구분(#1129 리뷰)
-  const target = ss.find((s) => s.id === preferId) ?? ss[0];
+  const target = ss.find((s) => s.id === preferId) ?? (exact ? undefined : ss[0]); // #1372 고른 탭이면 그 탭만 — 그새 사라졌으면 다른 탭으로 새지 않음
   if (!target) return { ok: false, reason: "no-agent" };
   const r = await pasteToAgent(target.id, text, async () => (await live()).some((s) => s.id === target.id) || ((await sessionKind(target.id)) === "shell" ? "shell" : false));
   return r.reason === "kept" ? { ok: false, reason: "no-agent" } : r; // 브라우저 쪽 응답은 예전 그대로
