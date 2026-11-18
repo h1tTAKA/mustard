@@ -267,8 +267,6 @@ export function shrinkEdit(input: unknown, max = 1500): unknown {
 }
 // #1378 해설 재료 — 코드 수정 도구 줄("▸ Edit: {입력 JSON}")을 "[코드 수정] 파일 + 바꾸기 전/바꾼 뒤"로 풀기(해설이 어떤 코드를 어떻게 바꿨는지 설명하게).
 // 코드 수정 도구가 아니면 null. 입력을 못 읽으면(기록 줄이 4000자에서 잘려 JSON이 깨짐·Codex 패치 글) 앞 1500자 그대로.
-// 패치 글의 파일 머리(*** Update/Add/Delete File: …)가 전부 문서(.md)면 코드 수정 아님(리뷰)
-const docsOnly = (patch: string) => { if (patch.trimEnd().endsWith("…")) return false; /* 잘린 패치 — 뒤에 코드 파일이 있을 수 있음(리뷰) */ const fs = [...patch.matchAll(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/gm)].map((m) => m[1].trim()); return fs.length > 0 && fs.every((f) => /\.mdx?$/i.test(f)); };
 const EDIT_TOOL = /^▸ (Edit|MultiEdit|Write|Update|NotebookEdit|apply_patch): ?/;
 export function editMaterial(line: string, max = 700): string | null {
   const m = EDIT_TOOL.exec(line);
@@ -276,12 +274,12 @@ export function editMaterial(line: string, max = 700): string | null {
   const rest = line.slice(m[0].length);
   const cut = (s: unknown) => { const t = typeof s === "string" ? s : ""; return t.length > max ? `${t.slice(0, max)}\n…` : t; };
   let o: Record<string, unknown> | null = null;
-  try { const v = JSON.parse(rest); if (typeof v === "string") return docsOnly(v) ? null : `[코드 수정] (패치)\n${cut(v)}`; if (v && typeof v === "object") o = v as Record<string, unknown>; } catch { /* 잘린 JSON·패치 글 */ } // Codex custom_tool_call은 패치 글 그대로(리뷰)
-  if (!o) return docsOnly(rest) ? null : `[코드 수정] ${rest.slice(0, 1500)}`;
+  try { const v = JSON.parse(rest); if (typeof v === "string") return `[코드 수정] (패치)\n${cut(v)}`; if (v && typeof v === "object") o = v as Record<string, unknown>; } catch { /* 잘린 JSON·패치 글 */ } // Codex custom_tool_call은 패치 글 그대로(리뷰)
+  if (!o) return `[코드 수정] ${rest.slice(0, 1500)}`; // 패치 글은 파일 머리가 보이니 문서만 고친 건 해설 지시(문서 수정은 코드 아님)가 거름 — 잘린 패치로 단정하다 틀리던 것(리뷰)
   const file = String(o.file_path ?? o.notebook_path ?? o.path ?? "");
   if (/\.mdx?$/i.test(file)) return null; // 문서 수정은 코드 아님 — 해설 지시의 문서 작업 규칙(SKIP)대로 보통 [작업] 줄로(리뷰)
   const patch = typeof o.input === "string" ? o.input : typeof o.patch === "string" ? o.patch : ""; // Codex apply_patch {input: "*** Begin Patch…"}(리뷰)
-  if (!file && patch) return docsOnly(patch) ? null : `[코드 수정] (패치)\n${cut(patch)}`;
+  if (!file && patch) return `[코드 수정] (패치)\n${cut(patch)}`;
   const pairs = Array.isArray(o.edits) ? (o.edits as Record<string, unknown>[]) : [o];
   const parts = pairs.flatMap((e) => typeof e?.old_string === "string" || typeof e?.new_string === "string"
     ? [`바꾸기 전:\n${cut(e.old_string)}\n바꾼 뒤:\n${cut(e.new_string)}`]
