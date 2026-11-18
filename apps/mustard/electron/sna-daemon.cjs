@@ -34,7 +34,7 @@ const working = (s) => s.id !== "default" && s.alive && (s.agentStatus === "busy
 // 메인 턴이 끝난 뒤 도는 백그라운드 작업(서브 에이전트 등) 수 — 데몬 껍데기가 적어 둠(scripts/patch-sna.mjs가 셈)
 const bgPath = (statePath) => path.join(path.dirname(statePath), "sna-daemon-bg.json");
 async function busy(st, statePath) {
-  // ponytail: v3 이하 데몬은 이 파일을 안 씀 → 그 데몬에서 v4로 처음 올릴 때만 턴 뒤 백그라운드 작업을 못 봄(한 번, 그때 돌던 서브는 꺼짐). 막으려면 옛 데몬을 영영 못 바꾸게 돼서 받아들임
+  // 한계: v3 이하 데몬은 이 파일을 안 씀 → 그 데몬에서 v4로 처음 올릴 때만 턴 뒤 백그라운드 작업을 못 봄(한 번, 그때 돌던 서브는 꺼짐). 막으려면 옛 데몬을 영영 못 바꾸게 돼서 받아들임
   try { const b = JSON.parse(fs.readFileSync(bgPath(statePath), "utf8")); if (b.pid === st.pid && b.bg > 0) return true; } catch { /* 없음 = 옛 데몬이거나 작업 없음 */ }
   try {
     const r = await fetch(`http://127.0.0.1:${st.port}/agent/sessions`, { headers: { authorization: `Bearer ${st.token}` }, signal: AbortSignal.timeout(3000) });
@@ -58,7 +58,7 @@ async function ensureSnaDaemon(opts) {
   // Windows는 ps가 없어 답하는지로만(포트가 잡혀 있다고 우리 것이라 볼 수 없음, 리뷰) — 한계: 답 없는 우리 데몬이 있으면 둘째가 뜰 수 있음
   const owned = live && (up || ours(st.pid) !== false);
   // 우리 데몬인데 답이 없음 → 절대 죽이지 않고 그대로 씀(일하는 세션이 있을 수 있음, 같은 DB로 둘을 띄우지도 않음, 리뷰). 멈춰 버렸으면 메뉴 "완전히 종료"로 끔
-  // ponytail: 멈춘 데몬 자동 교체 없음 — 실제로 멈추는 일이 보이면 "답 없음이 이어진 시간"을 재서 교체 추가
+  // 한계: 멈춘 데몬 자동 교체 없음 — 실제로 멈추는 일이 보이면 "답 없음이 이어진 시간"을 재서 교체 추가
   const action = owned && !up ? "keep-old" : decide(st, { alive: owned, healthy: up, busy: up && st.version !== version ? await busy(st, statePath) : false, version });
   opts.log?.(`[sna-daemon] ${action}${st ? ` (pid ${st.pid}, v${st.version} → v${version})` : ""}`);
   if (action === "reuse" || action === "keep-old") {
