@@ -2,7 +2,7 @@
 // 캐치업(#992, 구 학습 스트림 #855·#857) — MCP 연결 에이전트가 뭘 하든(그래프 탐색+파일 편집) 실시간 관찰(SSE) +
 // 등장한 "개념"을 중복 없이 1회씩 설명하고, 이해에 필요한 "용어"를 별도 용어집으로 누적. 반복 없이 정리.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconPin, IconPinFilled , IconAdjustmentsHorizontal, IconCards, IconEyeOff, IconPlus } from "@tabler/icons-react";
+import { IconX, IconGitFork, IconCopy, IconArrowUp, IconCode, IconFile, IconSearch, IconSitemap, IconActivity, IconPointFilled, IconLoader2, IconPencil, IconBroadcast, IconCalendar, IconArrowBarToUp, IconMessageCircle, IconCheck, IconGitCompare, IconExternalLink, IconGitBranch, IconMessages, IconSend, IconGitCommit, IconLayoutKanban , IconPin, IconPinFilled , IconAdjustmentsHorizontal, IconCards, IconEyeOff } from "@tabler/icons-react";
 import CatchupCalendar from "@/components/workspace/CatchupCalendar";
 import CatchupAskPanel from "@/components/workspace/CatchupAskPanel";
 import CatchupDiffCode from "@/components/workspace/CatchupDiffCode";
@@ -836,13 +836,13 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           }); };
                           const rest = sp ? sp.rest.filter((l) => !knownIn(l)) : [];
                           // 용어 칩 — 누르면 풀다운(카드 추가 또는 보기 / 해설 제외). 카드로 저장했으면 ✓·그라데이션. 0.4초 머물면 짧은 안내.
-                          // #1386 새 칩은 머스타드 원색으로 꽉 채움 + 앞에 + — 본문 노란 인라인 코드(옅은 바탕)와 헷갈려서(유저 지적), 브랜드 색은 유지(유저 결정)
+                          // #1386 새 칩은 머스타드 원색으로 꽉 채움 — 본문 노란 인라인 코드(옅은 바탕)와 헷갈려서(유저 지적), 브랜드 색은 유지(유저 결정)
                           const chip = (raw: Term) => { const term = raw.term.replace(/`/g, "").trim(); const card = cardOf(term); return (
                             <span className="group/chip relative inline-block">
                               <button type="button" aria-haspopup="menu" onClick={(e) => setChipMenu({ rect: e.currentTarget.getBoundingClientRect(), el: e.currentTarget, raw, ctx: chipCtx })}
                                 className={card ? "peer inline-flex items-center gap-0.5 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-semibold transition hover:brightness-110"
-                                  : "peer inline-flex items-center gap-0.5 rounded-md bg-mustard-500 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-900 transition hover:bg-mustard-400"}>
-                                {card ? <><IconCheck size={10} stroke={2.5} className="text-blue-500" aria-hidden /><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{term}</span></> : <><IconPlus size={10} stroke={2.5} aria-hidden />{term}</>}
+                                  : "peer rounded-md bg-mustard-500 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-900 transition hover:bg-mustard-400"}>
+                                {card ? <><IconCheck size={10} stroke={2.5} className="text-blue-500" aria-hidden /><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{term}</span></> : term}
                                 <span className="sr-only"> — {t("learn.chipHint")}</span>
                               </button>
                               <span className="pointer-events-none absolute left-0 top-full z-30 mt-1 whitespace-nowrap rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-white opacity-0 shadow transition group-hover/chip:opacity-100 group-hover/chip:delay-[400ms] peer-focus-visible:opacity-100 peer-focus-visible:delay-[400ms] dark:bg-zinc-700" aria-hidden>{t("learn.chipHint")}</span>
