@@ -27,11 +27,14 @@ function decide(st, now) {
 async function healthy(port) {
   try { const r = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(2000) }); return r.ok; } catch { return false; }
 }
+// 일하는 세션인가 — waiting은 답을 끝내고 다음 말을 기다리는 쉬는 상태(SNA가 complete·error·interrupted 뒤 붙임)라 뺌.
+// processing(답하는 중)·permission(권한 대답 대기)만 일하는 중. sna-daemon-host.cjs working()도 같은 규칙(따로 복사돼 배포돼서 require 못 함)
+const working = (s) => s.id !== "default" && s.alive && (s.agentStatus === "busy" || s.state === "processing" || s.state === "permission");
 async function busy(st) {
   try {
     const r = await fetch(`http://127.0.0.1:${st.port}/agent/sessions`, { headers: { authorization: `Bearer ${st.token}` }, signal: AbortSignal.timeout(3000) });
     const j = await r.json();
-    return (j.sessions || []).some((s) => s.id !== "default" && s.alive && (s.agentStatus === "busy" || (s.state && s.state !== "idle")));
+    return (j.sessions || []).some(working);
   } catch { return true; } // 모르면 일하는 중으로(작업을 죽이지 않게)
 }
 
@@ -102,4 +105,4 @@ function detachSnaDaemon(userData) {
   try { const st = JSON.parse(fs.readFileSync(p, "utf8")); if (st.appPid === process.pid) fs.writeFileSync(p, JSON.stringify({ ...st, appPid: 0 }), { mode: 0o600 }); } catch { /* 없음 */ }
 }
 
-module.exports = { ensureSnaDaemon, stopSnaDaemon, detachSnaDaemon, decide, SNA_DAEMON_VERSION };
+module.exports = { ensureSnaDaemon, stopSnaDaemon, detachSnaDaemon, decide, working, SNA_DAEMON_VERSION };

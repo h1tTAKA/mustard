@@ -22,7 +22,7 @@ async function working() {
   try {
     const r = await fetch(`http://127.0.0.1:${process.env.SNA_PORT}/agent/sessions`, { headers: { authorization: `Bearer ${process.env.SNA_AUTH_TOKEN}` }, signal: AbortSignal.timeout(5000) });
     const j = await r.json();
-    return (j.sessions || []).some((s) => s.id !== "default" && s.alive && (s.agentStatus === "busy" || (s.state && s.state !== "idle")));
+    return (j.sessions || []).some((s) => s.id !== "default" && s.alive && (s.agentStatus === "busy" || s.state === "processing" || s.state === "permission")); // sna-daemon.cjs working()과 같은 규칙 — waiting은 쉬는 상태
   } catch { return true; } // 못 물어보면 일하는 중으로 — 잘못 꺼서 작업을 죽이는 것보다 늦게 꺼지는 게 나음
 }
 

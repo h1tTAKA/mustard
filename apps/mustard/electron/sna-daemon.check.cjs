@@ -5,13 +5,20 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const net = require("node:net");
-const { ensureSnaDaemon, stopSnaDaemon, detachSnaDaemon, decide } = require("./sna-daemon.cjs");
+const { ensureSnaDaemon, stopSnaDaemon, detachSnaDaemon, decide, working } = require("./sna-daemon.cjs");
 
 assert.equal(decide(null, {}), "spawn");
 assert.equal(decide({ pid: 1, version: "a" }, { alive: true, healthy: true, version: "a" }), "reuse");
 assert.equal(decide({ pid: 1, version: "a" }, { alive: true, healthy: true, busy: true, version: "b" }), "keep-old");
 assert.equal(decide({ pid: 1, version: "a" }, { alive: true, healthy: true, busy: false, version: "b" }), "replace");
 assert.equal(decide({ pid: 1, version: "a" }, { alive: true, healthy: false, version: "a" }), "spawn");
+const w = (state, agentStatus = "idle") => working({ id: "x", alive: true, state, agentStatus });
+assert.equal(w("waiting"), false, "답 끝나고 기다리는 채팅은 쉬는 중 — 데몬 교체를 막지 않음");
+assert.equal(w("idle"), false);
+assert.equal(w("processing"), true);
+assert.equal(w("permission"), true);
+assert.equal(w("waiting", "busy"), true);
+assert.equal(working({ id: "x", alive: false, state: "processing" }), false, "죽은 세션은 빼");
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sna-daemon-"));
 const fake = path.join(dir, "fake-standalone.cjs");
