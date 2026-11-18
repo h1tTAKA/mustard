@@ -22,7 +22,7 @@ function termTabs(repo: string): { tabs: { id: string; customTitle?: string }[];
   } catch { return { tabs: [] }; } // 못 읽으면 터미널은 없음(fail-closed)
 }
 
-// 받을 곳 목록 — 둘 다 못 읽으면 null(오류), 하나라도 읽으면 그만큼
+// 받을 곳 목록 — 한쪽이라도 못 읽으면 null(오류). 한쪽만 보고 "하나뿐"이라 바로 보내 버리지 않게(리뷰)
 export async function listSendTargets(repo: string): Promise<SendTarget[] | null> {
   const api = typeof window !== "undefined" ? window.nunopiDesktop?.browser : undefined;
   const { tabs } = termTabs(repo);
@@ -30,7 +30,7 @@ export async function listSendTargets(repo: string): Promise<SendTarget[] | null
     api?.agentTargets ? api.agentTargets({ cwd: repo, ids: tabs.map((x) => x.id) }).catch(() => null) : Promise.resolve(null),
     fetch(`/api/chat/sessions?root=${encodeURIComponent(repo)}`).then((r) => r.json()).catch(() => null),
   ]);
-  if (!term?.ok && !chat?.ok) return null;
+  if (!term?.ok || !chat?.ok) return null;
   return buildTargets(tabs, term?.ok ? term.list : [], chat?.ok && Array.isArray(chat.chats) ? chat.chats : []);
 }
 

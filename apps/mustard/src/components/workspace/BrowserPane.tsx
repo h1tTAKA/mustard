@@ -101,7 +101,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
   const [picked, setPicked] = useState<{ el: PickedElement; shot?: string; pos: { left: number; top: number } } | null>(null);
   const [comment, setComment] = useState("");
   const [sendState, setSendState] = useState<"idle" | "sending" | "no-agent" | "error" | "full">("idle");
-  const [choose, setChoose] = useState<{ targets: SendTarget[]; list: (Note | PickNote)[] } | null>(null); // #1372 받을 곳이 여럿일 때 고르는 중
+  const [choose, setChoose] = useState<SendTarget[] | null>(null); // #1372 받을 곳이 여럿일 때 고르는 중
   // #1361 담은 곳들 — 탭 상태라 페이지를 옮겨도 남음. 보내기에 성공해야 비움.
   const [notes, setNotes] = useState<Note[]>([]);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -254,12 +254,17 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
     startPick();
   };
   // 보내기 — 담은 곳 + 지금 고른 곳(메모 있으면)을 한 덩어리로. 하나면 지금과 같은 글.
+  // 보낼 묶음 — 지금 상태로 매번 만듦(받을 곳 고르는 사이 지우기·고치기·Esc가 반영되게, 리뷰). null = 보낼 게 없음
+  const batch = (): (Note | PickNote)[] | null => {
+    const cur = picked && comment.trim() ? [{ el: picked.el, shot: picked.shot, comment }] : [];
+    if (picked && !cur.length) return null; // 팝오버에서 메모 없이 보내기 X
+    const list = [...notes, ...cur];
+    return list.length ? list : null;
+  };
   const send = async () => {
     if (sendState === "sending") return;
-    const cur = picked && comment.trim() ? [{ el: picked.el, shot: picked.shot, comment }] : [];
-    if (picked && !cur.length) return; // 팝오버에서 메모 없이 보내기 X
-    const list = [...notes, ...cur];
-    if (!list.length) return;
+    const list = batch();
+    if (!list) return;
     if (list.length > MAX_NOTES) { setSendState("full"); return; } // 지금 고른 것까지 10곳(리뷰)
     if (picking) { pickGen.current++; setPicking(false); void viewRef.current?.executeJavaScript(PICK_CANCEL).catch(() => {}); } // 카드에서 보내면 고르던 것 끝 — 보내는 중 고른 곳이 결과에 지워지지 않게(리뷰)
     setSendState("sending"); setChoose(null);
@@ -267,11 +272,14 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
     const targets = await listSendTargets(repo);
     if (!targets) { setSendState("error"); return; }
     if (!targets.length) { setSendState("no-agent"); return; }
-    if (targets.length === 1) { await deliver(list, targets[0]); return; }
-    setChoose({ targets, list }); setSendState("idle");
+    if (targets.length === 1) { await deliver(targets[0]); return; }
+    setChoose(targets); setSendState("idle");
   };
-  const deliver = async (list: (Note | PickNote)[], target: SendTarget) => {
-    setChoose(null); setSendState("sending");
+  const deliver = async (target: SendTarget) => {
+    setChoose(null);
+    const list = batch();
+    if (!list) { setSendState("idle"); return; } // 고르는 사이 다 지움
+    setSendState("sending");
     const r = await sendToTarget(repo, target, formatPickBatch(list));
     if (!r.ok) { setSendState(r.reason === "no-agent" ? "no-agent" : "error"); return; } // 데몬 실패를 "터미널 없음"으로 감추지 않게(#1129). 목록은 그대로
     const sent = new Set(list.map((x) => ("id" in x ? x.id : 0)));
@@ -329,8 +337,8 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
             </div>
           )}
           {picked && h && (
-            <div className="@container absolute z-20 w-[min(320px,calc(100%_-_8px))] rounded-lg border border-black/[0.08] bg-white p-3 text-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.18)] dark:border-white/[0.1] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[0_20px_44px_rgba(0,0,0,0.42)]"
-              style={picked.pos}>
+            <div className="@container nunopi-scroll absolute z-20 overflow-y-auto w-[min(320px,calc(100%_-_8px))] rounded-lg border border-black/[0.08] bg-white p-3 text-zinc-800 shadow-[0_10px_24px_rgba(0,0,0,0.18)] dark:border-white/[0.1] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[0_20px_44px_rgba(0,0,0,0.42)]"
+              style={{ ...picked.pos, maxHeight: `calc(100% - ${picked.pos.top + 4}px)` /* 받을 곳 목록이 열려 길어져도 칸 밖으로 안 나가게 — 넘치면 안에서 스크롤(리뷰) */ }}>
               {/* 머리 — 번호(담은 게 있으면) · 태그 뱃지 · 제목, 긴 선택자는 툴팁 */}
               <div className="mb-2 flex min-w-0 items-center gap-1.5" title={picked.el.selector || undefined}>
                 {notes.length > 0 && <NoteNum n={notes.length + 1} />}
@@ -343,7 +351,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
                 className="h-20 w-full resize-none rounded-md border border-zinc-200 bg-white px-2.5 py-2 text-[12px] leading-relaxed text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-mustard-500 focus:ring-2 focus:ring-mustard-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
               {err && <div className="mt-1.5 text-[11px] text-rose-500">{t(sendState === "error" ? "github.sendFailed" : sendState === "full" ? "browser.pickFull" : "browser.pickNoAgent")}</div>}
               {/* 버튼 줄은 한 줄 고정 — 좁으면 단축키 표시 → 담기 글자(아이콘만) → 취소(Esc로 대신) 순으로 접음, 글자는 줄바꿈 X */}
-              {choose ? <div className="-mx-3 -mb-3 mt-2"><TargetList list={choose.targets} onPick={(x) => void deliver(choose.list, x)} onCancel={() => setChoose(null)} /></div> : (
+              {choose ? <div className="-mx-3 -mb-3 mt-2"><TargetList list={choose} onPick={(x) => void deliver(x)} onCancel={() => setChoose(null)} /></div> : (
               <div className="mt-2.5 flex flex-nowrap items-center justify-end gap-1.5">
                 <button type="button" disabled={sendState === "sending"} onClick={() => setPicked(null)} className="hidden h-7 shrink-0 whitespace-nowrap rounded-md disabled:opacity-40 px-2.5 @[220px]:inline-block text-[12px] text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">{t("browser.pickCancel")}</button>
                 <button type="button" disabled={!comment.trim() || sendState === "sending"} onClick={addNote} title={`${t("browser.pickAdd")} ⇧⌘↵`} aria-label={t("browser.pickAdd")}
@@ -375,7 +383,7 @@ function BrowserPage({ repo, url, initialDevtools, visible, ports, onUrlChange, 
                   {sendState === "sending" && !picked ? <IconLoader2 size={12} className="animate-spin" aria-hidden /> : <IconSend size={12} stroke={2} aria-hidden />}<span className="hidden @[220px]:inline">{t("browser.pickSend")}</span>
                 </button>
               </div>
-              {!picked && choose && <TargetList list={choose.targets} onPick={(x) => void deliver(choose.list, x)} onCancel={() => setChoose(null)} />}
+              {!picked && choose && <TargetList list={choose} onPick={(x) => void deliver(x)} onCancel={() => setChoose(null)} />}
               {!picked && (sendState === "no-agent" || sendState === "error") && <div className="border-t border-zinc-100 px-3 py-1.5 text-[11px] text-rose-500 dark:border-zinc-800">{t(sendState === "error" ? "github.sendFailed" : "browser.pickNoAgent")}</div>}
               {notesOpen && (
                 <ol className="nunopi-scroll min-h-0 flex-1 overflow-y-auto border-t border-zinc-100 p-1.5 dark:border-zinc-800">
