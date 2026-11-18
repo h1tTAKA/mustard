@@ -20,6 +20,7 @@ const tsOf = (v: unknown) => { const n = typeof v === "string" ? Date.parse(v) :
 const textOf = (c: unknown): string => typeof c === "string" ? c
   : Array.isArray(c) ? c.map((x) => (x && typeof x === "object" && "text" in x && typeof (x as { text: unknown }).text === "string" ? (x as { text: string }).text : "")).filter(Boolean).join("\n") : "";
 const toolLine = (name: string, input: unknown) => {
+  if (EDIT_NAMES.has(name) && input && typeof input === "object") return `▸ ${name}: ${JSON.stringify(shrinkEdit(input))}`; // #1378 코드 수정(입력이 객체일 때 — 글이면 예전처럼 그대로) — 긴 필드만 먼저 줄여 JSON째(줄이 4000자에서 잘려 JSON이 깨지지 않게, 리뷰)
   const i = input && typeof input === "object" ? input as Record<string, unknown> : {};
   const main = typeof i.command === "string" ? i.command : typeof i.cmd === "string" ? i.cmd : typeof input === "string" ? input : JSON.stringify(input ?? "");
   return `▸ ${name}: ${main}`;
@@ -251,6 +252,17 @@ export function parseAntigravitySteps(steps: AntigravityStep[]): { lines: Parsed
   return { lines, cwd };
 }
 
+// #1378 코드 수정 도구 입력의 긴 글(바꾸기 전/뒤·새 내용·패치)만 앞 1500자로 — 기록 줄·채팅 메시지가 잘리거나 메모리에 수 MB가 쌓이지 않게(리뷰)
+export const EDIT_NAMES = new Set(["Edit", "MultiEdit", "Write", "Update", "NotebookEdit", "apply_patch"]);
+const LONG = ["old_string", "new_string", "content", "new_source", "input", "patch"];
+export function shrinkEdit(input: unknown, max = 1500): unknown {
+  if (typeof input === "string") return input.length > max ? `${input.slice(0, max)}…` : input;
+  if (!input || typeof input !== "object") return input;
+  const o: Record<string, unknown> = { ...(input as Record<string, unknown>) };
+  for (const k of LONG) if (typeof o[k] === "string" && (o[k] as string).length > max) o[k] = `${(o[k] as string).slice(0, max)}…`;
+  if (Array.isArray(o.edits)) o.edits = (o.edits as unknown[]).slice(0, 3).map((e) => shrinkEdit(e, max));
+  return o;
+}
 // #1378 해설 재료 — 코드 수정 도구 줄("▸ Edit: {입력 JSON}")을 "[코드 수정] 파일 + 바꾸기 전/바꾼 뒤"로 풀기(해설이 어떤 코드를 어떻게 바꿨는지 설명하게).
 // 코드 수정 도구가 아니면 null. 입력을 못 읽으면(기록 줄이 4000자에서 잘려 JSON이 깨짐·Codex 패치 글) 앞 1500자 그대로.
 const EDIT_TOOL = /^▸ (Edit|MultiEdit|Write|Update|NotebookEdit|apply_patch): ?/;
@@ -260,9 +272,12 @@ export function editMaterial(line: string, max = 700): string | null {
   const rest = line.slice(m[0].length);
   const cut = (s: unknown) => { const t = typeof s === "string" ? s : ""; return t.length > max ? `${t.slice(0, max)}\n…` : t; };
   let o: Record<string, unknown> | null = null;
-  try { const v = JSON.parse(rest); if (v && typeof v === "object") o = v as Record<string, unknown>; } catch { /* 잘린 JSON·패치 글 */ }
+  try { const v = JSON.parse(rest); if (typeof v === "string") return `[코드 수정] (패치)\n${cut(v)}`; if (v && typeof v === "object") o = v as Record<string, unknown>; } catch { /* 잘린 JSON·패치 글 */ } // Codex custom_tool_call은 패치 글 그대로(리뷰)
   if (!o) return `[코드 수정] ${rest.slice(0, 1500)}`;
   const file = String(o.file_path ?? o.notebook_path ?? o.path ?? "");
+  if (/\.mdx?$/i.test(file)) return null; // 문서 수정은 코드 아님 — 해설 지시의 문서 작업 규칙(SKIP)대로 보통 [작업] 줄로(리뷰)
+  const patch = typeof o.input === "string" ? o.input : typeof o.patch === "string" ? o.patch : ""; // Codex apply_patch {input: "*** Begin Patch…"}(리뷰)
+  if (!file && patch) return `[코드 수정] (패치)\n${cut(patch)}`;
   const pairs = Array.isArray(o.edits) ? (o.edits as Record<string, unknown>[]) : [o];
   const parts = pairs.flatMap((e) => typeof e?.old_string === "string" || typeof e?.new_string === "string"
     ? [`바꾸기 전:\n${cut(e.old_string)}\n바꾼 뒤:\n${cut(e.new_string)}`]

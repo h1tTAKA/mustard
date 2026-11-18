@@ -84,6 +84,7 @@ async function readOnce(root: string): Promise<LiveTranscript> {
 // 해설 재료 글 — 유저 요청 + 시간순 [에이전트]/[작업]/[결과]. 결과는 앞 300자만(출력이 수만 자일 수 있음).
 // 에이전트 내부 도구(도구 검색·기억 조회)는 뺌 — 해설할 작업이 아님(#1359 실측: 훅·메모리 조회를 4번 해설).
 const INTERNAL = /▸ (ToolSearch|TodoWrite|mcp__plugin_loom|mcp__.*memory|Skill)\b/;
+const internal = (t: string) => INTERNAL.test(t.slice(0, t.indexOf(":") + 1 || 80)); // 도구 이름만 봄 — 고친 코드 안의 "▸ Skill" 같은 글자에 안 걸리게(#1378 리뷰)
 export function materialOf(msgs: SessionMsg[], prompt?: string): string {
   const lines: string[] = [];
   let skipResult = false;
@@ -91,10 +92,10 @@ export function materialOf(msgs: SessionMsg[], prompt?: string): string {
     if (m.role === "user") { lines.push(`[유저] ${m.text.slice(0, 600)}`); continue; }
     if (m.role === "assistant") { lines.push(`[에이전트] ${m.text.slice(0, 1500)}`); continue; }
     const isCall = m.text.startsWith("▸ ");
-    if (isCall) { skipResult = INTERNAL.test(m.text); if (!skipResult) lines.push(editMaterial(m.text) ?? `[작업] ${m.text.slice(2, 400)}`); } // #1378 코드 수정은 바꾸기 전/뒤까지
+    if (isCall) { skipResult = internal(m.text); if (!skipResult) lines.push(editMaterial(m.text) ?? `[작업] ${m.text.slice(2, 400)}`); } // #1378 코드 수정은 바꾸기 전/뒤까지
     else if (!skipResult) lines.push(`[결과] ${m.text.replace(/\s+/g, " ").slice(0, 300)}`);
   }
   const body = lines.join("\n").slice(-12000); // #1378 코드 수정 칸이 말을 밀어내지 않게 9000 → 12000
   return `${prompt ? `## 유저가 맡긴 일(최근 요청)\n> ${prompt.replace(/\s+/g, " ").slice(0, 600)}\n\n` : ""}## 에이전트가 방금 한 말·작업(시간순)\n${body}`;
 }
-export const hasSubstance = (msgs: SessionMsg[]) => msgs.some((m) => m.role === "assistant" && m.text.trim().length > 20) || msgs.filter((m) => m.role === "tool" && m.text.startsWith("▸ ") && !INTERNAL.test(m.text)).length >= 3;
+export const hasSubstance = (msgs: SessionMsg[]) => msgs.some((m) => m.role === "assistant" && m.text.trim().length > 20) || msgs.filter((m) => m.role === "tool" && m.text.startsWith("▸ ") && !internal(m.text)).length >= 3;

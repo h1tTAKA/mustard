@@ -56,6 +56,14 @@ assert.deepStrictEqual(splitNames("`git add -p / --patch`"), ["`git add -p / --p
 assert.deepStrictEqual(["client/server", "request/response", "데이터의 흐름", "상태의 불변성"].map(isCardWorthy), [true, true, true, true], "일반 개념 쌍·한글 '의' 개념은 칩");
 assert.deepStrictEqual(["fix/catchup-x", "feature/a/b", "Widget의 key", "fix/login", "feat/cart"].map(isCardWorthy), [false, false, false, false, false]);
 assert.deepStrictEqual(splitTermsSection("### 용어\n- **`grep`** 같은 검색 — 결과\n- **diff** — 차이")!.terms.map((x) => x.term), ["diff"], "굵은 이름 뒤에 바로 구분자일 때만 칩");
+// #1378 코드블록 안의 "terms:"·"- key: value"는 용어 칸·용어가 아님(리뷰)
+{
+  const note = "첫 문단\n### 어떤 코드를 어떻게 바꿨나\n```yaml\nterms:\n- foo: bar\n### 카드로 남길 개념\n```\n설명\n### 나온 말·용어 풀이\n- **`moveBy`** — 조금씩 옮김 [코드]";
+  assert.deepStrictEqual(parseNarrationTerms(note).map((t) => t.term), ["`moveBy`"], "코드 속 terms: 무시");
+  const sp = splitTermsSection(note)!;
+  assert.ok(sp.before.includes("```yaml") && sp.terms.length === 1, "용어 칸은 진짜 소제목부터");
+  assert.deepStrictEqual(splitCardSection(note).items, [], "코드 속 카드 칸 소제목 무시");
+}
 console.log("catchupTerms ok");
 
 // #1369 백틱 없이 온 실제 카드(앱 저장소에서 IT용어로 잘못 들어간 것) — 이름 생김새 + 뜻 낱말로 토큰

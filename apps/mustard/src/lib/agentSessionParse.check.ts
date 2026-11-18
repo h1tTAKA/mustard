@@ -143,4 +143,11 @@ assert.strictEqual(editMaterial(`▸ MultiEdit: ${JSON.stringify({ file_path: "b
 assert.strictEqual(editMaterial(`▸ Write: ${JSON.stringify({ file_path: "c.py", content: "x".repeat(800) })}`, 5), "[코드 수정] c.py\n새로 쓴 내용(앞부분):\nxxxxx\n…", "Write 앞부분만");
 assert.strictEqual(editMaterial('▸ Edit: {"file_path":"d.ts","old_string":"abc'), '[코드 수정] {"file_path":"d.ts","old_string":"abc', "잘린 JSON은 원문 그대로");
 assert.strictEqual(editMaterial("▸ Bash: npm test"), null, "코드 수정 아님");
+// 리뷰: 긴 입력도 JSON이 안 깨지게(기록 줄), Codex 패치, 문서 수정은 코드 아님, 코드 안의 글자
+const bigW = parseClaudeLine(JSON.stringify({ type: "assistant", timestamp: "2026-11-19T00:00:00Z", message: { content: [{ type: "tool_use", name: "Write", input: { file_path: "/r/big.ts", content: "y".repeat(9000) } }] } }))!;
+assert.ok(editMaterial(bigW.msgs[0].text)!.startsWith("[코드 수정] /r/big.ts\n새로 쓴 내용(앞부분):\nyyy"), "9000자 Write도 바꾸기 전/뒤 꼴");
+assert.ok(bigW.msgs[0].text.length < 4000, "기록 줄이 잘리지 않을 만큼 줄임");
+assert.strictEqual(editMaterial(`▸ apply_patch: ${JSON.stringify({ input: "*** Begin Patch\n*** Update File: a.rs\n-x\n+y" })}`), "[코드 수정] (패치)\n*** Begin Patch\n*** Update File: a.rs\n-x\n+y", "Codex 패치 {input}");
+assert.strictEqual(editMaterial("▸ apply_patch: *** Begin Patch\n+z"), "[코드 수정] *** Begin Patch\n+z", "Codex 패치 글(입력이 글이면 그대로)");
+assert.strictEqual(editMaterial(`▸ Edit: ${JSON.stringify({ file_path: "docs/plan.md", old_string: "a", new_string: "b" })}`), null, "문서 수정은 코드 아님");
 console.log("agentSessionParse ok");
