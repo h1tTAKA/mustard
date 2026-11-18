@@ -29,7 +29,7 @@ export function buildCardExplainPrompt(request: AgentAnalyzeRequest): string {
   const h = HEADINGS[request.locale] ?? HEADINGS.ko; // #1091 소제목도 설정 언어로
   if (isCode) {
     lines.push(
-      `- Then a '### ${h.example}' section with 1-2 short, generic code examples in a fenced code block (not from any specific file).`,
+      `- Then a '### ${h.example}' section with 1-2 short, generic code examples in a fenced code block (not from any specific file). Always tag the fence with its language name (\`\`\`dart, \`\`\`ts, \`\`\`python …) — the language/framework this term belongs to.`,
       `- Then a '### ${h.whenUse}' section: when/where you typically see or use it, to build transfer/recognition.`,
     );
   } else {
