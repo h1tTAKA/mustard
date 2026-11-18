@@ -497,7 +497,7 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
                   {row.commit.refs.length > 0 && (
                     <span className="sticky right-0 z-10 ml-auto flex min-w-0 items-center gap-1 self-center bg-gradient-to-l from-white via-white pl-4 dark:from-[var(--ink)] dark:via-[var(--ink)]"
                       style={{ maxWidth: "50cqw" }} /* #1383 배지 묶음 전체가 보이는 패널 폭의 절반까지 — 나머지 절반은 늘 커밋 메시지(유저 지적) */>
-                      {(() => { const { shown, hidden } = badgeRefs(row.commit.refs, branch); return <>{shown.map(({ ref: rf, synced }) => {
+                      {(() => { const { shown, hidden } = badgeRefs(row.commit.refs, branch); return <>{shown.map(({ ref: rf, remotes }) => {
                         const isCur = rf === branch; // 현재 체크아웃 브랜치 = HEAD 위치
                         const b = refBadge(rf, branch);
                         // 브랜치 배지(태그 제외) 클릭 → 그 브랜치 챗 세션(#653). 커밋 토글 전파 차단.
@@ -507,11 +507,11 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
                             onClick={clickable ? (e) => { e.stopPropagation(); onFocusBranch(rf); } : undefined}
                             style={{ maxWidth: "14rem" }} // 묶음(절반) 안에서 배지끼리 줄어들며 나눔(#1383), 넓어도 한 배지는 14rem까지(#752)
                             className={`inline-flex min-w-0 shrink items-center gap-0.5 rounded px-1 text-[9px] font-medium ${b.cls} ${clickable ? "cursor-pointer hover:ring-1 hover:ring-current" : ""}`}
-                            title={`${clickable ? t("workspace.gitAskBranch", { branch: rf }) : rf}${synced ? `\n${row.commit.refs.filter((o) => o !== rf && o.endsWith(`/${rf}`)).join(", ")}` : ""}`}>
+                            title={`${clickable ? t("workspace.gitAskBranch", { branch: rf }) : rf}${remotes.length ? `\n${remotes.join(", ")}` : ""}`}>
                             {/* 현재 브랜치(isCur)는 배경색으로 구분되므로 "HEAD" 라벨 생략(#741 후속) — 너무 길어짐. */}
                             {isCur ? <IconGitCommit size={8} stroke={2.5} className="shrink-0" aria-hidden /> : b.tag ? <IconTag size={8} stroke={2} className="shrink-0" aria-hidden /> : <IconGitBranch size={8} stroke={2} className="shrink-0" aria-hidden />}
                             <span className="min-w-0 truncate">{rf}</span>
-                            {synced && <IconCloud size={8} stroke={2} className="shrink-0 opacity-70" aria-hidden />}{/* 원격(origin/…)도 같은 커밋 — 배지 하나로 합침(#1383) */}
+                            {remotes.length > 0 && <IconCloud size={8} stroke={2} className="shrink-0 opacity-70" aria-hidden />}{/* 원격(origin/…)도 같은 커밋 — 배지 하나로 합침(#1383) */}
                           </span>
                         );
                       })}
