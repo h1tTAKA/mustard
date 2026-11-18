@@ -184,7 +184,7 @@ export function stripTermsJson(note: string): string {
     for (let c = t.indexOf("```", body); c >= 0; c = t.indexOf("```", c + 3)) {
       try { if (isTermsArray(JSON.parse(t.slice(body, c)))) { end = c + 3; break; } } catch { /* 다음 닫힘 후보 */ }
     }
-    if (end < 0 && /^\[\s*\{\s*"term"/.test(head)) { const c = t.indexOf("```", body); if (c > 0) end = c + 3; } // 못 읽어도 [{"term"으로 시작하면 용어 덩어리 — 제 닫힘까지(예전처럼 어디 있든, 리뷰)
+    if (end < 0 && /^\[\s*\{\s*"term"/.test(head)) { let c = t.indexOf("```", body); while (c >= 0 && /^```[A-Za-z]/.test(t.slice(c, c + 4))) c = t.indexOf("```", c + 3); if (c > 0) end = c + 3; } // 다음 코드블록 여는 표시(```json 등)는 닫힘 아님(리뷰) // 못 읽어도 [{"term"으로 시작하면 용어 덩어리 — 제 닫힘까지(예전처럼 어디 있든, 리뷰)
     if (end < 0) { from = body; continue; }
     t = t.slice(0, at) + t.slice(end);
     from = at;
