@@ -71,7 +71,7 @@ assert.deepStrictEqual(splitTermsSection("### 용어\n- **`grep`** 같은 검색
 // #1378 용어 JSON 덩어리 지우기 — 코드 칸의 JSON 예시는 남김, 용어 글 안의 ```도, 끝에 붙은 깨진 덩어리도
 assert.strictEqual(stripTermsJson("본문\n```json\n[1, 2]\n```\n끝\n```json\n[{\"term\":\"a\",\"def\":\"```x```\"}]\n```"), "본문\n```json\n[1, 2]\n```\n끝", "예시는 남기고 용어 덩어리만(글 안 ``` 포함)");
 assert.strictEqual(stripTermsJson("본문\n```json\n[{\"term\": \"a\",}]\n```"), "본문", "끝에 붙은 깨진 덩어리");
-assert.strictEqual(stripTermsJson("```json\n[{\"term\": \"a\",}]\n```\n뒤 글"), "```json\n[{\"term\": \"a\",}]\n```\n뒤 글", "중간의 못 읽는 건 남김");
+assert.strictEqual(stripTermsJson("앞\n```json\n[{\"term\": \"a\",}]\n```\n뒤 글\n```diff\n+x\n```"), "앞\n\n뒤 글\n```diff\n+x\n```", "중간의 깨진 덩어리도 제 닫힘까지만(뒤 코드블록은 남김)");
 console.log("catchupTerms ok");
 
 // #1369 백틱 없이 온 실제 카드(앱 저장소에서 IT용어로 잘못 들어간 것) — 이름 생김새 + 뜻 낱말로 토큰
