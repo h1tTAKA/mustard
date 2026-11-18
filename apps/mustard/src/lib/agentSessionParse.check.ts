@@ -153,4 +153,5 @@ assert.strictEqual(editMaterial(`▸ Edit: ${JSON.stringify({ file_path: "docs/p
 const me = parseClaudeLine(JSON.stringify({ type: "assistant", timestamp: "2026-11-19T00:00:00Z", message: { content: [{ type: "tool_use", name: "MultiEdit", input: { file_path: "m.ts", edits: [1, 2, 3].map(() => ({ old_string: '"'.repeat(1500), new_string: '"'.repeat(1500) })) } }] } }))!;
 assert.ok(editMaterial(me.msgs[0].text)!.includes("바꾸기 전:"), "따옴표 많은 큰 MultiEdit도 JSON이 안 깨짐");
 assert.strictEqual(editMaterial("▸ apply_patch: *** Begin Patch\n*** Update File: docs/a.md\n+x"), null, "Codex 문서 패치는 코드 아님");
+assert.ok(editMaterial(`▸ apply_patch: *** Begin Patch\n*** Update File: a.md\n${"+x\n".repeat(1500)}`.slice(0, 4000) + "…")?.startsWith("[코드 수정]"), "잘린 패치는 문서뿐이라고 단정 안 함");
 console.log("agentSessionParse ok");

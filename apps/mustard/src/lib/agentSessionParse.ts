@@ -268,7 +268,7 @@ export function shrinkEdit(input: unknown, max = 1500): unknown {
 // #1378 해설 재료 — 코드 수정 도구 줄("▸ Edit: {입력 JSON}")을 "[코드 수정] 파일 + 바꾸기 전/바꾼 뒤"로 풀기(해설이 어떤 코드를 어떻게 바꿨는지 설명하게).
 // 코드 수정 도구가 아니면 null. 입력을 못 읽으면(기록 줄이 4000자에서 잘려 JSON이 깨짐·Codex 패치 글) 앞 1500자 그대로.
 // 패치 글의 파일 머리(*** Update/Add/Delete File: …)가 전부 문서(.md)면 코드 수정 아님(리뷰)
-const docsOnly = (patch: string) => { const fs = [...patch.matchAll(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/gm)].map((m) => m[1].trim()); return fs.length > 0 && fs.every((f) => /\.mdx?$/i.test(f)); };
+const docsOnly = (patch: string) => { if (patch.trimEnd().endsWith("…")) return false; /* 잘린 패치 — 뒤에 코드 파일이 있을 수 있음(리뷰) */ const fs = [...patch.matchAll(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/gm)].map((m) => m[1].trim()); return fs.length > 0 && fs.every((f) => /\.mdx?$/i.test(f)); };
 const EDIT_TOOL = /^▸ (Edit|MultiEdit|Write|Update|NotebookEdit|apply_patch): ?/;
 export function editMaterial(line: string, max = 700): string | null {
   const m = EDIT_TOOL.exec(line);
