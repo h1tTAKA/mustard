@@ -69,7 +69,7 @@ function cleanNote(s: string): string {
   let t = s.trim();
   // 모델이 붙이는 용어 JSON 블록만 제거(본문 ## 용어 섹션에 이미 있음). ```diff 등 다른 코드블록은 보존!
   t = t.replace(/```nunopi-cards[\s\S]*?```/g, "").trim();               // ```nunopi-cards [...] ```
-  t = t.replace(/```json\s*(\[[\s\S]*?"term"[\s\S]*?\])\s*```/g, (all, arr: string, at: number, whole: string) => { if (/^\[\s*\{\s*"term"/.test(arr) && !whole.slice(at + all.length).trim()) return ""; /* 못 읽는 건 끝에 붙은 것만 — 코드 칸 예시는 남김(리뷰) */ try { const v = JSON.parse(arr); return Array.isArray(v) && v.length && v.every((x) => x && typeof x === "object" && "term" in x) ? "" : all; } catch { return all; } }).trim(); // ```json [ {term..} ] ``` — 용어 배열 모양일 때만(코드 칸의 JSON 파일 예시는 남김, #1378 리뷰)
+  t = t.replace(/```json\s*(\[(?:(?!```)[\s\S])*?"term"(?:(?!```)[\s\S])*?\])\s*```/g, (all, arr: string, at: number, whole: string) => { if (/^\[\s*\{\s*"term"/.test(arr) && !whole.slice(at + all.length).trim()) return ""; /* 못 읽는 건 끝에 붙은 것만 — 코드 칸 예시는 남김(리뷰) */ try { const v = JSON.parse(arr); return Array.isArray(v) && v.length && v.every((x) => x && typeof x === "object" && "term" in x) ? "" : all; } catch { return all; } }).trim(); // ```json [ {term..} ] ``` — 용어 배열 모양일 때만(코드 칸의 JSON 파일 예시는 남김, #1378 리뷰)
   // 끝에 붙은 bare JSON terms 배열(코드펜스 없이)
   const nl = t.lastIndexOf("\n[");
   if (nl >= 0) {
