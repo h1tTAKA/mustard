@@ -17,12 +17,11 @@ export default function CatchupRepoPrefs({ isOff, set, loaded, onClose }: { isOf
   }, [onClose]);
   const g = {
     explainShow: useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow), explainAnalyze: useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze),
-    commandsShow: useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow), commandsAnalyze: useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze),
     diffShow: useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow), diffAnalyze: useSetting<boolean>(GKEYS.autoExplainCommits, GIT_DEFAULTS.autoExplainCommits),
     sessionsShow: useSetting<boolean>(CUKEYS.sessionsShow, CATCHUP_DEFAULTS.sessionsShow), sessionsAnalyze: useSetting<boolean>(CUKEYS.sessionsAnalyze, CATCHUP_DEFAULTS.sessionsAnalyze),
     termsShow: useSetting<boolean>(CUKEYS.termsShow, CATCHUP_DEFAULTS.termsShow), termsAnalyze: useSetting<boolean>(CUKEYS.termsAnalyze, CATCHUP_DEFAULTS.termsAnalyze),
   } as Record<RepoPrefKey, boolean>;
-  const rows: [string, string][] = [["explain", t("settings.catchupExplain")], ["commands", t("settings.catchupCommands")], ["diff", t("settings.catchupDiff")], ["sessions", t("settings.catchupSessions")]];
+  const rows: [string, string][] = [["explain", t("settings.catchupExplain")], ["diff", t("settings.catchupDiff")], ["sessions", t("settings.catchupSessions")]];
   const flip = async (k: RepoPrefKey) => { if (!(await set(k, !isOff(k)))) toast(t("learn.repoPrefsFailed")); };
   return (
     <div ref={ref} role="dialog" aria-label={t("learn.repoPrefs")}

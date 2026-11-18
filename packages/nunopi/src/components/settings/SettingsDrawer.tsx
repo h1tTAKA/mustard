@@ -262,7 +262,6 @@ export default function SettingsDrawer({
   };
   const cu = {
     explainShow: useSetting<boolean>(CUKEYS.explainShow, CATCHUP_DEFAULTS.explainShow), explainAnalyze: useSetting<boolean>(CUKEYS.explainAnalyze, CATCHUP_DEFAULTS.explainAnalyze),
-    commandsShow: useSetting<boolean>(CUKEYS.commandsShow, CATCHUP_DEFAULTS.commandsShow), commandsAnalyze: useSetting<boolean>(CUKEYS.commandsAnalyze, CATCHUP_DEFAULTS.commandsAnalyze),
     diffShow: useSetting<boolean>(CUKEYS.diffShow, CATCHUP_DEFAULTS.diffShow),
     beginner: useSetting<boolean>(CUKEYS.beginner, CATCHUP_DEFAULTS.beginner), // #1359
     sessionsShow: useSetting<boolean>(CUKEYS.sessionsShow, CATCHUP_DEFAULTS.sessionsShow), sessionsAnalyze: useSetting<boolean>(CUKEYS.sessionsAnalyze, CATCHUP_DEFAULTS.sessionsAnalyze),
@@ -272,7 +271,6 @@ export default function SettingsDrawer({
   // 카테고리 → [프로바이더 키, 값, 모델 키, 모델 값] — "" = 워크스페이스 기본 AI / 그 AI 기본 모델(#1062)
   const cuProv: Record<string, [string, string, string, string]> = {
     explain: [CUKEYS.explainProvider, useSetting<string>(CUKEYS.explainProvider, ""), CUKEYS.explainModel, useSetting<string>(CUKEYS.explainModel, "")],
-    commands: [CUKEYS.commandsProvider, useSetting<string>(CUKEYS.commandsProvider, ""), CUKEYS.commandsModel, useSetting<string>(CUKEYS.commandsModel, "")],
     diff: [CUKEYS.diffProvider, useSetting<string>(CUKEYS.diffProvider, ""), CUKEYS.diffModel, useSetting<string>(CUKEYS.diffModel, "")],
     session: [CUKEYS.sessionsProvider, useSetting<string>(CUKEYS.sessionsProvider, ""), CUKEYS.sessionsModel, useSetting<string>(CUKEYS.sessionsModel, "")],
     chat: [CUKEYS.chatProvider, useSetting<string>(CUKEYS.chatProvider, ""), CUKEYS.chatModel, useSetting<string>(CUKEYS.chatModel, "")], // #1081 질문 화면
@@ -1176,7 +1174,6 @@ export default function SettingsDrawer({
             <p className="text-xs text-zinc-400 dark:text-zinc-500">{t("settings.catchupDesc")}</p>
             {([
               { id: "explain", label: t("settings.catchupExplain"), desc: t("settings.catchupExplainDesc"), show: [CUKEYS.explainShow, cu.explainShow], analyze: [CUKEYS.explainAnalyze, cu.explainAnalyze] },
-              { id: "commands", label: t("settings.catchupCommands"), desc: t("settings.catchupCommandsDesc"), show: [CUKEYS.commandsShow, cu.commandsShow], analyze: [CUKEYS.commandsAnalyze, cu.commandsAnalyze] },
               { id: "diff", label: t("settings.catchupDiff"), desc: t("settings.catchupDiffDesc"), show: [CUKEYS.diffShow, cu.diffShow], analyze: [GKEYS.autoExplainCommits, gAutoExplain] },
               { id: "session", label: t("settings.catchupSessions"), desc: t("settings.catchupSessionsDesc"), show: [CUKEYS.sessionsShow, cu.sessionsShow], analyze: [CUKEYS.sessionsAnalyze, cu.sessionsAnalyze] },
               // #1081 질문 화면 — AI·모델 + 카드 추가 칩(표시/분석 대신 스위치 하나)

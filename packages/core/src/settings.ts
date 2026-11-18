@@ -219,22 +219,21 @@ export const GKEYS = {
   prReviewProvider: "git.prReviewProvider", prReviewModel: "git.prReviewModel",
 } as const;
 
-// 캐치업(#1049) — 명령어 해설 카드·용어집 켜고 끄기.
+// 캐치업(#1049) — 해설 카드·용어집 켜고 끄기(#1373 명령어 해설은 없앰).
 // #1062 카테고리마다 표시(캐치업 창에 보이기)·분석(새로 AI 분석) 분리 — 분석 꺼도 예전 내용은 표시로 계속 봄.
 // Diff 분석 = 커밋 자동 설명(GKEYS.autoExplainCommits, git 설정과 같은 키).
-export const CATCHUP_DEFAULTS = { enabled: true, explainShow: true, explainAnalyze: true, commandsShow: true, commandsAnalyze: true, diffShow: true, termsShow: true, termsAnalyze: true, sessionsShow: true, sessionsAnalyze: true, chatCards: true, beginner: false };
+export const CATCHUP_DEFAULTS = { enabled: true, explainShow: true, explainAnalyze: true, diffShow: true, termsShow: true, termsAnalyze: true, sessionsShow: true, sessionsAnalyze: true, chatCards: true, beginner: false };
 export const CUKEYS = {
   enabled: "catchup.enabled", // 캐치업 전체 — 끄면 패널 숨김 + 모든 분석 중지(카테고리 값은 보존)
   explainShow: "catchup.explainShow", explainAnalyze: "catchup.explainAnalyze",
-  commandsShow: "catchup.commandsShow", commandsAnalyze: "catchup.commandsAnalyze",
   diffShow: "catchup.diffShow",
   termsShow: "catchup.termsShow", termsAnalyze: "catchup.termsAnalyze",
   sessionsShow: "catchup.sessionsShow", sessionsAnalyze: "catchup.sessionsAnalyze", // #1064 커밋을 만든 에이전트 세션
   sessionsProvider: "catchup.sessionsProvider", sessionsModel: "catchup.sessionsModel",
   // 카테고리별 AI(#1062) — "" = 워크스페이스 기본 프로바이더. 용어는 해설·명령어 응답에서 모아서 별도 호출 없음.
-  explainProvider: "catchup.explainProvider", commandsProvider: "catchup.commandsProvider", diffProvider: "catchup.diffProvider",
+  explainProvider: "catchup.explainProvider", diffProvider: "catchup.diffProvider",
   // 카테고리별 모델 — "" = 그 프로바이더 기본 모델. 프로바이더 바꾸면 비움(목록이 달라서).
-  explainModel: "catchup.explainModel", commandsModel: "catchup.commandsModel", diffModel: "catchup.diffModel",
+  explainModel: "catchup.explainModel", diffModel: "catchup.diffModel",
   // #1081 질문 화면(캐치업 안) — AI·모델("" = 워크스페이스 기본) + 답변 아래 카드 추가 칩
   chatProvider: "catchup.chatProvider", chatModel: "catchup.chatModel", chatCards: "catchup.chatCards",
   // #1359 해설 용어 — 초보(커밋·PR·머지 같은 기본 말도 풀이) / 아는 용어(해설 칩에서 '이미 알아요' → 다음 해설부터 안 나옴, string[])
@@ -268,7 +267,6 @@ const listeners = new Set<Listener>();
 // 이름 바뀐 설정 키(옛 → 새). 옛 값이 있고 새 키가 없으면 옮기고 옛 키 삭제 — 유저가 고른 값 유지.
 export const RENAMED_KEYS: Record<string, string> = {
   "notif.suppressWhileFocused": "notif.suppressWhileWatching", // #1021 의미가 '보고 있는 레포 억제'로 바뀜(#973)
-  "catchup.commands": "catchup.commandsAnalyze", // #1062 표시/분석 분리 — 옛 켜기/끄기는 분석으로
   "catchup.terms": "catchup.termsAnalyze",
 };
 // 순수 이관 — 바뀌었으면 true(호출 측이 저장).
