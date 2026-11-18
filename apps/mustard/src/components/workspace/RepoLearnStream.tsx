@@ -836,11 +836,12 @@ export default function RepoLearnStream({ root, providerId, providerSettings, ac
                           }); };
                           const rest = sp ? sp.rest.filter((l) => !knownIn(l)) : [];
                           // 용어 칩 — 누르면 풀다운(카드 추가 또는 보기 / 해설 제외). 카드로 저장했으면 ✓·그라데이션. 0.4초 머물면 짧은 안내.
+                          // #1386 새 칩은 깃 그래프 브랜치 배지 꼴(딥브라운 바탕 + 탄 테두리·글자) — 본문의 노란 인라인 코드와 헷갈려서(유저 지적)
                           const chip = (raw: Term) => { const term = raw.term.replace(/`/g, "").trim(); const card = cardOf(term); return (
                             <span className="group/chip relative inline-block">
                               <button type="button" aria-haspopup="menu" onClick={(e) => setChipMenu({ rect: e.currentTarget.getBoundingClientRect(), el: e.currentTarget, raw, ctx: chipCtx })}
                                 className={card ? "peer inline-flex items-center gap-0.5 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-semibold transition hover:brightness-110"
-                                  : "peer rounded-md bg-mustard-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-mustard-700 transition hover:bg-mustard-500/20 dark:text-mustard-400"}>
+                                  : "peer rounded-md bg-brown-900 px-1.5 py-0.5 text-[11px] font-semibold text-brown-300 ring-1 ring-inset ring-brown-300/50 transition hover:brightness-125"}>
                                 {card ? <><IconCheck size={10} stroke={2.5} className="text-blue-500" aria-hidden /><span className="bg-clip-text text-transparent" style={{ backgroundImage: NUNOPI_GRADIENT }}>{term}</span></> : term}
                                 <span className="sr-only"> — {t("learn.chipHint")}</span>
                               </button>
