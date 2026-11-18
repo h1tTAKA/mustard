@@ -30,7 +30,7 @@ async function healthy(port) {
 // 일하는 세션인가 — waiting은 답을 끝내고 다음 말을 기다리는 쉬는 상태(SNA가 complete·error·interrupted 뒤 붙임)라 뺌.
 // processing(답하는 중)·permission(권한 대답 대기)만 일하는 중. 단 시작·이어 붙이기 직후(첫 글자 전)도 waiting이라 띄운 지 30초 안이면 일하는 중(리뷰).
 // sna-daemon-host.cjs에도 글자 그대로 같은 줄(따로 복사돼 배포돼서 require 못 함, 점검이 비교)
-const working = (s, now = Date.now()) => s.id !== "default" && s.alive && (s.agentStatus === "busy" || s.state === "processing" || s.state === "permission" || (s.state === "waiting" && now - (s.lastActivityAt || 0) < 30_000));
+const working = (s) => s.id !== "default" && s.alive && (s.agentStatus === "busy" || s.state === "processing" || s.state === "permission" || (s.state === "waiting" && Date.now() - (s.lastActivityAt || 0) < 30_000));
 // 메인 턴이 끝난 뒤 도는 백그라운드 작업(서브 에이전트 등) 수 — 데몬 껍데기가 적어 둠(scripts/patch-sna.mjs가 셈)
 const bgPath = (statePath) => path.join(path.dirname(statePath), "sna-daemon-bg.json");
 async function busy(st, statePath) {

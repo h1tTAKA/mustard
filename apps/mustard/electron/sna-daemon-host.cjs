@@ -19,7 +19,7 @@ function appAlive(pid) {
 }
 
 // sna-daemon.cjs working()과 글자 그대로 같은 줄(점검이 비교) — waiting은 쉬는 상태, 단 띄운 지 30초 안은 일하는 중
-const working = (s, now = Date.now()) => s.id !== "default" && s.alive && (s.agentStatus === "busy" || s.state === "processing" || s.state === "permission" || (s.state === "waiting" && now - (s.lastActivityAt || 0) < 30_000));
+const working = (s) => s.id !== "default" && s.alive && (s.agentStatus === "busy" || s.state === "processing" || s.state === "permission" || (s.state === "waiting" && Date.now() - (s.lastActivityAt || 0) < 30_000));
 // 메인 턴이 끝난 뒤 도는 백그라운드 작업 수 — SNA 패치(scripts/patch-sna.mjs)가 같은 프로세스에 셈 둠
 const bg = () => (typeof globalThis.__mustardSnaBg === "function" ? globalThis.__mustardSnaBg() : 0);
 async function anyWorking() {

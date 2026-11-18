@@ -21,6 +21,7 @@ assert.equal(w("waiting", "busy"), true);
 assert.equal(working({ id: "x", alive: false, state: "processing" }), false, "죽은 세션은 빼");
 assert.equal(working({ id: "x", alive: true, state: "waiting", lastActivityAt: Date.now() - 5000 }), true, "시작 직후 첫 글자 전은 일하는 중");
 assert.equal(working({ id: "x", alive: true, state: "waiting", lastActivityAt: Date.now() - 60_000 }), false);
+assert.equal([{ id: "x", alive: true, state: "waiting", lastActivityAt: Date.now() - 60_000 }].some(working), false, ".some(working)처럼 넘겨도(두 번째 인자 = 번호) 쉬는 중"); // 실제 앱에서 터진 버그
 const hostSrc = fs.readFileSync(path.join(__dirname, "sna-daemon-host.cjs"), "utf8");
 assert.ok(hostSrc.includes(`const working = ${working.toString()};`), "껍데기의 판정 줄이 sna-daemon.cjs와 같음");
 
