@@ -8,7 +8,7 @@ import { beginNarrate } from "@/lib/narrateBusy";
 import { narrationProvider, narrationModel, narrationLocale, narrationBeginner, narrationKnown } from "@/lib/narrationConfig";
 import { translate } from "@mustard/core/messages";
 import { isFailedNote } from "@/lib/failText";
-import { CARD_HEADS } from "@/lib/catchupTerms";
+import { CARD_HEADS, stripTermsJson } from "@/lib/catchupTerms";
 import { KIND_GUIDE, classifyPrompt, parseKinds } from "@/lib/cardKindAI";
 import type { CardKind } from "@/lib/catchupTerms";
 
@@ -69,8 +69,7 @@ function cleanNote(s: string): string {
   let t = s.trim();
   // 모델이 붙이는 용어 JSON 블록만 제거(본문 ## 용어 섹션에 이미 있음). ```diff 등 다른 코드블록은 보존!
   t = t.replace(/```nunopi-cards[\s\S]*?```/g, "").trim();               // ```nunopi-cards [...] ```
-  // 한계: 용어 JSON 문자열 안에 ```가 있으면 못 지움 — 마크다운에서도 그 ```가 코드블록을 닫아 버려 원래 깨진 꼴이라 받아들임(#1378 리뷰)
-  t = t.replace(/```json\s*(\[(?:(?!```)[\s\S])*?"term"(?:(?!```)[\s\S])*?\])\s*```/g, (all, arr: string, at: number, whole: string) => { if (/^\[\s*\{\s*"term"/.test(arr) && !whole.slice(at + all.length).trim()) return ""; /* 못 읽는 건 끝에 붙은 것만 — 코드 칸 예시는 남김(리뷰) */ try { const v = JSON.parse(arr); return Array.isArray(v) && v.length && v.every((x) => x && typeof x === "object" && "term" in x) ? "" : all; } catch { return all; } }).trim(); // ```json [ {term..} ] ``` — 용어 배열 모양일 때만(코드 칸의 JSON 파일 예시는 남김, #1378 리뷰)
+  t = stripTermsJson(t); // ```json [ {term..} ] ``` — 용어 배열일 때만(코드 칸의 JSON 예시는 남김, #1378 리뷰)
   // 끝에 붙은 bare JSON terms 배열(코드펜스 없이)
   const nl = t.lastIndexOf("\n[");
   if (nl >= 0) {

@@ -167,3 +167,26 @@ export function cardKindOf(raw: string, def = ""): "token" | "term" {
   const defs = def.split(/\s+\/\s+/); // 뜻도 같은 수로 나뉘면 짝지어("…객체 / …타이머")
   return parts.every((p, i) => codeKindOne(p, defs.length === parts.length ? defs[i] : def)) ? "token" : "term"; // 짝 뜻만 — 전체 뜻으로 넘어가면 다른 조각의 "위젯"을 빌려 씀(리뷰). 한계: "하나라도 / 전부 …메서드"처럼 뜻이 엇갈려 나뉘면 IT용어
 }
+
+// #1378 해설 끝에 모델이 붙이는 ```json [{"term":…}] ``` 덩어리 지우기 — 코드 칸의 JSON 예시는 남김.
+// ```json 시작마다 뒤의 ``` 닫힘 후보를 차례로 JSON.parse — 용어 객체 배열로 읽히는 첫 후보까지 지움(용어 글 안에 ```가 있어도). 정규식 되추적 없음.
+// 끝내 못 읽는데 "[{"term"으로 시작하고 맨 끝에 붙은" 건 깨진 용어 덩어리로 보고 지움(리뷰).
+const isTermsArray = (v: unknown) => Array.isArray(v) && v.length > 0 && v.every((x) => x && typeof x === "object" && "term" in x);
+export function stripTermsJson(note: string): string {
+  let t = note, from = 0;
+  for (;;) {
+    const at = t.indexOf("```json", from);
+    if (at < 0) return t.trim();
+    const body = at + 7;
+    const head = t.slice(body).trimStart();
+    if (!head.startsWith("[")) { from = body; continue; }
+    let end = -1;
+    for (let c = t.indexOf("```", body); c >= 0; c = t.indexOf("```", c + 3)) {
+      try { if (isTermsArray(JSON.parse(t.slice(body, c)))) { end = c + 3; break; } } catch { /* 다음 닫힘 후보 */ }
+    }
+    if (end < 0 && /^\[\s*\{\s*"term"/.test(head)) { const last = t.lastIndexOf("```"); if (last > body && !t.slice(last + 3).trim()) end = last + 3; }
+    if (end < 0) { from = body; continue; }
+    t = t.slice(0, at) + t.slice(end);
+    from = at;
+  }
+}

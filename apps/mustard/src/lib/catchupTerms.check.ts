@@ -1,6 +1,6 @@
 // catchupTerms 점검 — node --experimental-strip-types src/lib/catchupTerms.check.ts
 import assert from "node:assert";
-import { mergeTerms, parseNarrationTerms, splitCardSection, splitTermsSection, splitNames, isCardWorthy, cardKindOf } from "./catchupTerms.ts";
+import { mergeTerms, parseNarrationTerms, splitCardSection, splitTermsSection, splitNames, isCardWorthy, cardKindOf, stripTermsJson } from "./catchupTerms.ts";
 
 const note = `순수 함수와 리듀서
 ## 무엇이 바뀌었나
@@ -68,6 +68,10 @@ assert.deepStrictEqual(splitTermsSection("### 용어\n- **`grep`** 같은 검색
   const cut = "첫 문단\n```ts\nconst a = 1\n### 나온 말·용어 풀이\n- **`moveBy`** — 조금씩 옮김 [코드]"; // 안 닫힌 코드블록(출력 잘림)
   assert.strictEqual(parseNarrationTerms(cut).length, 1, "안 닫힌 울타리는 코드로 안 봄");
 }
+// #1378 용어 JSON 덩어리 지우기 — 코드 칸의 JSON 예시는 남김, 용어 글 안의 ```도, 끝에 붙은 깨진 덩어리도
+assert.strictEqual(stripTermsJson("본문\n```json\n[1, 2]\n```\n끝\n```json\n[{\"term\":\"a\",\"def\":\"```x```\"}]\n```"), "본문\n```json\n[1, 2]\n```\n끝", "예시는 남기고 용어 덩어리만(글 안 ``` 포함)");
+assert.strictEqual(stripTermsJson("본문\n```json\n[{\"term\": \"a\",}]\n```"), "본문", "끝에 붙은 깨진 덩어리");
+assert.strictEqual(stripTermsJson("```json\n[{\"term\": \"a\",}]\n```\n뒤 글"), "```json\n[{\"term\": \"a\",}]\n```\n뒤 글", "중간의 못 읽는 건 남김");
 console.log("catchupTerms ok");
 
 // #1369 백틱 없이 온 실제 카드(앱 저장소에서 IT용어로 잘못 들어간 것) — 이름 생김새 + 뜻 낱말로 토큰
