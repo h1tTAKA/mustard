@@ -16,6 +16,8 @@ export const COMMIT_RE = new RegExp(`${COMMIT_ONLY.source}|${MERGE_ONLY.source}|
 export const callKindOf = (t: string): CallKind | undefined => COMMIT_ONLY.test(t) ? "commit" : MERGE_ONLY.test(t) ? "merge" : PULL_ONLY.test(t) ? "pull" : undefined;
 
 const clip = (s: string) => (s.length > MSG_MAX ? s.slice(0, MSG_MAX) + "…" : s);
+// #1378 코드 수정 줄은 shrinkEdit로 이미 줄인 JSON — 4000자 자르기를 또 하면 JSON이 깨져 바꾸기 전/뒤로 못 풂(리뷰). 넉넉한 상한만
+const clipTool = (t: string) => /^▸ (Edit|MultiEdit|Write|Update|NotebookEdit|apply_patch): \{/.test(t) ? (t.length > 20_000 ? t.slice(0, 20_000) + "…" : t) : clip(t);
 const tsOf = (v: unknown) => { const n = typeof v === "string" ? Date.parse(v) : NaN; return Number.isFinite(n) ? n : 0; };
 const textOf = (c: unknown): string => typeof c === "string" ? c
   : Array.isArray(c) ? c.map((x) => (x && typeof x === "object" && "text" in x && typeof (x as { text: unknown }).text === "string" ? (x as { text: string }).text : "")).filter(Boolean).join("\n") : "";
@@ -35,7 +37,7 @@ export function parseClaudeLine(line: string): ParsedLine | null {
   if (typeof content === "string") { if (content.trim()) msgs.push({ role: o.type === "user" ? "user" : "assistant", text: clip(content), ts }); }
   else if (Array.isArray(content)) for (const p of content as Record<string, unknown>[]) {
     if (p.type === "text" && typeof p.text === "string" && p.text.trim()) msgs.push({ role: o.type === "user" ? "user" : "assistant", text: clip(p.text), ts });
-    else if (p.type === "tool_use") { tools.push({ name: String(p.name ?? "tool"), input: p.input }); const t = toolLine(String(p.name ?? "tool"), p.input); const k = callKindOf(t); if (k) { commitCall = true; kinds.push(k); kindText.push(t); callIdx = msgs.length; } msgs.push({ role: "tool", text: clip(t), ts }); }
+    else if (p.type === "tool_use") { tools.push({ name: String(p.name ?? "tool"), input: p.input }); const t = toolLine(String(p.name ?? "tool"), p.input); const k = callKindOf(t); if (k) { commitCall = true; kinds.push(k); kindText.push(t); callIdx = msgs.length; } msgs.push({ role: "tool", text: clipTool(t), ts }); }
     else if (p.type === "tool_result") { const t = textOf(p.content); if (t.trim()) msgs.push({ role: "tool", text: clip(t), ts }); }
   }
   const result = o.type === "user" && Array.isArray(content) && content.length > 0 && (content as Record<string, unknown>[]).every((p) => p.type === "tool_result");
@@ -75,7 +77,7 @@ export function parseCodexLine(line: string): ParsedLine | null {
       const args = p.type === "function_call" ? (() => { try { return JSON.parse(String(p.arguments ?? "")); } catch { return p.arguments; } })() : p.input;
       const t = toolLine(String(p.name ?? "tool"), args);
       const k = callKindOf(t);
-      return { msgs: [{ role: "tool", text: clip(t), ts }], ts, commitCall: !!k, callKind: k, mergeToo: MERGE_ONLY.test(t), tools: codexTools(String(p.name ?? "tool"), args) };
+      return { msgs: [{ role: "tool", text: clipTool(t), ts }], ts, commitCall: !!k, callKind: k, mergeToo: MERGE_ONLY.test(t), tools: codexTools(String(p.name ?? "tool"), args) };
     }
     if (p.type === "function_call_output" || p.type === "custom_tool_call_output") {
       const t = typeof p.output === "string" ? p.output : textOf(p.output);
@@ -265,6 +267,8 @@ export function shrinkEdit(input: unknown, max = 1500): unknown {
 }
 // #1378 해설 재료 — 코드 수정 도구 줄("▸ Edit: {입력 JSON}")을 "[코드 수정] 파일 + 바꾸기 전/바꾼 뒤"로 풀기(해설이 어떤 코드를 어떻게 바꿨는지 설명하게).
 // 코드 수정 도구가 아니면 null. 입력을 못 읽으면(기록 줄이 4000자에서 잘려 JSON이 깨짐·Codex 패치 글) 앞 1500자 그대로.
+// 패치 글의 파일 머리(*** Update/Add/Delete File: …)가 전부 문서(.md)면 코드 수정 아님(리뷰)
+const docsOnly = (patch: string) => { const fs = [...patch.matchAll(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/gm)].map((m) => m[1].trim()); return fs.length > 0 && fs.every((f) => /\.mdx?$/i.test(f)); };
 const EDIT_TOOL = /^▸ (Edit|MultiEdit|Write|Update|NotebookEdit|apply_patch): ?/;
 export function editMaterial(line: string, max = 700): string | null {
   const m = EDIT_TOOL.exec(line);
@@ -272,12 +276,12 @@ export function editMaterial(line: string, max = 700): string | null {
   const rest = line.slice(m[0].length);
   const cut = (s: unknown) => { const t = typeof s === "string" ? s : ""; return t.length > max ? `${t.slice(0, max)}\n…` : t; };
   let o: Record<string, unknown> | null = null;
-  try { const v = JSON.parse(rest); if (typeof v === "string") return `[코드 수정] (패치)\n${cut(v)}`; if (v && typeof v === "object") o = v as Record<string, unknown>; } catch { /* 잘린 JSON·패치 글 */ } // Codex custom_tool_call은 패치 글 그대로(리뷰)
-  if (!o) return `[코드 수정] ${rest.slice(0, 1500)}`;
+  try { const v = JSON.parse(rest); if (typeof v === "string") return docsOnly(v) ? null : `[코드 수정] (패치)\n${cut(v)}`; if (v && typeof v === "object") o = v as Record<string, unknown>; } catch { /* 잘린 JSON·패치 글 */ } // Codex custom_tool_call은 패치 글 그대로(리뷰)
+  if (!o) return docsOnly(rest) ? null : `[코드 수정] ${rest.slice(0, 1500)}`;
   const file = String(o.file_path ?? o.notebook_path ?? o.path ?? "");
   if (/\.mdx?$/i.test(file)) return null; // 문서 수정은 코드 아님 — 해설 지시의 문서 작업 규칙(SKIP)대로 보통 [작업] 줄로(리뷰)
   const patch = typeof o.input === "string" ? o.input : typeof o.patch === "string" ? o.patch : ""; // Codex apply_patch {input: "*** Begin Patch…"}(리뷰)
-  if (!file && patch) return `[코드 수정] (패치)\n${cut(patch)}`;
+  if (!file && patch) return docsOnly(patch) ? null : `[코드 수정] (패치)\n${cut(patch)}`;
   const pairs = Array.isArray(o.edits) ? (o.edits as Record<string, unknown>[]) : [o];
   const parts = pairs.flatMap((e) => typeof e?.old_string === "string" || typeof e?.new_string === "string"
     ? [`바꾸기 전:\n${cut(e.old_string)}\n바꾼 뒤:\n${cut(e.new_string)}`]

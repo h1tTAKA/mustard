@@ -64,6 +64,10 @@ assert.deepStrictEqual(splitTermsSection("### 용어\n- **`grep`** 같은 검색
   assert.ok(sp.before.includes("```yaml") && sp.terms.length === 1, "용어 칸은 진짜 소제목부터");
   assert.deepStrictEqual(splitCardSection(note).items, [], "코드 속 카드 칸 소제목 무시");
 }
+{
+  const cut = "첫 문단\n```ts\nconst a = 1\n### 나온 말·용어 풀이\n- **`moveBy`** — 조금씩 옮김 [코드]"; // 안 닫힌 코드블록(출력 잘림)
+  assert.strictEqual(parseNarrationTerms(cut).length, 1, "안 닫힌 울타리는 코드로 안 봄");
+}
 console.log("catchupTerms ok");
 
 // #1369 백틱 없이 온 실제 카드(앱 저장소에서 IT용어로 잘못 들어간 것) — 이름 생김새 + 뜻 낱말로 토큰

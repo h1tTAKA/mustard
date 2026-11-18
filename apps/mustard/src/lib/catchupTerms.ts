@@ -18,9 +18,17 @@ export function takeKind(def: string): { def: string; kind?: CardKind } {
 const KEYWORD = /(용어|用語|terms?|glossary)/i;
 const isHeading = (l: string) => /^#{1,6}\s/.test(l) || /^\*\*[^*]+\*\*\s*:?$/.test(l) || /^[^-*•>#\s][^:]{0,20}:$/.test(l);
 // #1378 해설에 코드블록이 들어감 — 코드 안의 "terms:"·"- key: value" 줄을 소제목·용어로 읽지 않게, 코드블록 줄(울타리 포함)은 true(리뷰)
+// 여는 표시와 같은 종류(``` / ~~~)로만 닫음, 끝까지 안 닫힌 블록(출력 잘림)은 코드로 안 봄 — 뒤 용어가 통째로 사라지지 않게(리뷰)
 export function fencedLines(lines: string[]): boolean[] {
-  let open = false;
-  return lines.map((l) => { if (/^\s*(```|~~~)/.test(l)) { open = !open; return true; } return open; });
+  const out = lines.map(() => false);
+  let open: string | null = null, from = -1;
+  lines.forEach((l, i) => {
+    const m = l.match(/^\s*(```|~~~)/);
+    if (open) { out[i] = true; if (m && m[1] === open) open = null; }
+    else if (m) { open = m[1]; from = i; out[i] = true; }
+  });
+  if (open) for (let i = from; i < lines.length; i++) out[i] = false;
+  return out;
 }
 export function parseNarrationTerms(note: string): Term[] {
   const out: Term[] = [];
@@ -28,7 +36,8 @@ export function parseNarrationTerms(note: string): Term[] {
   const lines = String(note || "").split("\n"), fence = fencedLines(lines);
   for (const [i, raw] of lines.entries()) {
     const line = raw.trim();
-    if (!line || fence[i]) continue;
+    if (fence[i]) { inSection = false; continue; } // 코드블록이 나오면 용어 칸 끝 — 칩(splitTermsSection)과 같게(리뷰)
+    if (!line) continue;
     if (isHeading(line)) { inSection = KEYWORD.test(line); continue; }
     if (!inSection) continue;
     if (/^>/.test(line)) { inSection = false; continue; } // 인용(팁 등)이면 끝

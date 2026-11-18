@@ -150,4 +150,7 @@ assert.ok(bigW.msgs[0].text.length < 4000, "기록 줄이 잘리지 않을 만�
 assert.strictEqual(editMaterial(`▸ apply_patch: ${JSON.stringify({ input: "*** Begin Patch\n*** Update File: a.rs\n-x\n+y" })}`), "[코드 수정] (패치)\n*** Begin Patch\n*** Update File: a.rs\n-x\n+y", "Codex 패치 {input}");
 assert.strictEqual(editMaterial("▸ apply_patch: *** Begin Patch\n+z"), "[코드 수정] *** Begin Patch\n+z", "Codex 패치 글(입력이 글이면 그대로)");
 assert.strictEqual(editMaterial(`▸ Edit: ${JSON.stringify({ file_path: "docs/plan.md", old_string: "a", new_string: "b" })}`), null, "문서 수정은 코드 아님");
+const me = parseClaudeLine(JSON.stringify({ type: "assistant", timestamp: "2026-11-19T00:00:00Z", message: { content: [{ type: "tool_use", name: "MultiEdit", input: { file_path: "m.ts", edits: [1, 2, 3].map(() => ({ old_string: '"'.repeat(1500), new_string: '"'.repeat(1500) })) } }] } }))!;
+assert.ok(editMaterial(me.msgs[0].text)!.includes("바꾸기 전:"), "따옴표 많은 큰 MultiEdit도 JSON이 안 깨짐");
+assert.strictEqual(editMaterial("▸ apply_patch: *** Begin Patch\n*** Update File: docs/a.md\n+x"), null, "Codex 문서 패치는 코드 아님");
 console.log("agentSessionParse ok");
