@@ -42,7 +42,7 @@ export function run(dist) {
   }
   if (!outs.length) throw new Error(`[patch-sna] ${ANCHOR}를 못 찾음 — SNA 버전이 바뀌었으면 이 패치를 확인`);
   const done = [];
-  try { for (const [f, src, out] of outs) if (out !== src) { writeFileSync(f, out); done.push([f, src]); } }
+  try { for (const [f, src, out] of outs) if (out !== src) { done.push([f, src]); writeFileSync(f, out); } }
   catch (e) { for (const [f, src] of done) try { writeFileSync(f, src); } catch { /* 되돌리기도 실패 — 다시 설치 */ } throw e; } // 쓰다 실패하면(권한·디스크) 쓴 것도 되돌림(리뷰)
   return outs.length;
 }
