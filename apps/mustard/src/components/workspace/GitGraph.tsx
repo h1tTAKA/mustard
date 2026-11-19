@@ -2,9 +2,10 @@
 // 워크스페이스 깃 그래프(#649) — /api/repo/git-log → 파싱 → 레인 배정 → SVG(점·선) + 커밋행.
 // 커밋 클릭 → 바뀐 파일(M/A/D) 펼침, 파일 클릭 → onOpenDiff(diff 뷰).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconCheck, IconLoader2, IconRefresh, IconGitBranch, IconTag, IconChevronRight, IconChevronDown, IconGitCommit, IconCloudDownload, IconArrowDown, IconPlus, IconMinus } from "@tabler/icons-react";
+import { IconCheck, IconLoader2, IconRefresh, IconGitBranch, IconTag, IconChevronRight, IconChevronDown, IconGitCommit, IconCloudDownload, IconArrowDown, IconPlus, IconMinus, IconCloud } from "@tabler/icons-react";
 import { useT, useToast, getSetting, GKEYS, GIT_DEFAULTS } from "@mustard/core";
 import { parseGitLog, assignLanes, githubLogin, type GitGraphModel } from "@/lib/repo/gitGraph";
+import { badgeRefs } from "@/lib/gitRefBadges";
 
 // ref 배지 종류별 스타일 — 로컬 브랜치 / 원격(origin/*) / 태그 / 현재 HEAD 브랜치 구분(색 같으면 못 알아봄).
 function refBadge(ref: string, curBranch: string) {
@@ -494,8 +495,9 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
                   {/* 브랜치/태그 배지(refs) — 우측 끝 고정(#741). sticky right-0라 가로 스크롤해도 뷰포트 오른쪽에 떠 있음.
                       왼쪽 gradient 배경으로 스크롤되는 메세지를 덮음. 긴 이름은 배지에서 max-w+truncate. */}
                   {row.commit.refs.length > 0 && (
-                    <span className="sticky right-0 z-10 ml-auto flex shrink-0 items-center gap-1 self-center bg-gradient-to-l from-white via-white pl-4 dark:from-[var(--ink)] dark:via-[var(--ink)]">
-                      {row.commit.refs.map((rf) => {
+                    <span className="sticky right-0 z-10 ml-auto flex min-w-0 items-center gap-1 self-center bg-gradient-to-l from-white via-white pl-4 dark:from-[var(--ink)] dark:via-[var(--ink)]"
+                      style={{ maxWidth: "50cqw" }} /* #1383 배지 묶음 전체가 보이는 패널 폭의 절반까지 — 나머지 절반은 늘 커밋 메시지(유저 지적) */>
+                      {(() => { const { shown, hidden } = badgeRefs(row.commit.refs, branch); return <>{shown.map(({ ref: rf, remotes }) => {
                         const isCur = rf === branch; // 현재 체크아웃 브랜치 = HEAD 위치
                         const b = refBadge(rf, branch);
                         // 브랜치 배지(태그 제외) 클릭 → 그 브랜치 챗 세션(#653). 커밋 토글 전파 차단.
@@ -503,15 +505,18 @@ export default function GitGraph({ root, onOpenDiff, onFocusBranch, onOpenChange
                         return (
                           <span key={rf} role={clickable ? "button" : undefined} tabIndex={clickable ? -1 : undefined}
                             onClick={clickable ? (e) => { e.stopPropagation(); onFocusBranch(rf); } : undefined}
-                            style={{ maxWidth: "min(45cqw, 14rem)" }} // 보이는 패널 폭의 45%(상한 14rem) — 넓히면 회복, 좁히면 더 truncate(#752)
-                            className={`inline-flex shrink-0 items-center gap-0.5 rounded px-1 text-[9px] font-medium ${b.cls} ${clickable ? "cursor-pointer hover:ring-1 hover:ring-current" : ""}`}
-                            title={clickable ? t("workspace.gitAskBranch", { branch: rf }) : rf}>
+                            style={{ maxWidth: "14rem" }} // 묶음(절반) 안에서 배지끼리 줄어들며 나눔(#1383), 넓어도 한 배지는 14rem까지(#752)
+                            className={`inline-flex min-w-0 shrink items-center gap-0.5 rounded px-1 text-[9px] font-medium ${b.cls} ${clickable ? "cursor-pointer hover:ring-1 hover:ring-current" : ""}`}
+                            title={`${clickable ? t("workspace.gitAskBranch", { branch: rf }) : rf}${remotes.length ? `\n${remotes.join(", ")}` : ""}`}>
                             {/* 현재 브랜치(isCur)는 배경색으로 구분되므로 "HEAD" 라벨 생략(#741 후속) — 너무 길어짐. */}
                             {isCur ? <IconGitCommit size={8} stroke={2.5} className="shrink-0" aria-hidden /> : b.tag ? <IconTag size={8} stroke={2} className="shrink-0" aria-hidden /> : <IconGitBranch size={8} stroke={2} className="shrink-0" aria-hidden />}
                             <span className="min-w-0 truncate">{rf}</span>
+                            {remotes.length > 0 && <IconCloud size={8} stroke={2} className="shrink-0 opacity-70" aria-hidden />}{/* 원격(origin/…)도 같은 커밋 — 배지 하나로 합침(#1383) */}
                           </span>
                         );
                       })}
+                      {hidden.length > 0 && <span className="shrink-0 rounded bg-zinc-200/70 px-1 text-[9px] font-medium text-zinc-600 dark:bg-zinc-700/60 dark:text-zinc-300" title={hidden.join("\n")}>+{hidden.length}</span>}
+                      </>; })()}
                     </span>
                   )}
                 </button>
