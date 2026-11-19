@@ -32,6 +32,7 @@ import WorkspaceDockLayout, { defaultTree, pruneTree, leavesOf, isDockNode, appe
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 import { CARDS_CHANGED_EVENT } from "@mustard/core";
 import { migrateCatchupTermCards, reclassifyTermCards } from "@/lib/cardKindMigrate";
+import { fillCardEco } from "@/lib/cardEcoFill";
 import { TERMINAL_LINK_EVENT, type TerminalLinkDetail } from "@/components/workspace/Terminal";
 import { findRepoFile } from "@/lib/terminalLinks";
 const OPEN_ROOTS = new Map<string, number>(); // 지금 열린 레포 화면 수(#1193 터미널 링크 — 가장 깊은 레포만 처리). 같은 레포 화면이 둘이어도 하나 닫힐 때 안 지워지게 개수로(리뷰)
@@ -181,6 +182,30 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       : reclassifyTermCards(localStorage, ask));
     const tm = setTimeout(() => { void run().then((n) => { if (n > 0) window.dispatchEvent(new Event(CARDS_CHANGED_EVENT)); }).catch(() => { /* 다음 시작에 다시 */ }); }, 15_000); // 앱 뜨는 일 다 끝난 뒤
     return () => { off = true; clearTimeout(tm); };
+  }, [mounted]);
+  // #1388 토큰 카드 소속(언어·라이브러리·프레임워크) 채우기 — 앱이 뜨고 40초 뒤(종류 재분류 다음), 그 뒤엔 카드가 바뀔 때마다(10초 모아서). 실패하면 다음 기회에
+  useEffect(() => {
+    if (!mounted) return;
+    let off = false, busy = false, again = false;
+    const ask = async (items: { name: string; def: string }[]) => {
+      const r = await fetch("/api/repo/learn/card-eco", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ items }) });
+      const j = await r.json().catch(() => null) as { ok?: boolean; ecos?: (string | null)[] } | null;
+      if (off || !j?.ok || !Array.isArray(j.ecos)) throw new Error("card-eco failed");
+      return j.ecos;
+    };
+    const run = async () => {
+      if (off) return;
+      if (busy) { again = true; return; } // 묻는 동안 카드가 바뀌면 끝나고 한 번 더(리뷰)
+      busy = true;
+      try {
+        const n = navigator.locks ? (await navigator.locks.request("mustard-card-eco", { ifAvailable: true }, async (l) => (l ? fillCardEco(localStorage, ask) : 0))) as number : await fillCardEco(localStorage, ask); // 창 여러 개면 하나만
+        if (n > 0 && !off) window.dispatchEvent(new Event(CARDS_CHANGED_EVENT));
+      } catch { /* 다음 기회에 */ } finally { busy = false; if (again && !off) { again = false; clearTimeout(tm); tm = setTimeout(() => void run(), 10_000); } } // 바로 다시 묻지 않고 10초 모아서(리뷰)
+    };
+    let tm = setTimeout(() => void run(), 40_000);
+    const onChange = () => { clearTimeout(tm); tm = setTimeout(() => void run(), 10_000); };
+    window.addEventListener(CARDS_CHANGED_EVENT, onChange);
+    return () => { off = true; clearTimeout(tm); window.removeEventListener(CARDS_CHANGED_EVENT, onChange); };
   }, [mounted]);
   // 저장된 패널 폭 복원.
   useEffect(() => {

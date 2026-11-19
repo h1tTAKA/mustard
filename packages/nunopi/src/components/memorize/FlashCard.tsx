@@ -4,11 +4,13 @@ import { useT } from "@mustard/core";
 import { cardFrame } from "../../lib/srs/cardFrame";
 import type { SrsSource } from "@mustard/core";
 import { CardTitle } from "./CardTitle";
+import { EcoTag } from "./EcoTag";
 
 interface FlashCardProps {
   front: string;
   back: string;
   source: SrsSource; // 테두리 색 구분(token=emerald, concept=amber, term=blue)
+  eco?: string; // #1388 토큰 카드 소속(Flutter 등) — 로고와 이름 사이
   flipped: boolean;
   onFlip: () => void;
   reduced: boolean; // prefers-reduced-motion — true면 회전 애니 생략
@@ -17,7 +19,7 @@ interface FlashCardProps {
 const SYMBOL = "/brand/nunopi-symbol-darkeye-transparent.png";
 
 // 3D 플립 카드 — 흰색 포커카드. 앞: 나노피 심볼 위 + 용어. 뒤: 좌상단 작은 심볼 + 용어 + 설명.
-export default function FlashCard({ front, back, source, flipped, onFlip, reduced }: FlashCardProps) {
+export default function FlashCard({ front, back, source, eco, flipped, onFlip, reduced }: FlashCardProps) {
   const t = useT();
   const f = cardFrame(source);
   return (
@@ -36,6 +38,7 @@ export default function FlashCard({ front, back, source, flipped, onFlip, reduce
           <span className={`pointer-events-none absolute inset-[14px] rounded-lg border ${f.inner}`} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={SYMBOL} alt="" className="relative h-12 w-12 object-contain" />
+          <EcoTag name={eco} className="-mb-2 text-sm" />
           <CardTitle text={front} className="relative text-xl font-bold text-zinc-900" />
           <span className="relative text-xs text-zinc-400">{t("mem.flipHint")}</span>
         </span>
@@ -45,6 +48,7 @@ export default function FlashCard({ front, back, source, flipped, onFlip, reduce
           <span className={`pointer-events-none absolute inset-[14px] rounded-lg border ${f.inner}`} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={SYMBOL} alt="" className="relative h-12 w-12 object-contain" />
+          <EcoTag name={eco} className="-mb-1.5 text-xs" />
           <CardTitle text={front} className="relative text-lg font-bold text-zinc-900" />
           <span className="relative whitespace-pre-wrap text-sm leading-relaxed text-zinc-600">
             {back || t("mem.noExplanation")}

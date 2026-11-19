@@ -39,6 +39,7 @@ export interface Card {
   originCardKey?: string; // card 출처(챗에서 생성)의 생성처 카드 key
   sourceSubId?: string; // ask 출처의 질문(서브세션) id
   sourceRoot?: string; // workspace 출처의 레포 절대경로 — 세션 카드 목록 레포별 격리용(#762)
+  eco?: string; // #1388 토큰 카드의 소속 언어·라이브러리·프레임워크(예: "Flutter"), 모르면 없음
   state: SrsState;
 }
 
