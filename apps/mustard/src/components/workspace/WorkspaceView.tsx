@@ -200,7 +200,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       try {
         const n = navigator.locks ? (await navigator.locks.request("mustard-card-eco", { ifAvailable: true }, async (l) => (l ? fillCardEco(localStorage, ask) : 0))) as number : await fillCardEco(localStorage, ask); // 창 여러 개면 하나만
         if (n > 0 && !off) window.dispatchEvent(new Event(CARDS_CHANGED_EVENT));
-      } catch { /* 다음 기회에 */ } finally { busy = false; if (again && !off) { again = false; void run(); } }
+      } catch { /* 다음 기회에 */ } finally { busy = false; if (again && !off) { again = false; clearTimeout(tm); tm = setTimeout(() => void run(), 10_000); } } // 바로 다시 묻지 않고 10초 모아서(리뷰)
     };
     let tm = setTimeout(() => void run(), 40_000);
     const onChange = () => { clearTimeout(tm); tm = setTimeout(() => void run(), 10_000); };
