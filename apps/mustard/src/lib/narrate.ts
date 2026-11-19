@@ -10,6 +10,7 @@ import { translate } from "@mustard/core/messages";
 import { isFailedNote } from "@/lib/failText";
 import { CARD_HEADS, stripTermsJson } from "@/lib/catchupTerms";
 import { KIND_GUIDE, classifyPrompt, parseKinds } from "@/lib/cardKindAI";
+import { ecoPrompt, parseEco } from "@/lib/cardEcoAI";
 import type { CardKind } from "@/lib/catchupTerms";
 
 // #1091 출력 언어 — 본문 지시가 한국어라 ko 아니면 맨 앞·끝에 못박음(제목 줄·소제목까지).
@@ -149,6 +150,21 @@ export async function classifyCardKinds(items: { name: string; def: string }[], 
   const kinds = parseKinds(text, items.length);
   if (!kinds.some(Boolean)) throw new Error("unparsed answer"); // 하나도 못 읽으면 실패로 — 완료 표시 없이 다음에 다시(리뷰)
   return kinds;
+}
+
+// #1388 토큰 카드 소속(언어·라이브러리·프레임워크)을 해설 AI로(한 번에 최대 80장). 번호별 이름, "" = 모름, undefined = 답 빠짐. 실패하면 throw.
+export async function classifyCardEco(items: { name: string; def: string }[], signal?: AbortSignal): Promise<(string | undefined)[]> {
+  const { pid, provider, model } = narrationAI();
+  const res = await provider.analyze({
+    code: "card eco", locale: "ko", providerId: pid, mode: "chat",
+    messages: [{ role: "user", content: ecoPrompt(items) }],
+    ...(model ? { providerSettings: { [pid]: { model } } } : {}),
+  } as AgentAnalyzeRequest, { signal });
+  const text = (res?.summary ?? "").trim();
+  if (!text || isFailedNote(text) || res?.warnings?.some((w) => w.code === "PARSE_FAILED")) throw new Error(text || "no answer");
+  const out = parseEco(text, items.length);
+  if (!out.some((x) => x !== undefined)) throw new Error("unparsed answer");
+  return out;
 }
 
 async function narrateOnce(cwd: string, agent: string, delta: string, diff: string, ts: number, opts: { providerId?: unknown; signal?: AbortSignal; material?: string }): Promise<boolean> {

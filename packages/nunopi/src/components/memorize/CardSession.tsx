@@ -291,7 +291,7 @@ export default function CardSession({ sources, mode = "due", active = true, deck
                 : undefined
             }
           >
-            <FlashCard front={card.front} back={card.back} source={card.source} flipped={flipped} onFlip={() => setFlipped((v) => !v)} reduced={reduced} />
+            <FlashCard front={card.front} back={card.back} source={card.source} eco={card.eco} flipped={flipped} onFlip={() => setFlipped((v) => !v)} reduced={reduced} />
           </div>
           {/* 출처로 이동 — 이 카드를 담은 분석 히스토리로 화면 전환(존재할 때만). */}
           {showSource && (

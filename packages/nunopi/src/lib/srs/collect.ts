@@ -6,6 +6,7 @@ import {
   loadTokenDetails,
   loadConceptDetails,
   loadTermDetails,
+  loadCardEco,
 } from "@mustard/core";
 import { initialState } from "./schedule";
 import { loadSrsState } from "./store";
@@ -70,10 +71,12 @@ function collectSource(source: SrsSource): Omit<Card, "state">[] {
 // 주어진 출처들의 카드 목록 + srs-state 조인(없으면 box1 기본).
 export function collectCards(sources: SrsSource[], now: Date): Card[] {
   const states = loadSrsState();
+  const eco = loadCardEco(); // #1388 토큰 카드 소속(없으면 안 붙임)
   const cards: Card[] = [];
   for (const source of sources) {
     for (const base of collectSource(source)) {
-      cards.push({ ...base, state: states[base.key] ?? initialState(now) });
+      const e = source === "token" ? eco[base.key] : undefined;
+      cards.push({ ...base, ...(e ? { eco: e } : {}), state: states[base.key] ?? initialState(now) });
     }
   }
   return cards;
