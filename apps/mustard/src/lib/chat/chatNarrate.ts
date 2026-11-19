@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { isNarrationOn } from "@/lib/narrationConfig";
 import { narrate } from "@/lib/narrate";
 import { materialOf, hasSubstance } from "@/lib/liveTranscript";
-import type { SessionMsg } from "@/lib/agentSessionParse";
+import { shrinkEdit, EDIT_NAMES, type SessionMsg } from "@/lib/agentSessionParse";
 
 const execFileP = promisify(execFile);
 const GAP_MS = 20_000;
@@ -29,7 +29,7 @@ export function eventMsg(ev: Record<string, unknown>): SessionMsg | null {
   const data = (ev.data ?? {}) as Record<string, unknown>, ts = Date.now();
   if (ev.type === "user_message" && typeof ev.message === "string") return { role: "user", text: ev.message, ts };
   if (ev.type === "assistant" && typeof ev.message === "string" && ev.message.trim()) return { role: "assistant", text: ev.message, ts };
-  if (ev.type === "tool_use" && data.update) return { role: "tool", text: `▸ ${String(data.toolName ?? "tool")}: ${brief(data.input)}`, ts };
+  if (ev.type === "tool_use" && data.update) { const name = String(data.toolName ?? "tool"); return { role: "tool", text: `▸ ${name}: ${EDIT_NAMES.has(name) ? JSON.stringify(shrinkEdit(data.input ?? {})) : brief(data.input)}`, ts }; } // #1378 코드 수정은 입력 전체(해설 재료가 바꾸기 전/뒤로 풂)
   if (ev.type === "tool_result") return { role: "tool", text: String(ev.message ?? "").replace(/data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+/g, "[image]").replace(/"data":"[A-Za-z0-9+/=]{200,}"/g, '"data":"[image]"').slice(0, 600), ts };
   return null;
 }

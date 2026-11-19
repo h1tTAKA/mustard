@@ -1,6 +1,6 @@
 // agentSessionParse 점검 — node --experimental-strip-types src/lib/agentSessionParse.check.ts
 import assert from "node:assert";
-import { parseClaudeLine, parseCodexLine, segmentForCommit, COMMIT_RE, activityInWindow, parseCursorMessages, parseAntigravitySteps, cursorTimestamp, asIs } from "./agentSessionParse.ts";
+import { parseClaudeLine, parseCodexLine, segmentForCommit, COMMIT_RE, activityInWindow, parseCursorMessages, parseAntigravitySteps, cursorTimestamp, asIs, editMaterial } from "./agentSessionParse.ts";
 
 const iso = (s: number) => new Date(s * 1000).toISOString();
 const T = 1_800_000_000; // 커밋 시각(초)
@@ -137,4 +137,19 @@ assert.strictEqual(ag.cwd, "/r", "워크스페이스 file:// → 경로");
 const agSeg = segmentForCommit(ag.lines, asIs, T0 + 6)!;
 assert.deepStrictEqual(agSeg.msgs.map((m) => m.text), ["커밋해줘", "확인 중", "▸ run_command: git add a && git commit -m x", "exited 0", "커밋 완료"], "Antigravity 프롬프트 ~ 커밋 완료");
 assert.strictEqual(agSeg.callTs, (T0 + 5) * 1000);
+// #1378 해설 재료 — 코드 수정 도구 줄을 바꾸기 전/뒤로
+assert.strictEqual(editMaterial(`▸ Edit: ${JSON.stringify({ file_path: "/r/a.dart", old_string: "drag(x, 80)", new_string: "moveBy(10)" })}`), "[코드 수정] /r/a.dart\n바꾸기 전:\ndrag(x, 80)\n바꾼 뒤:\nmoveBy(10)", "Edit");
+assert.strictEqual(editMaterial(`▸ MultiEdit: ${JSON.stringify({ file_path: "b.ts", edits: [{ old_string: "a", new_string: "b" }, { old_string: "c", new_string: "d" }] })}`), "[코드 수정] b.ts\n바꾸기 전:\na\n바꾼 뒤:\nb\n바꾸기 전:\nc\n바꾼 뒤:\nd", "MultiEdit 여러 개");
+assert.strictEqual(editMaterial(`▸ Write: ${JSON.stringify({ file_path: "c.py", content: "x".repeat(800) })}`, 5), "[코드 수정] c.py\n새로 쓴 내용(앞부분):\nxxxxx\n…", "Write 앞부분만");
+assert.strictEqual(editMaterial('▸ Edit: {"file_path":"d.ts","old_string":"abc'), '[코드 수정] {"file_path":"d.ts","old_string":"abc', "잘린 JSON은 원문 그대로");
+assert.strictEqual(editMaterial("▸ Bash: npm test"), null, "코드 수정 아님");
+// 리뷰: 긴 입력도 JSON이 안 깨지게(기록 줄), Codex 패치, 문서 수정은 코드 아님, 코드 안의 글자
+const bigW = parseClaudeLine(JSON.stringify({ type: "assistant", timestamp: "2026-11-19T00:00:00Z", message: { content: [{ type: "tool_use", name: "Write", input: { file_path: "/r/big.ts", content: "y".repeat(9000) } }] } }))!;
+assert.ok(editMaterial(bigW.msgs[0].text)!.startsWith("[코드 수정] /r/big.ts\n새로 쓴 내용(앞부분):\nyyy"), "9000자 Write도 바꾸기 전/뒤 꼴");
+assert.ok(bigW.msgs[0].text.length < 4000, "기록 줄이 잘리지 않을 만큼 줄임");
+assert.strictEqual(editMaterial(`▸ apply_patch: ${JSON.stringify({ input: "*** Begin Patch\n*** Update File: a.rs\n-x\n+y" })}`), "[코드 수정] (패치)\n*** Begin Patch\n*** Update File: a.rs\n-x\n+y", "Codex 패치 {input}");
+assert.strictEqual(editMaterial("▸ apply_patch: *** Begin Patch\n+z"), "[코드 수정] *** Begin Patch\n+z", "Codex 패치 글(입력이 글이면 그대로)");
+assert.strictEqual(editMaterial(`▸ Edit: ${JSON.stringify({ file_path: "docs/plan.md", old_string: "a", new_string: "b" })}`), null, "문서 수정은 코드 아님");
+const me = parseClaudeLine(JSON.stringify({ type: "assistant", timestamp: "2026-11-19T00:00:00Z", message: { content: [{ type: "tool_use", name: "MultiEdit", input: { file_path: "m.ts", edits: [1, 2, 3].map(() => ({ old_string: '"'.repeat(1500), new_string: '"'.repeat(1500) })) } }] } }))!;
+assert.ok(editMaterial(me.msgs[0].text)!.includes("바꾸기 전:"), "따옴표 많은 큰 MultiEdit도 JSON이 안 깨짐");
 console.log("agentSessionParse ok");

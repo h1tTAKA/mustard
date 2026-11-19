@@ -17,11 +17,26 @@ export function takeKind(def: string): { def: string; kind?: CardKind } {
 // 모델 표기 흔들림 허용(#1051 리뷰): "- **이름** — 뜻" / "- **이름 — 뜻**" / "- 이름 — 뜻"(구분자 — – :).
 const KEYWORD = /(용어|用語|terms?|glossary)/i;
 const isHeading = (l: string) => /^#{1,6}\s/.test(l) || /^\*\*[^*]+\*\*\s*:?$/.test(l) || /^[^-*•>#\s][^:]{0,20}:$/.test(l);
+// #1378 해설에 코드블록이 들어감 — 코드 안의 "terms:"·"- key: value" 줄을 소제목·용어로 읽지 않게, 코드블록 줄(울타리 포함)은 true(리뷰)
+// 여는 표시와 같은 종류(``` / ~~~)로만 닫음, 끝까지 안 닫힌 블록(출력 잘림)은 코드로 안 봄 — 뒤 용어가 통째로 사라지지 않게(리뷰)
+export function fencedLines(lines: string[]): boolean[] {
+  const out = lines.map(() => false);
+  let open: string | null = null, from = -1;
+  lines.forEach((l, i) => {
+    const m = l.match(/^\s*(```|~~~)/);
+    if (open) { out[i] = true; if (m && m[1] === open) open = null; }
+    else if (m) { open = m[1]; from = i; out[i] = true; }
+  });
+  if (open) for (let i = from; i < lines.length; i++) out[i] = false;
+  return out;
+}
 export function parseNarrationTerms(note: string): Term[] {
   const out: Term[] = [];
   let inSection = false;
-  for (const raw of String(note || "").split("\n")) {
+  const lines = String(note || "").split("\n"), fence = fencedLines(lines);
+  for (const [i, raw] of lines.entries()) {
     const line = raw.trim();
+    if (fence[i]) { inSection = false; continue; } // 코드블록이 나오면 용어 칸 끝 — 칩(splitTermsSection)과 같게(리뷰)
     if (!line) continue;
     if (isHeading(line)) { inSection = KEYWORD.test(line); continue; }
     if (!inSection) continue;
@@ -55,12 +70,12 @@ export function mergeTerms(prev: Term[], add: Term[], key: (s: string) => string
 // 한계: 첫 용어 칸만 칩 — 용어 칸이 두 번 나오면 둘째는 마크다운 글자로(내용은 그대로, 용어집은 둘 다 모음).
 // #1364 "이름 — 뜻" 꼴이 아닌 목록 줄(모델 사족 등)은 칸 전체를 버리지 않고 rest로 따로(화면이 아는 용어가 든 줄은 숨김). 목록 아닌 글이 섞이면 여전히 null.
 export function splitTermsSection(note: string): { before: string; terms: Term[]; after: string; rest: string[] } | null {
-  const lines = String(note || "").split("\n");
+  const lines = String(note || "").split("\n"), fence = fencedLines(lines);
   let start = -1, end = lines.length;
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i].trim();
-    if (start < 0) { if (l && isHeading(l) && KEYWORD.test(l)) start = i + 1; continue; }
-    if (l && (isHeading(l) || /^>/.test(l))) { end = i; break; }
+    if (start < 0) { if (l && !fence[i] && isHeading(l) && KEYWORD.test(l)) start = i + 1; continue; }
+    if (l && (fence[i] || isHeading(l) || /^>/.test(l))) { end = i; break; } // 코드블록이 나오면 칸 끝(#1378)
   }
   if (start < 0) return null;
   const sec = lines.slice(start, end).filter((l) => l.trim());
@@ -81,8 +96,8 @@ export const CARD_HEADS = { ko: "카드로 남길 개념", ja: "カードにす�
 const isCardHead = (l: string) => (/^#{1,6}\s/.test(l) || /^\*\*[^*]+\*\*\s*[:：]?$/.test(l)) && Object.values(CARD_HEADS).some((h) => l.replace(/^#{1,6}\s*/, "").replace(/\*/g, "").replace(/[:：]\s*$/, "").trim() === h);
 // 본문 → { body: 그 칸을 뺀 본문, items: 칸 속 이름·뜻(뜻 없으면 "") }. 칸이 없으면(옛 카드) 빈 배열.
 export function splitCardSection(note: string): { body: string; items: Term[] } {
-  const lines = String(note || "").split("\n");
-  const start = lines.findLastIndex((l) => isCardHead(l.trim())); // 칸은 해설 끝 — 앞 문장 속 굵은 같은 말에 안 걸리게 마지막 것(리뷰)
+  const lines = String(note || "").split("\n"), fence = fencedLines(lines);
+  const start = lines.findLastIndex((l, i) => !fence[i] && isCardHead(l.trim())); // 칸은 해설 끝 — 앞 문장 속 굵은 같은 말에 안 걸리게 마지막 것(리뷰)
   if (start < 0) return { body: String(note || ""), items: [] };
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) { const l = lines[i].trim(); if (l && !/^[-*•]\s/.test(l) && !/^\s/.test(lines[i])) { end = i; break; } } // 목록 아닌 줄(다음 소제목·팁)에서 끝 — 그 줄은 본문에 남김(리뷰)
@@ -151,4 +166,27 @@ export function cardKindOf(raw: string, def = ""): "token" | "term" {
   const parts = x.replace(/`/g, "").split(/\s+\/\s+/); // "Promise / setTimeout" → 조각마다
   const defs = def.split(/\s+\/\s+/); // 뜻도 같은 수로 나뉘면 짝지어("…객체 / …타이머")
   return parts.every((p, i) => codeKindOne(p, defs.length === parts.length ? defs[i] : def)) ? "token" : "term"; // 짝 뜻만 — 전체 뜻으로 넘어가면 다른 조각의 "위젯"을 빌려 씀(리뷰). 한계: "하나라도 / 전부 …메서드"처럼 뜻이 엇갈려 나뉘면 IT용어
+}
+
+// #1378 해설 끝에 모델이 붙이는 ```json [{"term":…}] ``` 덩어리 지우기 — 코드 칸의 JSON 예시는 남김.
+// ```json 시작마다 뒤의 ``` 닫힘 후보를 차례로 JSON.parse — 용어 객체 배열로 읽히는 첫 후보까지 지움(용어 글 안에 ```가 있어도). 정규식 되추적 없음.
+// 끝내 못 읽어도 "[{"term"으로 시작하면 깨진 용어 덩어리로 보고 제 닫힘까지 지움(리뷰).
+const isTermsArray = (v: unknown) => Array.isArray(v) && v.length > 0 && v.every((x) => x && typeof x === "object" && "term" in x);
+export function stripTermsJson(note: string): string {
+  let t = note, from = 0;
+  for (;;) {
+    const at = t.indexOf("```json", from);
+    if (at < 0) return t.trim();
+    const body = at + 7;
+    const head = t.slice(body).trimStart();
+    if (!head.startsWith("[")) { from = body; continue; }
+    let end = -1;
+    for (let c = t.indexOf("```", body); c >= 0; c = t.indexOf("```", c + 3)) {
+      try { if (isTermsArray(JSON.parse(t.slice(body, c)))) { end = c + 3; break; } } catch { /* 다음 닫힘 후보 */ }
+    }
+    if (end < 0 && /^\[\s*\{\s*"term"/.test(head)) { let c = t.indexOf("```", body); while (c >= 0 && /^```[A-Za-z]/.test(t.slice(c, c + 4))) c = t.indexOf("```", c + 3); if (c > 0) end = c + 3; } // 다음 코드블록 여는 표시(```json 등)는 닫힘 아님(리뷰) // 못 읽어도 [{"term"으로 시작하면 용어 덩어리 — 제 닫힘까지(예전처럼 어디 있든, 리뷰)
+    if (end < 0) { from = body; continue; }
+    t = t.slice(0, at) + t.slice(end);
+    from = at;
+  }
 }
