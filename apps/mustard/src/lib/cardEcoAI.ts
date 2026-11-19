@@ -16,7 +16,7 @@ export function parseEco(text: string, n: number): (string | undefined)[] {
     const name = m[2].replace(/["'`*]/g, "").replace(/\s*[—–(].*$/, "").trim();
     if (i < 0 || i >= n || out[i] !== undefined) continue;
     if (/^-+$|^(없음|none|n\/a|unknown)$/i.test(name) || !name) out[i] = "";
-    else if (name.length <= 30 && name.split(/\s+/).length <= 3 && !/[.,!?。、:;]|[가-힣]{2,}/.test(name.replace(/\.[a-z0-9]+\b/gi, "")) && !/\b(is|are|with|for|the|a|an|used|built|uses)\b/i.test(name)) out[i] = name; // 문장 답(설명)은 이름 아님 → 빠진 것으로(다음에 다시, 리뷰)
+    else if (name.length <= 30 && name.split(/\s+/).length <= 3 && !/[.,!?。、:;]|[가-힣]{2,}/.test(name.replace(/\.[a-z0-9]+\b/gi, "")) && !name.split(/\s+/).some((w) => /^(is|are|with|for|the|a|an|used|built|uses|in|by|from|of|and)$/i.test(w))) out[i] = name; // 문장 답(설명)은 이름 아님 → 빠진 것으로(다음에 다시, 리뷰). 한계: 낱말 목록으로 거르는 어림 — 틀려도 두 번 빠지면 "모름"이라 표시만 빠짐
   }
   return out;
 }
