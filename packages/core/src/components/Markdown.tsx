@@ -2,6 +2,7 @@
 
 import { createContext, memo, useContext, useMemo, useRef, useState, type ComponentProps } from "react";
 import { codeKind } from "../codeKind";
+import { useShiki, ShikiLines, hastText } from "./shikiCode";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -50,6 +51,18 @@ const keepAppLinks = (url: string) => (/^catchup:/i.test(url) ? url : defaultUrl
 // #1272 기본 37개(common)에 없던 언어(dart 등)를 더 등록. 표기 없는 펜스 자동 감지는 지금처럼 37개 안에서만(subset).
 const EXTRA = { dart, dockerfile, scala, elixir, haskell, groovy, gradle, protobuf, powershell, ocaml, clojure, erlang, julia, nix, cmake, nginx, fsharp, properties };
 let highlight: ReturnType<typeof rehypeHighlight> | undefined;
+// #1380 펜스에 언어 표시가 원래 있었는지 — rehype-highlight가 자동 감지한 언어도 같은 class로 붙여서, 그 전에 표시해 둠(추측한 언어는 shiki에 안 씀)
+type HEl = { type?: string; tagName?: string; children?: HEl[]; properties?: Record<string, unknown> };
+const markTagged = () => (tree: HEl) => {
+  const walk = (n: HEl) => {
+    if (n.type === "element" && n.tagName === "pre") for (const c of n.children ?? []) if (c.type === "element" && c.tagName === "code") {
+      const cls = c.properties?.className;
+      c.properties = { ...c.properties, dataTagged: Array.isArray(cls) && cls.some((x) => String(x).startsWith("language-")) ? "1" : "0" };
+    }
+    (n.children ?? []).forEach(walk);
+  };
+  walk(tree);
+};
 const highlightOnce = () => (highlight ??= rehypeHighlight({ detect: true, languages: { ...common, ...EXTRA }, subset: Object.keys(common), aliases: { xml: ["vue", "svelte"] } }));
 // #1325 인라인 코드 역할별 색 — `백틱` 조각을 모양으로 분류해 data-k를 붙임(색은 globals.css, 블록 코드 안은 CSS에서 제외).
 const InPre = createContext(false); // 펜스 코드(<pre> 안)는 한 줄이라도 분류 안 함(리뷰)
@@ -68,8 +81,18 @@ function CopyPre({ node: _node, children, ...rest }: ComponentProps<"pre"> & { n
     </div>
   );
 }
+// #1380 펜스 코드 = shiki로 다시 칠함(오기 전·실패는 highlight.js 그대로)
+function FenceCode({ node, className, children, ...rest }: ComponentProps<"code"> & { node?: unknown }) {
+  const r = rest as Record<string, unknown>;
+  const tagged = r["data-tagged"] === "1";
+  const { ["data-tagged"]: _t, ...attrs } = r;
+  const lang = tagged ? /(?:^|\s)language-([\w+#.-]+)/.exec(className ?? "")?.[1] : undefined;
+  const painted = useShiki(hastText(node as never), lang);
+  return <code className={className} {...attrs}>{painted ? <ShikiLines lines={painted.lines} /> : children}</code>;
+}
 function InlineCode({ node: _node, className, children, ...rest }: ComponentProps<"code"> & { node?: unknown }) {
   const inPre = useContext(InPre);
+  if (inPre) return <FenceCode node={_node} className={className} {...rest}>{children}</FenceCode>;
   const text = typeof children === "string" ? children : Array.isArray(children) && children.every((c) => typeof c === "string") ? children.join("") : null;
   const k = !inPre && !className && text !== null && !text.includes("\n") ? codeKind(text) : "plain"; // 언어 클래스가 붙은 건 펜스 코드 → 분류 안 함
   return k === "plain" ? <code className={className} {...rest}>{children}</code> : <code data-k={k} {...rest}>{children}</code>;
@@ -81,7 +104,7 @@ export default memo(function Markdown({ children, className, onLink, copyCode }:
   }), [onLink, copyCode]);
   return (
     <div className={className ? `nunopi-md ${className}` : "nunopi-md"}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[highlightOnce]} urlTransform={keepAppLinks}
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[markTagged, highlightOnce]} urlTransform={keepAppLinks}
         components={components}>
         {fixCjkEmphasis(children)}
       </ReactMarkdown>
