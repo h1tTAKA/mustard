@@ -15,6 +15,7 @@ import CardExplainPanel from "./CardExplainPanel";
 import MemorizeChat from "./MemorizeChat";
 import CardInfoPanel from "./CardInfoPanel";
 import CardStageBar from "./CardStageBar";
+import { CardTitle } from "./CardTitle";
 
 const SYMBOL = "/brand/nunopi-symbol-darkeye-transparent.png";
 // 도착 후 화면 중앙에서 멈춰 있는 자세(살짝 기운 채 확대). 낙하는 이 자세에서 이어진다.
@@ -171,7 +172,7 @@ export function FlyCardProvider({
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-3.5 py-4 text-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={SYMBOL} alt="" className="h-5 w-5 shrink-0 object-contain" />
-              <span className="text-[11px] font-bold leading-tight text-zinc-900">{fly.card.front}</span>
+              <CardTitle text={fly.card.front} className="text-[11px] font-bold leading-tight text-zinc-900" />
               <span className="line-clamp-6 whitespace-pre-wrap text-[7px] leading-snug text-zinc-600">
                 {fly.card.back || t("mem.noExplanation")}
               </span>

@@ -9,6 +9,7 @@ import MemorizeChat from "./MemorizeChat";
 import type { AgentProviderKind, ProviderSettings } from "../../lib/agent";
 import type { Card } from "@mustard/core";
 import { loadCardExplain, saveCardExplain, clearCardExplain, streamCardExplain } from "../../lib/cardExplain";
+import { CardTitle } from "./CardTitle";
 
 interface CardExplainPanelProps {
   card: Card;
@@ -142,7 +143,7 @@ export default function CardExplainPanel({ card, providerId, providerSettings, f
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-              <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{card.front}</span>
+              <CardTitle text={card.front} className="text-sm font-semibold text-zinc-800 dark:text-zinc-100" />
               <button
                 type="button"
                 onClick={() => { setZoomed(false); setChatOpen(false); }}

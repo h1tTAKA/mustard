@@ -16,6 +16,7 @@ import type { AgentProviderKind, ProviderSettings } from "../../lib/agent";
 import { useFlyCard } from "./FlyCard";
 import AgentDeckHubModal from "./AgentDeckHubModal";
 import CardDedupModal from "./CardDedupModal";
+import { CardTitle } from "./CardTitle";
 
 const SYMBOL = "/brand/nunopi-symbol-darkeye-transparent.png";
 
@@ -607,7 +608,7 @@ function CardTile({ card, reviews, picking, selected, tone, onToggle, onThrow, t
       </span>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={SYMBOL} alt="" className="relative h-[16cqw] max-h-10 w-[16cqw] max-w-10 object-contain" />
-      <span className="relative line-clamp-3 font-bold leading-tight text-zinc-900 [font-size:clamp(0.75rem,8cqw,1.5rem)]">{card.front}</span>
+      <CardTitle text={card.front} className="relative line-clamp-3 font-bold leading-tight text-zinc-900 [font-size:clamp(0.75rem,8cqw,1.5rem)]" />
       <span className="absolute bottom-[5cqw] tabular-nums text-zinc-400 [font-size:clamp(0.55rem,6cqw,0.9rem)] dark:text-zinc-500">
         {t("mem.reviewsShort").replace("{n}", String(reviews))}
       </span>

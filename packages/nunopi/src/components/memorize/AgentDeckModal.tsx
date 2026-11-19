@@ -12,6 +12,7 @@ import { cardFrame } from "../../lib/srs/cardFrame";
 import { useToast } from "@mustard/core";
 import { useFlyCard } from "./FlyCard";
 import type { AgentProviderKind, ChatMessage, ProviderSettings } from "../../lib/agent";
+import { CardTitle } from "./CardTitle";
 
 const SYMBOL = "/brand/nunopi-symbol-darkeye-transparent.png";
 type StreamEvent = { type: "progress"; line: string } | { type: "thinking"; line: string } | { type: "result"; response: { summary: string } } | { type: "error"; message: string };
@@ -310,7 +311,7 @@ export default function AgentDeckModal({
                             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-2.5 text-center">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={SYMBOL} alt="" className="h-5 w-5 object-contain" />
-                              <span className="line-clamp-3 text-[11px] font-bold leading-tight text-zinc-900">{c.front}</span>
+                              <CardTitle text={c.front} className="line-clamp-3 text-[11px] font-bold leading-tight text-zinc-900" />
                             </div>
                             {/* 전면 커버 제외 토글(실제 버튼) — 카드 아무데나 클릭 시 포함/제외 */}
                             <button
