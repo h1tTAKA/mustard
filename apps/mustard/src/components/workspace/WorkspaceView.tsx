@@ -186,7 +186,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
   // #1388 토큰 카드 소속(언어·라이브러리·프레임워크) 채우기 — 앱이 뜨고 40초 뒤(종류 재분류 다음), 그 뒤엔 카드가 바뀔 때마다(10초 모아서). 실패하면 다음 기회에
   useEffect(() => {
     if (!mounted) return;
-    let off = false, busy = false;
+    let off = false, busy = false, again = false;
     const ask = async (items: { name: string; def: string }[]) => {
       const r = await fetch("/api/repo/learn/card-eco", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ items }) });
       const j = await r.json().catch(() => null) as { ok?: boolean; ecos?: (string | null)[] } | null;
@@ -194,11 +194,13 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
       return j.ecos;
     };
     const run = async () => {
-      if (busy || off) return; busy = true;
+      if (off) return;
+      if (busy) { again = true; return; } // 묻는 동안 카드가 바뀌면 끝나고 한 번 더(리뷰)
+      busy = true;
       try {
         const n = navigator.locks ? (await navigator.locks.request("mustard-card-eco", { ifAvailable: true }, async (l) => (l ? fillCardEco(localStorage, ask) : 0))) as number : await fillCardEco(localStorage, ask); // 창 여러 개면 하나만
         if (n > 0 && !off) window.dispatchEvent(new Event(CARDS_CHANGED_EVENT));
-      } catch { /* 다음 기회에 */ } finally { busy = false; }
+      } catch { /* 다음 기회에 */ } finally { busy = false; if (again && !off) { again = false; void run(); } }
     };
     let tm = setTimeout(() => void run(), 40_000);
     const onChange = () => { clearTimeout(tm); tm = setTimeout(() => void run(), 10_000); };

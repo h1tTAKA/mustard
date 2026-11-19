@@ -21,7 +21,7 @@ const LOGOS: [RegExp, Icon, string][] = [
   [/^graphql$/i, IconBrandGraphql, "#E10098"], [/^prisma$/i, IconBrandPrisma, "#2D3748"], [/^c\+\+$/i, IconBrandCpp, "#00599C"], [/^c#$|^\.net$/i, IconBrandCSharp, "#512BD4"],
   [/^npm$/i, IconBrandNpm, "#CB3837"], [/^github( actions)?$/i, IconBrandGithub, "#18181b"], [/^openai$/i, IconBrandOpenai, "#18181b"], [/^aws$/i, IconBrandAws, "#FF9900"],
   [/^azure$/i, IconBrandAzure, "#0078D4"], [/^terraform$/i, IconBrandTerraform, "#7B42BC"], [/^nuxt$/i, IconBrandNuxt, "#00DC82"], [/^solid(js)?$/i, IconBrandSolidjs, "#2C4F7C"],
-  [/^astro$/i, IconBrandAstro, "#BC52EE"], [/^sass|scss$/i, IconBrandSass, "#CC6699"], [/^bootstrap$/i, IconBrandBootstrap, "#7952B3"], [/^windows$/i, IconBrandWindows, "#0078D4"],
+  [/^astro$/i, IconBrandAstro, "#BC52EE"], [/^(sass|scss)$/i, IconBrandSass, "#CC6699"], [/^bootstrap$/i, IconBrandBootstrap, "#7952B3"], [/^windows$/i, IconBrandWindows, "#0078D4"],
   [/^powershell$/i, IconBrandPowershell, "#5391FE"], [/^vercel$/i, IconBrandVercel, "#18181b"], [/^three\.?js$/i, IconBrandThreejs, "#18181b"],
 ];
 

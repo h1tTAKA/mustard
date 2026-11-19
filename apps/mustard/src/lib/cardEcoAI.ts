@@ -14,7 +14,9 @@ export function parseEco(text: string, n: number): (string | undefined)[] {
   for (const m of String(text || "").matchAll(/^[ \t*#>-]*\[?(\d+)\]?\**[.): \t-]+\**([^\n]*?)\**[ \t]*$/gm)) {
     const i = Number(m[1]) - 1;
     const name = m[2].replace(/["'`*]/g, "").replace(/\s*[—–(].*$/, "").trim();
-    if (i >= 0 && i < n && out[i] === undefined) out[i] = /^-+$|^(없음|none|n\/a|unknown)$/i.test(name) || !name ? "" : name.slice(0, 40);
+    if (i < 0 || i >= n || out[i] !== undefined) continue;
+    if (/^-+$|^(없음|none|n\/a|unknown)$/i.test(name) || !name) out[i] = "";
+    else if (name.length <= 30 && name.split(/\s+/).length <= 3 && !/[.,!?。、:;]|[가-힣]{2,}/.test(name.replace(/\.(js|net)\b/gi, ""))) out[i] = name; // 문장 답(설명)은 이름 아님 → 빠진 것으로(다음에 다시, 리뷰)
   }
   return out;
 }

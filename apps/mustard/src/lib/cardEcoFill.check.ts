@@ -9,5 +9,8 @@ const n = await fillCardEco(s, async (items) => { asked = items.map((x) => x.nam
 assert.deepEqual(asked, ["Positioned", "foo"], "이미 있는 건 안 물음");
 assert.equal(n, 1);
 assert.deepEqual(JSON.parse(s.m.get("nunopi:card-eco")!), { "token:useState": "React", "token:Positioned": "Flutter" }, "답 빠진 foo는 비워 둠(다음에 다시)");
+const n2 = await fillCardEco(s, async () => [undefined]);
+assert.equal(n2, 1, "두 번째로 빠지면 모름으로 저장");
+assert.equal(JSON.parse(s.m.get("nunopi:card-eco")!)["token:foo"], "", "foo = 모름 — 더 안 물음");
 assert.equal(await fillCardEco(mem({}), async () => { throw new Error("no"); }), 0, "토큰 없으면 안 물음");
 console.log("cardEcoFill ok");
