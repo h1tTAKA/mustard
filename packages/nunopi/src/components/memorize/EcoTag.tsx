@@ -30,8 +30,8 @@ export function EcoTag({ name, className = "" }: { name?: string; className?: st
   const hit = LOGOS.find(([re]) => re.test(name.trim()));
   const Logo = hit?.[1] ?? IconCode;
   return (
-    <span className={`relative inline-flex max-w-full items-center gap-1 font-semibold text-zinc-500 ${className}`}>
-      <Logo className="shrink-0" size="1.2em" stroke={1.8} style={{ color: hit?.[2] }} aria-hidden />
+    <span className={`relative inline-flex max-w-full items-center gap-1 font-bold text-zinc-700 ${className}`}>
+      <Logo className="shrink-0" size="1.2em" stroke={2.2} style={{ color: hit?.[2] }} aria-hidden />
       <span className="truncate">{name}</span>
     </span>
   );
