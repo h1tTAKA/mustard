@@ -1,6 +1,6 @@
 // crewRooms 점검 — MUSTARD_CREW_DIR=<임시> node --experimental-strip-types src/lib/crew/crewRooms.check.ts
 import assert from "node:assert";
-import { applyRoomOp, cleanRoom, dmRole, dmRoom, readRooms, roomMembers } from "./crewRooms.ts";
+import { applyRoomOp, cleanRoom, dmRole, dmRoom, pickModerator, readRooms, roomMembers } from "./crewRooms.ts";
 
 assert.ok(process.env.MUSTARD_CREW_DIR, "임시 디렉터리 필수");
 const root = "/tmp/repo-rooms";
@@ -41,4 +41,9 @@ assert.deepStrictEqual(roomMembers(root, a.id, all.filter((x) => x !== "app-buil
 assert.strictEqual(roomMembers(root, "g-00000000", all), null);
 applyRoomOp(root, { op: "delete", id: a.id }, known);
 assert.deepStrictEqual(readRooms(root), []);
+// 진행자 — 기본 진행자가 멤버면 그 역할, 아니면 받은 역할·첫 멤버
+assert.strictEqual(pickModerator(["app-builder", "scope-planner"], "scope-planner", "app-builder"), "scope-planner");
+assert.strictEqual(pickModerator(["app-builder", "test-engineer"], "scope-planner", "test-engineer"), "test-engineer");
+assert.strictEqual(pickModerator(["app-builder", "test-engineer"], "scope-planner", "bug-fixer"), "app-builder", "받은 역할이 멤버 아니면 첫 멤버");
+assert.strictEqual(pickModerator([], "scope-planner"), "scope-planner");
 console.log("crewRooms.check ok");

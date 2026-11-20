@@ -85,6 +85,10 @@ export function applyRoomOp(root: string, op: RoomOp, known: Set<string>, now = 
   return { room };
 }
 
+/** 방 진행자(회의·토론·받을 사람 없을 때) — 기본 진행자가 멤버면 그 역할, 아니면 prefer(멤버면)·첫 멤버. 빈 방이면 기본 진행자. */
+export const pickModerator = (scope: string[], fallback: string, prefer?: string) =>
+  scope.includes(fallback) ? fallback : prefer && scope.includes(prefer) ? prefer : scope[0] ?? fallback;
+
 /** 그 방에서 말할 수 있는 봇들 — 1:1 = 그 봇, 그룹 = 멤버(지금 있는 봇만), 팀방(없음) = 모든 봇. 없는 방이면 null. */
 export function roomMembers(root: string, room: string | undefined, all: string[]): string[] | null {
   if (!room) return all;
