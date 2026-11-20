@@ -23,7 +23,8 @@ import DiffPane from "@/components/workspace/DiffPane";
 import DocViewer from "@/components/workspace/DocViewer";
 import RepoFlowPane from "@/components/workspace/RepoFlowPane";
 import CrewBoard from "@/components/workspace/crew/CrewBoard";
-import CrewChat, { CREW_OPEN_TASK_EVENT } from "@/components/workspace/crew/CrewChat";
+import { CREW_OPEN_TASK_EVENT } from "@/components/workspace/crew/CrewChat";
+import CrewInbox from "@/components/workspace/crew/CrewInbox";
 import BrowserPane, { type BrowserState } from "@/components/workspace/BrowserPane";
 import RepoAnalyzeSection from "@/components/workspace/RepoAnalyzeSection";
 import RepoGraphViewer from "@/components/workspace/RepoGraphViewer";
@@ -963,7 +964,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
               {rightMode === "github" ? (
                 <GithubPanel root={path} ciDot={ciDot} onOpenPrDiff={(pr, file) => openCodeTab({ kind: "diff", pr, file })} agent={prAgent} />
               ) : rightMode === "crew" ? (
-                <CrewChat key={path} root={path} />
+                <CrewInbox key={path} root={path} /> /* #1392 대화 목록 → 방 */
               ) : rightMode === "learn" ? (
                 /* #1051 캐치업 용어 → 추가된 카드 클릭 시 확대(throwCard) — 질문 패널과 같은 FlyCardProvider */
                 <FlyCardProvider active={active} providerId={providerId} providerSettings={providerSettings} sourceIds={flyNoSources} onGoToSource={() => {}}>

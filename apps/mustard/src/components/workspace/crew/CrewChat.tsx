@@ -3,7 +3,7 @@
 // 채팅앱(단톡방)형: 방 헤더 + 멤버 프로필 줄(상태 점·누르면 @), 남은 왼쪽 아바타·이름·말풍선, 나는 오른쪽 겨자 말풍선, 보드 안내는 가운데 알림, 날짜 알약.
 // 입력: @에이전트 = 그 역할에게 새 카드(그록봇식), 메시지에 답글 = 그 카드로 전달. 2초 폴링(since 이후만).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconArrowBackUp, IconArrowUp, IconAt, IconBell, IconBellOff, IconLayoutKanban, IconSettings, IconTerminal2, IconUser, IconUsers, IconX } from "@tabler/icons-react";
+import { IconArrowBackUp, IconArrowUp, IconAt, IconBell, IconBellOff, IconChevronLeft, IconDots, IconInfoCircle, IconLayoutKanban, IconSettings, IconTerminal2, IconUser, IconUsers, IconX } from "@tabler/icons-react";
 import { Markdown, useT, useToast, relocalize, CREW_TEXT_KEYS, useSetting, setSetting, NKEYS, NOTIF_DEFAULTS } from "@mustard/core";
 import type { CrewMsg } from "@/lib/crew/crewChat";
 import type { CrewRun } from "@/lib/crew/crewRunner";
@@ -28,7 +28,7 @@ const dayKey = (ts: number) => new Date(ts).toDateString();
 const LOUD = new Set(["question", "gate", "permission", "blocked"]);
 const basename = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
 
-function Avatar({ from, known, size = 32 }: { from: string; known: Set<string>; size?: number }) {
+export function Avatar({ from, known, size = 32 }: { from: string; known: Set<string>; size?: number }) {
   const s = { width: size, height: size };
   if (from === "human") return <span style={s} className="flex shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"><IconUser size={size * 0.5} aria-hidden /></span>;
   if (from === "board") return <span style={s} className="flex shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 dark:bg-white/[0.07] dark:text-zinc-400"><IconLayoutKanban size={size * 0.5} aria-hidden /></span>;
@@ -37,7 +37,8 @@ function Avatar({ from, known, size = 32 }: { from: string; known: Set<string>; 
 
 const DECISION_KEYS = ["crewchat.decision.approve", "crewchat.decision.retry"];
 
-export default function CrewChat({ root }: { root: string }) {
+// #1392 room = 방 id(없음 = 팀방), members = 그 방 봇들(없음 = 전부), dm = 1:1 방의 봇. onBack = 대화 목록으로, onSettings = 그룹방 설정
+export default function CrewChat({ root, room, title, members, dm, onBack, onSettings }: { root: string; room?: string; title?: string; members?: string[]; dm?: string; onBack?: () => void; onSettings?: () => void }) {
   const t = useT();
   // #1125 보드·시스템 메시지는 키로 지금 언어 번역(옛 메시지는 text를 틀과 맞춰 다시 번역), 사람이 친 말은 그대로(키 없는 옛 승인 버튼 문구만 — 고정 문장 통째 일치)
   // #1162 권한 요청의 명령은 `…` 안에 들어감 — 여러 줄(heredoc)·` 가 있으면 코드 표시가 깨져 # 줄이 제목으로 렌더됨 → 한 줄(⏎)·' 로(저장된 옛 글도 여기서)
@@ -46,7 +47,8 @@ export default function CrewChat({ root }: { root: string }) {
   const toast = useToast();
   const crewNotify = useSetting<boolean>(NKEYS.crew, NOTIF_DEFAULTS.crew); // #1167
   useEffect(() => { crewRoomOpen.add(root); return () => { crewRoomOpen.delete(root); }; }, [root]); // #1167 열린 방은 알림 생략
-  const [roles, setRoles] = useCrewRoles();
+  const [allRoles, setRoles] = useCrewRoles();
+  const roles = useMemo(() => (members ? allRoles.filter((r) => members.includes(r.id)) : allRoles), [allRoles, members]); // 이 방 멤버만(멤버 줄·@ 후보)
   const [runs, reloadRuns] = useCrewRuns(root, () => {});
   const [msgs, setMsgs] = useState<CrewMsg[]>([]);
   const [text, setText] = useState("");
@@ -62,18 +64,18 @@ export default function CrewChat({ root }: { root: string }) {
 
   const [answering, setAnswering] = useState<string[]>([]); // #1139 @ 없는 글에 답 쓰는 중인 역할
   const load = useCallback(() => {
-    fetch(`/api/crew/chat?root=${encodeURIComponent(root)}&since=${lastTs.current}`).then((r) => r.json()).then((j) => {
+    fetch(`/api/crew/chat?root=${encodeURIComponent(root)}&since=${lastTs.current}${room ? `&room=${encodeURIComponent(room)}` : ""}`).then((r) => r.json()).then((j) => {
       if (j?.ok) setAnswering((prev) => { const next = Array.isArray(j.answering) ? (j.answering as string[]) : []; return prev.join() === next.join() ? prev : next; });
       if (!j?.ok || !j.msgs.length) return;
       lastTs.current = j.msgs[j.msgs.length - 1].ts;
       setMsgs((prev) => { const seen = new Set(prev.map((m) => m.id)); const add = (j.msgs as CrewMsg[]).filter((m) => !seen.has(m.id)); return add.length ? [...prev, ...add].slice(-600) : prev; });
     }).catch(() => {});
-  }, [root]);
+  }, [root, room]);
   useEffect(() => { lastTs.current = 0; setMsgs([]); load(); const id = setInterval(load, 2000); return () => clearInterval(id); }, [load]); // eslint-disable-line react-hooks/set-state-in-effect -- 레포 바뀌면 비우고 다시
   useEffect(() => { const el = listRef.current; if (el && stick.current) el.scrollTop = el.scrollHeight; }, [msgs]);
 
-  const known = useMemo(() => new Set(roles.map((r) => r.id)), [roles]);
-  const who = useCallback((from: string) => (from === "human" ? t("crewchat.you.name") : from === "board" ? t("crewchat.board") : roleName(t, roles, from)), [roles, t]);
+  const known = useMemo(() => new Set(allRoles.map((r) => r.id)), [allRoles]); // 아바타·이름은 전 역할로(방에서 나간 봇의 옛 글도)
+  const who = useCallback((from: string) => (from === "human" ? t("crewchat.you.name") : from === "board" ? t("crewchat.board") : roleName(t, allRoles, from)), [allRoles, t]);
   const titles = useMemo(() => { const m = new Map<string, string>(); for (const x of msgs) if (x.taskId && x.taskTitle) m.set(x.taskId, x.taskTitle); return m; }, [msgs]);
   // 멤버 상태 — 그 역할의 진행 중 실행(권한 대기면 내 확인 필요)
   const status = useCallback((roleId: string): { kind: "working" | "waiting" | "idle"; card?: string } => {
@@ -129,7 +131,7 @@ export default function CrewChat({ root }: { root: string }) {
     if (!body || busy) return;
     setBusy(true);
     try {
-      const j = await (await fetch("/api/crew/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, text: body, replyTo: reply?.id }) })).json();
+      const j = await (await fetch("/api/crew/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, text: body, replyTo: reply?.id, ...(room ? { room } : {}) }) })).json();
       if (!j?.ok) throw new Error(j?.error);
       setText(""); setReply(null); stick.current = true;
       load();
@@ -163,7 +165,7 @@ export default function CrewChat({ root }: { root: string }) {
         .replace(/(?<![\w.*_/])@([a-z0-9][a-z0-9-]{0,39})/gi, (m0, id: string) => {
           const k = id.toLowerCase();
           // 링크 꼴 [@이름](#@역할) — globals.css .crew-md가 예전 칩 색(하늘·나는 호박)으로, 누르면 그 역할 @부르기(유저)
-          return k === "you" ? `[@${mdEsc(t("crewchat.you.name"))}](#@you)` : known.has(k) ? `[@${mdEsc(roleName(t, roles, k))}](#@${k})` : m0;
+          return k === "you" ? `[@${mdEsc(t("crewchat.you.name"))}](#@you)` : known.has(k) ? `[@${mdEsc(roleName(t, allRoles, k))}](#@${k})` : m0;
         })
         .replace(/(?<!\n)\n(?!\n)/g, "  \n"))).join("")}
     </Markdown>
@@ -171,7 +173,7 @@ export default function CrewChat({ root }: { root: string }) {
   const renderText = (s: string) => s.split(/(@[a-z0-9][a-z0-9-]{0,39})/gi).map((part, i) => {
     const id = part.startsWith("@") ? part.slice(1).toLowerCase() : "";
     if (id === "you") return <span key={i} className="rounded bg-amber-500/15 px-1 font-medium text-amber-700 dark:text-amber-300">@{t("crewchat.you.name")}</span>;
-    if (id && known.has(id)) return <span key={i} className="rounded bg-sky-500/10 px-1 font-medium text-sky-700 dark:text-sky-300">@{roleName(t, roles, id)}</span>;
+    if (id && known.has(id)) return <span key={i} className="rounded bg-sky-500/10 px-1 font-medium text-sky-700 dark:text-sky-300">@{roleName(t, allRoles, id)}</span>;
     return <span key={i}>{part}</span>;
   });
 
@@ -189,8 +191,15 @@ export default function CrewChat({ root }: { root: string }) {
     <div className="relative flex h-full min-h-0 flex-col bg-zinc-50 dark:bg-[#1a1b22]">
       {/* 방 헤더 — 이름·인원·관리 */}
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white px-3 dark:border-zinc-800 dark:bg-[var(--s-pane)]">
-        <span className="truncate text-[13.5px] font-semibold text-zinc-900 dark:text-zinc-50">{t("crewchat.title")}</span>
-        <span className="flex shrink-0 items-center gap-0.5 text-[11.5px] tabular-nums text-zinc-400"><IconUsers size={12} aria-hidden />{roles.length + 1}</span>
+        {onBack && (
+          <button type="button" onClick={onBack} title={t("crewroom.back")} aria-label={t("crewroom.back")}
+            className="-ml-1.5 shrink-0 rounded-md p-1 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100">
+            <IconChevronLeft size={16} aria-hidden />
+          </button>
+        )}
+        {dm && <Avatar from={dm} known={known} size={24} />}
+        <span className="truncate text-[13.5px] font-semibold text-zinc-900 dark:text-zinc-50">{title ?? t("crewchat.title")}</span>
+        {!dm && <span className="flex shrink-0 items-center gap-0.5 text-[11.5px] tabular-nums text-zinc-400"><IconUsers size={12} aria-hidden />{roles.length + 1}</span>}
         {workingCount > 0 && <span className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10.5px] font-medium text-emerald-600 dark:text-emerald-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" aria-hidden />{workingCount}</span>}
         <span className="ml-auto truncate text-[11px] text-zinc-400 dark:text-zinc-500">{channel}</span>
         {/* #1167 Crew 알림 on/off — 역할이 나를 부르면(질문·권한·관문·막힘) 데스크톱 알림 */}
@@ -199,14 +208,26 @@ export default function CrewChat({ root }: { root: string }) {
           className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200">
           {crewNotify ? <IconBell size={14} aria-hidden /> : <IconBellOff size={14} aria-hidden />}
         </button>
-        <button type="button" onClick={() => setRolesOpen(true)} title={t("crewchat.manageRoles")} aria-label={t("crewchat.manageRoles")}
-          className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200">
-          <IconSettings size={14} aria-hidden />
-        </button>
+        {onSettings ? (
+          <button type="button" onClick={onSettings} title={t("crewroom.settings")} aria-label={t("crewroom.settings")}
+            className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200">
+            <IconDots size={14} aria-hidden />
+          </button>
+        ) : (
+          <button type="button" onClick={() => setRolesOpen(true)} title={t("crewchat.manageRoles")} aria-label={t("crewchat.manageRoles")}
+            className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200">
+            <IconSettings size={14} aria-hidden />
+          </button>
+        )}
       </div>
+      {room && ( /* #1392 이 방에서 봇이 무엇을 보는지·누가 답하는지 한 줄 */
+        <div className="flex shrink-0 items-start gap-1.5 border-b border-zinc-200 bg-white px-3 py-1.5 text-[11px] leading-snug text-zinc-500 dark:border-zinc-800 dark:bg-[var(--s-pane)] dark:text-zinc-400">
+          <IconInfoCircle size={12} className="mt-px shrink-0" aria-hidden />{t(dm ? "crewroom.scopeDm" : "crewroom.scopeGroup")}
+        </div>
+      )}
 
-      {/* 멤버 프로필 줄 — 누르면 @부르기, 상태 점(작업 중·내 확인 필요·대기) */}
-      <div className="nunopi-scroll flex shrink-0 gap-1 overflow-x-auto border-b border-zinc-200 bg-white px-2 py-2 dark:border-zinc-800 dark:bg-[var(--s-pane)]">
+      {/* 멤버 프로필 줄 — 누르면 @부르기, 상태 점(작업 중·내 확인 필요·대기). 1:1 방엔 없음 */}
+      {!dm && <div className="nunopi-scroll flex shrink-0 gap-1 overflow-x-auto border-b border-zinc-200 bg-white px-2 py-2 dark:border-zinc-800 dark:bg-[var(--s-pane)]">
         {roles.map((r) => {
           const st = status(r.id);
           return (
@@ -220,15 +241,15 @@ export default function CrewChat({ root }: { root: string }) {
             </button>
           );
         })}
-      </div>
+      </div>}
 
       <div ref={listRef} onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}
         className="nunopi-scroll min-h-0 flex-1 overflow-y-auto px-3 py-2">
         {!msgs.length && (
           <div className="flex h-full flex-col items-center justify-center px-6 text-center">
             <div className="mb-3 flex -space-x-2">{roles.slice(0, 5).map((r) => <span key={r.id} className="rounded-full ring-2 ring-zinc-50 dark:ring-[#1a1b22]"><Avatar from={r.id} known={known} size={36} /></span>)}</div>
-            <div className="text-[14px] font-semibold text-zinc-800 dark:text-zinc-100">{t("crewchat.emptyTitle")}</div>
-            <div className="mt-1 text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">{t("crewchat.emptyHint")}</div>
+            <div className="text-[14px] font-semibold text-zinc-800 dark:text-zinc-100">{dm ? title : t("crewchat.emptyTitle")}</div>
+            <div className="mt-1 text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">{dm ? roleDesc(t, allRoles, dm) : t("crewchat.emptyHint")}</div>
           </div>
         )}
         {msgs.map((m, i) => {
@@ -303,7 +324,7 @@ export default function CrewChat({ root }: { root: string }) {
                       const task = m.taskId && lastGate.get(m.taskId) === m.id ? tasks.find((x) => x.id === m.taskId) : undefined;
                       if (!task?.gate || (runs.get(task.id) && isActiveRun(runs.get(task.id)!))) return null;
                       return (
-                        <GatePanel task={task} roles={roles} branch={runs.get(task.id)?.branch} className="mt-1 w-full min-w-[280px]"
+                        <GatePanel task={task} roles={allRoles} branch={runs.get(task.id)?.branch} className="mt-1 w-full min-w-[280px]"
                           onGate={(d, txt) => void decideGate(task.id, d, txt)}
                           onPr={task.gate.kind === "merge" ? async () => { try { await runPost({ taskId: task.id, action: "pr" }); } catch (e) { toast(String((e as Error)?.message ?? e), "error"); } } : undefined}
                           extra={task.gate.kind !== "setup" && (
@@ -320,10 +341,10 @@ export default function CrewChat({ root }: { root: string }) {
             </div>
           );
         })}
-        {answering.map((id) => ( /* #1139 답 쓰는 중 — 에이전트 말풍선 자리에 */
+        {answering.filter((id) => roles.some((r) => r.id === id)).map((id) => ( /* #1139 답 쓰는 중 — 에이전트 말풍선 자리에(이 방 멤버만 — 한계: 다른 방에서 같은 봇이 답 쓰는 중이어도 보임) */
           <div key={`typing-${id}`} className="mt-2.5 flex items-center gap-2">
             <div className="w-8 shrink-0"><Avatar from={id} known={known} /></div>
-            <span className="text-[11.5px] text-zinc-400 dark:text-zinc-500">{t("crewchat.typingBy", { role: roleName(t, roles, id) })}</span>
+            <span className="text-[11.5px] text-zinc-400 dark:text-zinc-500">{t("crewchat.typingBy", { role: roleName(t, allRoles, id) })}</span>
           </div>
         ))}
       </div>
@@ -350,12 +371,12 @@ export default function CrewChat({ root }: { root: string }) {
           </div>
         )}
         <div className="flex items-end gap-1.5">
-          <button type="button" onClick={() => { setText((v) => `${v}${v && !/\s$/.test(v) ? " " : ""}@`); setMention({ q: "", at: text.length + (text && !/\s$/.test(text) ? 2 : 1) }); inputRef.current?.focus(); }}
+          {!dm && <button type="button" onClick={() => { setText((v) => `${v}${v && !/\s$/.test(v) ? " " : ""}@`); setMention({ q: "", at: text.length + (text && !/\s$/.test(text) ? 2 : 1) }); inputRef.current?.focus(); }}
             title={t("crewchat.mentionButton")} aria-label={t("crewchat.mentionButton")}
             className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100">
             <IconAt size={17} aria-hidden />
-          </button>
-          <textarea ref={inputRef} value={text} rows={1} placeholder={t("crewchat.placeholderShort")}
+          </button>}
+          <textarea ref={inputRef} value={text} rows={1} placeholder={dm ? t("crewroom.dmPlaceholder", { name: title ?? dm }) : t("crewchat.placeholderShort")}
             onChange={(e) => onChange(e.target.value, e.target.selectionStart)}
             onKeyDown={(e) => {
               if (candidates.length && (e.key === "Enter" || e.key === "Tab")) { e.preventDefault(); pick(candidates[0].id); return; }
@@ -370,7 +391,7 @@ export default function CrewChat({ root }: { root: string }) {
         </div>
       </div>
 
-      {rolesOpen && <RolesDialog roles={roles} onRoles={setRoles} onClose={() => setRolesOpen(false)} />}
+      {rolesOpen && <RolesDialog roles={allRoles} onRoles={setRoles} onClose={() => setRolesOpen(false)} />}
     </div>
   );
 }
