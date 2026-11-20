@@ -69,7 +69,7 @@ function writeRuns(root: string, runs: CrewRun[]) {
 
 // ── 프로세스 싱글톤 상태 ──────────────────────────────────────────────
 type Pending = { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> };
-type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending>; answering: Set<string>; delegated?: Map<string, { until: number; kind: string; stage: number; text: string }>; answerNext?: Map<string, { human: CrewMsg; roleId: string; taskId?: string; everyone?: boolean; mentioned?: string[]; routed?: boolean }[]> };
+type G = { trigTick?: number; trigBusy?: boolean; roots: Set<string>; origin: string; ticker?: ReturnType<typeof setInterval>; starting: Set<string>; runs: Map<string, CrewRun>; bySession: Map<string, string>; wired: boolean; reconciled: Set<string>; flush: Map<string, ReturnType<typeof setTimeout>>; tokens: Map<string, string>; pending: Map<string, Pending>; answering: Set<string>; delegated?: Map<string, { until: number; kind: string; stage: number; text: string }>; answerNext?: Map<string, { human: CrewMsg; roleId: string; taskId?: string; everyone?: boolean; mentioned?: string[]; routed?: boolean }[]>; roomOf?: Map<string, string> };
 const g = ((globalThis as unknown as { __mustardCrew?: G }).__mustardCrew ??= { roots: new Set(), origin: "", starting: new Set(), runs: new Map(), bySession: new Map(), wired: false, reconciled: new Set(), flush: new Map(), tokens: new Map(), pending: new Map(), answering: new Set() } as G);
 
 // ── Claude 권한 훅 ───────────────────────────────────────────────────
@@ -183,7 +183,13 @@ function roleLabel(id: string): string {
 }
 // #1125 번역 문구 = text(서버 언어) + i18n 키(화면이 앱 언어로 다시 번역)
 const tx = (key: string, vars?: Record<string, string | number>) => ({ text: tr(key, vars), i18n: { key, ...(vars ? { vars } : {}) } });
-function say(root: string, m: Omit<CrewMsg, "id" | "ts">) { try { appendMsg(root, m); } catch { /* 채팅 기록 실패는 무시 */ } }
+// #1392 글이 갈 방 — 직접 준 room → 답하는 사람 글의 방(1:1 방에서 온 글) → 카드의 방. 다 없으면 팀방.
+function roomFor(root: string, m: Omit<CrewMsg, "id" | "ts">): { room?: string } {
+  if (m.room !== undefined) return m.room ? { room: m.room } : {};
+  const r = (m.replyTo && g.roomOf?.get(m.replyTo)) || (m.taskId && readBoard(root).tasks.find((t) => t.id === m.taskId)?.room);
+  return r ? { room: r } : {};
+}
+function say(root: string, m: Omit<CrewMsg, "id" | "ts">) { try { appendMsg(root, { ...m, ...roomFor(root, m) }); } catch { /* 채팅 기록 실패는 무시 */ } }
 // 캐치업 보고 — 실시간 해설 통로(SSE + 날짜별 저장)로 "역할(AI) · 카드: 한 말"
 function report(run: CrewRun, title: string, text: string) {
   try {
@@ -355,7 +361,7 @@ async function wire() {
 }
 
 // 실행 지침에 붙일 최근 팀 대화(사람·역할 말만) — 크루끼리 서로 한 말을 보고 일하게(유저)
-const recentChat = (root: string, skip?: string, card?: string) => readMsgs(root, 0, 400).filter((m) => m.id !== skip && (!card || m.taskId !== card) && ["human", "answer", "meeting", "handoff", "question", "decision"].includes(m.kind)).slice(-12)
+const recentChat = (root: string, skip?: string, card?: string, room = "") => readMsgs(root, 0, 400, false, room).filter((m) => m.id !== skip && (!card || m.taskId !== card) && ["human", "answer", "meeting", "handoff", "question", "decision"].includes(m.kind)).slice(-12)
   .map((m) => `- ${m.from}${m.taskTitle ? ` [${clip(m.taskTitle, 40)}]` : ""}: ${clip(m.text, 300)}`);
 function buildPrompt(title: string, body: string, role: CrewRole, pipeline: string[], stage: number, note?: string, consult?: { from: string; question: string }, chat: string[] = []): string {
   // #1108 답하기 모드 — 동료 질문에 답만(코드 수정 금지), 답은 봉투 message에
@@ -464,7 +470,7 @@ export async function startRun(root: string, taskId: string, origin: string): Pr
     await sna.agent.start(sessionId, {
       provider: role.provider, model: modelFor(role), cwd: wt.dir,
       appendSystemPrompt: `${role.instructions}\n\n${crewProtocol(LANG[narrationLocale()] ?? "Korean", readGuidelines(root))}`, // 팀 지침(대화방에서 사람이 준 것)
-      prompt: buildPrompt(task.title, task.body, role, pipeline, stage, note, task.consult?.stage === stage ? task.consult : undefined, recentChat(root)),
+      prompt: buildPrompt(task.title, task.body, role, pipeline, stage, note, task.consult?.stage === stage ? task.consult : undefined, recentChat(root, undefined, undefined, task.room ?? "")),
       // Claude: SNA 훅 대신 Mustard 훅(정책 자동 허락·차단, 나머지만 사람에게). Codex·OpenCode: SNA 기본 승인 흐름(onPermissionRequest).
       permissionMode: isClaude ? "bypassPermissions" : "acceptEdits",
       // Codex: SNA 기본은 작업 폴더마다 .sna/codex-home에 로그인 정보를 복사 → 리프레시 토큰은 한 번 쓰면 무효라 복사본끼리 서로 깨뜨림
@@ -572,12 +578,14 @@ const CHAT_APPROVE = new Set(["spec", "schema", "merge"]);
 // - 카드 메시지에 답글: 질문 중이면 답 / spec·schema·merge 관문이면 반려(코멘트로 다시) / 막힘이면 다시 / 그 밖은 다음 실행 메모
 // - 답글 아님 + @역할: 그 역할이 대화로 먼저 답하며 의도 판단 — 작업 요청일 때만 카드(Ready = 바로 시작), 지침·지적은 팀 지침으로, 질문은 답만
 //   (앱 확인: 지적·공지까지 전부 카드가 돼 일을 시작함)
-export function postHuman(root: string, text: string, replyTo?: string, handoff = false): { msg: CrewMsg; taskId?: string; created?: boolean } {
+// #1392 room = 봇 1:1 방(역할 id) — @ 없이도 그 역할만 받음(전원·회의 없음), 일 요청이면 그 역할 하나짜리 카드가 그 방에 생김
+export function postHuman(root: string, text: string, replyTo?: string, handoff = false, room?: string): { msg: CrewMsg; taskId?: string; created?: boolean } {
   const body = text.trim().slice(0, 8000);
   if (!body) throw new Error("empty");
   registerRoot(root);
   const known = new Set(listRoles().map((r) => r.id));
-  const mentions = parseMentions(body, known);
+  if (room && !known.has(room)) throw new Error("unknown room");
+  const mentions = room ? [room] : parseMentions(body, known);
   const parent = replyTo ? findMsg(root, replyTo) : undefined;
   const task = parent?.taskId ? readBoard(root).tasks.find((t) => t.id === parent.taskId) : undefined;
   if (!task && !mentions.length) { // #1139 @ 없는 글 — 가장 최근 카드의 담당 역할(없으면 범위 기획자)이 받고, 누구에게 한 말인지 판단해 답함
@@ -594,7 +602,8 @@ export function postHuman(root: string, text: string, replyTo?: string, handoff 
     void answerHuman(root, m, who.role, who.taskId, callsEveryone(body)); // @all = 모든 역할(일 요청이면 전원 회의)
     return { msg: m };
   }
-  const msg = appendMsg(root, { from: "human", kind: "human", text: body, ...(mentions.length ? { mentions } : {}), ...(replyTo ? { replyTo } : {}), ...(task ? { taskId: task.id, taskTitle: task.title } : {}) });
+  const msg = appendMsg(root, { from: "human", kind: "human", text: body, ...(mentions.length && !room ? { mentions } : {}), ...(replyTo ? { replyTo } : {}), ...(task ? { taskId: task.id, taskTitle: task.title } : {}), ...(room ? { room } : {}) });
+  if (room) { const map = (g.roomOf ??= new Map()); map.set(msg.id, room); if (map.size > 500) map.delete(map.keys().next().value!); } // 답 글이 이 방으로(say)
   if (task) {
     if (activeFor(root, task.id)) { patchTask(root, task.id, { note: [task.note, body].filter(Boolean).join("\n\n") }); return { msg, taskId: task.id }; } // 실행 중 — 다음 실행에
     const g0 = task.gate;
@@ -609,15 +618,15 @@ export function postHuman(root: string, text: string, replyTo?: string, handoff 
     return { msg, taskId: task.id };
   }
   if (mentions.length && handoff) { // 맡기기 버튼(GitHub 이슈·PR 등) — 의도 판단 없이 바로 카드(리뷰)
-    const created = createFor(root, body, mentions);
+    const created = createFor(root, body, mentions, room);
     return { msg, taskId: created.id, created: true };
   }
   if (mentions.length) {
     // 불린 역할이 지금 실행 중인 카드만 — 답의 재료이자 메모(엉뚱한 옛 카드에 붙이지 않게, 리뷰)
     const role = mentions[0];
-    const card = readBoard(root).tasks.find((t) => activeFor(root, t.id)?.role === role);
+    const card = readBoard(root).tasks.find((t) => activeFor(root, t.id)?.role === role && (!room || t.room === room)); // 1:1 방 = 그 방 카드만
     if (card) patchTask(root, card.id, { note: [card.note, body].filter(Boolean).join("\n\n") });
-    void answerHuman(root, msg, role, card?.id, callsEveryone(body), mentions);
+    void answerHuman(root, msg, role, card?.id, room ? false : callsEveryone(body), mentions);
     return { msg, ...(card ? { taskId: card.id } : {}) };
   }
   return { msg };
@@ -704,9 +713,9 @@ const speaking = (root: string, roleId?: string) => { // 지금 말하는 역할
 
 // 레포마다 한 번에 하나(리뷰: 글을 연달아 보내면 AI 호출이 줄줄이 — 다른 해설과 슬롯을 나눠 씀). 쓰는 중에 온 글은 가장 최근 것만 이어서.
 // @역할 카드 — 첫 줄(멘션 뺀)이 제목, Ready = tick이 바로 시작
-function createFor(root: string, text: string, roles: string[]) {
+function createFor(root: string, text: string, roles: string[], room?: string) {
   const title = text.replace(/@[a-z0-9-]+/gi, "").split("\n").map((l) => l.trim()).find(Boolean)?.slice(0, 80) || text.slice(0, 80);
-  const b = applyOp(root, { op: "create", title, body: text, status: "ready", role: roles[0], pipeline: roles });
+  const b = applyOp(root, { op: "create", title, body: text, status: "ready", role: roles[0], pipeline: roles, ...(room ? { room } : {}) });
   return b.tasks[b.tasks.length - 1];
 }
 // mentioned = @로 부른 역할들(답글 아님) — 그 역할들이 답하고, 작업 요청이면 회의 없이 그 역할들 카드.
@@ -733,7 +742,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     // 질문한 말로 답함(일본어로 물으면 일본어) — 판단이 안 서면 앱 언어(유저)
     const lang = `the same language as the human's message (if unclear, ${LANG[narrationLocale()] ?? "English"})`;
     // 카드 밖 대화도 보게 — 예전엔 카드 대화만 넣어 바로 위 논의를 모르고 엉뚱한 카드 얘기를 함(유저)
-    const chat = recentChat(root, human.id, taskId); // 카드 대화는 factsFor가 이미 넣음(중복 X, 리뷰)
+    const chat = recentChat(root, human.id, taskId, human.room ?? ""); // 카드 대화는 factsFor가 이미 넣음(중복 X, 리뷰)
     const facts = [...factsFor(root, human, taskId), ...(chat.length ? ["", `Recent team chat (oldest first — the human's message usually continues it):`, ...chat] : [])];
     const t = taskId ? readBoard(root).tasks.find((x) => x.id === taskId) : undefined;
     // 칩은 @역할로 부른 글만(그 역할의 실행 중 카드) — @ 없는 글·@all은 카드를 참고로만(상관없는 잡담에 칩, 유저)
@@ -741,7 +750,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     const request = clip(human.text, 2000);
     // ① 첫 답 + 질문/일 요청 판단
     const op = await askR(first, [`You are "${roleLabel(first.id)}" (${first.id}), an agent on a software team board in Mustard.`,
-      everyone ? `The human wrote to the whole team (@all):` : mentioned.length && !routed ? `The human wrote to you directly (@${first.id}) in the team chat:` : `The human wrote in the team chat without @mentioning anyone:`, `> ${request}`, "",
+      everyone ? `The human wrote to the whole team (@all):` : human.room ? `The human wrote to you in your private 1:1 chat:` : mentioned.length && !routed ? `The human wrote to you directly (@${first.id}) in the team chat:` : `The human wrote in the team chat without @mentioning anyone:`, `> ${request}`, "",
       `Facts (use ONLY these; do not invent progress):`, ...facts, "",
       `Decide the intent:`,
       `- "work": the human asks the team to build, change, fix or plan something NEW that needs its own board card.`,
@@ -756,6 +765,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       ...(routing ? ["", `Team:`, teamList(), "", `Who is the message for? "me" if it is about your card or role, a teammate's role id if it is clearly meant for that role, "all" ONLY if the human wants each teammate's own view (e.g. "what do the others think?", "everyone answer"). A request to sum up or pick the best is "me" — you answer it alone from the chat.`] : []),
       `Answer ONLY with JSON: {"intent":"question"|"work"|"instruction"|"debate","format"?:"council"|"court",${routing ? `"audience":"me"|"all"|"<role-id>",` : ""}"reply":"..."}`].join("\n"));
     const opener = readAnswer(op.text);
+    if (human.room && opener.intent === "debate") opener.intent = "question"; // #1392 1:1 방은 혼자 — 토론(여러 역할)은 팀방에서
     // @ 없는 글 — 다른 역할에게 한 말이면 내 답은 버리고 그 역할이 답하게(대기열 맨 앞), 모두에게면 나머지도 이어서(유저: 회사처럼)
     const to = opener.audience;
     if (routing && to && to !== "me" && to !== "all" && to !== first.id && getRole(to)) {
@@ -769,7 +779,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     if (opener.intent === "instruction") addGuideline(root, human.text.replace(/@[a-z0-9-]+/gi, "").trim()); // 이후 모든 실행에 붙음
     //  한계: 터미널 CLI 에이전트가 crew_chat(MCP)으로 준 지침도 저장됨 — 유저 요청(리드 에이전트가 지침 전달). 크루 자신은 crew_* 못 씀(작업 폴더에서 거부), 금지 규칙은 정책 훅이 강제
     if (opener.intent === "work" && mentioned.length && !everyone && !routed) { // @역할 작업 요청 — 회의 없이 그 역할(여럿이면 그 순서) 카드, Ready = 바로 시작
-      createFor(root, human.text, mentioned);
+      createFor(root, human.text, mentioned, human.room);
       return;
     }
     if (opener.intent === "debate") { // #1318 토론 — 카드 없이 대화방에서 끝까지

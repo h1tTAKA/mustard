@@ -17,6 +17,7 @@ export interface CrewMsg {
   replyTo?: string;        // 사람 답글 — 대상 메시지 id
   // #1125 보드·시스템 문구는 번역 키도 저장 → 화면이 지금 언어로 번역(text = 저장 시점 언어, 옛 메시지·대체값)
   i18n?: { key: string; vars?: Record<string, string | number>; suffix?: string };
+  room?: string;           // #1392 봇 1:1 방(역할 id) — 없으면 팀방(옛 메시지 전부)
 }
 
 const normPath = (p: string) => p.replace(/\/+$/, "");
@@ -47,8 +48,11 @@ export function appendMsg(root: string, m: Omit<CrewMsg, "id" | "ts"> & { ts?: n
   return msg;
 }
 
-// 최근 limit개(since 이후만). 깨진 줄은 건너뜀.
-export function readMsgs(root: string, since = 0, limit = 400, oldest = false): CrewMsg[] {
+// #1392 방 맞추기 — room "" = 팀방(room 없는 글), 역할 id = 그 1:1 방
+export const inRoom = (m: CrewMsg, room: string) => (m.room ?? "") === room;
+
+// 최근 limit개(since 이후만). 깨진 줄은 건너뜀. room 주면 그 방만(안 주면 전 방 — 알림·엔진용)
+export function readMsgs(root: string, since = 0, limit = 400, oldest = false, room?: string): CrewMsg[] {
   const f = chatFile(root);
   if (!existsSync(f)) return [];
   const out: CrewMsg[] = [];
@@ -56,10 +60,22 @@ export function readMsgs(root: string, since = 0, limit = 400, oldest = false): 
     if (!line.trim()) continue;
     try {
       const m = JSON.parse(line) as CrewMsg;
-      if (typeof m.id === "string" && typeof m.ts === "number" && typeof m.from === "string" && KINDS.has(m.kind) && typeof m.text === "string" && m.ts >= since) out.push(m); // >= — 같은 ms 메시지 유실 방지(화면이 id로 중복 제거, 리뷰)
+      if (typeof m.id === "string" && typeof m.ts === "number" && typeof m.from === "string" && KINDS.has(m.kind) && typeof m.text === "string" && m.ts >= since && (room === undefined || inRoom(m, room))) out.push(m); // >= — 같은 ms 메시지 유실 방지(화면이 id로 중복 제거, 리뷰)
     } catch { /* 쓰다 죽은 줄 */ }
   }
   return oldest ? out.slice(0, limit) : out.slice(-limit); // #1167 oldest = 알림 확인(since가 한 쪽씩 앞으로 — 400개 넘게 밀려도 안 빠짐)
+}
+
+// #1392 방 목록 — 방마다 마지막 글·글 수(목록 미리보기). 파일 한 번 훑기.
+export interface RoomSummary { room: string; last: Pick<CrewMsg, "from" | "kind" | "text" | "ts" | "i18n">; count: number }
+export function roomSummaries(root: string): RoomSummary[] {
+  const by = new Map<string, RoomSummary>();
+  for (const m of readMsgs(root, 0, 100_000)) {
+    const room = m.room ?? "";
+    const prev = by.get(room);
+    by.set(room, { room, last: { from: m.from, kind: m.kind, text: m.text.slice(0, 200), ts: m.ts, ...(m.i18n ? { i18n: m.i18n } : {}) }, count: (prev?.count ?? 0) + 1 });
+  }
+  return [...by.values()].sort((a, b) => b.last.ts - a.last.ts);
 }
 
 export const findMsg = (root: string, id: string) => readMsgs(root, 0, 100_000).find((m) => m.id === id);
