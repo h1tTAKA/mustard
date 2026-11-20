@@ -20,6 +20,7 @@ import { readPerms } from "./crewPermStore";
 import { narrationLocale } from "@/lib/narrationConfig";
 import { defaultSnaModel } from "@mustard/nunopi/server";
 import { translate } from "@mustard/core/messages";
+import { dmRole, roomMembers } from "./crewRooms";
 import { addGuideline, appendMsg, findMsg, parseMentions, readGuidelines, readMsgs, type CrewMsg } from "./crewChat";
 import { snaClaudeProvider, snaCodexProvider, snaOpenCodeProvider } from "@mustard/nunopi/server";
 import { callsEveryone, courtSeats, juryVote, pickParticipants, planFromWrapUp, readAnswer, readJson, withIdleTimeout } from "./crewMeeting";
@@ -578,32 +579,40 @@ const CHAT_APPROVE = new Set(["spec", "schema", "merge"]);
 // - 카드 메시지에 답글: 질문 중이면 답 / spec·schema·merge 관문이면 반려(코멘트로 다시) / 막힘이면 다시 / 그 밖은 다음 실행 메모
 // - 답글 아님 + @역할: 그 역할이 대화로 먼저 답하며 의도 판단 — 작업 요청일 때만 카드(Ready = 바로 시작), 지침·지적은 팀 지침으로, 질문은 답만
 //   (앱 확인: 지적·공지까지 전부 카드가 돼 일을 시작함)
-// #1392 room = 봇 1:1 방(역할 id) — @ 없이도 그 역할만 받음(전원·회의 없음), 일 요청이면 그 역할 하나짜리 카드가 그 방에 생김
+// #1392 방에서 온 사람 글 — 그 글에 다는 답(say replyTo)이 같은 방으로 가게 기억(메모리, 최근 500개)
+function keepRoom(m: CrewMsg): CrewMsg {
+  if (m.room) { const map = (g.roomOf ??= new Map()); map.set(m.id, m.room); if (map.size > 500) map.delete(map.keys().next().value!); }
+  return m;
+}
+// #1392 room = 방 id. 1:1(dm-역할) = @ 없이도 그 역할만 받음(전원·회의 없음), 일 요청이면 그 역할 하나짜리 카드가 그 방에.
+//  그룹방(g-…)은 다음 커밋에서 멤버 한정 — 지금은 팀방처럼(멤버만 @ 인식).
 export function postHuman(root: string, text: string, replyTo?: string, handoff = false, room?: string): { msg: CrewMsg; taskId?: string; created?: boolean } {
   const body = text.trim().slice(0, 8000);
   if (!body) throw new Error("empty");
   registerRoot(root);
-  const known = new Set(listRoles().map((r) => r.id));
-  if (room && !known.has(room)) throw new Error("unknown room");
-  const mentions = room ? [room] : parseMentions(body, known);
+  const members = roomMembers(root, room, listRoles().map((r) => r.id));
+  if (!members) throw new Error("unknown room");
+  const known = new Set(members);
+  const dm = dmRole(room);
+  const mentions = dm ? [dm] : parseMentions(body, known);
   const parent = replyTo ? findMsg(root, replyTo) : undefined;
   const task = parent?.taskId ? readBoard(root).tasks.find((t) => t.id === parent.taskId) : undefined;
   if (!task && !mentions.length) { // #1139 @ 없는 글 — 가장 최근 카드의 담당 역할(없으면 범위 기획자)이 받고, 누구에게 한 말인지 판단해 답함
     const tasks = readBoard(root).tasks;
     const waiting = tasks.filter((t) => CHAT_APPROVE.has(t.gate?.kind ?? "") && !activeFor(root, t.id));
     if (waiting.length === 1 && isApproval(body)) { // 사람을 기다리는 카드가 하나뿐 + 짧은 승인 말 = 그 카드 승인(답글 안 달아도, 유저) — 보드 버튼과 같은 처리
-      const m = appendMsg(root, { from: "human", kind: "human", text: body, taskId: waiting[0].id, taskTitle: waiting[0].title });
+      const m = keepRoom(appendMsg(root, { from: "human", kind: "human", text: body, taskId: waiting[0].id, taskTitle: waiting[0].title, ...(room ? { room } : {}) }));
       decideCard(root, waiting[0].id, "approve");
       return { msg: m, taskId: waiting[0].id };
     }
     // 받는 역할 = 최근 카드 담당, 그 카드는 답의 참고로만 — 글·답에 카드를 붙이지 않고 카드 메모에도 안 넣음(예전: 상관없는 잡담에 카드 칩이 달리고 작업 메모에 섞임, 유저). 카드에 남길 말은 그 카드 메시지에 답글로
     const who = pickListener(tasks, (id) => activeFor(root, id)?.role);
-    const m = appendMsg(root, { from: "human", kind: "human", text: body, ...(replyTo ? { replyTo } : {}) });
+    const m = keepRoom(appendMsg(root, { from: "human", kind: "human", text: body, ...(replyTo ? { replyTo } : {}), ...(room ? { room } : {}) }));
     void answerHuman(root, m, who.role, who.taskId, callsEveryone(body)); // @all = 모든 역할(일 요청이면 전원 회의)
     return { msg: m };
   }
-  const msg = appendMsg(root, { from: "human", kind: "human", text: body, ...(mentions.length && !room ? { mentions } : {}), ...(replyTo ? { replyTo } : {}), ...(task ? { taskId: task.id, taskTitle: task.title } : {}), ...(room ? { room } : {}) });
-  if (room) { const map = (g.roomOf ??= new Map()); map.set(msg.id, room); if (map.size > 500) map.delete(map.keys().next().value!); } // 답 글이 이 방으로(say)
+  const msg = appendMsg(root, { from: "human", kind: "human", text: body, ...(mentions.length && !dm ? { mentions } : {}), ...(replyTo ? { replyTo } : {}), ...(task ? { taskId: task.id, taskTitle: task.title } : {}), ...(room ? { room } : {}) });
+  keepRoom(msg);
   if (task) {
     if (activeFor(root, task.id)) { patchTask(root, task.id, { note: [task.note, body].filter(Boolean).join("\n\n") }); return { msg, taskId: task.id }; } // 실행 중 — 다음 실행에
     const g0 = task.gate;
@@ -624,9 +633,9 @@ export function postHuman(root: string, text: string, replyTo?: string, handoff 
   if (mentions.length) {
     // 불린 역할이 지금 실행 중인 카드만 — 답의 재료이자 메모(엉뚱한 옛 카드에 붙이지 않게, 리뷰)
     const role = mentions[0];
-    const card = readBoard(root).tasks.find((t) => activeFor(root, t.id)?.role === role && (!room || t.room === room)); // 1:1 방 = 그 방 카드만
+    const card = readBoard(root).tasks.find((t) => activeFor(root, t.id)?.role === role && (t.room ?? "") === (room ?? "")); // 그 방 카드만
     if (card) patchTask(root, card.id, { note: [card.note, body].filter(Boolean).join("\n\n") });
-    void answerHuman(root, msg, role, card?.id, room ? false : callsEveryone(body), mentions);
+    void answerHuman(root, msg, role, card?.id, dm ? false : callsEveryone(body), mentions);
     return { msg, ...(card ? { taskId: card.id } : {}) };
   }
   return { msg };
@@ -750,7 +759,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
     const request = clip(human.text, 2000);
     // ① 첫 답 + 질문/일 요청 판단
     const op = await askR(first, [`You are "${roleLabel(first.id)}" (${first.id}), an agent on a software team board in Mustard.`,
-      everyone ? `The human wrote to the whole team (@all):` : human.room ? `The human wrote to you in your private 1:1 chat:` : mentioned.length && !routed ? `The human wrote to you directly (@${first.id}) in the team chat:` : `The human wrote in the team chat without @mentioning anyone:`, `> ${request}`, "",
+      everyone ? `The human wrote to the whole team (@all):` : dmRole(human.room) ? `The human wrote to you in your private 1:1 chat:` : mentioned.length && !routed ? `The human wrote to you directly (@${first.id}) in the team chat:` : `The human wrote in the team chat without @mentioning anyone:`, `> ${request}`, "",
       `Facts (use ONLY these; do not invent progress):`, ...facts, "",
       `Decide the intent:`,
       `- "work": the human asks the team to build, change, fix or plan something NEW that needs its own board card.`,
@@ -765,7 +774,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       ...(routing ? ["", `Team:`, teamList(), "", `Who is the message for? "me" if it is about your card or role, a teammate's role id if it is clearly meant for that role, "all" ONLY if the human wants each teammate's own view (e.g. "what do the others think?", "everyone answer"). A request to sum up or pick the best is "me" — you answer it alone from the chat.`] : []),
       `Answer ONLY with JSON: {"intent":"question"|"work"|"instruction"|"debate","format"?:"council"|"court",${routing ? `"audience":"me"|"all"|"<role-id>",` : ""}"reply":"..."}`].join("\n"));
     const opener = readAnswer(op.text);
-    if (human.room && opener.intent === "debate") opener.intent = "question"; // #1392 1:1 방은 혼자 — 토론(여러 역할)은 팀방에서
+    if (dmRole(human.room) && opener.intent === "debate") opener.intent = "question"; // #1392 1:1 방은 혼자 — 토론(여러 역할)은 그룹·팀방에서
     // @ 없는 글 — 다른 역할에게 한 말이면 내 답은 버리고 그 역할이 답하게(대기열 맨 앞), 모두에게면 나머지도 이어서(유저: 회사처럼)
     const to = opener.audience;
     if (routing && to && to !== "me" && to !== "all" && to !== first.id && getRole(to)) {

@@ -17,7 +17,7 @@ export interface CrewMsg {
   replyTo?: string;        // 사람 답글 — 대상 메시지 id
   // #1125 보드·시스템 문구는 번역 키도 저장 → 화면이 지금 언어로 번역(text = 저장 시점 언어, 옛 메시지·대체값)
   i18n?: { key: string; vars?: Record<string, string | number>; suffix?: string };
-  room?: string;           // #1392 봇 1:1 방(역할 id) — 없으면 팀방(옛 메시지 전부)
+  room?: string;           // #1392 방 id(dm-역할 = 1:1, g-… = 그룹, crewRooms) — 없으면 팀방(옛 메시지 전부)
 }
 
 const normPath = (p: string) => p.replace(/\/+$/, "");
@@ -48,7 +48,7 @@ export function appendMsg(root: string, m: Omit<CrewMsg, "id" | "ts"> & { ts?: n
   return msg;
 }
 
-// #1392 방 맞추기 — room "" = 팀방(room 없는 글), 역할 id = 그 1:1 방
+// #1392 방 맞추기 — room "" = 팀방(room 없는 글), 그 밖 = 그 방 id
 export const inRoom = (m: CrewMsg, room: string) => (m.room ?? "") === room;
 
 // 최근 limit개(since 이후만). 깨진 줄은 건너뜀. room 주면 그 방만(안 주면 전 방 — 알림·엔진용)
