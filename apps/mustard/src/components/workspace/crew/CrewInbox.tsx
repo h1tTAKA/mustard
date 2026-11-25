@@ -116,7 +116,7 @@ export default function CrewInbox({ root }: { root: string }) {
                 for (const m of g.members.filter((x) => !members.includes(x))) await roomOp({ op: "remove", id: g.id, member: m });
                 if ((g.name ?? "") !== gname) await roomOp({ op: "rename", id: g.id, name: gname });
                 setDialog(null);
-              } catch { toast(t("crewroom.failed"), "error"); }
+              } catch { load(); toast(t("crewroom.failed"), "error"); } // 중간에 실패하면 서버 상태로 다시(리뷰)
             }}
             onDelete={async () => {
               if (!(await confirm({ message: t("crewroom.deleteConfirm"), danger: true, confirmText: t("crewroom.delete") }))) return;

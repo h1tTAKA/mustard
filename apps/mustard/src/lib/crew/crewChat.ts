@@ -1,7 +1,7 @@
 // Crew 팀 채팅(#1104, 에픽 #1097) — 레포별 채널. 역할 에이전트·보드·사람의 메시지를 시간순으로. 서버 전용.
 // 저장 = ~/.nunopi/crew/<sha(root)>/chat.jsonl (한 줄 = 메시지, append). 동기 함수(같은 프로세스 안 경합 없음).
 import { createHash, randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
@@ -68,14 +68,22 @@ export function readMsgs(root: string, since = 0, limit = 400, oldest = false, r
 
 // #1392 방 목록 — 방마다 마지막 글·글 수(목록 미리보기). 파일 한 번 훑기.
 export interface RoomSummary { room: string; last: Pick<CrewMsg, "from" | "kind" | "text" | "ts" | "i18n">; count: number }
+const sumCache = new Map<string, { sig: string; v: RoomSummary[] }>(); // 목록이 5초마다 부름 — 파일이 그대로면 다시 안 훑음(리뷰)
 export function roomSummaries(root: string): RoomSummary[] {
+  const f = chatFile(root);
+  let sig = "";
+  try { const st = statSync(f); sig = `${st.size}:${st.mtimeMs}`; } catch { return []; }
+  const hit = sumCache.get(f);
+  if (hit?.sig === sig) return hit.v;
   const by = new Map<string, RoomSummary>();
   for (const m of readMsgs(root, 0, 100_000)) {
     const room = m.room ?? "";
     const prev = by.get(room);
     by.set(room, { room, last: { from: m.from, kind: m.kind, text: m.text.slice(0, 200), ts: m.ts, ...(m.i18n ? { i18n: m.i18n } : {}) }, count: (prev?.count ?? 0) + 1 });
   }
-  return [...by.values()].sort((a, b) => b.last.ts - a.last.ts);
+  const v = [...by.values()].sort((a, b) => b.last.ts - a.last.ts);
+  sumCache.set(f, { sig, v });
+  return v;
 }
 
 export const findMsg = (root: string, id: string) => readMsgs(root, 0, 100_000).find((m) => m.id === id);

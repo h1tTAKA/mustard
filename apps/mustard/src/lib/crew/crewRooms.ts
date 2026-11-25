@@ -25,7 +25,8 @@ const sha = (s: string) => createHash("sha256").update(s).digest("hex").slice(0,
 const baseDir = () => process.env.MUSTARD_CREW_DIR || join(homedir(), ".nunopi", "crew");
 const roomsFile = (root: string) => join(baseDir(), sha(normPath(root)), "rooms.json");
 
-const cleanMembers = (v: unknown) => [...new Set((Array.isArray(v) ? v : []).filter((x): x is string => typeof x === "string" && ROLE.test(x)))].slice(0, GROUP_MAX);
+const roleIds = (v: unknown) => [...new Set((Array.isArray(v) ? v : []).filter((x): x is string => typeof x === "string" && ROLE.test(x)))];
+const cleanMembers = (v: unknown) => roleIds(v).slice(0, GROUP_MAX);
 function sanitize(x: unknown): CrewRoom | null {
   const r = x as Record<string, unknown> | null;
   if (!r || typeof r.id !== "string" || !isGroupRoom(r.id)) return null;
@@ -61,10 +62,11 @@ export type RoomOp =
 /** 그룹방 바꾸기 — known = 지금 있는 봇 id들(없는 봇은 못 넣음). create는 같은 멤버 구성 방이 있으면 그 방을 돌려줌(existing). */
 export function applyRoomOp(root: string, op: RoomOp, known: Set<string>, now = Date.now()): { room?: CrewRoom; existing?: boolean } {
   const rooms = readRooms(root);
-  const pick = (v: unknown) => cleanMembers(v).filter((m) => known.has(m));
+  const pick = (v: unknown) => roleIds(v).filter((m) => known.has(m));
   if (op.op === "create") {
     const members = pick(op.members);
     if (members.length < 2) throw new Error("need 2+ members"); // 한 명이면 1:1 방(dm-)
+    if (members.length > GROUP_MAX) throw new Error(`max ${GROUP_MAX} members`);
     const same = rooms.find((r) => sameSet(r.members, members));
     if (same) return { room: same, existing: true };
     const name = String(op.name ?? "").trim().slice(0, NAME_MAX);
@@ -75,7 +77,11 @@ export function applyRoomOp(root: string, op: RoomOp, known: Set<string>, now = 
   const room = rooms.find((r) => r.id === op.id);
   if (!room) throw new Error("room not found");
   if (op.op === "delete") { writeRooms(root, rooms.filter((r) => r !== room)); return {}; }
-  if (op.op === "invite") room.members = [...new Set([...room.members, ...pick(op.members)])].slice(0, GROUP_MAX);
+  if (op.op === "invite") {
+    const next = [...new Set([...room.members, ...pick(op.members)])];
+    if (next.length > GROUP_MAX) throw new Error(`max ${GROUP_MAX} members`); // 조용히 자르지 않음(리뷰)
+    room.members = next;
+  }
   else if (op.op === "remove") {
     if (room.members.length <= 1) throw new Error("last member"); // 빈 방 대신 방 지우기
     room.members = room.members.filter((m) => m !== op.member);

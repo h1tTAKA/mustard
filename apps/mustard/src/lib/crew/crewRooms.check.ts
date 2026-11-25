@@ -32,6 +32,12 @@ assert.throws(() => applyRoomOp(root, { op: "remove", id: a.id, member: "app-bui
 applyRoomOp(root, { op: "rename", id: a.id, name: "" }, known);
 assert.strictEqual(readRooms(root)[0].name, undefined, "빈 이름 = 이름 지움");
 assert.throws(() => applyRoomOp(root, { op: "invite", id: "g-00000000", members: ["bug-fixer"] }, known), /not found/);
+{ // 초대 상한 — 넘치면 자르지 않고 거절
+  const many = new Set(Array.from({ length: 14 }, (_, i) => `r${i}`));
+  const big = applyRoomOp(root, { op: "create", members: ["r0", "r1"] }, many).room!;
+  assert.throws(() => applyRoomOp(root, { op: "invite", id: big.id, members: [...many] }, many), /max 12/);
+  applyRoomOp(root, { op: "delete", id: big.id }, many);
+}
 
 // 방 멤버 — 팀방 = 전부, 1:1 = 그 봇, 그룹 = 멤버(지금 있는 봇만), 없는 방 = null
 assert.deepStrictEqual(roomMembers(root, undefined, all), all);

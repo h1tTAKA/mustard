@@ -15,7 +15,8 @@ export async function GET(request: Request): Promise<Response> {
   if (!sp.get("peek")) registerRoot(root, new URL(request.url).origin); // 채팅만 열어 둬도 Ready 카드가 돌게
   try {
     const peek = !!sp.get("peek");
-    return Response.json({ ok: true, msgs: readMsgs(root, Number(sp.get("since")) || 0, 400, peek, peek ? undefined : sp.get("room") ?? ""), answering: answeringRoles(root) }); // 알림(peek)은 전 방
+    const room = peek ? undefined : sp.get("room") ?? "";
+    return Response.json({ ok: true, msgs: readMsgs(root, Number(sp.get("since")) || 0, 400, peek, room), answering: answeringRoles(root, room) }); // 알림(peek)은 전 방
   } // #1139 답 쓰는 중인 역할
   catch (e) { return Response.json({ ok: false, error: String((e as Error)?.message ?? e) }, { status: 500 }); }
 }
