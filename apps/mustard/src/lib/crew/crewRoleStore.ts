@@ -9,7 +9,9 @@ const ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const baseDir = () => process.env.MUSTARD_CREW_DIR || join(homedir(), ".nunopi", "crew");
 const file = () => join(baseDir(), "roles.json");
 
-type Stored = { overrides: Record<string, Partial<CrewRole>>; custom: CrewRole[] };
+// bots(#1394): 설치된 봇 정보 — 칸이 없으면(옛 파일) crewBots가 한 번 이전한다. 역할 저장 때 그대로 보존.
+export type BotMeta = { color: string; createdAt: number; name?: string; catalog?: string; mission?: string };
+export type Stored = { overrides: Record<string, Partial<CrewRole>>; custom: CrewRole[]; bots?: Record<string, BotMeta> };
 
 function clean(x: unknown, builtin: boolean): Partial<CrewRole> | null {
   if (!x || typeof x !== "object") return null;
@@ -26,14 +28,16 @@ function clean(x: unknown, builtin: boolean): Partial<CrewRole> | null {
   return out;
 }
 
-function readStored(): Stored {
+export function readStored(): Stored {
   try {
     if (!existsSync(file())) return { overrides: {}, custom: [] };
     const j = JSON.parse(readFileSync(file(), "utf8")) as Partial<Stored>;
-    return { overrides: j.overrides && typeof j.overrides === "object" ? j.overrides : {}, custom: Array.isArray(j.custom) ? j.custom : [] };
+    const out: Stored = { overrides: j.overrides && typeof j.overrides === "object" ? j.overrides : {}, custom: Array.isArray(j.custom) ? j.custom : [] };
+    if (j.bots && typeof j.bots === "object" && !Array.isArray(j.bots)) out.bots = j.bots;
+    return out;
   } catch { return { overrides: {}, custom: [] }; }
 }
-function writeStored(s: Stored) {
+export function writeStored(s: Stored) {
   mkdirSync(baseDir(), { recursive: true });
   writeFileSync(`${file()}.tmp`, JSON.stringify(s, null, 1));
   renameSync(`${file()}.tmp`, file());

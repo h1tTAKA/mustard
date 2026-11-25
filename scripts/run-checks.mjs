@@ -27,7 +27,7 @@ for (const f of files) {
   const s = Date.now();
   // 저장소를 건드리는 점검은 실제 기록 대신 임시 폴더를 요구함(없으면 일부러 실패) → 점검마다 새 임시 폴더, 끝나면 지움
   const tmp = mkdtempSync(join(tmpdir(), "mustard-check-"));
-  const env = { ...process.env, MUSTARD_STREAM_DIR: join(tmp, "stream"), MUSTARD_CREW_DIR: join(tmp, "crew"), MUSTARD_WORKTREE_DIR: join(tmp, "worktrees") };
+  const env = { ...process.env, MUSTARD_STREAM_DIR: join(tmp, "stream"), MUSTARD_CREW_DIR: join(tmp, "crew"), MUSTARD_BOTS_DIR: join(tmp, "bots"), MUSTARD_WORKTREE_DIR: join(tmp, "worktrees") };
   // .ts는 타입만 지우고 실행(Node 22는 플래그 필요, 24는 기본). 2분 넘으면 멈춘 걸로.
   const r = spawnSync(process.execPath, [...(ts ? ["--experimental-strip-types", "--no-warnings"] : []), basename(f)], { cwd: resolve(root, dirname(f)), encoding: "utf8", timeout: 120_000, env });
   clean(tmp);
