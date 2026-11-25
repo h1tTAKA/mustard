@@ -662,7 +662,7 @@ function failReason(e: unknown): string {
 }
 // 역할에게 묻되, Claude가 아닌 AI가 실패하면 Claude로 한 번 더(대화방에 이유와 함께 알림). 그래도 실패면 throw(이유 담김).
 // failed = 이번 글 처리에서 이미 실패한 AI — 다음 역할부턴 바로 Claude, 알림도 한 번만(리뷰: 같은 AI 역할 여럿이면 알림·헛호출 반복).
-async function askOrFallback(root: string, role: CrewRole, prompt: string, replyTo: string, failed: Set<string>): Promise<{ text: string; provider: string }> {
+async function askOrFallback(root: string, role: CrewRole, prompt: string, replyTo: string, failed: Set<string>, room = ""): Promise<{ text: string; provider: string }> { // room = 알림이 갈 방(#1392)
   // #1162 시간 초과면 같은 AI에게 한 번 더(일시적으로 느린 것 — 대화방에 알림). 두 번째도 실패면 그대로 던짐.
   // 다시 묻기·Claude로 바꾸기 전부 한 마감(4분) 안에서 — 사람이 기다리는 최대 시간(리뷰: 따로 세면 최악 16분).
   const deadline = Date.now() + ASK_MAX_MS;
@@ -670,7 +670,7 @@ async function askOrFallback(root: string, role: CrewRole, prompt: string, reply
     try { return await ask(r, prompt, deadline); }
     catch (e) {
       if (!/timeout/i.test(String((e as Error)?.message ?? e)) || deadline - Date.now() < 30_000) throw e; // 남은 시간이 너무 짧으면 그만
-      say(root, { from: "board", kind: "blocked", replyTo, ...tx("crewchat.retrying", { role: roleLabel(r.id) }) });
+      say(root, { from: "board", kind: "blocked", replyTo, room, ...tx("crewchat.retrying", { role: roleLabel(r.id) }) });
       return await ask(r, prompt, deadline);
     }
   };
@@ -681,7 +681,7 @@ async function askOrFallback(root: string, role: CrewRole, prompt: string, reply
     const why = failReason(e);
     if (role.provider === "claude-code") throw new Error(why);
     failed.add(role.provider);
-    say(root, { from: "board", kind: "blocked", replyTo, ...tx("crewchat.fallback", { role: roleLabel(role.id), ai: PROVIDER[role.provider] ?? role.provider, why }) });
+    say(root, { from: "board", kind: "blocked", replyTo, room, ...tx("crewchat.fallback", { role: roleLabel(role.id), ai: PROVIDER[role.provider] ?? role.provider, why }) });
     return viaClaude();
   }
 }
@@ -753,7 +753,7 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
   const routing = !everyone && !mentioned.length; // 받는 사람 판단은 @ 없는 글만
   speaking(root, first.id);
   const failed = new Set<string>();
-  const askR = (r: CrewRole, prompt: string) => askOrFallback(root, r, prompt, human.id, failed);
+  const askR = (r: CrewRole, prompt: string) => askOrFallback(root, r, prompt, human.id, failed, human.room ?? "");
   try {
     // 질문한 말로 답함(일본어로 물으면 일본어) — 판단이 안 서면 앱 언어(유저)
     const lang = `the same language as the human's message (if unclear, ${LANG[narrationLocale()] ?? "English"})`;
@@ -770,10 +770,11 @@ async function answerHuman(root: string, human: CrewMsg, roleId: string, taskId?
       `Facts (use ONLY these; do not invent progress):`, ...facts, "",
       `Decide the intent:`,
       `- "work": the human asks the team to build, change, fix or plan something NEW that needs its own board card.`,
-      `- "instruction": a guideline, rule, correction, complaint or notice about HOW the team should work (no new card). It is saved as a team guideline every later run follows.`,
+      dmRole(human.room) ? `- "instruction": a rule, correction or preference about how YOU should work (no new card). It is not saved yet — answer for this conversation only.`
+        : `- "instruction": a guideline, rule, correction, complaint or notice about HOW the team should work (no new card). It is saved as a team guideline every later run follows.`, // #1392 1:1 방은 팀 지침에 안 넣음(봇 기억은 다음 이슈)
       `- "debate": the human EXPLICITLY asks the team to debate, argue it out or vote and reach a conclusion (no card). A plain "what do you think?" is "question". Add "format":"court" if it is a choice between two options (A or B), else "format":"council".`,
       `- "question": status, explanation, opinion.`,
-      `For "instruction", say concretely what you will do differently from now on — no long apology, no question back.`,
+      dmRole(human.room) ? `For "instruction", acknowledge it briefly and say how you will handle it in this conversation — do not promise to remember it later.` : `For "instruction", say concretely what you will do differently from now on — no long apology, no question back.`,
       `Reply as ${first.id} in 1-4 short sentences, in ${lang}. You cannot run tools here.${everyone ? " Other teammates will add their view after you." : ""}`,
       ...(routing || routed ? [`Do NOT bring up cards, approvals or merges unless the human asks about them.`] : [`Only if the message is about the board or a card's progress: if a card waits for the human (spec/schema/merge approval, a question), say what they need to decide — they can reply to that card's message in this chat (a short "ok" approves).`]),
       `If intent is "debate", your reply only opens it in one sentence — the debate runs right after.`,
