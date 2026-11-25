@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { join } from "node:path";
 import { homedir } from "node:os";
 
+import { cleanRoom } from "./crewRooms.ts";
 import { CREW_STATUSES, type CrewBoard, type CrewGate, type CrewOp, type CrewStatus, type CrewTask } from "./crewTypes.ts";
 export type { CrewBoard, CrewOp, CrewStatus, CrewTask };
 
@@ -38,6 +39,8 @@ function flowFields(t: Record<string, unknown>): Partial<CrewTask> {
   if (pr && typeof pr.url === "string" && /^https?:\/\//.test(pr.url)) out.pr = { url: pr.url.slice(0, 500) };
   const iss = cleanIssue(t.issue);
   if (iss) out.issue = iss;
+  const room = cleanRoom(t.room);
+  if (room) out.room = room;
   const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && /^[\w-]{1,64}$/.test(x)).slice(0, 20) : []);
   if (Array.isArray(t.split)) {
     const sp = t.split.flatMap((x, i) => {
@@ -121,8 +124,9 @@ export function applyOp(root: string, op: CrewOp, now = Date.now()): CrewBoard {
     const role = cleanRole(op.role);
     const pipeline = (Array.isArray(op.pipeline) ? op.pipeline : []).map(cleanRole).filter((r): r is string => !!r).slice(0, 30);
     const issue = cleanIssue(op.issue);
+    const room = cleanRoom(op.room);
     if (issue && tasks.some((t) => t.issue?.provider === issue.provider && t.issue.key === issue.key && t.status !== "done")) throw new Error("issue card exists"); // 같은 이슈 카드 두 번 안 만듦(리뷰)
-    tasks.push({ id: randomUUID(), title: title.slice(0, TITLE_MAX), body: String(op.body ?? "").slice(0, BODY_MAX), status, order, createdAt: now, updatedAt: now, ...(role ? { role } : {}), ...(pipeline.length ? { pipeline, stage: 0 } : {}), ...(issue ? { issue } : {}) });
+    tasks.push({ id: randomUUID(), title: title.slice(0, TITLE_MAX), body: String(op.body ?? "").slice(0, BODY_MAX), status, order, createdAt: now, updatedAt: now, ...(role ? { role } : {}), ...(pipeline.length ? { pipeline, stage: 0 } : {}), ...(issue ? { issue } : {}), ...(room ? { room } : {}) });
   } else if (op.op === "update") {
     const t = find(op.id);
     if (op.title !== undefined) { const title = String(op.title).trim(); if (!title) throw new Error("title required"); t.title = title.slice(0, TITLE_MAX); }

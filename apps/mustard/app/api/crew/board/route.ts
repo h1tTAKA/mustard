@@ -18,7 +18,7 @@ export async function POST(request: Request): Promise<Response> {
   try { body = await request.json(); } catch { return Response.json({ ok: false, error: "bad json" }, { status: 400 }); }
   const root = typeof body.root === "string" ? body.root : "";
   if (!isAbsolute(root)) return Response.json({ ok: false, error: "absolute root required" }, { status: 400 });
-  const { root: _r, ...op } = body; // eslint-disable-line @typescript-eslint/no-unused-vars -- root 빼고 연산만
+  const { root: _r, room: _room, ...op } = body; // eslint-disable-line @typescript-eslint/no-unused-vars -- root 빼고 연산만, room은 서버(대화방)만 정함(#1392 리뷰)
   try { return Response.json({ ok: true, board: applyOp(root, op as unknown as CrewOp) }); }
   catch (e) { return Response.json({ ok: false, error: String((e as Error)?.message ?? e) }, { status: 400 }); }
 }

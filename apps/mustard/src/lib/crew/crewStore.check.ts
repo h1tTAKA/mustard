@@ -65,4 +65,12 @@ f = fb.tasks[0];
 assert.deepStrictEqual([f.gate, f.status, f.stage], [undefined, "ready", 1], "지우기");
 assert.strictEqual(readBoard(r4).tasks[0].pipeline?.length, 2, "파일에 남음");
 
+// #1392 1:1 방 카드 — room 저장·읽기, 이상한 값은 버림
+const r5 = "/tmp/repo-room";
+const roomBoard = applyOp(r5, { op: "create", title: "빌더 혼자", status: "ready", role: "app-builder", pipeline: ["app-builder"], room: "dm-app-builder" });
+assert.strictEqual(readBoard(r5).tasks[0].room, "dm-app-builder", "room 저장");
+assert.strictEqual(roomBoard.tasks[0].pipeline?.join(), "app-builder");
+assert.strictEqual(applyOp(r5, { op: "create", title: "팀 카드" }).tasks[1].room, undefined, "없으면 팀방");
+assert.strictEqual(sanitizeTask({ id: "x", title: "t", status: "ready", room: "../etc" })?.room, undefined, "이상한 room 버림");
+
 console.log("crewStore.check ok");

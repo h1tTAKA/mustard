@@ -18,10 +18,11 @@ export interface CrewTask {
   issue?: { provider: "linear" | "jira"; key: string; url: string }; // #1172 트래커 이슈에서 만든 카드 — 칩·상태 동기화
   // #1114 쪼개기 — split = spec 관문에 올라온 제안, children = 승인 후 만든 하위 카드, parentId·dependsOn = 하위 카드 쪽
   split?: CrewSubtask[]; children?: string[]; parentId?: string; dependsOn?: string[];
+  room?: string; // #1392 1:1 방(dm-역할)·그룹방(g-…)에서 생긴 카드 — 진행 글이 그 방으로. 없으면 팀방
 }
 export interface CrewBoard { version: 1; tasks: CrewTask[]; }
 export type CrewOp =
-  | { op: "create"; title: string; body?: string; status?: CrewStatus; role?: string; pipeline?: string[]; issue?: CrewTask["issue"] }
+  | { op: "create"; title: string; body?: string; status?: CrewStatus; role?: string; pipeline?: string[]; issue?: CrewTask["issue"]; room?: string }
   | { op: "update"; id: string; title?: string; body?: string; role?: string; pipeline?: string[] } // pipeline [] = 지움(담당 하나·자동)
   | { op: "move"; id: string; status: CrewStatus; index: number }
   | { op: "delete"; id: string };
