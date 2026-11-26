@@ -113,7 +113,8 @@ export function applyBotOp(op: BotOp, now = Date.now()): Bot[] {
     const role = applyRoleOp({ op: "save", role: { name, description: mission.split("\n")[0].slice(0, 200), instructions: mission, provider, access: "write" } })
       .find((r) => !before.has(r.id));
     if (!role) throw new Error("create failed");
-    ensureHome(role.id, name, mission);
+    try { ensureHome(role.id, name, mission); } // 폴더 실패면 방금 만든 역할도 되돌림(다시 하면 -2가 안 붙게, 리뷰)
+    catch (e) { applyRoleOp({ op: "delete", id: role.id }); throw e; }
     const s2 = readStored(); // applyRoleOp가 방금 쓴 파일(bots 칸 보존)
     s2.bots = { ...s2.bots, [role.id]: { color: cleanColor(op.color) ?? pickColor(role.id), createdAt: now, mission } };
     writeStored(s2);

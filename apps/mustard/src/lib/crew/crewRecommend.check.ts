@@ -12,6 +12,7 @@ assert.deepStrictEqual(ruleRecommend("PR 올라오면 리뷰하고 보안도", l
 assert.deepStrictEqual(ruleRecommend("ビルドが壊れたら直して", [{ ext: "go", share: 1 }]).slice(0, 1), ["go-build-resolver"], "빌드 + 언어");
 assert.deepStrictEqual(ruleRecommend("메일·일정 정리", []), ["chief-of-staff", "code-reviewer", "planner"], "모자라면 채움");
 assert.strictEqual(ruleRecommend("아무 말", []).length, 3, "맞는 단어 없어도 3개");
+assert.ok(ruleRecommend("vitest 깨진 거", []).includes("tdd-guide") && ruleRecommend("need a planner", []).includes("planner"), "도구 이름·파생어는 잡음");
 const noise = ruleRecommend("write the latest explanation", []);
 assert.ok(!noise.includes("tdd-guide") && !noise.includes("pr-test-analyzer") && noise.indexOf("planner") !== 0, "단어 일부(latest·explanation)에 안 걸림");
 
