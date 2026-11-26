@@ -90,4 +90,6 @@ assert.ok(!readStored().bots?.["security-reviewer-2"]);
 writeFileSync(join(crew, "roles.json"), "{broken");
 listBots();
 assert.ok(readdirSync(crew).some((f) => f.startsWith("roles.json.bad-")), "깨진 파일 백업");
+writeFileSync(join(crew, "roles.json"), JSON.stringify({ overrides: {}, custom: [null, { id: "ok-role", name: "Ok" }] }));
+assert.doesNotThrow(() => listBots(), "custom 안의 null 칸은 버림");
 console.log("crewBots OK");

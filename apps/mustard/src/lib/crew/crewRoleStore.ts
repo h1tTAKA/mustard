@@ -33,7 +33,7 @@ export function readStored(): Stored {
   try {
     if (!existsSync(file())) return { overrides: {}, custom: [] };
     const j = JSON.parse(readFileSync(file(), "utf8")) as Partial<Stored>;
-    const out: Stored = { overrides: j.overrides && typeof j.overrides === "object" ? j.overrides : {}, custom: Array.isArray(j.custom) ? j.custom : [] };
+    const out: Stored = { overrides: j.overrides && typeof j.overrides === "object" ? j.overrides : {}, custom: Array.isArray(j.custom) ? j.custom.filter((c) => c && typeof c === "object") : [] }; // null 같은 깨진 칸은 버림(리뷰 — c.id에서 죽음)
     if (j.bots && typeof j.bots === "object" && !Array.isArray(j.bots)) out.bots = j.bots;
     return out;
   } catch { return { overrides: {}, custom: [] }; }
