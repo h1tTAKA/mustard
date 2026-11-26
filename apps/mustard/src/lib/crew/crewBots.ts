@@ -16,6 +16,10 @@ export const BOT_COLORS = ["#e8b93a", "#93c5fd", "#a5b4fc", "#86efac", "#fca5a5"
 const pickColor = (id: string) => BOT_COLORS[[...id].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7) % BOT_COLORS.length];
 const cleanColor = (c: unknown) => (typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : undefined);
 
+// bots는 일반 객체라 "__proto__"·"constructor" 같은 이름이 상속값으로 잡힘(리뷰) → 자기 칸만 봄.
+const has = (bots: Record<string, BotMeta>, id: unknown) => typeof id === "string" && Object.hasOwn(bots, id);
+const LOCALES = ["ko", "ja", "en"] as const;
+
 const crewDir = () => process.env.MUSTARD_CREW_DIR || join(homedir(), ".nunopi", "crew");
 export const botsDir = () => process.env.MUSTARD_BOTS_DIR || join(homedir(), ".nunopi", "bots");
 export const botHome = (id: string) => join(botsDir(), id);
@@ -32,8 +36,10 @@ function ensureHome(id: string, title: string, about: string) {
 // 옛 사용자 이전 — bots 칸이 없을 때 한 번. 커스텀 역할 전부 + 어느 레포든 보드·대화에 등장한 기본 역할.
 // 한계: 역할 id가 따옴표째 들어 있는지만 본다(글 본문에 "app-builder"를 그대로 쓴 경우도 등장으로 침) — 넉넉히 옮기는 쪽이 안전.
 export function migrateBots(s: Stored, now = Date.now()): Record<string, BotMeta> {
-  const used = new Set<string>(s.custom.map((c) => c.id).filter((id) => typeof id === "string"));
+  // 커스텀 역할 전부 + 고쳐 둔 기본 역할(덮어쓰기) — 사용자가 손댄 건 다 옮김(리뷰)
+  const used = new Set<string>([...s.custom.map((c) => c.id), ...Object.keys(s.overrides)].filter((id) => typeof id === "string"));
   const builtins = builtinRoles().map((b) => b.id);
+  for (const id of [...used]) if (!builtins.includes(id) && !s.custom.some((c) => c.id === id)) used.delete(id); // 없는 역할 덮어쓰기는 버림
   try {
     const base = crewDir();
     const dirs = existsSync(base) ? readdirSync(base, { withFileTypes: true }).filter((d) => d.isDirectory()) : [];
@@ -60,7 +66,7 @@ function stored(): Stored {
 export function listBots(): Bot[] {
   const bots = stored().bots!;
   return listRoles()
-    .filter((r) => bots[r.id])
+    .filter((r) => has(bots, r.id))
     .map((r) => ({ ...r, ...bots[r.id], name: bots[r.id].name || r.name, home: botHome(r.id) }))
     .sort((a, b) => b.createdAt - a.createdAt); // 새 봇이 위
 }
@@ -80,21 +86,22 @@ export function applyBotOp(op: BotOp, now = Date.now()): Bot[] {
     const color = cleanColor(op.color);
     if (item.builtin) {
       const role = builtinRoles().find((b) => b.id === item.id)!;
-      if (!bots[role.id]) bots[role.id] = { color: color ?? pickColor(role.id), createdAt: now, catalog: role.id };
+      ensureHome(role.id, role.id, role.instructions.split("\n")[0]); // 폴더 먼저 — 실패하면 목록에도 안 들어감(리뷰)
+      if (!has(bots, role.id)) bots[role.id] = { color: color ?? pickColor(role.id), createdAt: now, catalog: role.id };
       writeStored(s);
-      ensureHome(role.id, role.id, role.instructions.split("\n")[0]);
     } else {
       // 외부 항목 = 커스텀 역할로 복사(사용자가 고쳐도 원본 그대로, 앱 업데이트로 원본이 바뀌어도 사용자 봇은 안 흔들림).
-      // 한계: 같은 id 커스텀 역할이 이미 있으면(지웠다 다시 설치·같은 이름으로 직접 만든 역할) 새로 복사하지 않고 그 역할을 봇으로 되살림.
+      // 같은 id 커스텀 역할이 이미 있으면(지웠다 다시 설치) 새로 복사하지 않고 그 역할을 봇으로 되살림(고친 지시문 보존).
+      // 한계: 카탈로그 id 예약(crewRoleStore) 전에 같은 이름으로 직접 만든 역할도 이렇게 되살아남.
       const agent = CATALOG_AGENTS[item.id];
       if (!agent) throw new Error("unknown catalog item");
-      const loc = op.locale && op.locale in item.name! ? op.locale : "en";
+      const loc = LOCALES.find((l) => l === op.locale) ?? "en";
       const name = item.name![loc], about = item.desc![loc];
       if (!s.custom.some((c) => c.id === item.id))
         s.custom.push({ id: item.id, name, description: about, instructions: agent.instructions, provider: "claude-code", access: agent.access });
-      if (!bots[item.id]) bots[item.id] = { color: color ?? pickColor(item.id), createdAt: now, catalog: item.id };
-      writeStored(s);
       ensureHome(item.id, name, about);
+      if (!has(bots, item.id)) bots[item.id] = { color: color ?? pickColor(item.id), createdAt: now, catalog: item.id };
+      writeStored(s);
     }
   } else if (op.op === "create") {
     const name = typeof op.name === "string" ? op.name.trim().slice(0, 60) : "";
@@ -106,13 +113,13 @@ export function applyBotOp(op: BotOp, now = Date.now()): Bot[] {
     const role = applyRoleOp({ op: "save", role: { name, description: mission.split("\n")[0].slice(0, 200), instructions: mission, provider, access: "write" } })
       .find((r) => !before.has(r.id));
     if (!role) throw new Error("create failed");
+    ensureHome(role.id, name, mission);
     const s2 = readStored(); // applyRoleOp가 방금 쓴 파일(bots 칸 보존)
     s2.bots = { ...s2.bots, [role.id]: { color: cleanColor(op.color) ?? pickColor(role.id), createdAt: now, mission } };
     writeStored(s2);
-    ensureHome(role.id, name, mission);
   } else if (op.op === "update") {
+    if (!has(bots, op.id)) throw new Error("not a bot");
     const b = bots[op.id];
-    if (!b) throw new Error("not a bot");
     if (op.name !== undefined) {
       const n = String(op.name).trim().slice(0, 60);
       if (!n) throw new Error("name required");
@@ -121,7 +128,7 @@ export function applyBotOp(op: BotOp, now = Date.now()): Bot[] {
     if (op.color !== undefined) b.color = cleanColor(op.color) ?? b.color;
     writeStored(s);
   } else if (op.op === "uninstall") {
-    if (!bots[op.id]) throw new Error("not a bot");
+    if (!has(bots, op.id)) throw new Error("not a bot");
     delete bots[op.id];
     writeStored(s);
   } else throw new Error("unknown op");

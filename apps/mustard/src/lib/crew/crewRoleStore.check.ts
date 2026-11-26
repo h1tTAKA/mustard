@@ -18,19 +18,21 @@ roles = applyRoleOp({ op: "reset", id: "app-builder" });
 assert.strictEqual(roles.find((r) => r.id === "app-builder")!.provider, "claude-code", "기본값으로");
 
 assert.throws(() => applyRoleOp({ op: "save", role: { name: "  " } }), /name required/);
-roles = applyRoleOp({ op: "save", role: { name: "Security Reviewer", description: "보안 점검", instructions: "check auth", access: "read", provider: "opencode" } });
-const sec = roles.find((r) => r.id === "security-reviewer");
+roles = applyRoleOp({ op: "save", role: { name: "Sec Checker", description: "보안 점검", instructions: "check auth", access: "read", provider: "opencode" } });
+const sec = roles.find((r) => r.id === "sec-checker");
 assert.ok(sec && !sec.builtin && sec.provider === "opencode" && sec.access === "read", "커스텀 추가(이름에서 id)");
-roles = applyRoleOp({ op: "save", role: { name: "Security Reviewer" } });
-assert.ok(roles.some((r) => r.id === "security-reviewer-2"), "같은 이름이면 -2");
-roles = applyRoleOp({ op: "save", role: { id: "security-reviewer", description: "바꿈" } });
-assert.strictEqual(roles.find((r) => r.id === "security-reviewer")!.description, "바꿈", "커스텀 수정");
+roles = applyRoleOp({ op: "save", role: { name: "Sec Checker" } });
+assert.ok(roles.some((r) => r.id === "sec-checker-2"), "같은 이름이면 -2");
+roles = applyRoleOp({ op: "save", role: { id: "sec-checker", description: "바꿈" } });
+assert.strictEqual(roles.find((r) => r.id === "sec-checker")!.description, "바꿈", "커스텀 수정");
 roles = applyRoleOp({ op: "save", role: { name: "보안 담당" } });
 assert.ok(roles.some((r) => r.name === "보안 담당" && /^role(-\d+)?$/.test(r.id)), "한글 이름 → role id");
 assert.throws(() => applyRoleOp({ op: "delete", id: "bug-fixer" }), /cannot be deleted/);
-roles = applyRoleOp({ op: "delete", id: "security-reviewer-2" });
-assert.ok(!roles.some((r) => r.id === "security-reviewer-2"), "커스텀 삭제");
+roles = applyRoleOp({ op: "delete", id: "sec-checker-2" });
+assert.ok(!roles.some((r) => r.id === "sec-checker-2"), "커스텀 삭제");
 assert.ok(applyRoleOp({ op: "save", role: { id: "x", provider: "evil" as never, name: "X" } }).find((r) => r.name === "X")!.provider === "claude-code", "모르는 AI 무시");
 
 assert.ok(crewProtocol("Japanese").includes("in Japanese") && crewProtocol("Korean").includes("NEVER run git push"), "규약");
+// 카탈로그 id는 비워 둠 — 같은 이름으로 만들면 -2
+assert.ok(applyRoleOp({ op: "save", role: { name: "Code Reviewer" } }).some((r) => r.id === "code-reviewer-2"), "카탈로그 id 예약");
 console.log("crewRoleStore.check ok");

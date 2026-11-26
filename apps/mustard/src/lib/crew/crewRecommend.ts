@@ -1,6 +1,7 @@
 // 봇 추천(#1394) — "맡길 일" 한 줄 + 레포 언어 비율 → 카탈로그 id 3개. AI 한 번 묻기, 실패하면 단어·언어 규칙.
 // repoLangs만 서버(git) 전용, 나머지는 순수 함수.
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { CATALOG, type CatalogItem } from "./crewCatalog.ts";
 
 export type LangShare = { ext: string; share: number };
@@ -19,10 +20,11 @@ export function langShares(files: string[]): LangShare[] {
 }
 
 // 레포 언어 비율 — git이 추적하는 파일 확장자. 레포가 아니거나 실패하면 빈 목록(언어 무관 추천).
-export function repoLangs(root: string): LangShare[] {
+// 비동기 — 큰 레포에서 서버 전체가 멈추지 않게(리뷰).
+export async function repoLangs(root: string): Promise<LangShare[]> {
   try {
-    const out = execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 64 << 20, timeout: 10_000 });
-    return langShares(out.split("\0").filter(Boolean));
+    const { stdout } = await promisify(execFile)("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 64 << 20, timeout: 10_000 });
+    return langShares(stdout.split("\0").filter(Boolean));
   } catch { return []; }
 }
 
@@ -31,15 +33,15 @@ const INTENTS: { re: RegExp; ids: string[] | "review" | "build" }[] = [
   { re: /리뷰|검토|review|レビュー|\bPR\b/i, ids: "review" },
   { re: /보안|취약|security|vulnerab|セキュリティ|脆弱/i, ids: ["security-reviewer"] },
   { re: /빌드|컴파일|\bCI\b|build|compile|ビルド|コンパイル/i, ids: "build" },
-  { re: /테스트|test|テスト|tdd|e2e/i, ids: ["tdd-guide", "pr-test-analyzer"] },
+  { re: /테스트|\btests?\b|\btesting\b|テスト|\btdd\b|\be2e\b/i, ids: ["tdd-guide", "pr-test-analyzer"] },
   { re: /릴리스|배포|release|deploy|リリース|デプロイ/i, ids: ["release-checker"] },
   { re: /문서|readme|docs?\b|ドキュメント|文書/i, ids: ["doc-updater"] },
   { re: /메일|이메일|슬랙|일정|mail|slack|calendar|schedule|メール|予定|スケジュール/i, ids: ["chief-of-staff"] },
   { re: /seo|검색 노출/i, ids: ["seo-specialist"] },
-  { re: /마케팅|카피|광고|marketing|copy|campaign|マーケ|広告/i, ids: ["marketing-agent"] },
+  { re: /마케팅|카피|광고|marketing|\bcopy(writing)?\b|campaign|マーケ|広告/i, ids: ["marketing-agent"] },
   { re: /성능|느리|최적화|performance|slow|optimi|パフォーマンス|遅い|最適化/i, ids: ["performance-optimizer"] },
   { re: /설계|아키텍처|architect|design|設計|アーキ/i, ids: ["architect"] },
-  { re: /계획|기획|plan|計画|企画/i, ids: ["planner"] },
+  { re: /계획|기획|\bplan(s|ning)?\b|計画|企画/i, ids: ["planner"] },
   { re: /리팩터|코드 ?정리|안 ?쓰는 코드|refactor|dead code|cleanup|リファクタ|コード整理/i, ids: ["refactor-cleaner"] },
   { re: /접근성|a11y|accessib|アクセシビリティ/i, ids: ["a11y-architect"] },
   { re: /만들|구현|기능|implement|feature|build an? app|実装|機能/i, ids: ["app-builder"] },
@@ -77,12 +79,12 @@ export function recommendPrompt(want: string, langs: LangShare[], items: { id: s
 }
 
 // AI 답 → 카탈로그에 있는 id만, 겹침 없이, 나온 순서대로. 모자라면 규칙으로 채움.
+// 배열이 없으면 규칙 그대로 — 글 속 id를 줍다 보면 "planner 말고"처럼 부정한 것까지 고름(리뷰).
 export function parseRecommend(text: string, fallback: string[]): string[] {
   const known = new Set(CATALOG.map((c) => c.id));
   const arr = text.match(/\[[^\]]*\]/)?.[0];
   let ids: string[] = [];
   try { ids = arr ? (JSON.parse(arr) as unknown[]).filter((x): x is string => typeof x === "string") : []; } catch { /* 아래 낱말로 */ }
-  if (!ids.length) ids = text.match(/[a-z0-9][a-z0-9-]+/g) ?? [];
   const picked = [...new Set(ids.filter((id) => known.has(id)))].slice(0, 3);
   return [...new Set([...picked, ...fallback])].slice(0, 3);
 }

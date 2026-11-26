@@ -1,6 +1,6 @@
 // crewBots 점검 — MUSTARD_CREW_DIR=<임시> MUSTARD_BOTS_DIR=<임시> node --experimental-strip-types src/lib/crew/crewBots.check.ts
 import assert from "node:assert";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { applyBotOp, botHome, listBots } from "./crewBots.ts";
 import { applyRoleOp, listRoles, readStored } from "./crewRoleStore.ts";
@@ -11,14 +11,15 @@ const crew = process.env.MUSTARD_CREW_DIR, home = process.env.MUSTARD_BOTS_DIR;
 assert.ok(crew && home, "임시 디렉터리 둘 다 필수(실 데이터 보호)");
 
 // 옛 사용자: 커스텀 역할 1 + 레포 하나의 보드에 app-builder, 대화에 test-engineer 등장
-applyRoleOp({ op: "save", role: { name: "Security Reviewer", instructions: "check" } });
+applyRoleOp({ op: "save", role: { name: "Security Reviewer", instructions: "check" } }); // 카탈로그 id 예약 → security-reviewer-2
+applyRoleOp({ op: "save", role: { id: "scope-planner", provider: "codex" } });            // 고쳐 둔 기본 역할도 옮김
 mkdirSync(join(crew, "abc123"), { recursive: true });
 writeFileSync(join(crew, "abc123", "board.json"), JSON.stringify({ tasks: [{ id: "t1", roles: ["app-builder"] }] }));
 writeFileSync(join(crew, "abc123", "chat.jsonl"), JSON.stringify({ from: "test-engineer", text: "ok" }) + "\n");
 assert.strictEqual(readStored().bots, undefined, "옛 파일엔 bots 칸 없음");
 
 let bots = listBots();
-assert.deepStrictEqual(bots.map((b) => b.id).sort(), ["app-builder", "security-reviewer", "test-engineer"], "쓰던 역할만 이전(8개 다 아님)");
+assert.deepStrictEqual(bots.map((b) => b.id).sort(), ["app-builder", "scope-planner", "security-reviewer-2", "test-engineer"], "쓰던 역할만 이전(8개 다 아님)");
 assert.ok(readStored().bots, "이전 결과 기록 — 다음엔 다시 안 훑음");
 
 // 역할 저장이 bots 칸을 지우지 않음
@@ -70,4 +71,17 @@ bots = applyBotOp({ op: "install", catalog: "go-reviewer", locale: "ja" });
 assert.ok(bots.find((b) => b.id === "go-reviewer")?.instructions === "mine", "재설치는 기존 역할 되살림");
 assert.strictEqual(listRoles().filter((r) => r.id.startsWith("go-reviewer")).length, 1, "복사본 안 늘어남");
 assert.strictEqual(applyBotOp({ op: "install", catalog: "build-error-resolver" }).find((b) => b.id === "build-error-resolver")?.name, "Build Error Resolver", "언어 없으면 영어");
+// 상속 이름(__proto__ 등)은 봇이 아님, 이상한 언어는 영어로
+assert.throws(() => applyBotOp({ op: "update", id: "__proto__", name: "x" }), /not a bot/);
+assert.strictEqual(({} as Record<string, unknown>).name, undefined, "Object.prototype 안 건드림");
+assert.strictEqual(applyBotOp({ op: "install", catalog: "planner", locale: "constructor" as never }).find((b) => b.id === "planner")?.name, "Planner");
+
+// 커스텀 역할을 지우면 봇 정보도 지움(같은 이름으로 다시 만들 때 옛 봇이 안 되살아남)
+applyRoleOp({ op: "delete", id: "security-reviewer-2" });
+assert.ok(!readStored().bots?.["security-reviewer-2"]);
+
+// 깨진 roles.json은 덮기 전에 옆에 백업
+writeFileSync(join(crew, "roles.json"), "{broken");
+listBots();
+assert.ok(readdirSync(crew).some((f) => f.startsWith("roles.json.bad-")), "깨진 파일 백업");
 console.log("crewBots OK");
