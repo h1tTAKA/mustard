@@ -1,15 +1,18 @@
 // Crew 역할 저장소(#1100) — 전역 ~/.nunopi/crew/roles.json. 서버 전용.
 // 파일엔 "기본 역할 덮어쓰기 + 커스텀 역할"만 저장 → 읽을 때 기본 8과 합침(기본 지시문이 앱 업데이트로 바뀌면 안 건드린 역할은 새 기본값을 받음).
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { builtinRoles, CREW_PROVIDERS, type CrewRole } from "./crewRoleDefaults.ts";
+import { CATALOG } from "./crewCatalog.ts";
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const baseDir = () => process.env.MUSTARD_CREW_DIR || join(homedir(), ".nunopi", "crew");
 const file = () => join(baseDir(), "roles.json");
 
-type Stored = { overrides: Record<string, Partial<CrewRole>>; custom: CrewRole[] };
+// bots(#1394): 설치된 봇 정보 — 칸이 없으면(옛 파일) crewBots가 한 번 이전한다. 역할 저장 때 그대로 보존.
+export type BotMeta = { color: string; createdAt: number; name?: string; catalog?: string; mission?: string };
+export type Stored = { overrides: Record<string, Partial<CrewRole>>; custom: CrewRole[]; bots?: Record<string, BotMeta> };
 
 function clean(x: unknown, builtin: boolean): Partial<CrewRole> | null {
   if (!x || typeof x !== "object") return null;
@@ -26,15 +29,27 @@ function clean(x: unknown, builtin: boolean): Partial<CrewRole> | null {
   return out;
 }
 
-function readStored(): Stored {
+// 파일을 못 읽어서(권한·잠김) 빈 값으로 돌려준 결과 — 이걸로 다시 쓰면 역할이 다 날아가므로 쓰기를 거부(리뷰)
+const unreadable = new WeakSet<Stored>();
+
+export function readStored(): Stored {
+  if (!existsSync(file())) return { overrides: {}, custom: [] };
+  let text: string;
+  try { text = readFileSync(file(), "utf8"); } catch { const empty = { overrides: {}, custom: [] }; unreadable.add(empty); return empty; }
   try {
-    if (!existsSync(file())) return { overrides: {}, custom: [] };
-    const j = JSON.parse(readFileSync(file(), "utf8")) as Partial<Stored>;
-    return { overrides: j.overrides && typeof j.overrides === "object" ? j.overrides : {}, custom: Array.isArray(j.custom) ? j.custom : [] };
-  } catch { return { overrides: {}, custom: [] }; }
+    const j = JSON.parse(text) as Partial<Stored>;
+    const out: Stored = { overrides: j.overrides && typeof j.overrides === "object" ? j.overrides : {}, custom: Array.isArray(j.custom) ? j.custom.filter((c) => c && typeof c === "object") : [] }; // null 같은 깨진 칸은 버림(리뷰 — c.id에서 죽음)
+    if (j.bots && typeof j.bots === "object" && !Array.isArray(j.bots)) out.bots = j.bots;
+    return out;
+  } catch { return { overrides: {}, custom: [] }; } // 깨진 JSON — 쓸 때 옆에 백업하고 새로 시작
 }
-function writeStored(s: Stored) {
+export function writeStored(s: Stored) {
+  if (unreadable.has(s)) throw new Error("roles.json unreadable — not overwriting");
   mkdirSync(baseDir(), { recursive: true });
+  // 깨진 JSON은 빈 값으로 읽히므로, 그 위에 그대로 쓰면 역할이 다 날아감(리뷰) → 덮기 전에 옆에 백업
+  if (existsSync(file())) {
+    try { JSON.parse(readFileSync(file(), "utf8")); } catch { copyFileSync(file(), `${file()}.bad-${Date.now()}`); }
+  }
   writeFileSync(`${file()}.tmp`, JSON.stringify(s, null, 1));
   renameSync(`${file()}.tmp`, file());
 }
@@ -74,7 +89,8 @@ export function applyRoleOp(op: RoleOp): CrewRole[] {
       } else {
         if (!v.name) throw new Error("name required");
         let nid = slug(v.name) || "role", n = 2;
-        const taken = new Set([...builtinIds, ...s.custom.map((c) => c.id)]);
+        // 카탈로그 id도 비워 둠 — 직접 만든 "Security Reviewer"가 카탈로그 보안 리뷰어 자리를 먹지 않게(리뷰)
+        const taken = new Set([...builtinIds, ...CATALOG.map((c) => c.id), ...s.custom.map((c) => c.id)]);
         if (!ID_RE.test(nid)) nid = "role";
         while (taken.has(nid)) nid = `${slug(v.name) || "role"}-${n++}`;
         s.custom.push({ provider: "claude-code", access: "write", instructions: "", description: "", ...v, id: nid, name: v.name } as CrewRole);
@@ -86,6 +102,7 @@ export function applyRoleOp(op: RoleOp): CrewRole[] {
   } else if (op.op === "delete") {
     if (builtinIds.has(op.id)) throw new Error("builtin role cannot be deleted");
     s.custom = s.custom.filter((c) => c.id !== op.id);
+    if (s.bots && Object.hasOwn(s.bots, op.id)) delete s.bots[op.id]; // 같은 이름으로 다시 만들 때 옛 봇 정보가 되살아나지 않게(리뷰)
   } else throw new Error("unknown op");
   writeStored(s);
   return listRoles();
