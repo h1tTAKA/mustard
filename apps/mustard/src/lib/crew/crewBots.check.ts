@@ -71,6 +71,12 @@ bots = applyBotOp({ op: "install", catalog: "go-reviewer", locale: "ja" });
 assert.ok(bots.find((b) => b.id === "go-reviewer")?.instructions === "mine", "재설치는 기존 역할 되살림");
 assert.strictEqual(listRoles().filter((r) => r.id.startsWith("go-reviewer")).length, 1, "복사본 안 늘어남");
 assert.strictEqual(applyBotOp({ op: "install", catalog: "build-error-resolver" }).find((b) => b.id === "build-error-resolver")?.name, "Build Error Resolver", "언어 없으면 영어");
+// 직접 만들기: 봇 폴더를 못 만들면 역할도 남기지 않음(자리에 파일을 두어 실패시킴)
+mkdirSync(home, { recursive: true });
+writeFileSync(join(home, "broken-bot"), "x");
+assert.throws(() => applyBotOp({ op: "create", name: "Broken Bot", mission: "m" }));
+assert.ok(!listRoles().some((r) => r.id.startsWith("broken-bot")), "실패하면 역할 되돌림");
+
 // 상속 이름(__proto__ 등)은 봇이 아님, 이상한 언어는 영어로
 assert.throws(() => applyBotOp({ op: "update", id: "__proto__", name: "x" }), /not a bot/);
 assert.strictEqual(({} as Record<string, unknown>).name, undefined, "Object.prototype 안 건드림");
