@@ -29,18 +29,24 @@ function clean(x: unknown, builtin: boolean): Partial<CrewRole> | null {
   return out;
 }
 
+// 파일을 못 읽어서(권한·잠김) 빈 값으로 돌려준 결과 — 이걸로 다시 쓰면 역할이 다 날아가므로 쓰기를 거부(리뷰)
+const unreadable = new WeakSet<Stored>();
+
 export function readStored(): Stored {
+  if (!existsSync(file())) return { overrides: {}, custom: [] };
+  let text: string;
+  try { text = readFileSync(file(), "utf8"); } catch { const empty = { overrides: {}, custom: [] }; unreadable.add(empty); return empty; }
   try {
-    if (!existsSync(file())) return { overrides: {}, custom: [] };
-    const j = JSON.parse(readFileSync(file(), "utf8")) as Partial<Stored>;
+    const j = JSON.parse(text) as Partial<Stored>;
     const out: Stored = { overrides: j.overrides && typeof j.overrides === "object" ? j.overrides : {}, custom: Array.isArray(j.custom) ? j.custom.filter((c) => c && typeof c === "object") : [] }; // null 같은 깨진 칸은 버림(리뷰 — c.id에서 죽음)
     if (j.bots && typeof j.bots === "object" && !Array.isArray(j.bots)) out.bots = j.bots;
     return out;
-  } catch { return { overrides: {}, custom: [] }; }
+  } catch { return { overrides: {}, custom: [] }; } // 깨진 JSON — 쓸 때 옆에 백업하고 새로 시작
 }
 export function writeStored(s: Stored) {
+  if (unreadable.has(s)) throw new Error("roles.json unreadable — not overwriting");
   mkdirSync(baseDir(), { recursive: true });
-  // 읽기 실패(깨진 JSON)는 빈 값으로 읽히므로, 그 위에 그대로 쓰면 역할이 다 날아감(리뷰) → 덮기 전에 옆에 백업
+  // 깨진 JSON은 빈 값으로 읽히므로, 그 위에 그대로 쓰면 역할이 다 날아감(리뷰) → 덮기 전에 옆에 백업
   if (existsSync(file())) {
     try { JSON.parse(readFileSync(file(), "utf8")); } catch { copyFileSync(file(), `${file()}.bad-${Date.now()}`); }
   }

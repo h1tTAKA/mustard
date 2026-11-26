@@ -1,6 +1,6 @@
 // crewBots 점검 — MUSTARD_CREW_DIR=<임시> MUSTARD_BOTS_DIR=<임시> node --experimental-strip-types src/lib/crew/crewBots.check.ts
 import assert from "node:assert";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { applyBotOp, botHome, listBots } from "./crewBots.ts";
 import { applyRoleOp, listRoles, readStored } from "./crewRoleStore.ts";
@@ -92,4 +92,13 @@ listBots();
 assert.ok(readdirSync(crew).some((f) => f.startsWith("roles.json.bad-")), "깨진 파일 백업");
 writeFileSync(join(crew, "roles.json"), JSON.stringify({ overrides: {}, custom: [null, { id: "ok-role", name: "Ok" }] }));
 assert.doesNotThrow(() => listBots(), "custom 안의 null 칸은 버림");
+
+// 못 읽는 roles.json(권한)은 빈 값으로 덮어쓰지 않음 — root는 권한을 무시하므로 건너뜀
+if (process.getuid?.() !== 0) {
+  const f = join(crew, "roles.json"), before = readFileSync(f, "utf8");
+  chmodSync(f, 0o000);
+  assert.throws(() => applyRoleOp({ op: "save", role: { name: "Another" } }), /unreadable/);
+  chmodSync(f, 0o644);
+  assert.strictEqual(readFileSync(f, "utf8"), before, "파일 그대로");
+}
 console.log("crewBots OK");

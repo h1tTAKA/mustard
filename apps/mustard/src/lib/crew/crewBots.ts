@@ -1,7 +1,7 @@
 // 봇(#1394, 에픽 #1391 재정의 2) — 봇 = "설치된" 역할 + 봇 정보(색·만든 시각·출처·임무) + 봇 폴더. 서버 전용.
 // 역할(실행 설정)은 crewRoleStore 그대로 두고, roles.json의 bots 칸이 "화면에 보이는 봇 목록"을 정한다.
 // 실행 엔진(listRoles)은 설치 여부와 무관하게 전 역할을 계속 본다 — 파이프라인이 안 깨지게.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { builtinRoles, CREW_PROVIDERS, type CrewProvider, type CrewRole } from "./crewRoleDefaults.ts";
@@ -114,6 +114,7 @@ export function applyBotOp(op: BotOp, now = Date.now()): Bot[] {
       .find((r) => !before.has(r.id));
     if (!role) throw new Error("create failed");
     // 폴더·봇 기록 중 하나라도 실패하면 방금 만든 역할도 되돌림(다시 하면 -2가 안 붙게, 리뷰)
+    const hadHome = existsSync(botHome(role.id));
     try {
       ensureHome(role.id, name, mission);
       const s2 = readStored(); // applyRoleOp가 방금 쓴 파일(bots 칸 보존)
@@ -121,6 +122,7 @@ export function applyBotOp(op: BotOp, now = Date.now()): Bot[] {
       writeStored(s2);
     } catch (e) {
       try { applyRoleOp({ op: "delete", id: role.id }); } catch (e2) { console.warn(`[bots] 되돌리기 실패 — 남은 역할 ${role.id}`, e2); }
+      if (!hadHome) rmSync(botHome(role.id), { recursive: true, force: true }); // 이번에 만든 폴더만(다시 만들 때 옛 임무가 남지 않게)
       throw e;
     }
   } else if (op.op === "update") {
