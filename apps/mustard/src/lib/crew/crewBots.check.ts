@@ -3,7 +3,9 @@ import assert from "node:assert";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { applyBotOp, botHome, listBots } from "./crewBots.ts";
-import { applyRoleOp, readStored } from "./crewRoleStore.ts";
+import { applyRoleOp, listRoles, readStored } from "./crewRoleStore.ts";
+import { CATALOG } from "./crewCatalog.ts";
+import { CATALOG_AGENTS } from "./crewCatalogAgents.ts";
 
 const crew = process.env.MUSTARD_CREW_DIR, home = process.env.MUSTARD_BOTS_DIR;
 assert.ok(crew && home, "임시 디렉터리 둘 다 필수(실 데이터 보호)");
@@ -43,4 +45,29 @@ assert.throws(() => applyBotOp({ op: "update", id: "app-builder", name: " " }), 
 bots = applyBotOp({ op: "uninstall", id: "doc-writer" });
 assert.ok(!bots.some((b) => b.id === "doc-writer") && existsSync(botHome("doc-writer")), "목록에서만 빠짐, 폴더 유지");
 assert.throws(() => applyBotOp({ op: "uninstall", id: "doc-writer" }), /not a bot/);
+// 카탈로그: 기본 8 + 외부 54, id 겹침 없음, 외부 항목은 지시문·3언어 이름이 다 있음, 원문 저장소 이름 없음
+const ext = CATALOG.filter((c) => !c.builtin);
+assert.strictEqual(CATALOG.length, 62);
+assert.strictEqual(new Set(CATALOG.map((c) => c.id)).size, CATALOG.length, "id 겹침");
+assert.deepStrictEqual(ext.map((c) => c.id).sort(), Object.keys(CATALOG_AGENTS).sort(), "목록 ↔ 생성물 일치");
+for (const c of ext) assert.ok(c.name?.ko && c.name.ja && c.name.en && c.desc?.ko && c.desc.ja && c.desc.en, `3언어: ${c.id}`);
+// 원문 저장소 주인·이름(고지 파일의 Source 줄에서 읽음 — 이름은 고지에만 둔다)이 지시문에 없어야 함
+const notice = readFileSync(join(import.meta.dirname, "../../../../../THIRD_PARTY_NOTICES.md"), "utf8");
+const src = notice.split("crewCatalogAgents.ts")[1]?.match(/Source: https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)/);
+assert.ok(src, "고지 파일에 카탈로그 출처");
+const agentsText = JSON.stringify(CATALOG_AGENTS);
+for (const w of [src[1], src[2]]) assert.ok(!new RegExp(`\\b${w}\\b`, "i").test(agentsText), "원문 저장소 이름 금지");
+
+// 외부 항목 설치 = 그 언어 이름으로 커스텀 역할 복사 + 봇 폴더
+bots = applyBotOp({ op: "install", catalog: "go-reviewer", locale: "ko" });
+const go = bots.find((b) => b.id === "go-reviewer")!;
+assert.ok(go && go.name === "Go 리뷰어" && go.access === "read" && go.catalog === "go-reviewer" && go.instructions === CATALOG_AGENTS["go-reviewer"].instructions, "외부 설치");
+assert.match(readFileSync(join(go.home, "ABOUT.md"), "utf8"), /# Go 리뷰어\n\n관용구/);
+// 고친 지시문은 지웠다 다시 설치해도 남음(새로 복사 안 함)
+applyRoleOp({ op: "save", role: { id: "go-reviewer", instructions: "mine" } });
+applyBotOp({ op: "uninstall", id: "go-reviewer" });
+bots = applyBotOp({ op: "install", catalog: "go-reviewer", locale: "ja" });
+assert.ok(bots.find((b) => b.id === "go-reviewer")?.instructions === "mine", "재설치는 기존 역할 되살림");
+assert.strictEqual(listRoles().filter((r) => r.id.startsWith("go-reviewer")).length, 1, "복사본 안 늘어남");
+assert.strictEqual(applyBotOp({ op: "install", catalog: "build-error-resolver" }).find((b) => b.id === "build-error-resolver")?.name, "Build Error Resolver", "언어 없으면 영어");
 console.log("crewBots OK");

@@ -1,11 +1,12 @@
-// 봇(#1394) — GET 설치된 봇 목록 / POST {op:"install"|"create"|"update"|"uninstall", ...} 후 새 목록.
+// 봇(#1394) — GET 설치된 봇 목록 + 카탈로그(지시문 뺀 목록) / POST {op:"install"|"create"|"update"|"uninstall", ...} 후 새 목록.
 import { applyBotOp, listBots, type BotOp } from "@/lib/crew/crewBots";
+import { CATALOG } from "@/lib/crew/crewCatalog";
 import { crossSite } from "@/lib/crew/crewPolicy";
 
 export const runtime = "nodejs";
 
 export async function GET(): Promise<Response> {
-  try { return Response.json({ ok: true, bots: listBots() }); }
+  try { return Response.json({ ok: true, bots: listBots(), catalog: CATALOG }); }
   catch (e) { return Response.json({ ok: false, error: String((e as Error)?.message ?? e) }, { status: 500 }); }
 }
 

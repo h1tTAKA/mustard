@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { builtinRoles, CREW_PROVIDERS, type CrewProvider, type CrewRole } from "./crewRoleDefaults.ts";
 import { applyRoleOp, listRoles, readStored, writeStored, type BotMeta, type Stored } from "./crewRoleStore.ts";
+import { catalogItem, type L10n } from "./crewCatalog.ts";
+import { CATALOG_AGENTS } from "./crewCatalogAgents.ts";
 
 export type Bot = CrewRole & BotMeta & { home: string };
 
@@ -64,7 +66,7 @@ export function listBots(): Bot[] {
 }
 
 export type BotOp =
-  | { op: "install"; catalog: string; color?: string }                       // 기본 역할 id(카탈로그는 커밋 2)
+  | { op: "install"; catalog: string; color?: string; locale?: keyof L10n }  // 카탈로그 id. 외부 항목은 그 언어 이름으로 커스텀 역할 복사
   | { op: "create"; name: string; mission: string; provider?: CrewProvider; color?: string }
   | { op: "update"; id: string; name?: string; color?: string }
   | { op: "uninstall"; id: string };                                          // 목록에서만 뺌(역할·폴더 유지)
@@ -73,11 +75,27 @@ export function applyBotOp(op: BotOp, now = Date.now()): Bot[] {
   const s = stored();
   const bots = s.bots!;
   if (op.op === "install") {
-    const role = builtinRoles().find((b) => b.id === op.catalog);
-    if (!role) throw new Error("unknown catalog item");
-    if (!bots[role.id]) bots[role.id] = { color: cleanColor(op.color) ?? pickColor(role.id), createdAt: now, catalog: role.id };
-    writeStored(s);
-    ensureHome(role.id, role.id, role.instructions.split("\n")[0]);
+    const item = catalogItem(op.catalog);
+    if (!item) throw new Error("unknown catalog item");
+    const color = cleanColor(op.color);
+    if (item.builtin) {
+      const role = builtinRoles().find((b) => b.id === item.id)!;
+      if (!bots[role.id]) bots[role.id] = { color: color ?? pickColor(role.id), createdAt: now, catalog: role.id };
+      writeStored(s);
+      ensureHome(role.id, role.id, role.instructions.split("\n")[0]);
+    } else {
+      // 외부 항목 = 커스텀 역할로 복사(사용자가 고쳐도 원본 그대로, 앱 업데이트로 원본이 바뀌어도 사용자 봇은 안 흔들림).
+      // 한계: 같은 id 커스텀 역할이 이미 있으면(지웠다 다시 설치·같은 이름으로 직접 만든 역할) 새로 복사하지 않고 그 역할을 봇으로 되살림.
+      const agent = CATALOG_AGENTS[item.id];
+      if (!agent) throw new Error("unknown catalog item");
+      const loc = op.locale && op.locale in item.name! ? op.locale : "en";
+      const name = item.name![loc], about = item.desc![loc];
+      if (!s.custom.some((c) => c.id === item.id))
+        s.custom.push({ id: item.id, name, description: about, instructions: agent.instructions, provider: "claude-code", access: agent.access });
+      if (!bots[item.id]) bots[item.id] = { color: color ?? pickColor(item.id), createdAt: now, catalog: item.id };
+      writeStored(s);
+      ensureHome(item.id, name, about);
+    }
   } else if (op.op === "create") {
     const name = typeof op.name === "string" ? op.name.trim().slice(0, 60) : "";
     const mission = typeof op.mission === "string" ? op.mission.trim().slice(0, 4000) : "";
