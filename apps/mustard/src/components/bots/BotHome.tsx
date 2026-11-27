@@ -29,7 +29,7 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
   const uninstall = async (id: string): Promise<"ok" | "rejected" | "unknown"> => { const r = await op({ op: "uninstall", id }); return typeof r === "object" ? "ok" : r; };
   // 맡길 일로 바로 만들기 → 서버가 알려 준 새 봇 id를 고름
   // 새 봇 창에서 만들기 → 서버가 알려 준 새 봇 id를 고름
-  const create = async (b: { name: string; mission: string; provider: CrewProvider; color: string }): Promise<CreateResult> => {
+  const create = async (b: { name: string; mission: string; provider: CrewProvider; model?: string; color: string }): Promise<CreateResult> => {
     const r = await op({ op: "create", ...b });
     if (typeof r !== "object") return r;
     if (r.created) pick(r.created);

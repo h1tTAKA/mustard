@@ -1,11 +1,12 @@
 "use client";
 // 새 봇 창(#1397) — 맡기고 싶은 일을 정해 봇을 바로 만든다(추천·고르기 없음, 유저 결정 11-27).
 // 위: 봇 색 띠 + 아바타(색 고르기) / 이름(선택, 비우면 정체성 첫 줄) / 정체성 = 누구고 무슨 일을 하는지(임무) / "이 컴퓨터에서 [AI]로 실행".
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { IconLoader2 } from "@tabler/icons-react";
 import { useT, useToast } from "@mustard/core";
-import { BOT_COLORS, CREW_PROVIDERS, type CrewProvider } from "@/lib/crew/crewRoleDefaults";
-import { PROVIDER_LABEL } from "@/components/workspace/crew/crewUi";
+import { BOT_COLORS, type CrewProvider } from "@/lib/crew/crewRoleDefaults";
+import type { Provider } from "@/components/workspace/ChatComposer";
+import AgentModelPicker from "./AgentModelPicker";
 import BotAvatar from "./BotAvatar";
 
 export type CreateResult = "ok" | "rejected" | "unknown";
@@ -24,14 +25,16 @@ const LABEL = "mb-1.5 block text-[12px] font-medium text-zinc-600 dark:text-zinc
 
 export default function NewBotDialog({ onClose, create }: {
   onClose: () => void;
-  create: (b: { name: string; mission: string; provider: CrewProvider; color: string }) => Promise<CreateResult>;
+  create: (b: { name: string; mission: string; provider: CrewProvider; model?: string; color: string }) => Promise<CreateResult>;
 }) {
   const t = useT();
   const toast = useToast();
   const [color, setColor] = useState(BOT_COLORS[0]);
   const [name, setName] = useState("");
   const [mission, setMission] = useState("");
-  const [provider, setProvider] = useState<CrewProvider>("claude-code");
+  const [provider, setProvider] = useState<Provider>("claude-code");
+  const [model, setModel] = useState("");
+  const pickAgent = useCallback((p: Provider, m: string) => { setProvider(p); setModel(m); }, []);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   useEffect(() => { busyRef.current = busy; }, [busy]);
@@ -61,7 +64,7 @@ export default function NewBotDialog({ onClose, create }: {
     const m = mission.trim();
     if (!m || busy) return;
     setBusy(true);
-    const r = await create({ name: shownName, mission: m, provider, color });
+    const r = await create({ name: shownName, mission: m, provider, model: model || undefined, color }); // 채팅 AI id = 봇 실행 AI id(같은 5개)
     setBusy(false);
     if (r === "ok") { onClose(); return; }
     // 거절 = 못 만듦. 늦음(unknown) = 만들어졌는지 모름 → 창·글은 그대로 두고 "목록에 없을 때만 다시" 안내
@@ -72,9 +75,9 @@ export default function NewBotDialog({ onClose, create }: {
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[12vh]">
       <div className="absolute inset-0 bg-black/40 dark:bg-black/50" onClick={() => { if (!busy) onClose(); }} aria-hidden />
       <form ref={formRef} role="dialog" aria-modal="true" aria-label={t("bots.new.title")} onSubmit={submit}
-        className="relative w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-2xl ring-1 ring-black/5 dark:border-white/10 dark:bg-[#14151c] dark:ring-white/5">
+        className="relative w-full max-w-md rounded-2xl border border-zinc-200/80 bg-white shadow-2xl ring-1 ring-black/5 dark:border-white/10 dark:bg-[#14151c] dark:ring-white/5">
         {/* 봇 색 띠 — 고른 색이 위에서 아래로 옅어짐 */}
-        <div aria-hidden className="h-[84px]" style={{ background: `linear-gradient(180deg, ${color}66 0%, ${color}14 70%, transparent 100%)` }} />
+        <div aria-hidden className="h-[84px] rounded-t-[15px]" style={{ background: `linear-gradient(180deg, ${color}66 0%, ${color}14 70%, transparent 100%)` }} />
         <div className="-mt-12 px-5 pb-5">
           <div className="flex items-end gap-3">
             <span className="rounded-[18px] ring-4 ring-white dark:ring-[#14151c]">
@@ -108,13 +111,10 @@ export default function NewBotDialog({ onClose, create }: {
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !composing(e)) { e.preventDefault(); void submit(); } }}
                 className={`${FIELD} resize-none py-2 leading-relaxed`} />
             </label>
-            {/* 실행 줄 — 문장 안에 AI 고르기 */}
+            {/* 실행 줄 — 문장 안에 AI·모델 알약 */}
             <div className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-zinc-500 dark:text-zinc-400">
               <span>{t("bots.new.runsOn")}</span>
-              <select value={provider} onChange={(e) => setProvider(e.target.value as CrewProvider)} aria-label={t("bots.new.agent")}
-                className="h-7 rounded-md border border-zinc-200 bg-white px-1.5 text-[12.5px] font-medium text-zinc-800 outline-none focus:border-mustard-400/70 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
-                {CREW_PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABEL[p] ?? p}</option>)}
-              </select>
+              <AgentModelPicker provider={provider} model={model} onChange={pickAgent} />
               {t("bots.new.runsOnTail") && <span>{t("bots.new.runsOnTail")}</span>}
             </div>
           </div>
