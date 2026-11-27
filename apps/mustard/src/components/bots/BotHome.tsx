@@ -83,11 +83,11 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
   const over = "absolute inset-y-0 z-20 shadow-lg";
   // 덮어 연 칸은 Esc로 닫힘(리뷰)
   useEffect(() => {
-    if (!leftOver && !rightOver) return;
+    if ((!leftOver && !rightOver) || creating) return; // 새 봇 창이 열려 있으면 Esc는 창 몫(같이 닫히지 않게, 리뷰)
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setLeftOver(false); setRightOver(false); } };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [leftOver, rightOver]);
+  }, [leftOver, rightOver, creating]);
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       <header className={`titlebar-drag flex h-10 shrink-0 items-center gap-2 border-b border-zinc-200 pr-2 dark:border-zinc-800 ${fullscreen ? "pl-2" : "pl-[78px]"}`}>
