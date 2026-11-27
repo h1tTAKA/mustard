@@ -305,6 +305,11 @@ export async function listModels(p: ChatProvider): Promise<ModelInfo[]> {
   if (r && !r.error) modelCache.set(p, { at: Date.now(), models }); // 실패·부분 결과는 캐시 안 함(리뷰)
   return models;
 }
+// 제대로 받은 모델 목록만(SNA 실패 땐 기본 모델 하나만 든 목록이라 대조에 못 씀) — 실패면 null(#1397 봇 만들기 모델 확인)
+export async function knownModels(p: ChatProvider): Promise<ModelInfo[] | null> {
+  await listModels(p);
+  return modelCache.get(p)?.models ?? null;
+}
 
 // ── 에이전트 ────────────────────────────────────────────────────────
 function wire(): Promise<void> {
