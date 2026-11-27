@@ -37,7 +37,9 @@ export default function BotOnboard({ catalog, bots, root, install, onOpen }: {
       const j = await fetch("/api/crew/bots/recommend", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ want: w, root }), signal: ac.signal }).then((r) => r.json());
       if (my !== reqRef.current) return;
       if (!j?.ok) throw new Error(j?.error);
-      setPicks(j.ids);
+      const ids = (j.ids as string[]).filter((id) => catalog.some((c) => c.id === id));
+      if (!ids.length) throw new Error("no known ids"); // 카탈로그를 못 받았거나 낡음 — 빈 칸 대신 실패 알림(리뷰)
+      setPicks(ids);
     } catch { if (my === reqRef.current) toast(t("bots.onboard.recommendFailed"), "error"); }
     finally { if (my === reqRef.current) setAsking(false); }
   };
