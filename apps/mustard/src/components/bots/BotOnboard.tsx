@@ -1,9 +1,12 @@
 "use client";
 // 봇 홈 첫 실행·새 봇(#1397) — 맡길 일을 적으면 그 임무로 봇을 바로 만든다(유저 결정: 추천·고르기 없이 맡기고 싶은 걸 맡김).
 // 이름은 비우면 임무 첫 줄에서 짓는다. 만든 뒤 이름·임무는 대화(H4)·설정(H3)에서 고친다.
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { IconRobot, IconLoader2 } from "@tabler/icons-react";
 import { useT, useToast } from "@mustard/core";
+
+// 한글·일본어 조합 확정 Enter — Safari는 확정 뒤 keydown에 isComposing=false·keyCode 229를 줌(리뷰)
+const composing = (e: KeyboardEvent<HTMLElement>) => e.nativeEvent.isComposing || e.keyCode === 229;
 
 const NAME_MAX = 24; // 자동 이름 길이(목록 한 줄에 들어가게)
 
@@ -48,10 +51,11 @@ export default function BotOnboard({ create }: { create: (name: string, mission:
         <div className="w-full rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-sm transition focus-within:border-mustard-400/70 focus-within:ring-4 focus-within:ring-mustard-400/10 dark:border-zinc-700/80 dark:bg-zinc-900/60 dark:focus-within:border-mustard-400/50">
           <textarea value={mission} onChange={(e) => setMission(e.target.value)} rows={4} maxLength={4000} autoFocus
             placeholder={t("bots.onboard.placeholder")} aria-label={t("bots.onboard.mission")}
-            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) { e.preventDefault(); void submit(); } }}
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !composing(e)) { e.preventDefault(); void submit(); } }}
             className="block w-full resize-none bg-transparent px-2.5 py-2 text-[14px] leading-relaxed text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500" />
           <div className="flex items-center gap-2 border-t border-zinc-100 px-1.5 pt-1.5 dark:border-zinc-800">
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} maxLength={60}
+              onKeyDown={(e) => { if (e.key === "Enter" && composing(e)) e.preventDefault(); }}
               placeholder={mission.trim() ? nameFromMission(mission) : t("bots.onboard.namePlaceholder")} aria-label={t("bots.onboard.name")}
               className="h-8 min-w-0 flex-1 rounded-lg bg-transparent px-2 text-[13px] text-zinc-800 outline-none placeholder:text-zinc-400 focus:bg-zinc-100 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:bg-zinc-800" />
             <button type="submit" disabled={!mission.trim() || busy} title={t("bots.onboard.submitHint")}
