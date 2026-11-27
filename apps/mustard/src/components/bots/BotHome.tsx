@@ -3,13 +3,14 @@
 // 좁은 폭: 본문 폭을 재서 오른쪽 칸(900px 미만) → 왼쪽 칸(560px 미만) 순으로 붙박이에서 빠짐.
 // 빠진 칸은 헤더 토글로 가운데 위에 덮어 열고, 가운데를 누르면 닫힘. 붙박이 칸의 토글은 그냥 접기/펴기.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { IconLayoutSidebarLeftExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarRightCollapse } from "@tabler/icons-react";
+import { IconPlus, IconLayoutSidebarLeftExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarRightCollapse } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
 import BotSidebar, { type BotProject } from "./BotSidebar";
 import BotInfo from "./BotInfo";
 import BotAvatar from "./BotAvatar";
-import BotOnboard from "./BotOnboard";
+import NewBotDialog, { type CreateResult } from "./NewBotDialog";
+import type { CrewProvider } from "@/lib/crew/crewRoleDefaults";
 import { botDesc, botName, useBots } from "./useBots";
 
 const SEL_KEY = "nunopi:bots-selected";
@@ -22,22 +23,21 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
   const { bots, error, reload, op } = useBots(active);
   // 고른 봇 — 기억해 두고, 없어졌으면(빼기·다른 창) 맨 위 봇.
   const [picked, setPicked] = useState<string | null>(() => { try { return localStorage.getItem(SEL_KEY); } catch { return null; } });
-  const [newing, setNewing] = useState(false); // + 누름 → 가운데 새 봇(맡길 일) 화면
-  const pick = (id: string | null) => { setNewing(false); setPicked(id); try { if (id) localStorage.setItem(SEL_KEY, id); else localStorage.removeItem(SEL_KEY); } catch { /* ignore */ } };
+  const [creating, setCreating] = useState(false); // 새 봇 창 열림
+  const pick = (id: string | null) => { setPicked(id); try { if (id) localStorage.setItem(SEL_KEY, id); else localStorage.removeItem(SEL_KEY); } catch { /* ignore */ } };
   const bot = bots?.find((b) => b.id === picked) ?? bots?.[0] ?? null;
   const uninstall = async (id: string): Promise<"ok" | "rejected" | "unknown"> => { const r = await op({ op: "uninstall", id }); return typeof r === "object" ? "ok" : r; };
   // 맡길 일로 바로 만들기 → 서버가 알려 준 새 봇 id를 고름
-  const create = async (name: string, mission: string): Promise<"ok" | "rejected" | "unknown"> => {
-    const r = await op({ op: "create", name, mission });
+  // 새 봇 창에서 만들기 → 서버가 알려 준 새 봇 id를 고름
+  const create = async (b: { name: string; mission: string; provider: CrewProvider; color: string }): Promise<CreateResult> => {
+    const r = await op({ op: "create", ...b });
     if (typeof r !== "object") return r;
     if (r.created) pick(r.created);
     return "ok";
   };
-  const onboarding = !!bots && (bots.length === 0 || newing); // 봇 없음 = 첫 실행. 못 읽음(null)은 여기 안 옴
-  const left = <BotSidebar bots={bots} error={error} selected={bot?.id ?? null} onSelect={pick} onNew={() => setNewing(true)} onRetry={reload} projects={projects} onOpenProject={onOpenProject} />;
-  const center = onboarding ? (
-    <BotOnboard create={create} />
-  ) : bot ? (
+  const openNew = () => setCreating(true);
+  const left = <BotSidebar bots={bots} error={error} selected={bot?.id ?? null} onSelect={pick} onNew={openNew} onRetry={reload} projects={projects} onOpenProject={onOpenProject} />;
+  const center = bot ? (
     // 한계: Home Chat(H4) 전까지 가운데는 봇 소개만.
     <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
       <BotAvatar name={botName(t, bot)} color={bot.color} size={56} />
@@ -45,8 +45,17 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
       <p className="max-w-md text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">{botDesc(t, bot)}</p>
       <p className="mt-2 rounded-lg bg-zinc-100 px-3 py-1.5 text-[12px] text-zinc-500 dark:bg-zinc-800/70 dark:text-zinc-400">{t("bots.chatSoon")}</p>
     </div>
-  ) : null; // 읽는 중·못 읽음 — 빈 봇 목록은 위 첫 실행으로 감
-  const right = bots && !onboarding ? <BotInfo bot={bot} onUninstall={uninstall} /> : error ? <BotInfo bot={null} onUninstall={uninstall} /> : null; // 읽는 중·첫 실행엔 비움(고를 봇이 없음, 리뷰)
+  ) : bots && bots.length === 0 ? (
+    // 봇 없음 — 가운데는 조용히 한 줄 + [새 봇](만들기는 창으로)
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+      <p className="text-[13px] text-zinc-400 dark:text-zinc-500">{t("bots.noBots")}</p>
+      <button type="button" onClick={openNew}
+        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-mustard-500 px-3.5 text-[12.5px] font-semibold text-brown-900 transition hover:bg-mustard-400">
+        <IconPlus size={14} stroke={2.2} aria-hidden /> {t("bots.new.title")}
+      </button>
+    </div>
+  ) : null; // 읽는 중·못 읽음
+  const right = bot ? <BotInfo bot={bot} onUninstall={uninstall} /> : error ? <BotInfo bot={null} onUninstall={uninstall} /> : null; // 읽는 중·봇 없음엔 비움
   const fullscreen = useFullscreen(); // 신호등 자리 좌측 패딩(레포 헤더와 같은 규칙)
   const bodyRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1440);
@@ -104,6 +113,7 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
           </aside>
         )}
       </div>
+      {creating && <NewBotDialog onClose={() => setCreating(false)} create={create} />}
     </div>
   );
 }

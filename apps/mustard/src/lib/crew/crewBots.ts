@@ -4,15 +4,14 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { builtinRoles, CREW_PROVIDERS, type CrewProvider, type CrewRole } from "./crewRoleDefaults.ts";
+import { BOT_COLORS, builtinRoles, CREW_PROVIDERS, type CrewProvider, type CrewRole } from "./crewRoleDefaults.ts";
 import { applyRoleOp, listRoles, readStored, writeStored, type BotMeta, type Stored } from "./crewRoleStore.ts";
 import { catalogItem, type L10n } from "./crewCatalog.ts";
 import { CATALOG_AGENTS } from "./crewCatalogAgents.ts";
 
 export type Bot = CrewRole & BotMeta & { home: string };
 
-// 봇 아바타 바탕색(시안의 7색). 지정 안 하면 id로 고정 배정.
-export const BOT_COLORS = ["#e8b93a", "#93c5fd", "#a5b4fc", "#86efac", "#fca5a5", "#fdba74", "#d4d4d8"];
+// 봇 아바타 바탕색 — 지정 안 하면 id로 고정 배정(색 목록은 crewRoleDefaults, 화면과 공용).
 const pickColor = (id: string) => BOT_COLORS[[...id].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7) % BOT_COLORS.length];
 const cleanColor = (c: unknown) => (typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : undefined);
 

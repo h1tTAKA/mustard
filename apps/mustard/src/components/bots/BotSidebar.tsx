@@ -73,10 +73,14 @@ export default function BotSidebar({ bots, error, selected, onSelect, onNew, onR
               </div>
             )}
             {!bots ? null : bots.length === 0 ? (
-              // 첫 실행 — 가운데 추천 화면과 짝(무엇을 하는 칸인지 한 줄)
+              // 첫 실행 — 무엇을 하는 칸인지 한 줄 + [새 봇](창 열기)
               <div className="mx-1 flex flex-col gap-1 rounded-xl bg-white px-3 py-3 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800/50 dark:ring-zinc-700/60">
                 <div className="text-[13px] font-semibold text-zinc-800 dark:text-zinc-100">{t("bots.emptyCard.title")}</div>
                 <div className="text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">{t("bots.emptyCard.desc")}</div>
+                <button type="button" onClick={onNew}
+                  className="mt-1.5 inline-flex h-7 items-center gap-1 self-start rounded-md bg-mustard-500 px-2.5 text-[12px] font-semibold text-brown-900 transition hover:bg-mustard-400">
+                  <IconPlus size={13} stroke={2.2} aria-hidden /> {t("bots.new.title")}
+                </button>
               </div>
             ) : rows.length === 0 && q.trim() ? (
               <p className="px-2.5 py-2 text-[12px] text-zinc-400 dark:text-zinc-500">{t("bots.noMatch")}</p>
