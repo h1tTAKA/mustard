@@ -32,10 +32,11 @@ export default function BotOnboard({ create }: { create: (name: string, mission:
     const r = await create(name.trim() || nameFromMission(m), m);
     setBusy(false);
     if (r === "rejected") { toast(t("bots.onboard.createFailed"), "error"); return; }
-    // 기다리는 동안 새로 쓴 글은 지우지 않음(리뷰). 응답이 늦었으면(unknown) 서버가 만들었을 수 있어 그대로 다시 누르면 겹침 → 비우고 안내
+    // 응답이 늦음(unknown) = 만들어졌는지 모름 → 쓴 글은 남기고 "목록에 없을 때만 다시" 안내(글 잃는 쪽이 겹침보다 손해, 리뷰). 초록 성공으로 안 보이게 error.
+    if (r === "unknown") { toast(t("bots.onboard.createSlow"), "error"); return; }
+    // 기다리는 동안 새로 쓴 글은 지우지 않음(리뷰)
     setMission((cur) => (cur.trim() === m ? "" : cur));
     setName((cur) => (cur === n ? "" : cur));
-    if (r === "unknown") toast(t("bots.onboard.createSlow"), "error"); // 확인 안 된 상태 — 성공(초록)으로 보이지 않게
   };
 
   return (

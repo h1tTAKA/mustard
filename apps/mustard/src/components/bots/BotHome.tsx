@@ -45,10 +45,8 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
       <p className="max-w-md text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">{botDesc(t, bot)}</p>
       <p className="mt-2 rounded-lg bg-zinc-100 px-3 py-1.5 text-[12px] text-zinc-500 dark:bg-zinc-800/70 dark:text-zinc-400">{t("bots.chatSoon")}</p>
     </div>
-  ) : (
-    <div className="flex flex-1 items-center justify-center p-8 text-[13px] text-zinc-400 dark:text-zinc-500">{bots ? t("bots.empty") : null}</div>
-  );
-  const right = bots && !onboarding ? <BotInfo bot={bot} error={error} onUninstall={uninstall} /> : error ? <BotInfo bot={null} error onUninstall={uninstall} /> : null; // 읽는 중·첫 실행엔 비움(고를 봇이 없음, 리뷰)
+  ) : null; // 읽는 중·못 읽음 — 빈 봇 목록은 위 첫 실행으로 감
+  const right = bots && !onboarding ? <BotInfo bot={bot} onUninstall={uninstall} /> : error ? <BotInfo bot={null} onUninstall={uninstall} /> : null; // 읽는 중·첫 실행엔 비움(고를 봇이 없음, 리뷰)
   const fullscreen = useFullscreen(); // 신호등 자리 좌측 패딩(레포 헤더와 같은 규칙)
   const bodyRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1440);
