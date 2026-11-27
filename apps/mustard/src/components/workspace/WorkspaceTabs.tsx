@@ -454,6 +454,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   useShortcut(["repo.new", "repo.close", "repo.newWorkspace", "repo.openIn"], (d) => {
     if (!active) return false;
     if (d.id === "repo.new") { void addRepoTab(); return; }
+    if (mode !== "repo") return false; // #1397 봇 모드엔 보이는 레포 탭이 없음 — 숨은 탭을 닫거나 열지 않게(리뷰)
     const tb = tabs.find((x) => tabKey(x) === activeKey);
     if (!tb) return false;
     if (d.id === "repo.close") {
@@ -743,7 +744,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
                   <WorkspaceView
                     key={tab.wt ?? tab.path} // #1170 작업 폴더를 바꾸면 그 폴더로 새로(터미널·변경·파일 모두 그 폴더 기준)
                     path={tab.wt ?? tab.path}
-                    active={active && on}
+                    active={active && on && mode === "repo"} // #1397 봇 모드면 숨은 레포 화면 단축키·포커스 끔(탭 바꿀 때와 같은 뜻)
                     agentWorking={repoStatus[tab.wt ?? tab.path] === "working"} // #1043 숨은 레포라도 에이전트 작업 중이면 캐치업 연결 유지
                     providerId={providerId}
                     providerSettings={providerSettings}
@@ -755,7 +756,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
                 ) : (
                   <WorkspaceModePane
                     kind={tab.type}
-                    active={active && on}
+                    active={active && on && mode === "repo"} // #1397 봇 모드면 숨은 레포 화면 단축키·포커스 끔(탭 바꿀 때와 같은 뜻)
                     providerId={providerId}
                     providerSettings={providerSettings}
                     tabStrip={on ? tabStrip : undefined}

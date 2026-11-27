@@ -23,14 +23,18 @@ export default function BotOnboard({ catalog, bots, root, install, onOpen }: {
   const [picks, setPicks] = useState<string[] | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
   const reqRef = useRef(0); // 늦게 온 옛 답이 새 답을 덮지 않게
+  const abortRef = useRef<AbortController | null>(null); // 새로 물으면 앞 요청은 취소(AI가 오래 걸려도 막히지 않게, 리뷰)
 
   const ask = async (text: string) => {
     const w = text.trim();
-    if (!w || asking) return;
+    if (!w) return;
     const my = ++reqRef.current;
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
     setAsking(true);
     try {
-      const j = await fetch("/api/crew/bots/recommend", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ want: w, root }) }).then((r) => r.json());
+      const j = await fetch("/api/crew/bots/recommend", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ want: w, root }), signal: ac.signal }).then((r) => r.json());
       if (my !== reqRef.current) return;
       if (!j?.ok) throw new Error(j?.error);
       setPicks(j.ids);
@@ -63,7 +67,7 @@ export default function BotOnboard({ catalog, bots, root, install, onOpen }: {
         <form onSubmit={submit} className="flex h-[52px] w-full items-center gap-2.5 rounded-2xl border border-zinc-200 bg-white pl-4 pr-2 shadow-sm transition focus-within:border-mustard-400/70 focus-within:ring-4 focus-within:ring-mustard-400/10 dark:border-zinc-700/80 dark:bg-zinc-900/60 dark:focus-within:border-mustard-400/50">
           <input type="text" value={want} onChange={(e) => setWant(e.target.value)} maxLength={500} placeholder={t("bots.onboard.placeholder")} aria-label={t("bots.onboard.want")}
             className="min-w-0 flex-1 bg-transparent text-[14px] text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500" />
-          <button type="submit" disabled={!want.trim() || asking}
+          <button type="submit" disabled={!want.trim()}
             className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-mustard-500 px-4 text-[13px] font-semibold text-brown-900 transition hover:bg-mustard-400 disabled:opacity-50">
             {asking && <IconLoader2 size={14} stroke={2.2} className="animate-spin" aria-hidden />}
             {t(asking ? "bots.onboard.asking" : "bots.onboard.ask")}
@@ -71,7 +75,7 @@ export default function BotOnboard({ catalog, bots, root, install, onOpen }: {
         </form>
         <div className="flex flex-wrap justify-center gap-2">
           {CHIPS.map((k) => (
-            <button key={k} type="button" onClick={() => chip(k)} disabled={asking}
+            <button key={k} type="button" onClick={() => chip(k)}
               className="h-8 whitespace-nowrap rounded-full border border-zinc-200 bg-white px-3.5 text-[12.5px] text-zinc-600 transition hover:border-mustard-400 hover:text-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-300 dark:hover:text-zinc-50">
               {t(`bots.onboard.chip.${k}`)}
             </button>

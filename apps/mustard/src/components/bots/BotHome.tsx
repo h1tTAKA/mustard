@@ -66,11 +66,11 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject, r
     <div className="flex h-full min-h-0 w-full flex-col">
       <header className={`titlebar-drag flex h-10 shrink-0 items-center gap-2 border-b border-zinc-200 pr-2 dark:border-zinc-800 ${fullscreen ? "pl-2" : "pl-[78px]"}`}>
         {modeSwitch}
-        <button type="button" onClick={toggleLeft} aria-pressed={leftOn} title={t(leftOn ? "workspace.leftCollapse" : "workspace.leftExpand")} aria-label={t(leftOn ? "workspace.leftCollapse" : "workspace.leftExpand")} className={TOGGLE}>
+        <button type="button" onClick={toggleLeft} aria-pressed={leftOn} title={t("bots.leftPanel")} aria-label={t("bots.leftPanel")} className={TOGGLE}>
           {leftOn ? <IconLayoutSidebarLeftCollapse size={18} stroke={2} aria-hidden /> : <IconLayoutSidebarLeftExpand size={18} stroke={2} aria-hidden />}
         </button>
         <div className="flex-1" />
-        <button type="button" onClick={toggleRight} aria-pressed={rightOn} title={t(rightOn ? "bots.rightCollapse" : "bots.rightExpand")} aria-label={t(rightOn ? "bots.rightCollapse" : "bots.rightExpand")} className={TOGGLE}>
+        <button type="button" onClick={toggleRight} aria-pressed={rightOn} title={t("bots.rightPanel")} aria-label={t("bots.rightPanel")} className={TOGGLE}>
           {rightOn ? <IconLayoutSidebarRightCollapse size={18} stroke={2} aria-hidden /> : <IconLayoutSidebarRightExpand size={18} stroke={2} aria-hidden />}
         </button>
       </header>
