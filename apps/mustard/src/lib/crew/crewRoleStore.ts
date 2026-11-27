@@ -21,7 +21,8 @@ function clean(x: unknown, builtin: boolean): Partial<CrewRole> | null {
   const out: Partial<CrewRole> = {};
   if (typeof r.instructions === "string") out.instructions = r.instructions.slice(0, 20_000);
   if (typeof r.provider === "string" && (CREW_PROVIDERS as string[]).includes(r.provider)) out.provider = r.provider as CrewRole["provider"];
-  if (typeof r.model === "string") out.model = r.model.trim().slice(0, 80) || undefined;
+  // 모델 id는 실행 AI 명령줄로 넘어감 → 글자 허용 목록, 맨 앞 "-" 금지(옵션으로 읽히지 않게, #1397 리뷰). 안 맞으면 비움 = 그 AI 기본 모델.
+  if (typeof r.model === "string") { const m = r.model.trim(); out.model = /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]{0,79}$/.test(m) ? m : undefined; }
   if (r.access === "read" || r.access === "write") out.access = r.access;
   if (!builtin) {
     if (typeof r.name === "string") out.name = r.name.trim().slice(0, 60);

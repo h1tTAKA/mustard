@@ -37,6 +37,11 @@ bots = applyBotOp({ op: "create", name: "일정 비서", mission: "매일 아침
 const sec = bots[0];
 assert.ok(sec.name === "일정 비서" && sec.instructions.startsWith("매일 아침") && sec.color === "#93c5fd" && sec.mission, "만들기(새 봇이 위)");
 assert.ok(sec.provider === "codex" && sec.model === "gpt-5", "만들기 실행 AI·모델");
+// 모델 id 허용 목록 — 옵션처럼 보이는 값·공백 섞인 값은 버림(기본 모델), [1m] 같은 꼬리는 허용
+const mk = (model: string) => applyBotOp({ op: "create", name: `m${model.length}${model[0]}`, mission: "x", model }, Date.now() + 70_000).find((b) => b.mission === "x" && b.name === `m${model.length}${model[0]}`)!.model;
+assert.equal(mk("--dangerous"), undefined, "맨 앞 - 거부");
+assert.equal(mk("a b"), undefined, "공백 거부");
+assert.equal(mk("claude-opus-4-8[1m]"), "claude-opus-4-8[1m]", "[1m] 허용");
 assert.match(readFileSync(join(sec.home, "ABOUT.md"), "utf8"), /# 일정 비서\n\n매일 아침 일정 정리/);
 assert.throws(() => applyBotOp({ op: "create", name: "x", mission: " " }), /mission required/);
 

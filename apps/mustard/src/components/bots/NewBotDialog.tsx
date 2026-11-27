@@ -35,6 +35,7 @@ export default function NewBotDialog({ onClose, create }: {
   const [provider, setProvider] = useState<Provider>("claude-code");
   const [model, setModel] = useState("");
   const pickAgent = useCallback((p: Provider, m: string) => { setProvider(p); setModel(m); }, []);
+  const [hasAgent, setHasAgent] = useState(true); // 설치·켜진 실행 AI가 하나라도 있나
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   useEffect(() => { busyRef.current = busy; }, [busy]);
@@ -62,7 +63,7 @@ export default function NewBotDialog({ onClose, create }: {
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
     const m = mission.trim();
-    if (!m || busy) return;
+    if (!m || busy || !hasAgent) return;
     setBusy(true);
     const r = await create({ name: shownName, mission: m, provider, model: model || undefined, color }); // 채팅 AI id = 봇 실행 AI id(같은 5개)
     setBusy(false);
@@ -114,7 +115,7 @@ export default function NewBotDialog({ onClose, create }: {
             {/* 실행 줄 — 문장 안에 AI·모델 알약 */}
             <div className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-zinc-500 dark:text-zinc-400">
               <span>{t("bots.new.runsOn")}</span>
-              <AgentModelPicker provider={provider} model={model} onChange={pickAgent} />
+              <AgentModelPicker provider={provider} model={model} onChange={pickAgent} onAvailable={setHasAgent} />
               {t("bots.new.runsOnTail") && <span>{t("bots.new.runsOnTail")}</span>}
             </div>
           </div>
@@ -124,7 +125,7 @@ export default function NewBotDialog({ onClose, create }: {
               className="h-8 rounded-lg px-3 text-[12.5px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-white/10">
               {t("bots.new.cancel")}
             </button>
-            <button type="submit" disabled={!mission.trim() || busy} title={t("bots.new.submitHint")}
+            <button type="submit" disabled={!mission.trim() || busy || !hasAgent} title={t("bots.new.submitHint")}
               className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg bg-mustard-500 px-3.5 text-[12.5px] font-semibold text-brown-900 transition hover:bg-mustard-400 disabled:opacity-50">
               {busy && <IconLoader2 size={14} stroke={2.2} className="animate-spin" aria-hidden />}
               {t("bots.new.create")}
