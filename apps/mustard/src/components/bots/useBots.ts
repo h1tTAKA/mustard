@@ -32,16 +32,16 @@ export function useBots(active: boolean) {
   const op = useCallback((body: BotOp): Promise<Bot[] | null> => {
     const run = async (): Promise<Bot[] | null> => {
       try {
-        const j = await fetch("/api/crew/bots", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+        const j = await fetch("/api/crew/bots", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) }).then((r) => r.json()); // 멈춘 요청이 뒤 줄을 막지 않게(리뷰)
         if (!j?.ok) return null;
         gen.current++;
         setBots(j.bots); setError(false);
         return j.bots as Bot[];
-      } catch { return null; }
+      } catch { reload(); return null; } // 시간 초과여도 서버는 했을 수 있음 → 목록 다시 맞춤
     };
     const p = chain.current.then(run, run);
     chain.current = p;
     return p;
-  }, []);
+  }, [reload]);
   return { bots, catalog, error, reload, op };
 }
