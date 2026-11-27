@@ -8,7 +8,7 @@ import { fmtDateTime } from "@/lib/relTime";
 import BotAvatar from "./BotAvatar";
 import { botDesc, botName, type Bot } from "./useBots";
 
-export default function BotInfo({ bot, onUninstall }: { bot: Bot | null; onUninstall: (id: string) => Promise<boolean> }) {
+export default function BotInfo({ bot, onUninstall }: { bot: Bot | null; onUninstall: (id: string) => Promise<"ok" | "rejected" | "unknown"> }) {
   const t = useT();
   const confirm = useConfirm();
   const toast = useToast();
@@ -18,7 +18,8 @@ export default function BotInfo({ bot, onUninstall }: { bot: Bot | null; onUnins
   const openFolder = () => void window.nunopiDesktop?.openIn?.("finder", bot.home).then((r) => { if (!r?.ok) toast(t("openIn.failed", { app: "Finder" }), "error"); }, () => toast(t("openIn.failed", { app: "Finder" }), "error"));
   const uninstall = async () => {
     if (!(await confirm({ title: name, message: t("bots.uninstallConfirm"), detail: t("bots.uninstallDetail"), confirmText: t("bots.uninstall"), tone: "warn" }))) return;
-    if (!(await onUninstall(bot.id))) toast(t("bots.uninstallFailed"), "error");
+    // 응답이 늦음(unknown)은 실패로 단정 안 함 — 잠시 뒤 다시 읽은 목록이 결과를 보여 줌(리뷰)
+    if ((await onUninstall(bot.id)) === "rejected") toast(t("bots.uninstallFailed"), "error");
   };
   const row = (label: string, value: React.ReactNode) => (
     <div className="flex flex-col gap-0.5">

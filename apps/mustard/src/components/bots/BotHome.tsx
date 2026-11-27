@@ -25,7 +25,7 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
   const [newing, setNewing] = useState(false); // + 누름 → 가운데 새 봇(맡길 일) 화면
   const pick = (id: string | null) => { setNewing(false); setPicked(id); try { if (id) localStorage.setItem(SEL_KEY, id); else localStorage.removeItem(SEL_KEY); } catch { /* ignore */ } };
   const bot = bots?.find((b) => b.id === picked) ?? bots?.[0] ?? null;
-  const uninstall = async (id: string) => typeof (await op({ op: "uninstall", id })) === "object";
+  const uninstall = async (id: string): Promise<"ok" | "rejected" | "unknown"> => { const r = await op({ op: "uninstall", id }); return typeof r === "object" ? "ok" : r; };
   // 맡길 일로 바로 만들기 → 서버가 알려 준 새 봇 id를 고름
   const create = async (name: string, mission: string): Promise<"ok" | "rejected" | "unknown"> => {
     const r = await op({ op: "create", name, mission });
