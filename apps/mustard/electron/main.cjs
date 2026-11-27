@@ -604,6 +604,12 @@ ipcMain.handle("open-in:open", async (_e, { id, dir } = {}) => {
   if (!a) return { ok: false, reason: "not installed" };
   return new Promise((res) => require("node:child_process").execFile("open", ["-a", a.appPath, real], { timeout: 10000 }, (e) => res(e ? { ok: false, reason: String(e.message || e) } : { ok: true })));
 });
+// #1399 봇 삭제 — 서버가 비켜 둔 봇 폴더를 OS 휴지통으로(경로 검사는 bot-trash.cjs)
+ipcMain.handle("bots:trash", async (_e, p) => {
+  const real = require("./bot-trash.cjs").trashTarget(p);
+  if (!real) return { ok: false, reason: "bad path" };
+  try { await shell.trashItem(real); return { ok: true }; } catch (e) { return { ok: false, reason: String(e?.message || e) }; }
+});
 ipcMain.handle("shell:open-external", (_e, url) => { if (typeof url === "string" && /^https?:\/\//i.test(url)) void shell.openExternal(url); }); // #1193 터미널 링크 — http(s)만
 ipcMain.handle("computer:status", (_e, { force } = {}) => computerStatus(!!force));
 ipcMain.handle("computer:set", (_e, patch = {}) => {

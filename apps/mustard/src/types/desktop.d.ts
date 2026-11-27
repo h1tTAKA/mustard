@@ -45,6 +45,7 @@ interface NunopiDesktopApi {
   clearBrowserData?(): Promise<{ ok: boolean; reason?: string }>; // #1209
   openInList?(): Promise<{ id: string; kind: "files" | "editor" | "terminal" | "git"; name: string; icon: string | null }[]>; // #1199
   openIn?(id: string, dir: string): Promise<{ ok: boolean; reason?: string }>;
+  trashBotFolder?(path: string): Promise<{ ok: boolean; reason?: string }>; // #1399
   openExternal?(url: string): Promise<void>; // #1193
   writeClipboardText?(text: string): Promise<void>; // #1196
   // #1175 컴퓨터 사용(Mustard main — 단독 앱엔 없음)

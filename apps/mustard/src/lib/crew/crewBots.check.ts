@@ -2,7 +2,7 @@
 import assert from "node:assert";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { applyBotOp, botHome, listBots } from "./crewBots.ts";
+import { applyBotOp, botHome, deleteBot, listBots } from "./crewBots.ts";
 import { applyRoleOp, listRoles, readStored } from "./crewRoleStore.ts";
 import { CATALOG } from "./crewCatalog.ts";
 import { CATALOG_AGENTS } from "./crewCatalogAgents.ts";
@@ -52,6 +52,19 @@ assert.throws(() => applyBotOp({ op: "update", id: "app-builder", name: " " }), 
 bots = applyBotOp({ op: "uninstall", id: "doc-writer" });
 assert.ok(!bots.some((b) => b.id === "doc-writer") && existsSync(botHome("doc-writer")), "목록에서만 빠짐, 폴더 유지");
 assert.throws(() => applyBotOp({ op: "uninstall", id: "doc-writer" }), /not a bot/);
+// 삭제(#1399) — 커스텀 봇: 역할까지 지우고 폴더는 .deleted-* 로 비킴 → 같은 이름으로 다시 만들면 새 정체성
+const del = deleteBot(sec.id, 1234);
+assert.ok(!del.bots.some((b) => b.id === sec.id) && !listRoles().some((r) => r.id === sec.id), "커스텀 봇 삭제 = 역할도 지움");
+assert.ok(del.trashed === join(home, `.deleted-${sec.id}-1234`) && existsSync(join(del.trashed, "MEMORY.md")) && !existsSync(sec.home), "폴더는 비켜 둠");
+// 한글 이름은 무작위 id라 같은 id가 다시 나오진 않음 — 영문 이름으로 같은 id 재생성 확인
+const re1 = applyBotOp({ op: "create", name: "Reborn", mission: "old" }, Date.now() + 80_000)[0];
+deleteBot(re1.id, 1);
+const re2 = applyBotOp({ op: "create", name: "Reborn", mission: "new" }, Date.now() + 90_000)[0];
+assert.ok(re2.id === re1.id && /new/.test(readFileSync(join(re2.home, "ABOUT.md"), "utf8")), "같은 id로 다시 만들면 새 ABOUT");
+// 기본 역할 봇: 목록에서만(역할은 파이프라인이 씀)
+assert.ok(deleteBot("app-builder", 2).bots.every((b) => b.id !== "app-builder") && listRoles().some((r) => r.id === "app-builder"), "기본 역할은 남음");
+assert.throws(() => deleteBot("app-builder"), /not a bot/);
+assert.strictEqual(applyBotOp({ op: "delete", id: "test-engineer" }).some((b) => b.id === "test-engineer"), false, "op로도 삭제");
 // 카탈로그: 기본 8 + 외부 54, id 겹침 없음, 외부 항목은 지시문·3언어 이름이 다 있음, 원문 저장소 이름 없음
 const ext = CATALOG.filter((c) => !c.builtin);
 assert.strictEqual(CATALOG.length, 62);

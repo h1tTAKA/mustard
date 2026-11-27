@@ -123,6 +123,7 @@ contextBridge.exposeInMainWorld("nunopiDesktop", {
   clearBrowserData: () => ipcRenderer.invoke("browser:clear-data"), // #1209
   openInList: () => ipcRenderer.invoke("open-in:list"), // #1199 설치된 편집기·터미널·git 앱
   openIn: (id, dir) => ipcRenderer.invoke("open-in:open", { id, dir }),
+  trashBotFolder: (p) => ipcRenderer.invoke("bots:trash", p), // #1399 삭제한 봇 폴더 → 휴지통
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url), // #1193 터미널 링크 → 외부 브라우저(http·https만)
   // #1175 컴퓨터 사용 — 켜기·막는 앱·드라이버·권한·기록(조작 자체는 Mustard MCP → main)
   computer: {

@@ -1,7 +1,7 @@
 // 봇(#1394, 에픽 #1391 재정의 2) — 봇 = "설치된" 역할 + 봇 정보(색·만든 시각·출처·임무) + 봇 폴더. 서버 전용.
 // 역할(실행 설정)은 crewRoleStore 그대로 두고, roles.json의 bots 칸이 "화면에 보이는 봇 목록"을 정한다.
 // 실행 엔진(listRoles)은 설치 여부와 무관하게 전 역할을 계속 본다 — 파이프라인이 안 깨지게.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { BOT_COLORS, builtinRoles, CREW_PROVIDERS, type CrewProvider, type CrewRole } from "./crewRoleDefaults.ts";
@@ -74,7 +74,8 @@ export type BotOp =
   | { op: "install"; catalog: string; color?: string; locale?: keyof L10n }  // 카탈로그 id. 외부 항목은 그 언어 이름으로 커스텀 역할 복사
   | { op: "create"; name: string; mission: string; provider?: CrewProvider; model?: string; color?: string } // model 비우면 그 AI 기본
   | { op: "update"; id: string; name?: string; color?: string }
-  | { op: "uninstall"; id: string };                                          // 목록에서만 뺌(역할·폴더 유지)
+  | { op: "uninstall"; id: string }                                           // 목록에서만 뺌(역할·폴더 유지) — 화면은 안 씀(#1399 삭제로 바뀜)
+  | { op: "delete"; id: string };                                            // 삭제(#1399) — deleteBot
 
 export function applyBotOp(op: BotOp, now = Date.now()): Bot[] {
   const s = stored();
@@ -134,10 +135,31 @@ export function applyBotOp(op: BotOp, now = Date.now()): Bot[] {
     }
     if (op.color !== undefined) b.color = cleanColor(op.color) ?? b.color;
     writeStored(s);
+  } else if (op.op === "delete") {
+    return deleteBot(op.id, now).bots;
   } else if (op.op === "uninstall") {
     if (!has(bots, op.id)) throw new Error("not a bot");
     delete bots[op.id];
     writeStored(s);
   } else throw new Error("unknown op");
   return listBots();
+}
+
+// 봇 삭제(#1399) — 커스텀 봇은 역할까지, 기본 역할 봇은 목록에서만(파이프라인이 id로 부름).
+// 봇 폴더는 같은 bots 폴더 안 ".deleted-<id>-<시각>"으로 비켜 둠 → 같은 이름으로 다시 만든 봇이 옛 정체성·기억을 물려받지 않게.
+// 휴지통으로 보내기는 화면이 데스크톱 메인에 부탁(서버는 OS 휴지통을 못 씀). trashed = 비켜 둔 경로.
+export function deleteBot(id: string, now = Date.now()): { bots: Bot[]; trashed?: string } {
+  const s = stored();
+  if (!has(s.bots!, id) || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(id)) throw new Error("not a bot"); // 손댄 파일의 "../x" 같은 키로 폴더 밖을 건드리지 않게
+  const dir = botHome(id);
+  const trashed = existsSync(dir) ? join(botsDir(), `.deleted-${id}-${now}`) : undefined;
+  if (trashed) renameSync(dir, trashed); // 폴더 먼저 — 못 옮기면 역할도 안 지움
+  try {
+    if (builtinRoles().some((b) => b.id === id)) { delete s.bots![id]; writeStored(s); }
+    else applyRoleOp({ op: "delete", id }); // 커스텀 역할 + bots 칸
+  } catch (e) {
+    if (trashed) try { renameSync(trashed, dir); } catch { /* 되돌리기 실패 — .deleted-* 로 남음(목록엔 봇 그대로) */ }
+    throw e;
+  }
+  return { bots: listBots(), trashed };
 }
