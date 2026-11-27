@@ -52,6 +52,21 @@ assert.throws(() => applyBotOp({ op: "update", id: "app-builder", name: " " }), 
 bots = applyBotOp({ op: "uninstall", id: "doc-writer" });
 assert.ok(!bots.some((b) => b.id === "doc-writer") && existsSync(botHome("doc-writer")), "목록에서만 빠짐, 폴더 유지");
 assert.throws(() => applyBotOp({ op: "uninstall", id: "doc-writer" }), /not a bot/);
+// 설정 바꾸기(#1399) — 정체성·실행 AI·모델, ABOUT 다시 씀. 바뀐 칸만.
+bots = applyBotOp({ op: "update", id: sec.id, mission: "주간 보고 정리\n금요일마다", provider: "claude-code", model: "claude-opus-4-8" });
+let ed = bots.find((b) => b.id === sec.id)!;
+assert.ok(ed.mission?.startsWith("주간 보고") && ed.instructions.startsWith("주간 보고") && ed.description === "주간 보고 정리", "정체성 = 임무·지시문·설명");
+assert.ok(ed.provider === "claude-code" && ed.model === "claude-opus-4-8" && ed.color === "#93c5fd", "실행 AI·모델, 색은 그대로");
+assert.match(readFileSync(join(sec.home, "ABOUT.md"), "utf8"), /^# 일정 비서\n\n주간 보고 정리\n금요일마다/);
+ed = applyBotOp({ op: "update", id: sec.id, name: "보고 비서", model: "" }).find((b) => b.id === sec.id)!;
+assert.ok(ed.name === "보고 비서" && ed.model === undefined && ed.instructions.startsWith("주간 보고"), "이름만·모델 비우면 기본, 정체성 그대로");
+assert.match(readFileSync(join(sec.home, "ABOUT.md"), "utf8"), /^# 보고 비서\n\n주간 보고/, "이름만 바뀌면 제목 줄만");
+assert.throws(() => applyBotOp({ op: "update", id: sec.id, mission: "  " }), /mission required/);
+// 기본 역할 봇: 정체성은 덮어쓰기로, 설명은 i18n 그대로(직접 고치지 않은 칸)
+ed = applyBotOp({ op: "update", id: "test-engineer", provider: "codex" }).find((b) => b.id === "test-engineer")!;
+assert.ok(ed.provider === "codex" && !ed.mission && readStored().overrides["test-engineer"]?.provider === "codex", "기본 역할 실행 AI만");
+applyBotOp({ op: "update", id: sec.id, model: "claude-opus-4-8" });
+assert.strictEqual(applyBotOp({ op: "update", id: sec.id, provider: "codex" }).find((b) => b.id === sec.id)?.model, undefined, "실행 AI만 바꾸면 모델은 기본");
 // 삭제(#1399) — 커스텀 봇: 역할까지 지우고 폴더는 .deleted-* 로 비킴 → 같은 이름으로 다시 만들면 새 정체성
 const del = deleteBot(sec.id, 1234);
 assert.ok(!del.bots.some((b) => b.id === sec.id) && !listRoles().some((r) => r.id === sec.id), "커스텀 봇 삭제 = 역할도 지움");

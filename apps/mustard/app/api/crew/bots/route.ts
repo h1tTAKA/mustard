@@ -17,10 +17,12 @@ export async function POST(request: Request): Promise<Response> {
   let body: unknown;
   try { body = await request.json(); } catch { return Response.json({ ok: false, error: "bad json" }, { status: 400 }); }
   // 만들기 모델 — 그 실행 AI 목록에 있는 것만(다른 AI 모델 id로 만들어 두고 실행 때 실패하지 않게, 리뷰). 목록을 제대로 못 받으면(SNA 꺼짐) 통과(글자 검사는 역할 저장이 함).
-  const b = body as { op?: string; provider?: unknown; model?: unknown };
-  if (b?.op === "create" && typeof b.model === "string" && b.model.trim()) {
+  // 설정 바꾸기(#1399)도 같은 규칙 — 실행 AI를 안 바꾸면 그 봇의 지금 실행 AI 목록으로 대조.
+  const b = body as { op?: string; id?: unknown; provider?: unknown; model?: unknown };
+  if ((b?.op === "create" || b?.op === "update") && typeof b.model === "string" && b.model.trim()) {
     if (!MODEL_RE.test(b.model.trim())) return Response.json({ ok: false, error: "bad model" }, { status: 400 }); // 저장 때 조용히 기본 모델로 바뀌지 않게(리뷰)
-    const ms = await knownModels(asProvider(b.provider)).catch(() => null);
+    const provider = b.op === "update" && b.provider === undefined ? listBots().find((x) => x.id === b.id)?.provider : b.provider;
+    const ms = await knownModels(asProvider(provider)).catch(() => null);
     if (ms && !ms.some((m) => m.id === (b.model as string).trim())) return Response.json({ ok: false, error: "unknown model" }, { status: 400 });
   }
   try {

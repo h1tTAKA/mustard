@@ -73,7 +73,7 @@ export function listBots(): Bot[] {
 export type BotOp =
   | { op: "install"; catalog: string; color?: string; locale?: keyof L10n }  // 카탈로그 id. 외부 항목은 그 언어 이름으로 커스텀 역할 복사
   | { op: "create"; name: string; mission: string; provider?: CrewProvider; model?: string; color?: string } // model 비우면 그 AI 기본
-  | { op: "update"; id: string; name?: string; color?: string }
+  | { op: "update"; id: string; name?: string; color?: string; mission?: string; provider?: CrewProvider; model?: string } // 바뀐 칸만(#1399 설정 창). model "" = 그 AI 기본
   | { op: "uninstall"; id: string }                                           // 목록에서만 뺌(역할·폴더 유지) — 화면은 안 씀(#1399 삭제로 바뀜)
   | { op: "delete"; id: string };                                            // 삭제(#1399) — deleteBot
 
@@ -134,7 +134,31 @@ export function applyBotOp(op: BotOp, now = Date.now()): Bot[] {
       b.name = n;
     }
     if (op.color !== undefined) b.color = cleanColor(op.color) ?? b.color;
-    writeStored(s);
+    let mission: string | undefined;
+    if (op.mission !== undefined) {
+      mission = String(op.mission).trim().slice(0, 4000);
+      if (!mission) throw new Error("mission required");
+      b.mission = mission;
+    }
+    writeStored(s); // 봇 정보 먼저 — 역할 저장은 파일을 새로 읽어 bots 칸을 보존(순서를 바꾸면 여기 s가 역할 변경을 덮음)
+    // 역할(실행 설정) — 정체성 = 지시문(직접 만든 봇은 설명도 첫 줄). 기본 역할은 덮어쓰기로 저장(설명은 i18n 그대로).
+    if (mission !== undefined || op.provider !== undefined || op.model !== undefined) {
+      const role: Partial<CrewRole> & { id: string } = { id: op.id };
+      if (mission !== undefined) { role.instructions = mission; role.description = mission.split("\n")[0].slice(0, 200); }
+      if (op.provider !== undefined) role.provider = op.provider; // 목록 밖 값은 역할 저장이 버림
+      // 빈 값·규칙 밖 = 기본 모델. 실행 AI만 바꾸고 모델을 안 보내면 기본으로(다른 AI 모델 id가 남지 않게)
+      if (op.model !== undefined || op.provider !== undefined) role.model = typeof op.model === "string" ? op.model : "";
+      applyRoleOp({ op: "save", role });
+    }
+    // 봇 폴더 ABOUT.md — 정체성이 바뀌면 다시 씀, 이름만 바뀌면 제목 줄만.
+    // 한계: H4 이후 봇이 ABOUT에 덧붙인 내용도 정체성을 바꾸면 덮임 → H4에서 다시 봄.
+    if (mission !== undefined || op.name !== undefined) {
+      const title = b.name || listRoles().find((r) => r.id === op.id)?.name || op.id;
+      const a = join(botHome(op.id), "ABOUT.md");
+      mkdirSync(botHome(op.id), { recursive: true });
+      if (mission !== undefined || !existsSync(a)) writeFileSync(a, `# ${title}\n\n${mission ?? b.mission ?? ""}\n`);
+      else writeFileSync(a, readFileSync(a, "utf8").replace(/^# .*$/m, `# ${title}`));
+    }
   } else if (op.op === "delete") {
     return deleteBot(op.id, now).bots;
   } else if (op.op === "uninstall") {
