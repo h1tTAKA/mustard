@@ -23,7 +23,7 @@ function clean(x: unknown, builtin: boolean): Partial<CrewRole> | null {
   if (typeof r.provider === "string" && (CREW_PROVIDERS as string[]).includes(r.provider)) out.provider = r.provider as CrewRole["provider"];
   // 모델 id는 실행 AI 명령줄로 넘어감 → 공백·제어 문자 없이, 맨 앞 "-" 금지(옵션으로 읽히지 않게, #1397 리뷰). 목록 소속은 만들 때 route가 확인.
   // 안 맞으면 비움 = 그 AI 기본 모델. 한계: 공백 든 모델 id는 못 씀(실행 AI들의 id엔 없음).
-  if (typeof r.model === "string") { const m = r.model.trim(); out.model = /^[^\s-][^\s]{0,79}$/.test(m) ? m : undefined; }
+  if (typeof r.model === "string") { const m = r.model.trim(); out.model = MODEL_RE.test(m) ? m : undefined; }
   if (r.access === "read" || r.access === "write") out.access = r.access;
   if (!builtin) {
     if (typeof r.name === "string") out.name = r.name.trim().slice(0, 60);
@@ -74,6 +74,7 @@ export type RoleOp =
   | { op: "reset"; id: string }   // 기본 역할 → 기본값으로
   | { op: "delete"; id: string }; // 커스텀만
 
+export const MODEL_RE = /^[^\s-][^\s]{0,79}$/; // 모델 id 글자 규칙(공백·맨 앞 - 금지) — route도 같은 규칙으로 미리 거절
 const slug = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30);
 
 export function applyRoleOp(op: RoleOp): CrewRole[] {

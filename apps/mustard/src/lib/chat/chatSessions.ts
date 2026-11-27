@@ -308,7 +308,8 @@ export async function listModels(p: ChatProvider): Promise<ModelInfo[]> {
 // 제대로 받은 모델 목록만(SNA 실패 땐 기본 모델 하나만 든 목록이라 대조에 못 씀) — 실패면 null(#1397 봇 만들기 모델 확인)
 export async function knownModels(p: ChatProvider): Promise<ModelInfo[] | null> {
   await listModels(p);
-  return modelCache.get(p)?.models ?? null;
+  const h = modelCache.get(p);
+  return h && Date.now() - h.at < 10 * 60_000 ? h.models : null; // 이번에 못 받았으면 지난 목록(낡음)도 안 씀(리뷰)
 }
 
 // ── 에이전트 ────────────────────────────────────────────────────────

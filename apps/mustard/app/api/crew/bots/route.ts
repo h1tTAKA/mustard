@@ -2,6 +2,7 @@
 // install은 화면에서 안 씀(#1397 추천·카탈로그 고르기 제거) — 기본 역할 되살리기 등에 쓸 수 있어 서버엔 둠.
 import { applyBotOp, listBots, type BotOp } from "@/lib/crew/crewBots";
 import { crossSite } from "@/lib/crew/crewPolicy";
+import { MODEL_RE } from "@/lib/crew/crewRoleStore";
 import { asProvider, knownModels } from "@/lib/chat/chatSessions";
 
 export const runtime = "nodejs";
@@ -18,6 +19,7 @@ export async function POST(request: Request): Promise<Response> {
   // 만들기 모델 — 그 실행 AI 목록에 있는 것만(다른 AI 모델 id로 만들어 두고 실행 때 실패하지 않게, 리뷰). 목록을 제대로 못 받으면(SNA 꺼짐) 통과(글자 검사는 역할 저장이 함).
   const b = body as { op?: string; provider?: unknown; model?: unknown };
   if (b?.op === "create" && typeof b.model === "string" && b.model.trim()) {
+    if (!MODEL_RE.test(b.model.trim())) return Response.json({ ok: false, error: "bad model" }, { status: 400 }); // 저장 때 조용히 기본 모델로 바뀌지 않게(리뷰)
     const ms = await knownModels(asProvider(b.provider)).catch(() => null);
     if (ms && !ms.some((m) => m.id === (b.model as string).trim())) return Response.json({ ok: false, error: "unknown model" }, { status: 400 });
   }
