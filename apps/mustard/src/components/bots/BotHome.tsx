@@ -43,7 +43,7 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject, r
   ) : (
     <div className="flex flex-1 items-center justify-center p-8 text-[13px] text-zinc-400 dark:text-zinc-500">{bots ? t("bots.empty") : null}</div>
   );
-  const right = <BotInfo bot={onboarding ? null : bot} error={error} onUninstall={uninstall} />;
+  const right = bots && !onboarding ? <BotInfo bot={bot} error={error} onUninstall={uninstall} /> : error ? <BotInfo bot={null} error onUninstall={uninstall} /> : null; // 읽는 중·첫 실행엔 비움(고를 봇이 없음, 리뷰)
   const fullscreen = useFullscreen(); // 신호등 자리 좌측 패딩(레포 헤더와 같은 규칙)
   const bodyRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1440);
@@ -62,6 +62,13 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject, r
   const toggleLeft = () => (leftDocked ? setLeftShut((v) => !v) : setLeftOver((v) => !v));
   const toggleRight = () => (rightDocked ? setRightShut((v) => !v) : setRightOver((v) => !v));
   const over = "absolute inset-y-0 z-20 shadow-lg";
+  // 덮어 연 칸은 Esc로 닫힘(리뷰)
+  useEffect(() => {
+    if (!leftOver && !rightOver) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setLeftOver(false); setRightOver(false); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [leftOver, rightOver]);
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       <header className={`titlebar-drag flex h-10 shrink-0 items-center gap-2 border-b border-zinc-200 pr-2 dark:border-zinc-800 ${fullscreen ? "pl-2" : "pl-[78px]"}`}>

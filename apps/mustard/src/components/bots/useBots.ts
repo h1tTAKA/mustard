@@ -17,7 +17,7 @@ export function useBots(active: boolean) {
   const [error, setError] = useState(false);
   // 응답 순서(리뷰) — seq = 마지막 GET만 반영, gen = 설치·빼기가 끝날 때마다 +1.
   // GET은 보낼 때의 gen을 기억했다가, 그 사이 설치·빼기가 끝났으면 버림(옛 목록이 새 목록을 덮지 않게). 설치·빼기 결과는 늘 반영.
-  const seq = useRef(0), gen = useRef(0);
+  const seq = useRef(0), gen = useRef(0), opSeq = useRef(0); // opSeq = 설치·빼기끼리 겹칠 때 마지막에 보낸 것의 목록만(리뷰)
   const reload = useCallback(() => {
     const my = ++seq.current, g = gen.current;
     fetch("/api/crew/bots").then((r) => r.json()).then((j) => {
@@ -29,11 +29,12 @@ export function useBots(active: boolean) {
   // 봇 홈이 보일 때마다 다시 읽음(다른 창·레포 패널에서 바뀌었을 수 있음)
   useEffect(() => { if (active) reload(); }, [active, reload]);
   const op = useCallback(async (body: BotOp): Promise<Bot[] | null> => {
+    const mine = ++opSeq.current;
     try {
       const j = await fetch("/api/crew/bots", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
       if (!j?.ok) return null;
       gen.current++;
-      setBots(j.bots); setError(false);
+      if (mine === opSeq.current) { setBots(j.bots); setError(false); }
       return j.bots as Bot[];
     } catch { return null; }
   }, []);

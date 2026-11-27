@@ -33,7 +33,7 @@ assert.ok(existsSync(join(botHome("doc-writer"), "ABOUT.md")) && existsSync(join
 assert.throws(() => applyBotOp({ op: "install", catalog: "nope" }), /unknown catalog/);
 
 // 직접 만들기 — 임무가 지시문·ABOUT 첫 문단
-bots = applyBotOp({ op: "create", name: "일정 비서", mission: "매일 아침 일정 정리\n회의 전 링크 모으기", color: "#93C5FD" });
+bots = applyBotOp({ op: "create", name: "일정 비서", mission: "매일 아침 일정 정리\n회의 전 링크 모으기", color: "#93C5FD" }, Date.now() + 60_000); // 시각을 넘겨 둠 — 앞 설치와 같은 ms면 "새 봇이 위"가 우연이 됨
 const sec = bots[0];
 assert.ok(sec.name === "일정 비서" && sec.instructions.startsWith("매일 아침") && sec.color === "#93c5fd" && sec.mission, "만들기(새 봇이 위)");
 assert.match(readFileSync(join(sec.home, "ABOUT.md"), "utf8"), /# 일정 비서\n\n매일 아침 일정 정리/);
