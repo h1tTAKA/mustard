@@ -6,12 +6,37 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { IconLayoutSidebarLeftExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarRightCollapse } from "@tabler/icons-react";
 import { useT } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
+import BotSidebar, { type BotProject } from "./BotSidebar";
+import BotInfo from "./BotInfo";
+import BotAvatar from "./BotAvatar";
+import { botDesc, botName, useBots } from "./useBots";
+
+const SEL_KEY = "nunopi:bots-selected";
 
 const TOGGLE = "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200";
 const LEFT_MIN = 560, RIGHT_MIN = 900;
 
-export default function BotHome({ modeSwitch, left, center, right }: { modeSwitch: ReactNode; left?: ReactNode; center?: ReactNode; right?: ReactNode }) {
+export default function BotHome({ modeSwitch, active, projects, onOpenProject }: { modeSwitch: ReactNode; active: boolean; projects: BotProject[]; onOpenProject: (key: string) => void }) {
   const t = useT();
+  const { bots, error, reload, op } = useBots(active);
+  // 고른 봇 — 기억해 두고, 없어졌으면(빼기·다른 창) 맨 위 봇.
+  const [picked, setPicked] = useState<string | null>(() => { try { return localStorage.getItem(SEL_KEY); } catch { return null; } });
+  const pick = (id: string | null) => { setPicked(id); try { if (id) localStorage.setItem(SEL_KEY, id); else localStorage.removeItem(SEL_KEY); } catch { /* ignore */ } };
+  const bot = bots?.find((b) => b.id === picked) ?? bots?.[0] ?? null;
+  const uninstall = async (id: string) => !!(await op({ op: "uninstall", id }));
+  const left = <BotSidebar bots={bots} error={error} selected={bot?.id ?? null} onSelect={pick} onNew={() => pick(null)} onRetry={reload} projects={projects} onOpenProject={onOpenProject} />;
+  const center = bot ? (
+    // 한계: Home Chat(H4) 전까지 가운데는 봇 소개만.
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+      <BotAvatar name={botName(t, bot)} color={bot.color} size={56} />
+      <div className="text-[18px] font-bold tracking-tight text-zinc-900 dark:text-zinc-50">{botName(t, bot)}</div>
+      <p className="max-w-md text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">{botDesc(t, bot)}</p>
+      <p className="mt-2 rounded-lg bg-zinc-100 px-3 py-1.5 text-[12px] text-zinc-500 dark:bg-zinc-800/70 dark:text-zinc-400">{t("bots.chatSoon")}</p>
+    </div>
+  ) : (
+    <div className="flex flex-1 items-center justify-center p-8 text-[13px] text-zinc-400 dark:text-zinc-500">{bots ? t("bots.empty") : null}</div>
+  );
+  const right = <BotInfo bot={bot} onUninstall={uninstall} />;
   const fullscreen = useFullscreen(); // 신호등 자리 좌측 패딩(레포 헤더와 같은 규칙)
   const bodyRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1440);
