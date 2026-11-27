@@ -137,19 +137,6 @@ function narrationAI(providerId?: unknown) {
   return { pid, provider, model };
 }
 
-// 해설 AI에 한 번 묻고 글 답만(#1394 봇 추천). 실패·빈 답은 throw.
-export async function askNarrationAI(code: string, prompt: string, signal?: AbortSignal): Promise<string> {
-  const { pid, provider, model } = narrationAI();
-  const res = await provider.analyze({
-    code, locale: "en", providerId: pid, mode: "chat",
-    messages: [{ role: "user", content: prompt }],
-    ...(model ? { providerSettings: { [pid]: { model } } } : {}),
-  } as AgentAnalyzeRequest, { signal });
-  const text = (res?.summary ?? "").trim();
-  if (!text || isFailedNote(text) || res?.warnings?.some((w) => w.code === "PARSE_FAILED")) throw new Error(text || "no answer");
-  return text;
-}
-
 // #1369 저장된 카드 종류를 해설 AI로 다시 나눔(한 번에 최대 80장). 실패하면 throw — 호출부가 다음에 다시.
 export async function classifyCardKinds(items: { name: string; def: string }[], signal?: AbortSignal): Promise<(CardKind | undefined)[]> {
   const { pid, provider, model } = narrationAI();

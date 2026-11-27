@@ -26,7 +26,7 @@ assert.ok(roles.some((r) => r.id === "sec-checker-2"), "같은 이름이면 -2")
 roles = applyRoleOp({ op: "save", role: { id: "sec-checker", description: "바꿈" } });
 assert.strictEqual(roles.find((r) => r.id === "sec-checker")!.description, "바꿈", "커스텀 수정");
 roles = applyRoleOp({ op: "save", role: { name: "보안 담당" } });
-assert.ok(roles.some((r) => r.name === "보안 담당" && /^role(-\d+)?$/.test(r.id)), "한글 이름 → role id");
+assert.ok(roles.some((r) => r.name === "보안 담당" && /^bot-[0-9a-f]{6}$/.test(r.id)), "한글 이름 → bot-16진 id(전부 role-n으로 겹치지 않게, #1397)");
 assert.throws(() => applyRoleOp({ op: "delete", id: "bug-fixer" }), /cannot be deleted/);
 roles = applyRoleOp({ op: "delete", id: "sec-checker-2" });
 assert.ok(!roles.some((r) => r.id === "sec-checker-2"), "커스텀 삭제");
@@ -35,4 +35,6 @@ assert.ok(applyRoleOp({ op: "save", role: { id: "x", provider: "evil" as never, 
 assert.ok(crewProtocol("Japanese").includes("in Japanese") && crewProtocol("Korean").includes("NEVER run git push"), "규약");
 // 카탈로그 id는 비워 둠 — 같은 이름으로 만들면 -2
 assert.ok(applyRoleOp({ op: "save", role: { name: "Code Reviewer" } }).some((r) => r.id === "code-reviewer-2"), "카탈로그 id 예약");
+// 한글 이름 둘 → 서로 다른 id
+assert.equal(applyRoleOp({ op: "save", role: { name: "일정 비서" } }).filter((r) => /^bot-[0-9a-f]{6}$/.test(r.id)).length, 2, "한글 이름 id 안 겹침");
 console.log("crewRoleStore.check ok");

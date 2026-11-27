@@ -62,7 +62,7 @@ function ZonePlaceholder({ Icon, label }: { Icon: typeof IconFiles; label: strin
 }
 
 // path(레포)는 WorkspaceTabs가 소유해 prop로 내려준다(#731). key={path}로 탭마다 인스턴스 분리.
-export default function WorkspaceView({ path, active = true, agentWorking = false, providerId, providerSettings, onOpenMemorize, onOpenSettings, tabStrip }: { path: string; active?: boolean; agentWorking?: boolean; providerId: AgentProviderKind; providerSettings: ProviderSettings; onOpenMemorize?: () => void; onOpenSettings?: () => void; tabStrip?: ReactNode }) {
+export default function WorkspaceView({ path, active = true, agentWorking = false, providerId, providerSettings, onOpenMemorize, onOpenSettings, tabStrip, lead }: { path: string; active?: boolean; agentWorking?: boolean; providerId: AgentProviderKind; providerSettings: ProviderSettings; onOpenMemorize?: () => void; onOpenSettings?: () => void; tabStrip?: ReactNode; lead?: ReactNode }) {
   const t = useT();
   const fullscreen = useFullscreen(); // 타이틀바 통합(#779) — 신호등 자리 좌측 패딩 토글
   const [picking, setPicking] = useState(false);
@@ -768,6 +768,7 @@ export default function WorkspaceView({ path, active = true, agentWorking = fals
     <div className="flex h-full min-h-0 w-full flex-col">
       {/* 헤더 한 줄(#731) — 좌: 워크스페이스 탭(이름이 탭에 있어 별도 폴더명 줄 없음), 우: 영역 컨트롤. */}
       <header className={`titlebar-drag flex h-10 shrink-0 items-center gap-2 border-b border-zinc-200 pr-2 dark:border-zinc-800 ${fullscreen ? "" : "pl-[78px]"}`}>
+        {lead && <span className={`flex shrink-0 ${fullscreen ? "pl-2" : ""}`}>{lead}</span> /* #1397 [레포|봇] 모드 전환 — 신호등 바로 오른쪽, 전체 화면이면 창 끝에 붙지 않게 */}
         {/* 좌측 도크 툴바(#758) — 왼쪽 사이드바 토글 | (커밋2: 중앙 패널 접기/펴기 토글들). */}
         <div className="flex shrink-0 items-center gap-0.5 pl-1.5">
           {/* 제목 줄(창 드래그 영역)은 Electron이 기본 title 툴팁을 안 띄움 → 앱의 기존 말풍선 방식(GitGraph 헤더와 동일)(#1029) */}

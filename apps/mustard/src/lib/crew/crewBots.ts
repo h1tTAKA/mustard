@@ -4,15 +4,14 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { builtinRoles, CREW_PROVIDERS, type CrewProvider, type CrewRole } from "./crewRoleDefaults.ts";
+import { BOT_COLORS, builtinRoles, CREW_PROVIDERS, type CrewProvider, type CrewRole } from "./crewRoleDefaults.ts";
 import { applyRoleOp, listRoles, readStored, writeStored, type BotMeta, type Stored } from "./crewRoleStore.ts";
 import { catalogItem, type L10n } from "./crewCatalog.ts";
 import { CATALOG_AGENTS } from "./crewCatalogAgents.ts";
 
 export type Bot = CrewRole & BotMeta & { home: string };
 
-// 봇 아바타 바탕색(시안의 7색). 지정 안 하면 id로 고정 배정.
-export const BOT_COLORS = ["#e8b93a", "#93c5fd", "#a5b4fc", "#86efac", "#fca5a5", "#fdba74", "#d4d4d8"];
+// 봇 아바타 바탕색 — 지정 안 하면 id로 고정 배정(색 목록은 crewRoleDefaults, 화면과 공용).
 const pickColor = (id: string) => BOT_COLORS[[...id].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7) % BOT_COLORS.length];
 const cleanColor = (c: unknown) => (typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : undefined);
 
@@ -73,7 +72,7 @@ export function listBots(): Bot[] {
 
 export type BotOp =
   | { op: "install"; catalog: string; color?: string; locale?: keyof L10n }  // 카탈로그 id. 외부 항목은 그 언어 이름으로 커스텀 역할 복사
-  | { op: "create"; name: string; mission: string; provider?: CrewProvider; color?: string }
+  | { op: "create"; name: string; mission: string; provider?: CrewProvider; model?: string; color?: string } // model 비우면 그 AI 기본
   | { op: "update"; id: string; name?: string; color?: string }
   | { op: "uninstall"; id: string };                                          // 목록에서만 뺌(역할·폴더 유지)
 
@@ -110,7 +109,7 @@ export function applyBotOp(op: BotOp, now = Date.now()): Bot[] {
     if (!mission) throw new Error("mission required");
     const provider = op.provider && CREW_PROVIDERS.includes(op.provider) ? op.provider : "claude-code";
     const before = new Set(listRoles().map((r) => r.id));
-    const role = applyRoleOp({ op: "save", role: { name, description: mission.split("\n")[0].slice(0, 200), instructions: mission, provider, access: "write" } })
+    const role = applyRoleOp({ op: "save", role: { name, description: mission.split("\n")[0].slice(0, 200), instructions: mission, provider, model: typeof op.model === "string" ? op.model : undefined, access: "write" } }) // model은 역할 저장이 다듬음(80자)
       .find((r) => !before.has(r.id));
     if (!role) throw new Error("create failed");
     // 폴더·봇 기록 중 하나라도 실패하면 방금 만든 역할도 되돌림(다시 하면 -2가 안 붙게, 리뷰)

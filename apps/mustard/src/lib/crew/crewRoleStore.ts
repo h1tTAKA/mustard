@@ -3,6 +3,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { randomBytes } from "node:crypto";
 import { builtinRoles, CREW_PROVIDERS, type CrewRole } from "./crewRoleDefaults.ts";
 import { CATALOG } from "./crewCatalog.ts";
 
@@ -20,7 +21,9 @@ function clean(x: unknown, builtin: boolean): Partial<CrewRole> | null {
   const out: Partial<CrewRole> = {};
   if (typeof r.instructions === "string") out.instructions = r.instructions.slice(0, 20_000);
   if (typeof r.provider === "string" && (CREW_PROVIDERS as string[]).includes(r.provider)) out.provider = r.provider as CrewRole["provider"];
-  if (typeof r.model === "string") out.model = r.model.trim().slice(0, 80) || undefined;
+  // 모델 id는 실행 AI 명령줄로 넘어감 → 공백·제어 문자 없이, 맨 앞 "-" 금지(옵션으로 읽히지 않게, #1397 리뷰). 목록 소속은 만들 때 route가 확인.
+  // 안 맞으면 비움 = 그 AI 기본 모델. 한계: 공백 든 모델 id는 못 씀(실행 AI들의 id엔 없음).
+  if (typeof r.model === "string") { const m = r.model.trim(); out.model = MODEL_RE.test(m) ? m : undefined; }
   if (r.access === "read" || r.access === "write") out.access = r.access;
   if (!builtin) {
     if (typeof r.name === "string") out.name = r.name.trim().slice(0, 60);
@@ -71,6 +74,7 @@ export type RoleOp =
   | { op: "reset"; id: string }   // 기본 역할 → 기본값으로
   | { op: "delete"; id: string }; // 커스텀만
 
+export const MODEL_RE = /^[^\s-][^\s]{0,79}$/; // 모델 id 글자 규칙(공백·맨 앞 - 금지) — route도 같은 규칙으로 미리 거절
 const slug = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30);
 
 export function applyRoleOp(op: RoleOp): CrewRole[] {
@@ -88,11 +92,13 @@ export function applyRoleOp(op: RoleOp): CrewRole[] {
         s.custom[existing] = { ...s.custom[existing], ...v } as CrewRole;
       } else {
         if (!v.name) throw new Error("name required");
-        let nid = slug(v.name) || "role", n = 2;
+        // 영문·숫자가 없는 이름(한글·일본어 등)은 slug가 비어 전부 "role-n"이 됨 → 짧은 무작위 id(#1397 리뷰)
+        const base = slug(v.name);
+        let nid = base && ID_RE.test(base) ? base : `bot-${randomBytes(3).toString("hex")}`, n = 2;
+        const root = nid;
         // 카탈로그 id도 비워 둠 — 직접 만든 "Security Reviewer"가 카탈로그 보안 리뷰어 자리를 먹지 않게(리뷰)
         const taken = new Set([...builtinIds, ...CATALOG.map((c) => c.id), ...s.custom.map((c) => c.id)]);
-        if (!ID_RE.test(nid)) nid = "role";
-        while (taken.has(nid)) nid = `${slug(v.name) || "role"}-${n++}`;
+        while (taken.has(nid)) nid = `${root}-${n++}`;
         s.custom.push({ provider: "claude-code", access: "write", instructions: "", description: "", ...v, id: nid, name: v.name } as CrewRole);
       }
     }

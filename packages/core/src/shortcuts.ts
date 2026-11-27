@@ -32,6 +32,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "view.git", group: "panels", labelKey: "shortcut.viewGit", defaults: ["Mod+Shift+G"], scope: "global" },
   { id: "view.browser", group: "panels", labelKey: "shortcut.viewBrowser", defaults: ["Mod+Shift+B"], scope: "global" }, // #1200 인앱 브라우저 열기/닫기
   { id: "view.crew", group: "panels", labelKey: "shortcut.viewCrew", defaults: ["Mod+Shift+A"], scope: "global" }, // #1200 에이전트 팀 보드 열기/닫기
+  { id: "mode.toggle", group: "panels", labelKey: "shortcut.modeToggle", defaults: ["Mod+Shift+."], scope: "global" }, // #1397 [레포|봇] 모드 전환
   { id: "term.clear", group: "terminal", labelKey: "shortcut.termClear", defaults: ["Mod+K"], scope: "terminal" },
   { id: "term.fontUp", group: "terminal", labelKey: "shortcut.termFontUp", defaults: ["Mod+="], scope: "global" },
   { id: "term.fontDown", group: "terminal", labelKey: "shortcut.termFontDown", defaults: ["Mod+-"], scope: "global" },

@@ -15,9 +15,10 @@ import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 // 동일하게 받아 활성 탭이 모드일 때도 탭 바가 그대로 보이게 한다(끌어올리기 없이 시각 일관).
 export type ModeKind = "ask" | "code" | "text" | "memorize";
 
-export default function WorkspaceModePane({ kind, tabStrip, active, providerId, providerSettings, onExitWorkspace, onOpenMemorize }: {
+export default function WorkspaceModePane({ kind, tabStrip, lead, active, providerId, providerSettings, onExitWorkspace, onOpenMemorize }: {
   kind: ModeKind;
   tabStrip?: ReactNode;
+  lead?: ReactNode; // #1397 [레포|봇] 모드 전환
   active?: boolean;
   providerId: AgentProviderKind;
   providerSettings: ProviderSettings;
@@ -40,6 +41,7 @@ export default function WorkspaceModePane({ kind, tabStrip, active, providerId, 
           폭(≈161px = pl 6 + 버튼5×28 + 구분선 5 + gap 10)으로 두어(#771), 레포↔모드 탭 전환에도 탭
           스트립 시작점이 안 밀리게. 로고는 왼쪽 정렬, 나머지는 여백. 우: 공통 영역 컨트롤. */}
       <header className={`titlebar-drag flex h-10 shrink-0 items-center gap-2 border-b border-zinc-200 pr-2 dark:border-zinc-800 ${fullscreen ? "" : "pl-[78px]"}`}>
+        {lead && <span className={`flex shrink-0 ${fullscreen ? "pl-2" : ""}`}>{lead}</span> /* #1397 [레포|봇] 모드 전환 — 신호등 바로 오른쪽, 전체 화면이면 창 끝에 붙지 않게 */}
         <div className="flex w-[161px] shrink-0 items-center pl-0.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/nunopi-lockup-light.png" alt="nunopi" className="block h-7 w-auto -translate-y-0.5 dark:hidden" />

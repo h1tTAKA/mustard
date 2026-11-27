@@ -22,9 +22,13 @@ import { AgentStateIcon } from "@/components/workspace/AgentStateIcon";
 import { markUnread, publishRepoSessions, repoUnread, useAgentSessionStates } from "@/lib/agentSessionStates";
 import { requestTerminalFocus } from "@/components/workspace/TerminalPane";
 import MustardMark from "@/components/brand/MustardMark";
+import ModeSwitch, { type WsMode } from "@/components/bots/ModeSwitch";
+import BotHome from "@/components/bots/BotHome";
+import { useFullscreen } from "@mustard/nunopi";
 import type { AgentProviderKind, ProviderSettings } from "@mustard/core";
 const TABS_KEY = "nunopi:ws-tabs";       // 열린 탭 배열(#731, #769에서 태그드 유니온으로 확장)
 const ACTIVE_KEY = "nunopi:ws-active";   // 활성 탭 키(tabKey)
+const MODE_KEY = "nunopi:ws-mode";       // #1397 작업 모드(레포 | 봇)
 const OLD_PATH_KEY = "nunopi:workspace-path"; // 구 단일 워크스페이스 경로 — 최초 1회 마이그레이션
 
 // 탭 모델(#769) — 레포 탭은 폴더 경로가 정체성, 모드 탭(질문/코드/글)은 폴더 없이 유니크 id가 정체성.
@@ -107,6 +111,11 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   // 한 번이라도 활성화된 탭 키 — 이 집합만 실제 마운트(keep-alive). 안 연 탭은 마운트 안 함.
   const [visited, setVisited] = useState<Set<string>>(new Set());
   const [picking, setPicking] = useState(false);
+  // #1397 작업 모드 — 봇이면 레포 화면은 숨기기만(터미널·에이전트 그대로), 봇 홈은 한 번 열면 살려 둠.
+  const [mode, setMode] = useState<WsMode>("repo");
+  const [botsSeen, setBotsSeen] = useState(false);
+  const switchMode = useCallback((m: WsMode) => { setMode(m); if (m === "bots") setBotsSeen(true); }, []);
+  const fullscreen = useFullscreen();
   const modeSeq = useRef(0); // 모드 탭 id 세션 카운터(같은 ms 충돌 방지, #769)
   const [addMenu, setAddMenu] = useState<{ left: number; top: number } | null>(null); // "+" 드롭다운 픽커(#769)
   const closeAddMenu = useCallback(() => setAddMenu(null), []); // 안정 참조 — 메뉴 effect 재부착 최소화
@@ -333,6 +342,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     setTabs(ts);
     setActiveKey(a);
     if (a) setVisited(new Set([a]));
+    try { if (localStorage.getItem(MODE_KEY) === "bots") { setMode("bots"); setBotsSeen(true); } } catch { /* ignore */ }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
@@ -340,6 +350,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
 
   // 영속.
   useEffect(() => { if (!mounted) return; try { localStorage.setItem(TABS_KEY, JSON.stringify(tabs)); } catch { /* ignore */ } }, [tabs, mounted]);
+  useEffect(() => { if (!mounted) return; try { localStorage.setItem(MODE_KEY, mode); } catch { /* ignore */ } }, [mode, mounted]);
   useEffect(() => { if (!mounted) return; try { if (activeKey) localStorage.setItem(ACTIVE_KEY, activeKey); else localStorage.removeItem(ACTIVE_KEY); } catch { /* ignore */ } }, [activeKey, mounted]);
 
   // 복원 시 모드 탭을 main 레지스트리에 재등록(#789) — 재시작하면 레지스트리가 비므로. 이미 다른
@@ -423,6 +434,12 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     });
   }, [mounted, desktop]);
 
+  // #1397 작업 모드 전환(⌘⇧.)
+  useShortcut(["mode.toggle"], () => {
+    if (!active) return false;
+    switchMode(mode === "repo" ? "bots" : "repo");
+  });
+
   // #1027 레포 탭 단축키 — ⌘⌥] / ⌘⌥[ / ⌘⌥1~9(9=마지막). 탭 줄 순서 그대로.
   useShortcut(["repo.next", "repo.prev", ...Array.from({ length: 9 }, (_, i) => `repo.goto${i + 1}`)], (d) => {
     if (!active || !tabs.length) return false;
@@ -437,6 +454,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   useShortcut(["repo.new", "repo.close", "repo.newWorkspace", "repo.openIn"], (d) => {
     if (!active) return false;
     if (d.id === "repo.new") { void addRepoTab(); return; }
+    if (mode !== "repo") return false; // #1397 봇 모드엔 보이는 레포 탭이 없음 — 숨은 탭을 닫거나 열지 않게(리뷰)
     const tb = tabs.find((x) => tabKey(x) === activeKey);
     if (!tb) return false;
     if (d.id === "repo.close") {
@@ -455,6 +473,7 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   });
 
   function activate(key: string) {
+    setMode("repo"); // #1397 탭으로 가는 길(알림·단축키·레포 열기)은 전부 레포 모드로 — 봇 홈에 가려 안 보이는 일 없게
     setVisited((prev) => (prev.has(key) ? prev : new Set(prev).add(key))); // keep-alive 대상 등록
     setActiveKey(key);
   }
@@ -629,6 +648,8 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
     return <div className="flex h-full flex-1 items-center justify-center p-8 text-center text-[13px] text-zinc-400 dark:text-zinc-500">{t("workspace.desktopOnly")}</div>;
   }
 
+  const modeSwitch = <ModeSwitch mode={mode} onChange={switchMode} />;
+
   // 탭 스트립 — WorkspaceView 헤더 한 줄의 좌측에 pill 형태로(#731). 헤더가 border-b 제공, 자체 bar 없음.
   const tabStrip = (
     <div className="nunopi-scroll flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-2 py-1.5">
@@ -683,10 +704,19 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       <DaemonOutdatedNotice />
+      {/* #1397 봇 홈 — 한 번 열면 살려 둠. 레포 화면은 아래에서 hidden으로만 가림. */}
+      {botsSeen && (
+        <div className={mode === "bots" ? "flex min-h-0 flex-1" : "hidden"}>
+          <BotHome modeSwitch={modeSwitch} active={active && mode === "bots"} onOpenProject={activate}
+            projects={tabs.flatMap((x) => (x.type === "repo" ? [{ key: tabKey(x), path: x.wt ?? x.path }] : []))} />
+        </div>
+      )}
       {/* 본문 — 방문한 탭들 keep-alive(활성만 보임). 탭 스트립은 각 WorkspaceView 헤더 아래에. 탭 없으면 빈 상태. */}
-      <div className="relative flex min-h-0 flex-1">
+      <div className={mode === "repo" ? "relative flex min-h-0 flex-1" : "hidden"}>
         {tabs.length === 0 ? (
           <div className="flex h-full flex-1 items-center justify-center p-8">
+            {/* #1397 헤더가 없는 빈 화면에도 모드 전환(신호등 오른쪽) */}
+            <div className={`titlebar-drag absolute inset-x-0 top-0 flex h-10 items-center ${fullscreen ? "pl-2" : "pl-[78px]"}`}>{modeSwitch}</div>
             <div className="flex max-w-sm flex-col items-center gap-4 text-center">
               {/* 브랜드 심볼(#906 겨자 꽃가지) + 워드마크. 브랜드명이라 무번역. */}
               <MustardMark size={60} />
@@ -713,21 +743,23 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
                   <WorkspaceView
                     key={tab.wt ?? tab.path} // #1170 작업 폴더를 바꾸면 그 폴더로 새로(터미널·변경·파일 모두 그 폴더 기준)
                     path={tab.wt ?? tab.path}
-                    active={active && on}
+                    active={active && on && mode === "repo"} // #1397 봇 모드면 숨은 레포 화면 단축키·포커스 끔(탭 바꿀 때와 같은 뜻)
                     agentWorking={repoStatus[tab.wt ?? tab.path] === "working"} // #1043 숨은 레포라도 에이전트 작업 중이면 캐치업 연결 유지
                     providerId={providerId}
                     providerSettings={providerSettings}
                     onOpenMemorize={onOpenMemorize}
                     onOpenSettings={onOpenSettings}
                     tabStrip={on ? tabStrip : undefined}
+                    lead={on ? modeSwitch : undefined}
                   />
                 ) : (
                   <WorkspaceModePane
                     kind={tab.type}
-                    active={active && on}
+                    active={active && on && mode === "repo"} // #1397 봇 모드면 숨은 레포 화면 단축키·포커스 끔(탭 바꿀 때와 같은 뜻)
                     providerId={providerId}
                     providerSettings={providerSettings}
                     tabStrip={on ? tabStrip : undefined}
+                    lead={on ? modeSwitch : undefined}
                     onExitWorkspace={onExitWorkspace}
                     onOpenMemorize={onOpenMemorize}
                   />
