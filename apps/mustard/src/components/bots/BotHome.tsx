@@ -4,11 +4,12 @@
 // 빠진 칸은 헤더 토글로 가운데 위에 덮어 열고, 가운데를 누르면 닫힘. 붙박이 칸의 토글은 그냥 접기/펴기.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { IconLayoutSidebarLeftExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarRightCollapse } from "@tabler/icons-react";
-import { useT } from "@mustard/core";
+import { useLocale, useT } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
 import BotSidebar, { type BotProject } from "./BotSidebar";
 import BotInfo from "./BotInfo";
 import BotAvatar from "./BotAvatar";
+import BotOnboard from "./BotOnboard";
 import { botDesc, botName, useBots } from "./useBots";
 
 const SEL_KEY = "nunopi:bots-selected";
@@ -16,16 +17,22 @@ const SEL_KEY = "nunopi:bots-selected";
 const TOGGLE = "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200";
 const LEFT_MIN = 560, RIGHT_MIN = 900;
 
-export default function BotHome({ modeSwitch, active, projects, onOpenProject }: { modeSwitch: ReactNode; active: boolean; projects: BotProject[]; onOpenProject: (key: string) => void }) {
+export default function BotHome({ modeSwitch, active, projects, onOpenProject, repoRoot }: { modeSwitch: ReactNode; active: boolean; projects: BotProject[]; onOpenProject: (key: string) => void; repoRoot?: string }) {
   const t = useT();
-  const { bots, error, reload, op } = useBots(active);
+  const { locale } = useLocale();
+  const { bots, catalog, error, reload, op } = useBots(active);
   // 고른 봇 — 기억해 두고, 없어졌으면(빼기·다른 창) 맨 위 봇.
   const [picked, setPicked] = useState<string | null>(() => { try { return localStorage.getItem(SEL_KEY); } catch { return null; } });
-  const pick = (id: string | null) => { setPicked(id); try { if (id) localStorage.setItem(SEL_KEY, id); else localStorage.removeItem(SEL_KEY); } catch { /* ignore */ } };
+  const [newing, setNewing] = useState(false); // + 누름 → 가운데 새 봇(추천) 화면
+  const pick = (id: string | null) => { setNewing(false); setPicked(id); try { if (id) localStorage.setItem(SEL_KEY, id); else localStorage.removeItem(SEL_KEY); } catch { /* ignore */ } };
   const bot = bots?.find((b) => b.id === picked) ?? bots?.[0] ?? null;
   const uninstall = async (id: string) => !!(await op({ op: "uninstall", id }));
-  const left = <BotSidebar bots={bots} error={error} selected={bot?.id ?? null} onSelect={pick} onNew={() => pick(null)} onRetry={reload} projects={projects} onOpenProject={onOpenProject} />;
-  const center = bot ? (
+  const install = async (catalog: string) => !!(await op({ op: "install", catalog, locale }));
+  const onboarding = !!bots && (bots.length === 0 || newing); // 봇 없음 = 첫 실행. 못 읽음(null)은 여기 안 옴
+  const left = <BotSidebar bots={bots} error={error} selected={bot?.id ?? null} onSelect={pick} onNew={() => setNewing(true)} onRetry={reload} projects={projects} onOpenProject={onOpenProject} />;
+  const center = onboarding ? (
+    <BotOnboard catalog={catalog} bots={bots!} root={repoRoot} install={install} onOpen={pick} />
+  ) : bot ? (
     // 한계: Home Chat(H4) 전까지 가운데는 봇 소개만.
     <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
       <BotAvatar name={botName(t, bot)} color={bot.color} size={56} />
@@ -36,7 +43,7 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
   ) : (
     <div className="flex flex-1 items-center justify-center p-8 text-[13px] text-zinc-400 dark:text-zinc-500">{bots ? t("bots.empty") : null}</div>
   );
-  const right = <BotInfo bot={bot} onUninstall={uninstall} />;
+  const right = <BotInfo bot={onboarding ? null : bot} onUninstall={uninstall} />;
   const fullscreen = useFullscreen(); // 신호등 자리 좌측 패딩(레포 헤더와 같은 규칙)
   const bodyRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1440);

@@ -707,7 +707,8 @@ const WorkspaceTabs = forwardRef<WorkspaceTabsHandle, WorkspaceTabsProps>(functi
       {botsSeen && (
         <div className={mode === "bots" ? "flex min-h-0 flex-1" : "hidden"}>
           <BotHome modeSwitch={modeSwitch} active={active && mode === "bots"} onOpenProject={activate}
-            projects={tabs.flatMap((x) => (x.type === "repo" ? [{ key: tabKey(x), path: x.wt ?? x.path }] : []))} />
+            projects={tabs.flatMap((x) => (x.type === "repo" ? [{ key: tabKey(x), path: x.wt ?? x.path }] : []))}
+            repoRoot={((x) => (x?.type === "repo" ? x.wt ?? x.path : undefined))(tabs.find((x) => tabKey(x) === activeKey))} />
         </div>
       )}
       {/* 본문 — 방문한 탭들 keep-alive(활성만 보임). 탭 스트립은 각 WorkspaceView 헤더 아래에. 탭 없으면 빈 상태. */}

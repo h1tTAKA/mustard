@@ -70,6 +70,12 @@ export default function BotSidebar({ bots, error, selected, onSelect, onNew, onR
                 <span className="flex-1">{t("bots.loadFailed")}</span>
                 <button type="button" onClick={onRetry} className="shrink-0 font-semibold underline-offset-2 hover:underline">{t("bots.retry")}</button>
               </div>
+            ) : bots && bots.length === 0 ? (
+              // 첫 실행 — 가운데 추천 화면과 짝(무엇을 하는 칸인지 한 줄)
+              <div className="mx-1 flex flex-col gap-1 rounded-xl bg-white px-3 py-3 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800/50 dark:ring-zinc-700/60">
+                <div className="text-[13px] font-semibold text-zinc-800 dark:text-zinc-100">{t("bots.emptyCard.title")}</div>
+                <div className="text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">{t("bots.emptyCard.desc")}</div>
+              </div>
             ) : bots && rows.length === 0 && q.trim() ? (
               <p className="px-2.5 py-2 text-[12px] text-zinc-400 dark:text-zinc-500">{t("bots.noMatch")}</p>
             ) : rows.map(({ b, name, desc }) => {
