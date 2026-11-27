@@ -36,23 +36,21 @@ export default function NewBotDialog({ onClose, create }: {
   const busyRef = useRef(false);
   useEffect(() => { busyRef.current = busy; }, [busy]);
 
-  // 포커스 — 열 때 누른 버튼을 기억했다가 닫으면 돌려줌, 창 안에서 Tab이 돌게(뒤 화면으로 안 새게, 리뷰)
+  // 포커스 — 열 때 누른 버튼을 기억했다가 닫으면 돌려줌(렌더 때 잡음 — 이름 칸 autoFocus보다 먼저, 리뷰).
+  // Esc = 닫기(만드는 중엔 안 닫음 — 결과를 못 보게 되니). Tab은 창 안에서만 돎(포커스가 창 밖·body여도, 리뷰).
+  const [opener] = useState(() => (typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null)));
   const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => () => opener?.focus?.(), [opener]);
   useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    return () => opener?.focus?.();
-  }, []);
-  const trapTab = (e: KeyboardEvent<HTMLFormElement>) => {
-    if (e.key !== "Tab" || !formRef.current) return;
-    const els = [...formRef.current.querySelectorAll<HTMLElement>("button:not([disabled]), input, textarea, select")];
-    const first = els[0], last = els[els.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
-  };
-
-  // Esc = 닫기(만드는 중엔 안 닫음 — 결과를 못 보게 되니)
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape" && !busyRef.current) onClose(); };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape" && !busyRef.current) { onClose(); return; }
+      if (e.key !== "Tab" || !formRef.current) return;
+      const els = [...formRef.current.querySelectorAll<HTMLElement>("button:not([disabled]), input, textarea, select")];
+      const first = els[0], last = els[els.length - 1], at = document.activeElement;
+      if (!formRef.current.contains(at)) { e.preventDefault(); first?.focus(); }
+      else if (e.shiftKey && at === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && at === last) { e.preventDefault(); first?.focus(); }
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -73,7 +71,7 @@ export default function NewBotDialog({ onClose, create }: {
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[12vh]">
       <div className="absolute inset-0 bg-black/40 dark:bg-black/50" onClick={() => { if (!busy) onClose(); }} aria-hidden />
-      <form ref={formRef} role="dialog" aria-modal="true" aria-label={t("bots.new.title")} onSubmit={submit} onKeyDown={trapTab}
+      <form ref={formRef} role="dialog" aria-modal="true" aria-label={t("bots.new.title")} onSubmit={submit}
         className="relative w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-2xl ring-1 ring-black/5 dark:border-white/10 dark:bg-[#14151c] dark:ring-white/5">
         {/* 봇 색 띠 — 고른 색이 위에서 아래로 옅어짐 */}
         <div aria-hidden className="h-[84px]" style={{ background: `linear-gradient(180deg, ${color}66 0%, ${color}14 70%, transparent 100%)` }} />
