@@ -47,17 +47,24 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject, r
   const fullscreen = useFullscreen(); // 신호등 자리 좌측 패딩(레포 헤더와 같은 규칙)
   const bodyRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1440);
+  const [leftOver, setLeftOver] = useState(false), [rightOver, setRightOver] = useState(false);
   useEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(([e]) => { if (e.contentRect.width > 0) setWidth(e.contentRect.width); }); // 레포 모드(display:none)의 0은 무시 — 돌아올 때 양옆 칸이 한 번 빠졌다 붙지 않게(리뷰)
+    const ro = new ResizeObserver(([e]) => {
+      const w = e.contentRect.width;
+      if (w <= 0) return;
+      setWidth(w);
+      // 붙박이로 돌아가면 덮개 상태는 버림 — 다시 좁혔을 때 안 눌렀는데 덮개가 열리지 않게(리뷰)
+      if (w >= LEFT_MIN) setLeftOver(false);
+      if (w >= RIGHT_MIN) setRightOver(false);
+    }); // 레포 모드(display:none)의 0은 무시 — 돌아올 때 양옆 칸이 한 번 빠졌다 붙지 않게(리뷰)
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
   const leftDocked = width >= LEFT_MIN, rightDocked = width >= RIGHT_MIN;
   // 붙박이일 땐 접기 상태, 빠졌을 땐 덮어 열기 상태 — 서로 따로(넓혔을 때 덮개가 남지 않게).
   const [leftShut, setLeftShut] = useState(false), [rightShut, setRightShut] = useState(false);
-  const [leftOver, setLeftOver] = useState(false), [rightOver, setRightOver] = useState(false);
   const leftOn = leftDocked ? !leftShut : leftOver, rightOn = rightDocked ? !rightShut : rightOver;
   const toggleLeft = () => (leftDocked ? setLeftShut((v) => !v) : setLeftOver((v) => !v));
   const toggleRight = () => (rightDocked ? setRightShut((v) => !v) : setRightOver((v) => !v));
