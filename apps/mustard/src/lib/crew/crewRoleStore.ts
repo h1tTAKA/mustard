@@ -3,6 +3,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { randomBytes } from "node:crypto";
 import { builtinRoles, CREW_PROVIDERS, type CrewRole } from "./crewRoleDefaults.ts";
 import { CATALOG } from "./crewCatalog.ts";
 
@@ -88,11 +89,13 @@ export function applyRoleOp(op: RoleOp): CrewRole[] {
         s.custom[existing] = { ...s.custom[existing], ...v } as CrewRole;
       } else {
         if (!v.name) throw new Error("name required");
-        let nid = slug(v.name) || "role", n = 2;
+        // 영문·숫자가 없는 이름(한글·일본어 등)은 slug가 비어 전부 "role-n"이 됨 → 짧은 무작위 id(#1397 리뷰)
+        const base = slug(v.name);
+        let nid = base && ID_RE.test(base) ? base : `bot-${randomBytes(3).toString("hex")}`, n = 2;
+        const root = nid;
         // 카탈로그 id도 비워 둠 — 직접 만든 "Security Reviewer"가 카탈로그 보안 리뷰어 자리를 먹지 않게(리뷰)
         const taken = new Set([...builtinIds, ...CATALOG.map((c) => c.id), ...s.custom.map((c) => c.id)]);
-        if (!ID_RE.test(nid)) nid = "role";
-        while (taken.has(nid)) nid = `${slug(v.name) || "role"}-${n++}`;
+        while (taken.has(nid)) nid = `${root}-${n++}`;
         s.custom.push({ provider: "claude-code", access: "write", instructions: "", description: "", ...v, id: nid, name: v.name } as CrewRole);
       }
     }

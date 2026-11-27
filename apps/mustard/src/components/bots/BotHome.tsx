@@ -22,17 +22,16 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
   const { bots, error, reload, op } = useBots(active);
   // 고른 봇 — 기억해 두고, 없어졌으면(빼기·다른 창) 맨 위 봇.
   const [picked, setPicked] = useState<string | null>(() => { try { return localStorage.getItem(SEL_KEY); } catch { return null; } });
-  const [newing, setNewing] = useState(false); // + 누름 → 가운데 새 봇(추천) 화면
+  const [newing, setNewing] = useState(false); // + 누름 → 가운데 새 봇(맡길 일) 화면
   const pick = (id: string | null) => { setNewing(false); setPicked(id); try { if (id) localStorage.setItem(SEL_KEY, id); else localStorage.removeItem(SEL_KEY); } catch { /* ignore */ } };
   const bot = bots?.find((b) => b.id === picked) ?? bots?.[0] ?? null;
-  const uninstall = async (id: string) => !!(await op({ op: "uninstall", id }));
-  // 맡길 일로 바로 만들기 → 새로 생긴 봇을 고름(서버가 이름 겹침을 -2로 피하니 id는 응답에서 찾음)
-  const create = async (name: string, mission: string) => {
-    const before = new Set((bots ?? []).map((b) => b.id));
-    const next = await op({ op: "create", name, mission });
-    const made = next?.find((b) => !before.has(b.id));
-    if (made) pick(made.id);
-    return !!next;
+  const uninstall = async (id: string) => typeof (await op({ op: "uninstall", id })) === "object";
+  // 맡길 일로 바로 만들기 → 서버가 알려 준 새 봇 id를 고름
+  const create = async (name: string, mission: string): Promise<"ok" | "rejected" | "unknown"> => {
+    const r = await op({ op: "create", name, mission });
+    if (typeof r !== "object") return r;
+    if (r.created) pick(r.created);
+    return "ok";
   };
   const onboarding = !!bots && (bots.length === 0 || newing); // 봇 없음 = 첫 실행. 못 읽음(null)은 여기 안 옴
   const left = <BotSidebar bots={bots} error={error} selected={bot?.id ?? null} onSelect={pick} onNew={() => setNewing(true)} onRetry={reload} projects={projects} onOpenProject={onOpenProject} />;

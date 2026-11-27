@@ -7,13 +7,13 @@ import { useT, useToast } from "@mustard/core";
 
 const NAME_MAX = 24; // 자동 이름 길이(목록 한 줄에 들어가게)
 
-// 임무 첫 줄 → 이름. 글자 단위(한글·이모지 안 깨지게)로 자르고 잘렸으면 "…".
+// 임무 첫 줄 → 이름. 코드포인트 단위로 자름(한글은 안 깨짐, 합친 이모지는 끝에서 갈릴 수 있음 — 이름이라 감수). 잘렸으면 "…".
 export function nameFromMission(mission: string): string {
   const first = [...(mission.trim().split("\n")[0] ?? "").trim()];
   return first.length > NAME_MAX ? `${first.slice(0, NAME_MAX).join("")}…` : first.join("");
 }
 
-export default function BotOnboard({ create }: { create: (name: string, mission: string) => Promise<boolean> }) {
+export default function BotOnboard({ create }: { create: (name: string, mission: string) => Promise<"ok" | "rejected" | "unknown"> }) {
   const t = useT();
   const toast = useToast();
   const [mission, setMission] = useState("");
@@ -25,9 +25,14 @@ export default function BotOnboard({ create }: { create: (name: string, mission:
     const m = mission.trim();
     if (!m || busy) return;
     setBusy(true);
-    const ok = await create(name.trim() || nameFromMission(m), m);
+    const n = name;
+    const r = await create(name.trim() || nameFromMission(m), m);
     setBusy(false);
-    if (ok) { setMission(""); setName(""); } else toast(t("bots.onboard.createFailed"), "error");
+    if (r === "rejected") { toast(t("bots.onboard.createFailed"), "error"); return; }
+    // 기다리는 동안 새로 쓴 글은 지우지 않음(리뷰). 응답이 늦었으면(unknown) 서버가 만들었을 수 있어 그대로 다시 누르면 겹침 → 비우고 안내
+    setMission((cur) => (cur.trim() === m ? "" : cur));
+    setName((cur) => (cur === n ? "" : cur));
+    if (r === "unknown") toast(t("bots.onboard.createSlow"), "error"); // 확인 안 된 상태 — 성공(초록)으로 보이지 않게
   };
 
   return (
@@ -49,7 +54,7 @@ export default function BotOnboard({ create }: { create: (name: string, mission:
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} maxLength={60}
               placeholder={mission.trim() ? nameFromMission(mission) : t("bots.onboard.namePlaceholder")} aria-label={t("bots.onboard.name")}
               className="h-8 min-w-0 flex-1 rounded-lg bg-transparent px-2 text-[13px] text-zinc-800 outline-none placeholder:text-zinc-400 focus:bg-zinc-100 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:bg-zinc-800" />
-            <button type="submit" disabled={!mission.trim() || busy} title="⌘↵"
+            <button type="submit" disabled={!mission.trim() || busy} title={t("bots.onboard.submitHint")}
               className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-mustard-500 px-4 text-[13px] font-semibold text-brown-900 transition hover:bg-mustard-400 disabled:opacity-50">
               {busy && <IconLoader2 size={14} stroke={2.2} className="animate-spin" aria-hidden />}
               {t("bots.onboard.create")}

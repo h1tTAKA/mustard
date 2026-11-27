@@ -3,11 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Bot, BotOp } from "@/lib/crew/crewBots";
 
 export type { Bot };
+export type OpResult = { bots: Bot[]; created?: string } | "rejected" | "unknown";
 type T = (k: string, v?: Record<string, string | number>) => string;
 
 // 기본 역할은 role.name이 비어 있어 i18n 이름. 봇 이름을 바꿨으면(meta.name) listBots가 이미 덮어 줌.
 export const botName = (t: T, b: Bot) => b.name || (b.builtin ? t(`crew.role.${b.id}`) : b.id);
-// 직접 만든 봇 = 임무 첫 줄, 기본 역할 = i18n 설명, 카탈로그 봇 = 설치 때 고른 언어 설명.
+// 직접 만든 봇 = 임무 첫 줄, 기본 역할 = i18n 설명, 그 밖(예전에 설치한 봇) = 저장된 설명.
 export const botDesc = (t: T, b: Bot) => b.mission?.split("\n")[0] || (b.builtin ? t(`crew.roleDesc.${b.id}`) : b.description);
 
 export function useBots(active: boolean) {
@@ -27,15 +28,16 @@ export function useBots(active: boolean) {
   }, []);
   // 봇 홈이 보일 때마다 다시 읽음(다른 창·레포 패널에서 바뀌었을 수 있음)
   useEffect(() => { if (active) reload(); }, [active, reload]);
-  const op = useCallback((body: BotOp): Promise<Bot[] | null> => {
-    const run = async (): Promise<Bot[] | null> => {
+  // 결과: 성공 {bots, created?} / 서버 거절 "rejected" / 시간 초과·연결 끊김 "unknown"(서버가 했을 수도 있음 — 다시 하기 전에 목록 확인)
+  const op = useCallback((body: BotOp): Promise<OpResult> => {
+    const run = async (): Promise<OpResult> => {
       try {
         const j = await fetch("/api/crew/bots", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) }).then((r) => r.json()); // 멈춘 요청이 뒤 줄을 막지 않게(리뷰)
-        if (!j?.ok) { reload(); return null; } // 서버가 거절(다른 창이 이미 바꿈 등) → 목록 다시 맞춤(리뷰)
+        if (!j?.ok) { reload(); return "rejected"; } // 서버가 거절(다른 창이 이미 바꿈 등) → 목록 다시 맞춤(리뷰)
         gen.current++;
         setBots(j.bots); setError(false);
-        return j.bots as Bot[];
-      } catch { setTimeout(reload, 2_000); return null; } // 시간 초과여도 서버가 곧 처리할 수 있음 → 조금 뒤 다시 맞춤(리뷰)
+        return { bots: j.bots as Bot[], created: typeof j.created === "string" ? j.created : undefined };
+      } catch { setTimeout(reload, 2_000); return "unknown"; } // 시간 초과여도 서버가 곧 처리할 수 있음 → 조금 뒤 다시 맞춤(리뷰)
     };
     const p = chain.current.then(run, run);
     chain.current = p;
