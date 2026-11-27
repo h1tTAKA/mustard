@@ -8,11 +8,11 @@ import { fmtDateTime } from "@/lib/relTime";
 import BotAvatar from "./BotAvatar";
 import { botDesc, botName, type Bot } from "./useBots";
 
-export default function BotInfo({ bot, onUninstall }: { bot: Bot | null; onUninstall: (id: string) => Promise<boolean> }) {
+export default function BotInfo({ bot, error, onUninstall }: { bot: Bot | null; error: boolean; onUninstall: (id: string) => Promise<boolean> }) {
   const t = useT();
   const confirm = useConfirm();
   const toast = useToast();
-  if (!bot) return <p className="px-4 py-5 text-[12.5px] text-zinc-400 dark:text-zinc-500">{t("bots.pickHint")}</p>;
+  if (!bot) return <p className="px-4 py-5 text-[12.5px] text-zinc-400 dark:text-zinc-500">{t(error ? "bots.loadFailed" : "bots.pickHint")}</p>; // 못 읽었는데 "고르세요"는 거짓 안내(리뷰)
   const name = botName(t, bot);
   const canOpen = typeof window !== "undefined" && !!window.nunopiDesktop?.openIn;
   const openFolder = () => void window.nunopiDesktop?.openIn?.("finder", bot.home).then((r) => { if (!r?.ok) toast(t("openIn.failed", { app: "Finder" }), "error"); }, () => toast(t("openIn.failed", { app: "Finder" }), "error"));

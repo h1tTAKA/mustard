@@ -43,14 +43,14 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject, r
   ) : (
     <div className="flex flex-1 items-center justify-center p-8 text-[13px] text-zinc-400 dark:text-zinc-500">{bots ? t("bots.empty") : null}</div>
   );
-  const right = <BotInfo bot={onboarding ? null : bot} onUninstall={uninstall} />;
+  const right = <BotInfo bot={onboarding ? null : bot} error={error} onUninstall={uninstall} />;
   const fullscreen = useFullscreen(); // 신호등 자리 좌측 패딩(레포 헤더와 같은 규칙)
   const bodyRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1440);
   useEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
+    const ro = new ResizeObserver(([e]) => { if (e.contentRect.width > 0) setWidth(e.contentRect.width); }); // 레포 모드(display:none)의 0은 무시 — 돌아올 때 양옆 칸이 한 번 빠졌다 붙지 않게(리뷰)
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
