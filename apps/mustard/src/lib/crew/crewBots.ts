@@ -169,6 +169,12 @@ export function applyBotOp(op: BotOp, now = Date.now()): Bot[] {
   return listBots();
 }
 
+// 휴지통에 못 보낸 채 남은 삭제 폴더(창이 닫혔거나 휴지통 실패) — 봇 홈이 열릴 때 다시 부탁하게 목록으로(#1399 리뷰)
+export function deletedFolders(): string[] {
+  try { return readdirSync(botsDir(), { withFileTypes: true }).filter((d) => d.isDirectory() && /^\.deleted-[a-z0-9-]+-\d+$/.test(d.name)).map((d) => join(botsDir(), d.name)); }
+  catch { return []; }
+}
+
 // 봇 삭제(#1399) — 커스텀 봇은 역할까지, 기본 역할 봇은 목록에서만(파이프라인이 id로 부름).
 // 봇 폴더는 같은 bots 폴더 안 ".deleted-<id>-<시각>"으로 비켜 둠 → 같은 이름으로 다시 만든 봇이 옛 정체성·기억을 물려받지 않게.
 // 휴지통으로 보내기는 화면이 데스크톱 메인에 부탁(서버는 OS 휴지통을 못 씀). trashed = 비켜 둔 경로.

@@ -2,7 +2,7 @@
 import assert from "node:assert";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { applyBotOp, botHome, deleteBot, listBots } from "./crewBots.ts";
+import { applyBotOp, botHome, deleteBot, deletedFolders, listBots } from "./crewBots.ts";
 import { applyRoleOp, listRoles, readStored } from "./crewRoleStore.ts";
 import { CATALOG } from "./crewCatalog.ts";
 import { CATALOG_AGENTS } from "./crewCatalogAgents.ts";
@@ -76,6 +76,7 @@ const re1 = applyBotOp({ op: "create", name: "Reborn", mission: "old" }, Date.no
 deleteBot(re1.id, 1);
 const re2 = applyBotOp({ op: "create", name: "Reborn", mission: "new" }, Date.now() + 90_000)[0];
 assert.ok(re2.id === re1.id && /new/.test(readFileSync(join(re2.home, "ABOUT.md"), "utf8")), "같은 id로 다시 만들면 새 ABOUT");
+assert.ok(deletedFolders().includes(del.trashed) && deletedFolders().every((p) => p.includes("/.deleted-")), "남은 삭제 폴더 목록");
 // 기본 역할 봇: 목록에서만(역할은 파이프라인이 씀)
 assert.ok(deleteBot("app-builder", 2).bots.every((b) => b.id !== "app-builder") && listRoles().some((r) => r.id === "app-builder"), "기본 역할은 남음");
 assert.throws(() => deleteBot("app-builder"), /not a bot/);

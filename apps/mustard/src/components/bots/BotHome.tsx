@@ -19,12 +19,16 @@ const LEFT_MIN = 560, RIGHT_MIN = 900;
 
 export default function BotHome({ modeSwitch, active, projects, onOpenProject }: { modeSwitch: ReactNode; active: boolean; projects: BotProject[]; onOpenProject: (key: string) => void }) {
   const t = useT();
-  const { bots, error, reload, op } = useBots(active);
+  const { bots, error, reload, op, trashLeft } = useBots(active);
   // 고른 봇 — 기억해 두고, 없어졌으면(빼기·다른 창) 맨 위 봇.
   const [picked, setPicked] = useState<string | null>(() => { try { return localStorage.getItem(SEL_KEY); } catch { return null; } });
   const [creating, setCreating] = useState(false); // 새 봇 창 열림
   const [editing, setEditing] = useState<string | null>(null); // 설정 창을 연 봇 id
   const toast = useToast();
+  // 설정 중 봇이 사라지면(다른 창 삭제) 설정 상태도 비움 — 안 비우면 Esc가 막히고, 같은 id로 다시 만든 봇에 창이 저절로 열림(리뷰)
+  useEffect(() => { if (editing && bots && !bots.some((b) => b.id === editing)) setEditing(null); }, [bots, editing]); // eslint-disable-line react-hooks/set-state-in-effect -- 목록이 바뀐 결과로 닫음
+  // 지난번에 휴지통에 못 보낸 삭제 폴더 — 봇 홈을 다시 읽을 때 조용히 다시 부탁(실패해도 알림 안 함, 다음에 또)
+  useEffect(() => { for (const p of trashLeft) void window.nunopiDesktop?.trashBotFolder?.(p).catch(() => {}); }, [trashLeft]);
   const pick = (id: string | null) => { setPicked(id); try { if (id) localStorage.setItem(SEL_KEY, id); else localStorage.removeItem(SEL_KEY); } catch { /* ignore */ } };
   const bot = bots?.find((b) => b.id === picked) ?? bots?.[0] ?? null;
   // 삭제 → 서버가 비켜 둔 봇 폴더를 데스크톱에 휴지통으로 부탁(웹·실패면 봇 폴더 안 .deleted-* 로 남음 — 목록엔 안 보임)

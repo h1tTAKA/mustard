@@ -1,6 +1,6 @@
 // 봇(#1394) — GET 설치된 봇 목록 / POST {op:"install"|"create"|"update"|"uninstall"|"delete", ...} 후 새 목록(만들기면 created = 새 봇 id, #1397 · 삭제면 trashed = 비켜 둔 봇 폴더, #1399).
 // install은 화면에서 안 씀(#1397 추천·카탈로그 고르기 제거) — 기본 역할 되살리기 등에 쓸 수 있어 서버엔 둠.
-import { applyBotOp, deleteBot, listBots, type BotOp } from "@/lib/crew/crewBots";
+import { applyBotOp, deleteBot, deletedFolders, listBots, type BotOp } from "@/lib/crew/crewBots";
 import { crossSite } from "@/lib/crew/crewPolicy";
 import { MODEL_RE } from "@/lib/crew/crewRoleStore";
 import { asProvider, knownModels } from "@/lib/chat/chatSessions";
@@ -8,7 +8,7 @@ import { asProvider, knownModels } from "@/lib/chat/chatSessions";
 export const runtime = "nodejs";
 
 export async function GET(): Promise<Response> {
-  try { return Response.json({ ok: true, bots: listBots() }); }
+  try { return Response.json({ ok: true, bots: listBots(), trashLeft: deletedFolders() }); } // trashLeft = 휴지통에 못 보낸 삭제 폴더(#1399)
   catch (e) { return Response.json({ ok: false, error: String((e as Error)?.message ?? e) }, { status: 500 }); }
 }
 
