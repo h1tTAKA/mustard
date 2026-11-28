@@ -1,7 +1,7 @@
 // crewPolicy 점검 — node --experimental-strip-types src/lib/crew/crewPolicy.check.ts
 import assert from "node:assert";
 import { homedir, tmpdir } from "node:os";
-import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { crossSite, decide, fromAgentRequest } from "./crewPolicy.ts";
 
@@ -60,6 +60,10 @@ assert.strictEqual(d("SomethingNew", {}), "ask");
   try {
     symlinkSync(join(homedir(), ".ssh"), join(tmp, "evil"));
     assert.strictEqual(decide("Read", { file_path: join(tmp, "evil", "config") }, join(tmp, "evil")), "ask", "링크 봇 폴더");
+    // 봇 폴더 안 링크로 밖 — cd link 뒤 맨이름(리뷰)
+    mkdirSync(join(tmp, "me"));
+    symlinkSync(join(homedir(), ".ssh"), join(tmp, "me", "out"));
+    assert.strictEqual(decide("Bash", { command: "cd out && cat config" }, join(tmp, "me")), "ask", "cd 링크(밖) 뒤 맨이름");
   } finally { rmSync(tmp, { recursive: true, force: true }); if (saved === undefined) delete process.env.MUSTARD_BOTS_DIR; else process.env.MUSTARD_BOTS_DIR = saved; }
 }
 

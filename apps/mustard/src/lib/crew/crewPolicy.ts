@@ -4,7 +4,7 @@
 // 그 안에 숨긴 git push·API 호출을 못 봄 — 진짜 막는 건 OS 샌드박스·서버 쪽 인증(#1157 보류, Crew API 토큰은 #1161).
 // #1279 유저가 켠 항목(처음 보는 명령·코드 실행 등)은 경로 인자를 모름 — tar -C ~/x·unzip -d ~·node -e 조립 경로처럼 밖에 쓰는 것도 통과(한계, 설정 화면 문구에 명시).
 // 비밀 파일은 '이름·경로'로만 잡음 — 이름을 안 대는 내용 검색(grep -r PRIVATE . 이 id_rsa·credentials.json 안까지)은 못 막음.
-import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { lstatSync, readlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { timingSafeEqual } from "node:crypto";
@@ -62,7 +62,7 @@ const homes = () => [HOME, realish(HOME)];
 // 경로와 링크 푼 실제 경로가 둘 다 그 봇 폴더 안일 때만(봇 폴더 안 링크로 ~/.ssh를 가리켜도 예외 안 됨).
 // 봇 폴더 자체도 실제로 봇 폴더 모음 바로 아래여야 함(봇 폴더가 ~/.ssh를 가리키는 링크면 예외 안 됨, 리뷰).
 const botsRoot = () => process.env.MUSTARD_BOTS_DIR || join(HOME, ".nunopi", "bots");
-const inOwnBotHome = (a: string, base: string) => { const b = resolve(base); return dirname(b) === resolve(botsRoot()) && dirname(realish(b)) === realish(botsRoot()) && under(a, b) && under(realish(a), realish(b)); };
+const inOwnBotHome = (a: string, base: string) => { const b = resolve(base); return dirname(b) === resolve(botsRoot()) && realish(b) === join(realish(botsRoot()), basename(b)) && under(a, b) && under(realish(a), realish(b)); };
 // 글자 검사(SECRET_TEXT)용 — 봇 대화면 글 속 자기 봇 폴더 절대·~ 경로를 "."로(경로 판정은 isSecretPath가 따로 다시 함: ../ 로 빠져나가면 그대로 비밀)
 const ownHomeText = (v: string, base: string) => {
   const b = resolve(base);
@@ -86,7 +86,9 @@ const SECRET_TEXT = new RegExp(`(?:~|\\$\\{?HOME\\}?|${esc(HOME)})/(?:${SECRET_R
 function shellSecret(raw: string, worktree: string): boolean {
   // #1401 봇 폴더 예외는 글자 그대로 읽히는 명령에만 — $PWD/../다른봇·$(pwd)·`…`·.. 은 검사기가 셸처럼 못 풀어 옆 봇 폴더로 새므로 예외 없이(리뷰).
   // 따옴표 안 빈칸 경로가 쪼개져 상대 경로가 되는 것도 .. 없이는 자기 폴더 밖으로 못 나감.
-  const own = !/[`$]|\.\./.test(unquote(raw));
+  const own = !/[`$]|\.\.|~[+-]/.test(unquote(raw)); // ~+ ~- = 지금·이전 폴더(셸이 풂)
+  // cd 대상 — 빗금 없는 이름(cd link)도 링크를 풀어 비밀인지(그 뒤 맨이름 cat MEMORY.md는 조각 검사에 안 걸림, 리뷰). 자기 봇 폴더 예외 없이.
+  for (const m of unquote(raw).matchAll(/(?:^|[\s;&|(])cd\s+([^\s;&|)]+)/g)) if (isSecretPath(m[1], worktree, false)) return true;
   if (SECRET_TEXT.test(own ? ownHomeText(unquote(raw), worktree) : unquote(raw)) || SECRET_NAMES.test(unquote(raw)) || PROJECT_SECRET.test(unquote(raw))) return true; // 비밀 이름은 heredoc 본문까지
   raw = dropHeredocs(raw).c; // 경로 조각 검사는 본문 빼고 — cat > f <<'EOF' 로 쓰는 코드의 // 주석이 "/"(홈 통째)로 걸림(앱 확인)
   const text = unquote(raw);
