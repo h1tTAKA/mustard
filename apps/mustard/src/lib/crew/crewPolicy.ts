@@ -102,19 +102,22 @@ function shellSecret(raw: string, worktree: string): boolean {
   const text = unquote(raw);
   if (/(^|[\s/])\.[^\s/]*[*?[{]/.test(unquote(globOff(raw))) || /\$'[^']*\\(x|u|U|[0-7])/.test(raw)) return true; // .en?·.[e]nv·~/.a?s — 점 이름 와일드카드, $'\x65' 숨긴 글자(리뷰)
   if (/(^|[\s;&|(])cd(\s|$)/.test(text) && /(^|[\s/=])\.\.(\/|\s|$)/.test(text)) return true;
-  const hasSed = /(^|[\s;&|(])(sed|grep|egrep|fgrep|rg|awk)(\s|$)/.test(text); // 정규식을 받는 명령(식 조각의 .* ^ $ 는 와일드카드가 아님)
-  for (let tok of text.split(/[\s=:,]+/)) {
-    tok = tok.replace(/^-[A-Za-z]+(?=[./~$])/, ""); // -f../x 처럼 붙은 짧은 옵션 값
-    if (!tok || tok.startsWith("-")) continue;
-    // 경로처럼 생긴 것 + 맨이름인데 그 자리에 링크가 있는 것(cat creds, creds → ~/.ssh/config, 리뷰). 맨이름을 다 보면 봇 폴더(~/.nunopi 아래)에서 낱말마다 걸림
-    // 와일드카드(cat *, cat */config) — 셸이 펼치면 링크도 들어감. 펼칠 폴더(와일드카드 앞까지)에 링크가 하나라도 있으면 사람에게(리뷰)
-    // 와일드카드 조각(* ? [ { 와 확장 @( +( !( ) — sed 's#.*#x#' 같은 식(# | ^ \ $ 든 것)만 빼고(앱 확인 오탐). 빼는 쪽을 좁게 = 새 글자도 검사로(리뷰)
-    const globPath = /[*?[{]|[@+!]\(/.test(tok) && !(hasSed && /[#|^\\$]/.test(tok)); // 빼기는 정규식 명령의 식 조각만(리뷰 — cat */x# 처럼 이름에 # 든 링크로 빠져나가지 않게)
-    if (globPath && /([*?[{]|[@+!]\()[^/]*\//.test(tok)) return true; // 가운데 조각 와일드카드(*/config, **/x) — 펼쳐질 하위 폴더들을 다 못 훑으니 사람에게(리뷰)
-    if (globPath && bases.some((b) => { const dir = resolve(b, expandHome(tok.replace(/[*?[{].*$/, "").replace(/[^/]*$/, "") || ".")); try { return readdirSync(dir, { withFileTypes: true }).some((d) => d.isSymbolicLink()); } catch { return false; } })) return true;
-    const pathy = /[/~]|^\.\.?$|^\$/.test(tok) || bases.some((b) => { try { return lstatSync(join(b, tok)).isSymbolicLink(); } catch { return false; } });
-    if (!pathy) continue;
-    if (bases.some((b) => isSecretPath(tok, b, own && worktree) || coversHome(tok, b))) return true;
+  // 명령 마디(; & | ( ) 로 나눔)마다 — 정규식을 받는 명령(sed·grep·rg·awk)이 그 마디의 명령일 때만 식 조각을 와일드카드 검사에서 뺌(리뷰: grep x . ; cat */x#)
+  for (const seg of text.split(/[;&|()\n]+/)) {
+    const hasSed = /^\s*(?:\w+=\S*\s+)*(sed|grep|egrep|fgrep|rg|awk)(\s|$)/.test(seg);
+    for (let tok of seg.split(/[\s=:,]+/)) {
+      tok = tok.replace(/^-[A-Za-z]+(?=[./~$])/, ""); // -f../x 처럼 붙은 짧은 옵션 값
+      if (!tok || tok.startsWith("-")) continue;
+      // 경로처럼 생긴 것 + 맨이름인데 그 자리에 링크가 있는 것(cat creds, creds → ~/.ssh/config, 리뷰). 맨이름을 다 보면 봇 폴더(~/.nunopi 아래)에서 낱말마다 걸림
+      // 와일드카드(cat *, cat */config) — 셸이 펼치면 링크도 들어감. 펼칠 폴더(와일드카드 앞까지)에 링크가 하나라도 있으면 사람에게(리뷰)
+      // 와일드카드 조각(* ? [ { 와 확장 @( +( !( ) — sed 's#.*#x#' 같은 식(# | ^ \ $ 든 것)만 빼고(앱 확인 오탐). 빼는 쪽을 좁게 = 새 글자도 검사로(리뷰)
+      const globPath = /[*?[{]|[@+!]\(/.test(tok) && !(hasSed && /[#|^\\$]/.test(tok)); // 빼기는 정규식 명령의 식 조각만(리뷰 — cat */x# 처럼 이름에 # 든 링크로 빠져나가지 않게)
+      if (globPath && /([*?[{]|[@+!]\()[^/]*\//.test(tok)) return true; // 가운데 조각 와일드카드(*/config, **/x) — 펼쳐질 하위 폴더들을 다 못 훑으니 사람에게(리뷰)
+      if (globPath && bases.some((b) => { const dir = resolve(b, expandHome(tok.replace(/[*?[{].*$/, "").replace(/[^/]*$/, "") || ".")); try { return readdirSync(dir, { withFileTypes: true }).some((d) => d.isSymbolicLink()); } catch { return false; } })) return true;
+      const pathy = /[/~]|^\.\.?$|^\$/.test(tok) || bases.some((b) => { try { return lstatSync(join(b, tok)).isSymbolicLink(); } catch { return false; } });
+      if (!pathy) continue;
+      if (bases.some((b) => isSecretPath(tok, b, own && worktree) || coversHome(tok, b))) return true;
+    }
   }
   return false;
 }
