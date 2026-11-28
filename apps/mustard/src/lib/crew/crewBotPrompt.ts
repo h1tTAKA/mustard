@@ -9,7 +9,7 @@ const MEMORY_LINES = 200; // 지시문에 넣는 기억 줄 수(넘으면 몇 �
 const ABOUT_MAX = 8_000;  // 정체성 글자 상한(손으로 아주 길게 쓴 경우 문맥을 다 먹지 않게)
 
 export function buildBotPrompt({ name, about, memory, firstRun }: { name: string; about: string; memory: string; firstRun: boolean }): string {
-  const lines = memory.replace(/\s+$/, "").split("\n");
+  const lines = defence(memory).replace(/\s+$/, "").split("\n");
   const shown = lines.slice(0, MEMORY_LINES).join("\n");
   const more = lines.length > MEMORY_LINES ? `\n(${lines.length - MEMORY_LINES} more lines in MEMORY.md not loaded; read the file when you need them)` : "";
   const out = [
@@ -21,7 +21,7 @@ export function buildBotPrompt({ name, about, memory, firstRun }: { name: string
     "- Never store secrets (tokens, passwords, keys) in your home.",
     "",
     "## ABOUT.md",
-    about.trim().slice(0, ABOUT_MAX) || "(empty)",
+    defence(about.trim().slice(0, ABOUT_MAX)) || "(empty)",
     "",
     `Your name is ${name}. If ABOUT.md names you differently, use ${name}.`,
     "",
@@ -49,6 +49,8 @@ export function buildBotPrompt({ name, about, memory, firstRun }: { name: string
   return out.join("\n");
 }
 
+// 울타리 글자(<<< >>>)를 흉내 낸 줄이 기억·정체성 안에 있으면 울타리를 일찍 닫고 뒤 글이 지시처럼 읽힘 → 비슷한 다른 글자로(리뷰)
+const defence = (s: string) => s.replace(/<<<|>>>/g, (m) => (m === "<<<" ? "‹‹‹" : "›››"));
 const read = (p: string) => { try { return existsSync(p) ? readFileSync(p, "utf8") : ""; } catch { return ""; } };
 // 막 만든 봇의 기억 = 만들 때 쓴 빈 틀 그대로
 const blankMemory = (m: string) => !m.replace(/^#\s*Memory\s*/i, "").trim();

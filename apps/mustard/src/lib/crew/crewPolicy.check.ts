@@ -1,6 +1,7 @@
 // crewPolicy 점검 — node --experimental-strip-types src/lib/crew/crewPolicy.check.ts
 import assert from "node:assert";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { crossSite, decide, fromAgentRequest } from "./crewPolicy.ts";
 
@@ -47,7 +48,19 @@ assert.strictEqual(d("SomethingNew", {}), "ask");
     assert.strictEqual(decide("Read", { file_path: `${B}/MEMORY.md` }, W), "ask", "봇 대화가 아니면 예외 없음");
     assert.strictEqual(decide("Read", { file_path: `${B}/../../crew/roles.json` }, B), "ask", "../ 로 빠져나가면 비밀");
     assert.strictEqual(decide("Bash", { command: `cat ${B}/../b2/MEMORY.md` }, B), "ask", "셸로 옆 봇 폴더도 비밀");
+    assert.strictEqual(decide("Bash", { command: "cat $PWD/../b2/MEMORY.md" }, B), "ask", "$PWD로 옆 봇 폴더(검사기는 변수를 못 풂, 리뷰)");
+    assert.strictEqual(decide("Bash", { command: "cat `pwd`/../b2/MEMORY.md" }, B), "ask", "명령 치환으로 옆 봇 폴더");
   } finally { if (saved === undefined) delete process.env.MUSTARD_BOTS_DIR; else process.env.MUSTARD_BOTS_DIR = saved; }
+}
+// 봇 폴더 자체가 밖(~/.ssh)을 가리키는 링크면 예외 없음(리뷰) — 임시 폴더에 링크만 만듦(대상은 읽지 않음)
+{
+  const saved = process.env.MUSTARD_BOTS_DIR;
+  const tmp = mkdtempSync(join(tmpdir(), "bots-pol-"));
+  process.env.MUSTARD_BOTS_DIR = tmp;
+  try {
+    symlinkSync(join(homedir(), ".ssh"), join(tmp, "evil"));
+    assert.strictEqual(decide("Read", { file_path: join(tmp, "evil", "config") }, join(tmp, "evil")), "ask", "링크 봇 폴더");
+  } finally { rmSync(tmp, { recursive: true, force: true }); if (saved === undefined) delete process.env.MUSTARD_BOTS_DIR; else process.env.MUSTARD_BOTS_DIR = saved; }
 }
 
 // 실사용 오탐(#1100 라이브 테스트)

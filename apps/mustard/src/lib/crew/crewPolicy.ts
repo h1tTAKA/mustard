@@ -60,8 +60,9 @@ const excepts = () => [...SECRET_EXCEPT, ...SECRET_EXCEPT.map((e) => realish(e))
 const homes = () => [HOME, realish(HOME)];
 // #1401 봇 대화(cwd = 봇 폴더 ~/.nunopi/bots/<id>)는 자기 봇 폴더 안(정체성·기억)을 비밀로 보지 않음. 다른 봇·~/.nunopi 나머지는 그대로 비밀.
 // 경로와 링크 푼 실제 경로가 둘 다 그 봇 폴더 안일 때만(봇 폴더 안 링크로 ~/.ssh를 가리켜도 예외 안 됨).
+// 봇 폴더 자체도 실제로 봇 폴더 모음 바로 아래여야 함(봇 폴더가 ~/.ssh를 가리키는 링크면 예외 안 됨, 리뷰).
 const botsRoot = () => process.env.MUSTARD_BOTS_DIR || join(HOME, ".nunopi", "bots");
-const inOwnBotHome = (a: string, base: string) => { const b = resolve(base); return dirname(b) === resolve(botsRoot()) && under(a, b) && under(realish(a), realish(b)); };
+const inOwnBotHome = (a: string, base: string) => { const b = resolve(base); return dirname(b) === resolve(botsRoot()) && dirname(realish(b)) === realish(botsRoot()) && under(a, b) && under(realish(a), realish(b)); };
 // 글자 검사(SECRET_TEXT)용 — 봇 대화면 글 속 자기 봇 폴더 절대·~ 경로를 "."로(경로 판정은 isSecretPath가 따로 다시 함: ../ 로 빠져나가면 그대로 비밀)
 const ownHomeText = (v: string, base: string) => {
   const b = resolve(base);
@@ -69,10 +70,11 @@ const ownHomeText = (v: string, base: string) => {
   const forms = [b, ...(under(b, HOME) ? [`~${b.slice(HOME.length)}`, `$HOME${b.slice(HOME.length)}`, `\${HOME}${b.slice(HOME.length)}`] : [])];
   return forms.reduce((t, f) => t.replace(new RegExp(`${esc(f)}(?=$|[/\\s"'])`, FOLD ? "gi" : "g"), "."), v);
 };
-export function isSecretPath(p: string, base: string): boolean {
+// own = 자기 봇 폴더 예외를 쓸지 — 셸 글자는 변수·명령 치환·.. 이 있으면 안 씀(shellSecret)
+export function isSecretPath(p: string, base: string, own = true): boolean {
   const a = resolve(base, expandHome(p));
   if (realish(a) === sep && a !== sep) return true; // 링크 사슬 너무 김 = 판정 포기 → 비밀로(읽기도 막는 쪽, 리뷰)
-  if (inOwnBotHome(a, base)) return false;
+  if (own && inOwnBotHome(a, base)) return false;
   return [a, realish(a)].some((x) => secrets().some((d) => under(x, d)) && !excepts().some((e) => under(x, e)));
 }
 // 홈(또는 그 위)을 통째로 — grep -r ../../../../ 처럼 비밀 폴더까지 훑음(리뷰)
@@ -82,7 +84,10 @@ const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const SECRET_TEXT = new RegExp(`(?:~|\\$\\{?HOME\\}?|${esc(HOME)})/(?:${SECRET_REL.map((d) => esc(d) + (d === ".nunopi" ? "(?!/worktrees(?:/|$))" : "")).join("|")})(?=$|[/\\s"'])`, FOLD ? "i" : "");
 // 셸 명령 — 따옴표 걷은 글자를 빈칸·=·: 로 자른 조각 전부를 경로로 확인(따옴표 안·--opt=값·-f값도). cd 뒤 상대 경로(..)는 위치를 못 따라가 사람에게.
 function shellSecret(raw: string, worktree: string): boolean {
-  if (SECRET_TEXT.test(ownHomeText(unquote(raw), worktree)) || SECRET_NAMES.test(unquote(raw)) || PROJECT_SECRET.test(unquote(raw))) return true; // 비밀 이름은 heredoc 본문까지
+  // #1401 봇 폴더 예외는 글자 그대로 읽히는 명령에만 — $PWD/../다른봇·$(pwd)·`…`·.. 은 검사기가 셸처럼 못 풀어 옆 봇 폴더로 새므로 예외 없이(리뷰).
+  // 따옴표 안 빈칸 경로가 쪼개져 상대 경로가 되는 것도 .. 없이는 자기 폴더 밖으로 못 나감.
+  const own = !/[`$]|\.\./.test(unquote(raw));
+  if (SECRET_TEXT.test(own ? ownHomeText(unquote(raw), worktree) : unquote(raw)) || SECRET_NAMES.test(unquote(raw)) || PROJECT_SECRET.test(unquote(raw))) return true; // 비밀 이름은 heredoc 본문까지
   raw = dropHeredocs(raw).c; // 경로 조각 검사는 본문 빼고 — cat > f <<'EOF' 로 쓰는 코드의 // 주석이 "/"(홈 통째)로 걸림(앱 확인)
   const text = unquote(raw);
   if (/(^|[\s/])\.[^\s/]*[*?[{]/.test(unquote(globOff(raw))) || /\$'[^']*\\(x|u|U|[0-7])/.test(raw)) return true; // .en?·.[e]nv·~/.a?s — 점 이름 와일드카드, $'\x65' 숨긴 글자(리뷰)
@@ -90,7 +95,7 @@ function shellSecret(raw: string, worktree: string): boolean {
   for (let tok of text.split(/[\s=:,]+/)) {
     tok = tok.replace(/^-[A-Za-z]+(?=[./~$])/, ""); // -f../x 처럼 붙은 짧은 옵션 값
     if (!tok || tok.startsWith("-") || !/[/~]|^\.\.?$|^\$/.test(tok)) continue; // 경로처럼 생긴 것만
-    if (isSecretPath(tok, worktree) || coversHome(tok, worktree)) return true;
+    if (isSecretPath(tok, worktree, own) || coversHome(tok, worktree)) return true;
   }
   return false;
 }

@@ -22,8 +22,9 @@ async function openHome(bot: Bot, fresh: boolean): Promise<Meta | null> {
   return c?.ok ? (c.chat as Meta) : null;
 }
 const openOnce = (bot: Bot, fresh = false) => {
+  if (fresh) return openHome(bot, true); // 새 대화는 같이 쓰지 않음 — 진행 중인 "기존 열기"를 받아 그걸 닫아 버리면 안 됨(리뷰)
   let p = opening.get(bot.home);
-  if (!p) { p = openHome(bot, fresh).finally(() => opening.delete(bot.home)); opening.set(bot.home, p); }
+  if (!p) { p = openHome(bot, false).finally(() => opening.delete(bot.home)); opening.set(bot.home, p); }
   return p;
 };
 
