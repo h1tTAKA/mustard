@@ -89,10 +89,12 @@ function shellSecret(raw: string, worktree: string): boolean {
   const own = !/[`$]|\.\.|~[+-]/.test(unquote(raw)); // ~+ ~- = 지금·이전 폴더(셸이 풂)
   // cd 대상 — 빗금 없는 이름(cd link)도 링크를 풀어 비밀인지(그 뒤 맨이름 cat MEMORY.md는 조각 검사에 안 걸림, 리뷰). 자기 봇 폴더 예외 없이.
   // 대상은 ;&|) 또는 줄 끝까지 통째로. 평범한 글자(영문·숫자·. _ / ~ -)가 아니면(따옴표·\ 빈칸·변수 등) 셸이 어떻게 풀지 못 따라가니 사람에게(리뷰: "my link", my\ link, my" "link)
+  const bases = [worktree]; // 뒤 조각을 풀 기준 — cd 목적지들도(cd sub && cat link/config 의 link 는 sub 기준, 리뷰)
   for (const m of raw.matchAll(/(?:^|[\s;&|(])cd(?=\s|$|[;&|)])(?:[ \t]+([^;&|)\n]*))?/g)) {
     const arg = (m[1] ?? "").trim().replace(/^(?:-[A-Za-z]+\s+|--\s+)+/, "").replace(/^(?:-[A-Za-z]+|--)$/, ""); // 앞 옵션(-P -L --)은 떼고 목적지만
     if (!arg) return true; // cd만 = 홈으로 — 그 뒤 맨이름(cat .zshrc 등)이 홈 기준이 되니 사람에게
     if (!/^[\w./~-]+$/.test(arg) || isSecretPath(arg, worktree, false)) return true;
+    bases.push(resolve(worktree, expandHome(arg)));
   }
   if (SECRET_TEXT.test(own ? ownHomeText(unquote(raw), worktree) : unquote(raw)) || SECRET_NAMES.test(unquote(raw)) || PROJECT_SECRET.test(unquote(raw))) return true; // 비밀 이름은 heredoc 본문까지
   raw = dropHeredocs(raw).c; // 경로 조각 검사는 본문 빼고 — cat > f <<'EOF' 로 쓰는 코드의 // 주석이 "/"(홈 통째)로 걸림(앱 확인)
@@ -102,7 +104,7 @@ function shellSecret(raw: string, worktree: string): boolean {
   for (let tok of text.split(/[\s=:,]+/)) {
     tok = tok.replace(/^-[A-Za-z]+(?=[./~$])/, ""); // -f../x 처럼 붙은 짧은 옵션 값
     if (!tok || tok.startsWith("-") || !/[/~]|^\.\.?$|^\$/.test(tok)) continue; // 경로처럼 생긴 것만
-    if (isSecretPath(tok, worktree, own) || coversHome(tok, worktree)) return true;
+    if (bases.some((b) => isSecretPath(tok, b, own && b === worktree) || coversHome(tok, b))) return true;
   }
   return false;
 }

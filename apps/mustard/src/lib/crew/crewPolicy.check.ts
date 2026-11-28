@@ -70,6 +70,8 @@ assert.strictEqual(d("SomethingNew", {}), "ask");
     assert.strictEqual(decide("Bash", { command: 'cd my" "link && cat config' }, join(tmp, "me")), "ask", "따옴표 이어 붙인 cd 대상");
     mkdirSync(join(tmp, "me", "notes"));
     assert.strictEqual(decide("Bash", { command: "cd notes && ls" }, join(tmp, "me")), "allow", "평범한 하위 폴더 cd는 그대로");
+    symlinkSync(join(homedir(), ".ssh"), join(tmp, "me", "notes", "link"));
+    assert.strictEqual(decide("Bash", { command: "cd notes && cat link/config" }, join(tmp, "me")), "ask", "cd 뒤 상대 경로는 cd 목적지 기준으로도(리뷰)");
   } finally { rmSync(tmp, { recursive: true, force: true }); if (saved === undefined) delete process.env.MUSTARD_BOTS_DIR; else process.env.MUSTARD_BOTS_DIR = saved; }
 }
 
