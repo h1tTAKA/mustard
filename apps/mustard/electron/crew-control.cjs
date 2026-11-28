@@ -5,8 +5,10 @@
 //  한계: cwd는 요청이 보내는 값이라 속일 수 있음 — 그래도 열린 건 아래 허용 동작뿐.
 //  한계: 레포 = cwd 실경로. 앱이 심볼릭 링크 경로로 연 레포면 보드 키가 달라 다른(빈) 보드를 봄.
 // 대화방 답글(replyTo)은 안 엶 — 서버가 답글을 관문 결정(질문 답·막힘 재시작·반려)으로 처리해서(리뷰).
+// bot_item_*(#1404) — 봇 대화에서 그 봇의 할 일 티켓만. 봇 = cwd 실경로가 봇 폴더(botsDir 바로 아래)일 때 그 폴더 이름. 아니면 거부.
+//  한계: cwd를 속이면 다른 봇 티켓을 고칠 수 있음 — 열린 건 티켓 만들기·상태·댓글뿐(삭제 없음).
 const { existsSync, realpathSync } = require("node:fs");
-const { dirname, join } = require("node:path");
+const { basename, dirname, join } = require("node:path");
 const { homedir } = require("node:os");
 
 const text = (t) => ({ content: [{ type: "text", text: typeof t === "string" ? t : JSON.stringify(t, null, 2) }] });
@@ -24,6 +26,10 @@ function repoOf(cwd) {
 // 크루 작업 폴더 — crewWorktree.ts baseDir와 같은 값(서버가 main env를 물려받음)
 const worktreeBase = () => real(process.env.MUSTARD_WORKTREE_DIR || join(homedir(), ".nunopi", "worktrees"));
 const inCrewWorktree = (cwd) => { const c = real(cwd), b = worktreeBase(); return c === b || c.startsWith(b + "/"); };
+// 봇 폴더 — crewBots.ts botsDir와 같은 값. cwd가 그 바로 아래면 봇 id, 아니면 null
+const botsBase = () => real(process.env.MUSTARD_BOTS_DIR || join(homedir(), ".nunopi", "bots"));
+const botOf = (cwd) => { const c = real(cwd); return dirname(c) === botsBase() ? basename(c) : null; };
+const pick = (a, keys) => Object.fromEntries(keys.filter((k) => a[k] !== undefined).map((k) => [k, a[k]])); // 정한 칸만 넘김(op·by·bot을 인자로 못 바꾸게)
 
 // deps: appBase() → Next 주소 | null, uiToken → 앱 창 비밀값, fetch(점검용 주입)
 function createCrewControl({ appBase, uiToken, fetch = globalThis.fetch }) {
@@ -42,8 +48,26 @@ function createCrewControl({ appBase, uiToken, fetch = globalThis.fetch }) {
   };
   const q = (root) => `root=${encodeURIComponent(root)}`;
 
+  async function botItems(tool, args, cwd) {
+    const bot = botOf(cwd);
+    if (!bot) return fail("Item tools work only in a bot's Home Chat (its home folder).");
+    try {
+      if (tool === "bot_item_list") {
+        const { items } = await api("GET", `/api/crew/bots/items?bot=${encodeURIComponent(bot)}`);
+        if (args.n !== undefined) { const it = items.find((i) => i.n === Number(args.n)); return it ? text(it) : fail(`No item #${args.n}.`); }
+        // 목록은 짧게 — 활동은 마지막 것만(전체는 n으로)
+        return text(items.map((i) => ({ n: i.n, title: i.title, status: i.status, doneMeans: i.doneMeans, last: i.activity[i.activity.length - 1] })));
+      }
+      const fields = { bot_item_add: ["title", "doneMeans", "text"], bot_item_set: ["n", "status", "title", "doneMeans", "text"], bot_item_comment: ["n", "text"] }[tool];
+      if (!fields) return fail(`Unknown tool: ${tool}`);
+      const { item } = await api("POST", "/api/crew/bots/items", { ...pick(args, fields), bot, op: tool.slice("bot_item_".length), by: "bot" });
+      return text({ n: item.n, title: item.title, status: item.status });
+    } catch (e) { return fail(`Item error: ${String(e?.message || e)}`); }
+  }
+
   async function call(tool, args, cwd) {
     args = args || {};
+    if (tool.startsWith("bot_")) return botItems(tool, args, cwd); // 봇 폴더는 레포가 아님 — 레포 확인 전에
     if (inCrewWorktree(cwd)) return fail("Crew tools are not available inside a Crew run (a crew member cannot direct other crew members).");
     const root = repoOf(cwd);
     if (!root) return fail("Run this from inside a git repo opened in Mustard.");
@@ -98,4 +122,4 @@ function createCrewControl({ appBase, uiToken, fetch = globalThis.fetch }) {
   return { call };
 }
 
-module.exports = { createCrewControl, repoOf, inCrewWorktree };
+module.exports = { createCrewControl, repoOf, inCrewWorktree, botOf };

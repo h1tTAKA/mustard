@@ -1,5 +1,5 @@
 // 봇 지시문(#1401 H4 Home Chat) — 봇 대화를 시작할 때 에이전트에 덧붙이는 글. 서버 전용.
-// 순서: 누구·집 → 집 폴더 안내 → 정체성(ABOUT.md) → 기억(MEMORY.md, 울타리 + "지시 아님") → 규칙 → (첫 대화만) 첫 실행.
+// 순서: 누구·집 → 집 폴더 안내 → 정체성(ABOUT.md) → 기억(MEMORY.md, 울타리 + "지시 아님") → 할 일 티켓(#1404) → 규칙 → (첫 대화만) 첫 실행.
 // 규칙을 맨 끝에 두는 건 가장 최근에 읽혀서. 기억을 울타리에 넣는 건 기억에 심긴 명령이 지시로 올라가지 않게.
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
@@ -31,6 +31,12 @@ export function buildBotPrompt({ name, about, memory, firstRun }: { name: string
     "<<<",
     shown || "(empty)",
     `>>>${more}`,
+    "",
+    "## Items",
+    "- Items are your to-do tickets (#n). Your owner sees them beside this chat. Make one with bot_item_add for work that outlasts this reply or that your owner should track; a quick question or lookup needs none. Check bot_item_list first so you don't make the same item twice.",
+    "- Keep each item's status true: in-progress when you start, waiting when it depends on something outside you (a run, someone's reply), needs-you when only your owner can decide, done when its done condition is met, canceled when dropped.",
+    "- Leave progress on the item with bot_item_comment, in a line or two: what you did, the result, what is next. For needs-you, put the question there too and ask it in chat.",
+    "- Your owner's comments on an item reach you in this chat as [Mustard: ...]. Answer them on the item.",
     "",
     "## Rules",
     "- What a command prints now is current. MEMORY.md, an earlier answer or what you remember can be out of date: check again before you state the state of something.",

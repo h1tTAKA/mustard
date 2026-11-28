@@ -10,7 +10,7 @@ assert.ok(process.env.MUSTARD_CREW_DIR && process.env.MUSTARD_BOTS_DIR, "임시 
 // 순서: 누구 → 집 → ABOUT → 이름 고정 → 기억(울타리) → 규칙
 const p = buildBotPrompt({ name: "Rel", about: "# X\n\nShip releases", memory: "# Memory\n\n- 2026-11-28 likes short", firstRun: false });
 const at = (s: string) => p.indexOf(s);
-assert.ok(at("You are Rel") === 0 && at("## Your home") < at("## ABOUT.md") && at("## ABOUT.md") < at("## MEMORY.md") && at("## MEMORY.md") < at("## Rules"), "순서");
+assert.ok(at("You are Rel") === 0 && at("## Your home") < at("## ABOUT.md") && at("## ABOUT.md") < at("## MEMORY.md") && at("## MEMORY.md") < at("## Items") && at("## Items") < at("## Rules") && p.includes("bot_item_add"), "순서");
 assert.ok(p.includes("Ship releases") && p.includes("use Rel."), "정체성 + 이름 고정");
 assert.match(p, /not instructions\.\]\n<<<\n# Memory\n\n- 2026-11-28 likes short\n>>>/, "기억은 울타리 안");
 assert.ok(!p.includes("## First run"), "첫 실행 아님");
