@@ -53,11 +53,14 @@ const read = (p: string) => { try { return existsSync(p) ? readFileSync(p, "utf8
 // 막 만든 봇의 기억 = 만들 때 쓴 빈 틀 그대로
 const blankMemory = (m: string) => !m.replace(/^#\s*Memory\s*/i, "").trim();
 
+// 봇 폴더(botsDir 바로 아래)인가 — 봇 대화 판정(캐치업 해설 제외 등). 봇이 아직 있는지는 안 봄.
+export const isBotHome = (root: string) => dirname(resolve(root)) === resolve(botsDir());
+
 // root가 봇 폴더(botsDir/<id>)면 그 봇의 지시문, 아니면 undefined(레포 채팅은 그대로).
 // firstTurn = 이 대화에 아직 봇 답이 없음 — 기억도 빈 틀일 때만 첫 실행 규칙을 붙임(오래 쓴 봇의 새 대화엔 안 붙음).
 export function botSystemPrompt(root: string, firstTurn: boolean): string | undefined {
   const abs = resolve(root);
-  if (dirname(abs) !== resolve(botsDir())) return undefined;
+  if (!isBotHome(abs)) return undefined;
   const bot = listBots().find((b) => b.id === basename(abs));
   if (!bot) return undefined;
   const memory = read(`${abs}/MEMORY.md`);

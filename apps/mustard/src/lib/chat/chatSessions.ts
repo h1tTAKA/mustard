@@ -18,6 +18,7 @@ import { HOOK_SRC } from "@/lib/crew/crewRunner";
 import { applyEvent, itemsFromClaudeTranscript, takeCursor, type ChatItem, type Timeline } from "./chatTimeline";
 import { projectDirFor } from "@/lib/subagents";
 import { observeChat } from "./chatNarrate";
+import { botSystemPrompt, isBotHome } from "@/lib/crew/crewBotPrompt";
 import { chatHookSrc } from "./chatHook";
 
 export type ChatProvider = "claude-code" | "codex" | "opencode" | "grok" | "cursor";
@@ -330,7 +331,7 @@ async function wireOnce() {
     if (c.stopping && ev.type === "error") ev = { type: "interrupted" };
     if (ev.type === "complete" || ev.type === "interrupted" || ev.type === "error") c.stopping = false;
     const r = applyEvent(c.tl, ev, saveImage);
-    if (!c.replaying || !BACKFILLED.has(c.provider)) observeChat(c.id, c.cwd, AGENT_ID[c.provider], ev); // 캐치업 실시간 해설(터미널과 같은 narrate). 다시 붙어 받은 지난 이벤트는 백필이 CLI 기록을 읽는 AI만 건너뜀(리뷰)
+    if ((!c.replaying || !BACKFILLED.has(c.provider)) && !isBotHome(c.root)) observeChat(c.id, c.cwd, AGENT_ID[c.provider], ev); // 캐치업 실시간 해설(터미널과 같은 narrate). 다시 붙어 받은 지난 이벤트는 백필이 CLI 기록을 읽는 AI만 건너뜀(리뷰)
     for (const i of r.changed) emit(c.id, { type: "item", i, item: c.tl.items[i] });
     if (r.delta) emit(c.id, { type: "delta", streaming: c.tl.streaming });
     if (wasBusy !== c.tl.busy) emit(c.id, { type: "busy", busy: c.tl.busy });
@@ -441,8 +442,12 @@ async function ensureAgentOnce(c: Chat, origin: string) {
   await wire();
   const sna = await getSnaClient();
   const isClaude = c.provider === "claude-code";
+  // #1401 봇 대화(root = 봇 폴더) — 시작 때마다 정체성·기억을 새로 읽어 지시문으로 덧붙임. 봇 답이 아직 없으면 첫 실행 규칙도.
+  // 한계: 대화 중 바뀐 기억은 다음 시작(새 대화·앱 재시작)부터. 생각 강도 바꾸기(restart)는 SNA가 시작 설정을 이어 받는다고 봄(직접 확인 안 함).
+  const system = isBotHome(c.root) ? botSystemPrompt(c.root, c.tl.items.every((i) => i.k === "user")) : undefined;
   const config = {
     provider: c.provider, model: c.model || defaultModel(c.provider), cwd: c.cwd,
+    ...(system ? { appendSystemPrompt: system } : {}),
     permissionMode: permModeOf(c),
     ...(c.effort !== undefined ? { reasoningLevel: c.effort as 0 | 1 | 2 | 3 | 4 | 5 } : {}),
     ...(isClaude ? { providerOptions: { settings: { hooks: { PreToolUse: [{ matcher: ".*", hooks: [{ type: "command", command: `node "${hookPath()}" --url=${safeOrigin(origin)} --run=${c.id} --token=${c.token}`, timeout: 900 }] }] } } } } : {}),
