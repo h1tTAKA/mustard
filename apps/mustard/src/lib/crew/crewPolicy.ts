@@ -102,24 +102,38 @@ function shellSecret(raw: string, worktree: string): boolean {
   const text = unquote(raw);
   if (/(^|[\s/])\.[^\s/]*[*?[{]/.test(unquote(globOff(raw))) || /\$'[^']*\\(x|u|U|[0-7])/.test(raw)) return true; // .en?·.[e]nv·~/.a?s — 점 이름 와일드카드, $'\x65' 숨긴 글자(리뷰)
   if (/(^|[\s;&|(])cd(\s|$)/.test(text) && /(^|[\s/=])\.\.(\/|\s|$)/.test(text)) return true;
-  // 명령 마디(; & | ( ) 로 나눔)마다 — 정규식을 받는 명령(sed·grep·rg·awk)이 그 마디의 명령일 때만 식 조각을 와일드카드 검사에서 뺌(리뷰: grep x . ; cat */x#)
-  for (const seg of text.split(/[;&|()\n]+/)) {
-    const hasSed = /^\s*(?:\w+=\S*\s+)*(sed|grep|egrep|fgrep|rg|awk)(\s|$)/.test(seg);
-    for (let tok of seg.split(/[\s=:,]+/)) {
+  {
+    for (let tok of text.split(/[\s=:,]+/)) {
       tok = tok.replace(/^-[A-Za-z]+(?=[./~$])/, ""); // -f../x 처럼 붙은 짧은 옵션 값
       if (!tok || tok.startsWith("-")) continue;
       // 경로처럼 생긴 것 + 맨이름인데 그 자리에 링크가 있는 것(cat creds, creds → ~/.ssh/config, 리뷰). 맨이름을 다 보면 봇 폴더(~/.nunopi 아래)에서 낱말마다 걸림
-      // 와일드카드(cat *, cat */config) — 셸이 펼치면 링크도 들어감. 펼칠 폴더(와일드카드 앞까지)에 링크가 하나라도 있으면 사람에게(리뷰)
-      // 와일드카드 조각(* ? [ { 와 확장 @( +( !( ) — sed 's#.*#x#' 같은 식(# | ^ \ $ 든 것)만 빼고(앱 확인 오탐). 빼는 쪽을 좁게 = 새 글자도 검사로(리뷰)
-      const globPath = /[*?[{]|[@+!]\(/.test(tok) && !(hasSed && /[#|^\\$]/.test(tok)); // 빼기는 정규식 명령의 식 조각만(리뷰 — cat */x# 처럼 이름에 # 든 링크로 빠져나가지 않게)
-      if (globPath && /([*?[{]|[@+!]\()[^/]*\//.test(tok)) return true; // 가운데 조각 와일드카드(*/config, **/x) — 펼쳐질 하위 폴더들을 다 못 훑으니 사람에게(리뷰)
-      if (globPath && bases.some((b) => { const dir = resolve(b, expandHome(tok.replace(/[*?[{].*$/, "").replace(/[^/]*$/, "") || ".")); try { return readdirSync(dir, { withFileTypes: true }).some((d) => d.isSymbolicLink()); } catch { return false; } })) return true;
+      // 와일드카드(cat *, cat */config, [!a]*, @(x)) — 셸이 실제로 펼칠 때 링크를 지나가면 사람에게(globHitsLink). 맞는 이름이 없으면 셸도 안 펼침
+      // → sed 's#.*#x#'·grep "^lib/.*//" 같은 식 조각은 맞는 파일이 없어 그대로 통과(명령 이름으로 가르지 않음, 리뷰)
+      if (/[*?[{]|[@+!]\(/.test(tok) && bases.some((b) => globHitsLink(tok, b))) return true;
       const pathy = /[/~]|^\.\.?$|^\$/.test(tok) || bases.some((b) => { try { return lstatSync(join(b, tok)).isSymbolicLink(); } catch { return false; } });
       if (!pathy) continue;
       if (bases.some((b) => isSecretPath(tok, b, own && worktree) || coversHome(tok, b))) return true;
     }
   }
   return false;
+}
+// 셸 와일드카드 조각이 펼쳐지며 링크를 지나가나 — 조각마다 실제 폴더를 읽어 맞는 이름만 따라감(#1401 리뷰).
+// 마지막 조각: 맞는 이름 중 링크가 있으면 참. 가운데 조각: 맞는 링크면 참, 맞는 폴더는 나머지로 내려감. 와일드카드 없는 나머지는 길 중간에 링크가 있으면 참.
+// 확장 와일드카드(@( +( !( )는 정규식으로 못 옮겨 그 폴더의 모든 이름을 맞는 것으로 봄(막는 쪽).
+function globHitsLink(tok: string, base: string, depth = 0): boolean {
+  if (depth > 8) return true;
+  const segs = expandHome(tok).split("/");
+  const i = segs.findIndex((x) => /[*?[{]|[@+!]\(/.test(x));
+  if (i < 0) { const p = resolve(base, segs.join("/")); return realish(p) !== p; }
+  const dir = resolve(base, segs.slice(0, i).join("/") || (tok.startsWith("/") ? "/" : "."));
+  let re: RegExp | null = null;
+  if (!/[@+!]\(/.test(segs[i])) { try { re = new RegExp(`^${globRe(segs[i])}$`); } catch { return true; } }
+  let ents: import("node:fs").Dirent[];
+  try { ents = readdirSync(dir, { withFileTypes: true }); } catch { return false; } // 폴더가 없음 = 펼칠 것 없음
+  const hit = ents.filter((d) => (!re || re.test(d.name)) && (segs[i].startsWith(".") || !d.name.startsWith(".")));
+  if (i === segs.length - 1) return hit.some((d) => d.isSymbolicLink());
+  const rest = segs.slice(i + 1).join("/");
+  return hit.some((d) => d.isSymbolicLink() || (d.isDirectory() && globHitsLink(rest, join(dir, d.name), depth + 1)));
 }
 // glob → 정규식(*·?·[..]·{a,b}) — 대표 비밀 파일 이름에 맞아떨어지는지 직접 시험(*.env·{.env,x}·.e[n]v·id_* 등, 리뷰)
 // credentials.json·service-account.json은 이름 그대로일 때만(PROJECT_SECRET) — 표본에 넣으면 **/*.json 이 전부 걸림(리뷰)
