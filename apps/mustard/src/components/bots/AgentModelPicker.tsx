@@ -10,7 +10,7 @@ import { P, PROVIDERS, type Provider } from "@/components/workspace/ChatComposer
 type ModelInfo = { id: string; label: string; description?: string; legacy?: boolean };
 
 export default function AgentModelPicker({ provider, model, onChange, onAvailable }: {
-  provider: Provider; model: string; onChange: (provider: Provider, model: string) => void;
+  provider: Provider; model: string; onChange: (provider: Provider, model: string, byUser?: boolean) => void; // byUser = 사람이 메뉴에서 고름(스스로 맞춤은 아님, #1399 설정 창)
   onAvailable?: (ok: boolean) => void; // 설치·켜진 AI가 하나도 없으면 false(만들기 막기)
 }) {
   const t = useT();
@@ -70,7 +70,7 @@ export default function AgentModelPicker({ provider, model, onChange, onAvailabl
           <div className="absolute bottom-full left-0 z-50 mb-1.5 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-black/[.14] bg-white/95 p-1 shadow-lg backdrop-blur-2xl dark:border-white/[.12] dark:bg-zinc-800/95">
             <div className="flex flex-wrap gap-1 border-b border-black/[.08] px-1.5 pb-1.5 pt-1 dark:border-white/[.08]">
               {providers.map((p) => (
-                <button key={p.id} type="button" onClick={() => onChange(p.id, p.id === provider ? model : "")} aria-pressed={p.id === provider}
+                <button key={p.id} type="button" onClick={() => onChange(p.id, p.id === provider ? model : "", true)} aria-pressed={p.id === provider}
                   className={`flex h-6 items-center gap-1.5 rounded-md px-2 text-xs transition ${p.id === provider ? "bg-mustard-500/15 font-medium text-mustard-700 dark:text-mustard-300" : "text-zinc-600 hover:bg-black/[.05] dark:text-zinc-300 dark:hover:bg-white/[.08]"}`}>
                   <AgentLogo agent={p.agent} size={12} />{p.label}
                 </button>
@@ -82,7 +82,7 @@ export default function AgentModelPicker({ provider, model, onChange, onAvailabl
               ) : models.length === 0 ? (
                 <p className="px-2.5 py-1.5 text-xs text-zinc-400 dark:text-zinc-500">{t("bots.new.defaultModel")}</p>
               ) : models.map((m) => (
-                <button key={m.id} type="button" aria-pressed={m.id === model} onClick={() => { onChange(provider, m.id); close(); }}
+                <button key={m.id} type="button" aria-pressed={m.id === model} onClick={() => { onChange(provider, m.id, true); close(); }}
                   className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition hover:bg-black/[.05] dark:hover:bg-white/[.08]">
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] text-zinc-800 dark:text-zinc-100">{m.label}</span>

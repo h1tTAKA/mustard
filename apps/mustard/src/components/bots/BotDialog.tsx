@@ -1,15 +1,18 @@
 "use client";
 // 새 봇 창(#1397) — 맡기고 싶은 일을 정해 봇을 바로 만든다(추천·고르기 없음, 유저 결정 11-27).
+// 봇 설정 창(#1399) — bot을 넘기면 같은 창이 지금 값으로 채워지고, 저장 때 바뀐 칸만 보냄.
 // 위: 봇 색 띠 + 아바타(색 고르기) / 이름(선택, 비우면 정체성 첫 줄) / 정체성 = 누구고 무슨 일을 하는지(임무) / "이 컴퓨터에서 [AI]로 실행".
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { IconLoader2 } from "@tabler/icons-react";
 import { useT, useToast } from "@mustard/core";
 import { BOT_COLORS, type CrewProvider } from "@/lib/crew/crewRoleDefaults";
 import type { Provider } from "@/components/workspace/ChatComposer";
+import type { Bot } from "./useBots";
 import AgentModelPicker from "./AgentModelPicker";
 import BotAvatar from "./BotAvatar";
 
 export type CreateResult = "ok" | "rejected" | "unknown";
+export type BotFields = { name?: string; mission?: string; provider?: CrewProvider; model?: string; color?: string };
 const NAME_MAX = 24; // 자동 이름 길이(목록 한 줄에 들어가게)
 
 // 정체성 첫 줄 → 이름. 코드포인트 단위로 자름(한글은 안 깨짐, 합친 이모지는 끝에서 갈릴 수 있음 — 이름이라 감수). 잘렸으면 "…".
@@ -23,18 +26,22 @@ const composing = (e: KeyboardEvent<HTMLElement>) => e.nativeEvent.isComposing |
 const FIELD = "w-full rounded-lg border border-zinc-200 bg-white px-3 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-mustard-400/70 focus:ring-4 focus:ring-mustard-400/10 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-100 dark:placeholder:text-zinc-500";
 const LABEL = "mb-1.5 block text-[12px] font-medium text-zinc-600 dark:text-zinc-300";
 
-export default function NewBotDialog({ onClose, create }: {
+export default function BotDialog({ bot, nameHint, onClose, submit }: {
+  bot?: Bot;          // 있으면 설정 창
+  nameHint?: string;  // 설정 창 이름 칸 자리 글(기본 역할은 이름이 비어 있고 화면 이름은 i18n)
   onClose: () => void;
-  create: (b: { name: string; mission: string; provider: CrewProvider; model?: string; color: string }) => Promise<CreateResult>;
+  submit: (b: BotFields) => Promise<CreateResult>; // 새 봇 = 전 칸, 설정 = 바뀐 칸만
 }) {
   const t = useT();
   const toast = useToast();
-  const [color, setColor] = useState(BOT_COLORS[0]);
-  const [name, setName] = useState("");
-  const [mission, setMission] = useState("");
-  const [provider, setProvider] = useState<Provider>("claude-code");
-  const [model, setModel] = useState("");
-  const pickAgent = useCallback((p: Provider, m: string) => { setProvider(p); setModel(m); }, []);
+  const [color, setColor] = useState(bot?.color ?? BOT_COLORS[0]);
+  const [name, setName] = useState(bot?.name ?? "");
+  const [mission, setMission] = useState(bot?.instructions ?? "");
+  const [provider, setProvider] = useState<Provider>(bot?.provider ?? "claude-code");
+  const [model, setModel] = useState(bot?.model ?? "");
+  // 실행 AI·모델은 고르기 메뉴가 스스로 맞추기도 함(목록 받으면 첫 모델) → 설정 창은 사람이 고른 때만 바뀐 걸로 침
+  const [agentTouched, setAgentTouched] = useState(false);
+  const pickAgent = useCallback((p: Provider, m: string, byUser?: boolean) => { setProvider(p); setModel(m); if (byUser) setAgentTouched(true); }, []);
   const [hasAgent, setHasAgent] = useState(true); // 설치·켜진 실행 AI가 하나라도 있나
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -59,23 +66,34 @@ export default function NewBotDialog({ onClose, create }: {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const shownName = name.trim() || nameFromMission(mission);
-  const submit = async (e?: FormEvent) => {
+  const shownName = name.trim() || (bot ? nameHint ?? "" : nameFromMission(mission));
+  const onSubmit = async (e?: FormEvent) => {
     e?.preventDefault();
     const m = mission.trim();
     if (!m || busy || !hasAgent) return;
+    let fields: BotFields;
+    if (!bot) fields = { name: shownName, mission: m, provider, model: model || undefined, color }; // 채팅 AI id = 봇 실행 AI id(같은 5개)
+    else {
+      fields = {};
+      if (name.trim() && name.trim() !== bot.name) fields.name = name.trim(); // 비우면 그대로
+      if (m !== bot.instructions.trim()) fields.mission = m;
+      if (color !== bot.color) fields.color = color;
+      if (agentTouched && (provider !== bot.provider || model !== (bot.model ?? ""))) { fields.provider = provider; fields.model = model; }
+      if (!Object.keys(fields).length) { onClose(); return; } // 바뀐 게 없으면 그냥 닫음
+    }
     setBusy(true);
-    const r = await create({ name: shownName, mission: m, provider, model: model || undefined, color }); // 채팅 AI id = 봇 실행 AI id(같은 5개)
+    const r = await submit(fields);
     setBusy(false);
     if (r === "ok") { onClose(); return; }
-    // 거절 = 못 만듦. 늦음(unknown) = 만들어졌는지 모름 → 창·글은 그대로 두고 "목록에 없을 때만 다시" 안내
-    toast(t(r === "rejected" ? "bots.new.failed" : "bots.new.slow"), "error");
+    // 거절 = 못 함. 늦음(unknown) = 됐는지 모름 → 창·글은 그대로 두고 확인 안내(새 봇은 "목록에 없을 때만 다시")
+    toast(t(r === "rejected" ? (bot ? "bots.settings.failed" : "bots.new.failed") : (bot ? "bots.settings.slow" : "bots.new.slow")), "error");
   };
+  const title = t(bot ? "bots.settings.title" : "bots.new.title");
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[12vh]">
       <div className="absolute inset-0 bg-black/40 dark:bg-black/50" onClick={() => { if (!busy) onClose(); }} aria-hidden />
-      <form ref={formRef} role="dialog" aria-modal="true" aria-label={t("bots.new.title")} onSubmit={submit}
+      <form ref={formRef} role="dialog" aria-modal="true" aria-label={title} onSubmit={onSubmit}
         className="relative w-full max-w-md rounded-2xl border border-zinc-200/80 bg-white shadow-2xl ring-1 ring-black/5 dark:border-white/10 dark:bg-[#14151c] dark:ring-white/5">
         {/* 봇 색 띠 — 고른 색이 위에서 아래로 옅어짐 */}
         <div aria-hidden className="h-[84px] rounded-t-[15px]" style={{ background: `linear-gradient(180deg, ${color}66 0%, ${color}14 70%, transparent 100%)` }} />
@@ -85,7 +103,7 @@ export default function NewBotDialog({ onClose, create }: {
               <BotAvatar name={shownName || "?"} color={color} size={64} />
             </span>
             <div className="min-w-0 flex-1 pb-1">
-              <div className="text-[15px] font-semibold text-zinc-900 dark:text-zinc-50">{t("bots.new.title")}</div>
+              <div className="text-[15px] font-semibold text-zinc-900 dark:text-zinc-50">{title}</div>
               {/* 색 고르기 — 7색 */}
               <div role="group" aria-label={t("bots.new.color")} className="mt-1.5 flex gap-1.5">
                 {BOT_COLORS.map((c, i) => (
@@ -101,7 +119,7 @@ export default function NewBotDialog({ onClose, create }: {
             <label className="block">
               <span className={LABEL}>{t("bots.new.name")}</span>
               <input type="text" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} autoFocus
-                placeholder={nameFromMission(mission) || t("bots.new.namePlaceholder")}
+                placeholder={(bot ? nameHint : nameFromMission(mission)) || t("bots.new.namePlaceholder")}
                 onKeyDown={(e) => { if (e.key === "Enter" && composing(e)) e.preventDefault(); }}
                 className={`${FIELD} h-9`} />
             </label>
@@ -109,7 +127,7 @@ export default function NewBotDialog({ onClose, create }: {
               <span className={LABEL}>{t("bots.new.identity")} <span className="font-normal text-zinc-400 dark:text-zinc-500">· {t("bots.new.identityHint")}</span></span>
               <textarea value={mission} onChange={(e) => setMission(e.target.value)} rows={4} maxLength={4000}
                 placeholder={t("bots.new.identityPlaceholder")}
-                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !composing(e)) { e.preventDefault(); void submit(); } }}
+                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !composing(e)) { e.preventDefault(); void onSubmit(); } }}
                 className={`${FIELD} resize-none py-2 leading-relaxed`} />
             </label>
             {/* 실행 줄 — 문장 안에 AI·모델 알약 */}
@@ -128,7 +146,7 @@ export default function NewBotDialog({ onClose, create }: {
             <button type="submit" disabled={!mission.trim() || busy || !hasAgent} title={t("bots.new.submitHint")}
               className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg bg-mustard-500 px-3.5 text-[12.5px] font-semibold text-brown-900 transition hover:bg-mustard-400 disabled:opacity-50">
               {busy && <IconLoader2 size={14} stroke={2.2} className="animate-spin" aria-hidden />}
-              {t("bots.new.create")}
+              {t(bot ? "bots.settings.save" : "bots.new.create")}
             </button>
           </div>
         </div>

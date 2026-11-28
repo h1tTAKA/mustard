@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Bot, BotOp } from "@/lib/crew/crewBots";
 
 export type { Bot };
-export type OpResult = { bots: Bot[]; created?: string } | "rejected" | "unknown";
+export type OpResult = { bots: Bot[]; created?: string; trashed?: string } | "rejected" | "unknown"; // trashed = 삭제로 비켜 둔 봇 폴더(#1399)
 type T = (k: string, v?: Record<string, string | number>) => string;
 
 // 기본 역할은 role.name이 비어 있어 i18n 이름. 봇 이름을 바꿨으면(meta.name) listBots가 이미 덮어 줌.
@@ -36,7 +36,7 @@ export function useBots(active: boolean) {
         if (!j?.ok) { reload(); return "rejected"; } // 서버가 거절(다른 창이 이미 바꿈 등) → 목록 다시 맞춤(리뷰)
         gen.current++;
         setBots(j.bots); setError(false);
-        return { bots: j.bots as Bot[], created: typeof j.created === "string" ? j.created : undefined };
+        return { bots: j.bots as Bot[], created: typeof j.created === "string" ? j.created : undefined, trashed: typeof j.trashed === "string" ? j.trashed : undefined };
       } catch { setTimeout(reload, 2_000); return "unknown"; } // 시간 초과여도 서버가 곧 처리할 수 있음 → 조금 뒤 다시 맞춤(리뷰)
     };
     const p = chain.current.then(run, run);
