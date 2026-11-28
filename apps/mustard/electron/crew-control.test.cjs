@@ -8,7 +8,10 @@ const tmp = realpathSync(mkdtempSync(join(tmpdir(), "crewctl-")));
 const repo = join(tmp, "repo"), sub = join(repo, "app"), wt = join(tmp, "wt", "abc", "id8");
 mkdirSync(join(repo, ".git"), { recursive: true }); mkdirSync(sub, { recursive: true }); mkdirSync(wt, { recursive: true });
 process.env.MUSTARD_WORKTREE_DIR = join(tmp, "wt");
-const { createCrewControl, repoOf } = require("./crew-control.cjs");
+const bots = join(tmp, "bots"), relbot = join(bots, "rel");
+mkdirSync(join(relbot, "memory"), { recursive: true });
+process.env.MUSTARD_BOTS_DIR = bots;
+const { createCrewControl, repoOf, botOf } = require("./crew-control.cjs");
 
 (async () => {
   // 진짜 fetch가 기본으로 연결돼 있는지
@@ -96,6 +99,36 @@ const { createCrewControl, repoOf } = require("./crew-control.cjs");
   } });
   r = JSON.parse((await half.call("crew_add_task", { title: "x", start: true }, repo)).content[0].text);
   assert.deepStrictEqual([r.id, r.started, r.startError], ["tNew", false, "concurrency limit (3)"]);
+
+  // 봇 티켓(#1404) — 봇 폴더 바로 아래에서만, 정한 칸만 + by:"bot", bot·op는 인자로 못 바꿈
+  assert.strictEqual(botOf(relbot), "rel");
+  assert.strictEqual(botOf(join(relbot, "memory")), null);
+  assert.strictEqual(botOf(bots), null);
+  const bcalls = [];
+  const items = [{ n: 1, title: "채널 정리", status: "open", activity: [{ at: 1, by: "bot", kind: "created" }, { at: 2, by: "owner", kind: "comment", text: "ㄱㄱ" }] }];
+  const bc = createCrewControl({ appBase: () => base, uiToken: "SECRET", fetch: async (url, init) => {
+    bcalls.push({ url: url.replace(base, ""), method: init.method, cookie: init.headers.Cookie, body: init.body && JSON.parse(init.body) });
+    return { ok: true, status: 200, json: async () => (init.method === "GET" ? { ok: true, items } : { ok: true, item: { n: 2, title: "새 일", status: "open", activity: [] } }) };
+  } });
+  r = JSON.parse((await bc.call("bot_item_list", {}, relbot)).content[0].text);
+  assert.deepStrictEqual(r[0].last, { at: 2, by: "owner", kind: "comment", text: "ㄱㄱ" }); // 목록엔 마지막 활동만
+  assert.strictEqual(bcalls[0].url, "/api/crew/bots/items?bot=rel");
+  assert.strictEqual(JSON.parse((await bc.call("bot_item_list", { n: 1 }, relbot)).content[0].text).activity.length, 2);
+  assert.ok((await bc.call("bot_item_list", { n: 9 }, relbot)).isError);
+  bcalls.length = 0;
+  await bc.call("bot_item_add", { title: "새 일", doneMeans: "올림", bot: "other", op: "comment", by: "owner", n: 5 }, relbot);
+  await bc.call("bot_item_set", { n: 1, status: "done", text: "끝" }, relbot);
+  await bc.call("bot_item_comment", { n: 1, text: "보고" }, relbot);
+  assert.deepStrictEqual(bcalls.map((c) => c.body), [
+    { title: "새 일", doneMeans: "올림", bot: "rel", op: "add", by: "bot" },
+    { n: 1, status: "done", text: "끝", bot: "rel", op: "set", by: "bot" },
+    { n: 1, text: "보고", bot: "rel", op: "comment", by: "bot" },
+  ]);
+  assert.ok(bcalls.every((c) => c.cookie === "mustard_ui=SECRET" && c.url === "/api/crew/bots/items"));
+  // 봇 폴더 밖(레포·봇 하위 폴더)·없는 도구는 거부, API를 안 부름
+  bcalls.length = 0;
+  for (const [t, d] of [["bot_item_list", repo], ["bot_item_add", join(relbot, "memory")], ["bot_item_delete", relbot]]) assert.ok((await bc.call(t, { title: "x" }, d)).isError, t);
+  assert.strictEqual(bcalls.length, 0);
 
   console.log("crew-control ok");
 })().catch((e) => { console.error(e); process.exit(1); });

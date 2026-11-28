@@ -1,5 +1,5 @@
 "use client";
-// 봇 홈(#1397, 에픽 #1391 재정의 2) — 레포 없이 봇들만 보는 화면. 왼쪽 목록 · 가운데 · 오른쪽 봇 정보 3단.
+// 봇 홈(#1397, 에픽 #1391 재정의 2) — 레포 없이 봇들만 보는 화면. 왼쪽 목록 · 가운데 · 오른쪽 [할 일 | 정보] 탭(#1404) 3단.
 // 좁은 폭: 본문 폭을 재서 오른쪽 칸(900px 미만) → 왼쪽 칸(560px 미만) 순으로 붙박이에서 빠짐.
 // 빠진 칸은 헤더 토글로 가운데 위에 덮어 열고, 가운데를 누르면 닫힘. 붙박이 칸의 토글은 그냥 접기/펴기.
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -8,11 +8,13 @@ import { useT, useToast } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
 import BotSidebar, { type BotProject } from "./BotSidebar";
 import BotInfo from "./BotInfo";
+import BotItems from "./BotItems";
 import BotChat from "./BotChat";
 import BotDialog, { type BotFields, type CreateResult } from "./BotDialog";
 import { botName, useBots } from "./useBots";
 
 const SEL_KEY = "nunopi:bots-selected";
+const TAB_KEY = "nunopi:bots-right-tab"; // 오른쪽 탭 기억(할 일 | 정보)
 // 휴지통 부탁 중인 삭제 폴더 — 삭제 직후 부탁과 "남은 폴더 다시 부탁"이 같은 폴더를 겹쳐 부탁하면 뒤쪽이 실패로 보임(리뷰).
 // 겹치면 진행 중인 부탁을 같이 기다림(새로 안 보냄) → 누가 불러도 진짜 결과를 받음. 데스크톱이 아니면 null.
 const trashing = new Map<string, Promise<{ ok: boolean }>>();
@@ -34,6 +36,8 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
   const [picked, setPicked] = useState<string | null>(() => { try { return localStorage.getItem(SEL_KEY); } catch { return null; } });
   const [creating, setCreating] = useState(false); // 새 봇 창 열림
   const [editing, setEditing] = useState<string | null>(null); // 설정 창을 연 봇 id
+  const [tab, setTabState] = useState<"items" | "info">(() => { try { return localStorage.getItem(TAB_KEY) === "info" ? "info" : "items"; } catch { return "items"; } });
+  const setTab = (v: "items" | "info") => { setTabState(v); try { localStorage.setItem(TAB_KEY, v); } catch { /* ignore */ } };
   const toast = useToast();
   // 설정 중 봇이 사라지면(다른 창 삭제) 설정 상태도 비움 — 안 비우면 Esc가 막히고, 같은 id로 다시 만든 봇에 창이 저절로 열림(리뷰)
   useEffect(() => { if (editing && bots && !bots.some((b) => b.id === editing)) setEditing(null); }, [bots, editing]); // eslint-disable-line react-hooks/set-state-in-effect -- 목록이 바뀐 결과로 닫음
@@ -70,7 +74,20 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
       </button>
     </div>
   ) : null; // 읽는 중·못 읽음
-  const right = bot ? <BotInfo bot={bot} onDelete={remove} onEdit={() => setEditing(bot.id)} /> : error ? <BotInfo bot={null} onDelete={remove} onEdit={() => {}} /> : null; // 읽는 중·봇 없음엔 비움
+  const tabBtn = (v: "items" | "info") => (
+    <button type="button" role="tab" aria-selected={tab === v} onClick={() => setTab(v)}
+      className={`h-7 w-20 rounded-md text-[12px] font-medium transition ${tab === v ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"}`}>
+      {t(`bots.tab.${v}`)}
+    </button>
+  );
+  const right = bot ? (
+    <>
+      <div role="tablist" className="flex shrink-0 items-center gap-1 border-b border-zinc-200 px-2 py-1.5 dark:border-zinc-800">{tabBtn("items")}{tabBtn("info")}</div>
+      {tab === "items"
+        ? <BotItems key={bot.id} botId={bot.id} botName={botName(t, bot)} active={active} />
+        : <BotInfo bot={bot} onDelete={remove} onEdit={() => setEditing(bot.id)} />}
+    </>
+  ) : error ? <BotInfo bot={null} onDelete={remove} onEdit={() => {}} /> : null; // 읽는 중·봇 없음엔 비움
   const fullscreen = useFullscreen(); // 신호등 자리 좌측 패딩(레포 헤더와 같은 규칙)
   const bodyRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1440);
