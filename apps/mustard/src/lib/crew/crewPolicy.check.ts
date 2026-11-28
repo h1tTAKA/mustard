@@ -66,6 +66,10 @@ assert.strictEqual(d("SomethingNew", {}), "ask");
     assert.strictEqual(decide("Bash", { command: "cd out && cat config" }, join(tmp, "me")), "ask", "cd 링크(밖) 뒤 맨이름");
     symlinkSync(join(homedir(), ".ssh"), join(tmp, "me", "my link"));
     assert.strictEqual(decide("Bash", { command: 'cd "my link" && cat config' }, join(tmp, "me")), "ask", "빈칸 든 따옴표 cd 대상");
+    assert.strictEqual(decide("Bash", { command: "cd my\\ link && cat config" }, join(tmp, "me")), "ask", "\\ 빈칸 cd 대상");
+    assert.strictEqual(decide("Bash", { command: 'cd my" "link && cat config' }, join(tmp, "me")), "ask", "따옴표 이어 붙인 cd 대상");
+    mkdirSync(join(tmp, "me", "notes"));
+    assert.strictEqual(decide("Bash", { command: "cd notes && ls" }, join(tmp, "me")), "allow", "평범한 하위 폴더 cd는 그대로");
   } finally { rmSync(tmp, { recursive: true, force: true }); if (saved === undefined) delete process.env.MUSTARD_BOTS_DIR; else process.env.MUSTARD_BOTS_DIR = saved; }
 }
 
