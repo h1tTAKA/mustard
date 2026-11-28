@@ -5,7 +5,7 @@
 // #1279 유저가 켠 항목(처음 보는 명령·코드 실행 등)은 경로 인자를 모름 — tar -C ~/x·unzip -d ~·node -e 조립 경로처럼 밖에 쓰는 것도 통과(한계, 설정 화면 문구에 명시).
 // 비밀 파일은 '이름·경로'로만 잡음 — 이름을 안 대는 내용 검색(grep -r PRIVATE . 이 id_rsa·credentials.json 안까지)은 못 막음.
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
-import { lstatSync, readlinkSync } from "node:fs";
+import { lstatSync, readdirSync, readlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { timingSafeEqual } from "node:crypto";
 import type { CrewPermCat, CrewPerms } from "./crewTypes.ts";
@@ -106,6 +106,8 @@ function shellSecret(raw: string, worktree: string): boolean {
     tok = tok.replace(/^-[A-Za-z]+(?=[./~$])/, ""); // -f../x 처럼 붙은 짧은 옵션 값
     if (!tok || tok.startsWith("-")) continue;
     // 경로처럼 생긴 것 + 맨이름인데 그 자리에 링크가 있는 것(cat creds, creds → ~/.ssh/config, 리뷰). 맨이름을 다 보면 봇 폴더(~/.nunopi 아래)에서 낱말마다 걸림
+    // 와일드카드(cat *, cat */config) — 셸이 펼치면 링크도 들어감. 펼칠 폴더(와일드카드 앞까지)에 링크가 하나라도 있으면 사람에게(리뷰)
+    if (/[*?[{]/.test(tok) && bases.some((b) => { const dir = resolve(b, expandHome(tok.replace(/[*?[{].*$/, "").replace(/[^/]*$/, "") || ".")); try { return readdirSync(dir, { withFileTypes: true }).some((d) => d.isSymbolicLink()); } catch { return false; } })) return true;
     const pathy = /[/~]|^\.\.?$|^\$/.test(tok) || bases.some((b) => { try { return lstatSync(join(b, tok)).isSymbolicLink(); } catch { return false; } });
     if (!pathy) continue;
     if (bases.some((b) => isSecretPath(tok, b, own && worktree) || coversHome(tok, b))) return true;

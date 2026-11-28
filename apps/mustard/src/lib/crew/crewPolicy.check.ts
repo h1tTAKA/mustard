@@ -76,6 +76,9 @@ assert.strictEqual(d("SomethingNew", {}), "ask");
     assert.strictEqual(decide("Bash", { command: "cd notes && cat link/config" }, join(tmp, "me")), "ask", "cd 뒤 상대 경로는 cd 목적지 기준으로도(리뷰)");
     assert.strictEqual(decide("Bash", { command: "cat out" }, join(tmp, "me")), "ask", "맨이름 링크(밖)");
     assert.strictEqual(decide("Bash", { command: "cd notes && cat link" }, join(tmp, "me")), "ask", "cd 뒤 맨이름 링크");
+    assert.strictEqual(decide("Bash", { command: "cat *" }, join(tmp, "me")), "ask", "와일드카드 폴더에 링크");
+    mkdirSync(join(tmp, "me", "plain"));
+    assert.strictEqual(decide("Bash", { command: "ls plain/*" }, join(tmp, "me")), "allow", "링크 없는 폴더 와일드카드는 그대로");
   } finally { rmSync(tmp, { recursive: true, force: true }); if (saved === undefined) delete process.env.MUSTARD_BOTS_DIR; else process.env.MUSTARD_BOTS_DIR = saved; }
 }
 
