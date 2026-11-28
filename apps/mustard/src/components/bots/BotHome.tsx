@@ -8,9 +8,9 @@ import { useT, useToast } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
 import BotSidebar, { type BotProject } from "./BotSidebar";
 import BotInfo from "./BotInfo";
-import BotAvatar from "./BotAvatar";
+import BotChat from "./BotChat";
 import BotDialog, { type BotFields, type CreateResult } from "./BotDialog";
-import { botDesc, botName, useBots } from "./useBots";
+import { botName, useBots } from "./useBots";
 
 const SEL_KEY = "nunopi:bots-selected";
 // 휴지통 부탁 중인 삭제 폴더 — 삭제 직후 부탁과 "남은 폴더 다시 부탁"이 같은 폴더를 겹쳐 부탁하면 뒤쪽이 실패로 보임(리뷰).
@@ -59,14 +59,8 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
   const openNew = () => setCreating(true);
   const left = <BotSidebar bots={bots} error={error} selected={bot?.id ?? null} onSelect={pick} onNew={openNew} onRetry={reload} projects={projects} onOpenProject={onOpenProject} />;
   const center = bot ? (
-    // 한계: Home Chat(H4) 전까지 가운데는 봇 소개만.
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-      <BotAvatar name={botName(t, bot)} color={bot.color} size={56} />
-      <div className="text-[18px] font-bold tracking-tight text-zinc-900 dark:text-zinc-50">{botName(t, bot)}</div>
-      <p className="max-w-md text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">{botDesc(t, bot)}</p>
-      <p className="mt-2 rounded-lg bg-zinc-100 px-3 py-1.5 text-[12px] text-zinc-500 dark:bg-zinc-800/70 dark:text-zinc-400">{t("bots.chatSoon")}</p>
-    </div>
-  ) : bots && bots.length === 0 ? (
+    <BotChat key={bot.id} bot={bot} /> // #1401 Home Chat
+) : bots && bots.length === 0 ? (
     // 봇 없음 — 가운데는 조용히 한 줄 + [새 봇](만들기는 창으로)
     <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
       <p className="text-[13px] text-zinc-400 dark:text-zinc-500">{t("bots.noBots")}</p>

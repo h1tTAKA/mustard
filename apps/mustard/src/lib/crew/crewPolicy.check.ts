@@ -1,5 +1,8 @@
 // crewPolicy 점검 — node --experimental-strip-types src/lib/crew/crewPolicy.check.ts
 import assert from "node:assert";
+import { homedir, tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { join } from "node:path";
 import { crossSite, decide, fromAgentRequest } from "./crewPolicy.ts";
 
 const W = "/Users/u/.nunopi/worktrees/abc/1234";
@@ -31,6 +34,58 @@ assert.strictEqual(d("Bash", { command: "echo $(whoami)" }), "ask", "명령 치�
 assert.strictEqual(d("Bash", { command: "cd /tmp && ls" }), "ask", "밖으로 cd");
 assert.strictEqual(d("Bash", { command: "git remote add x y" }), "ask", "git 하위 명령 목록 밖");
 assert.strictEqual(d("SomethingNew", {}), "ask");
+
+// #1401 봇 대화: 자기 봇 폴더(정체성·기억)는 비밀 예외, 다른 봇·~/.nunopi 나머지는 그대로
+{
+  const saved = process.env.MUSTARD_BOTS_DIR;
+  process.env.MUSTARD_BOTS_DIR = join(homedir(), ".nunopi", "bots");
+  try {
+    const B = join(process.env.MUSTARD_BOTS_DIR, "b1");
+    assert.strictEqual(decide("Read", { file_path: `${B}/MEMORY.md` }, B), "allow", "자기 기억 읽기");
+    assert.strictEqual(decide("Bash", { command: "cat ABOUT.md" }, B), "allow", "자기 정체성 읽기(셸)");
+    assert.strictEqual(decide("Read", { file_path: join(homedir(), ".nunopi", "bots", "b2", "MEMORY.md") }, B), "ask", "다른 봇 기억은 묻기");
+    assert.strictEqual(decide("Read", { file_path: join(homedir(), ".nunopi", "crew", "roles.json") }, B), "ask", "~/.nunopi 나머지는 그대로");
+    assert.strictEqual(decide("Read", { file_path: `${B}/MEMORY.md` }, W), "ask", "봇 대화가 아니면 예외 없음");
+    assert.strictEqual(decide("Read", { file_path: `${B}/../../crew/roles.json` }, B), "ask", "../ 로 빠져나가면 비밀");
+    assert.strictEqual(decide("Bash", { command: `cat ${B}/../b2/MEMORY.md` }, B), "ask", "셸로 옆 봇 폴더도 비밀");
+    assert.strictEqual(decide("Bash", { command: "cat $PWD/../b2/MEMORY.md" }, B), "ask", "$PWD로 옆 봇 폴더(검사기는 변수를 못 풂, 리뷰)");
+    assert.strictEqual(decide("Bash", { command: "cat `pwd`/../b2/MEMORY.md" }, B), "ask", "명령 치환으로 옆 봇 폴더");
+    assert.strictEqual(decide("Bash", { command: "cd memory && cat topic.md" }, B), "allow", "자기 봇 폴더 하위로 cd(실제 ~/.nunopi 아래)는 묻지 않음(리뷰)");
+    assert.strictEqual(decide("Bash", { command: "cat memory/topic.md" }, B), "allow", "자기 봇 폴더 하위 경로");
+  } finally { if (saved === undefined) delete process.env.MUSTARD_BOTS_DIR; else process.env.MUSTARD_BOTS_DIR = saved; }
+}
+// 봇 폴더 자체가 밖(~/.ssh)을 가리키는 링크면 예외 없음(리뷰) — 임시 폴더에 링크만 만듦(대상은 읽지 않음)
+{
+  const saved = process.env.MUSTARD_BOTS_DIR;
+  const tmp = mkdtempSync(join(tmpdir(), "bots-pol-"));
+  process.env.MUSTARD_BOTS_DIR = tmp;
+  try {
+    symlinkSync(join(homedir(), ".ssh"), join(tmp, "evil"));
+    assert.strictEqual(decide("Read", { file_path: join(tmp, "evil", "config") }, join(tmp, "evil")), "ask", "링크 봇 폴더");
+    // 봇 폴더 안 링크로 밖 — cd link 뒤 맨이름(리뷰)
+    mkdirSync(join(tmp, "me"));
+    symlinkSync(join(homedir(), ".ssh"), join(tmp, "me", "out"));
+    assert.strictEqual(decide("Bash", { command: "cd out && cat config" }, join(tmp, "me")), "ask", "cd 링크(밖) 뒤 맨이름");
+    symlinkSync(join(homedir(), ".ssh"), join(tmp, "me", "my link"));
+    assert.strictEqual(decide("Bash", { command: 'cd "my link" && cat config' }, join(tmp, "me")), "ask", "빈칸 든 따옴표 cd 대상");
+    assert.strictEqual(decide("Bash", { command: "cd my\\ link && cat config" }, join(tmp, "me")), "ask", "\\ 빈칸 cd 대상");
+    assert.strictEqual(decide("Bash", { command: 'cd my" "link && cat config' }, join(tmp, "me")), "ask", "따옴표 이어 붙인 cd 대상");
+    mkdirSync(join(tmp, "me", "notes"));
+    assert.strictEqual(decide("Bash", { command: "cd notes && ls" }, join(tmp, "me")), "allow", "평범한 하위 폴더 cd는 그대로");
+    symlinkSync(join(homedir(), ".ssh"), join(tmp, "me", "notes", "link"));
+    assert.strictEqual(decide("Bash", { command: "cd notes && cat link/config" }, join(tmp, "me")), "ask", "cd 뒤 상대 경로는 cd 목적지 기준으로도(리뷰)");
+    assert.strictEqual(decide("Bash", { command: "cat out" }, join(tmp, "me")), "ask", "맨이름 링크(밖)");
+    assert.strictEqual(decide("Bash", { command: "cd notes && cat link" }, join(tmp, "me")), "ask", "cd 뒤 맨이름 링크");
+    assert.strictEqual(decide("Bash", { command: "cat *" }, join(tmp, "me")), "ask", "와일드카드 폴더에 링크");
+    mkdirSync(join(tmp, "me", "plain"));
+    assert.strictEqual(decide("Bash", { command: "ls plain/*" }, join(tmp, "me")), "allow", "링크 없는 폴더 와일드카드는 그대로");
+    assert.strictEqual(decide("Bash", { command: "cat plain/*/config" }, join(tmp, "me")), "allow", "가운데 조각 와일드카드 — 펼칠 게 없으면 그대로");
+    mkdirSync(join(tmp, "me", "plain", "sub")); symlinkSync(join(homedir(), ".ssh", "config"), join(tmp, "me", "plain", "sub", "config"));
+    assert.strictEqual(decide("Bash", { command: "cat plain/*/config" }, join(tmp, "me")), "ask", "가운데 조각 와일드카드가 링크로 펼쳐짐");
+    assert.strictEqual(decide("Bash", { command: "ls plain/*" }, join(tmp, "me")), "allow", "하위가 폴더뿐이면 마지막 조각은 그대로");
+    for (const c of ["cat [!a]*/config", "cat @(plain)/config", "cat [!a]*", "cat */x#", "grep -r x . ; cat */x#", "grep x . | cat */x#", "cat {x,out}/config", "cat {nope,notes/link}/config", "cat {a..b}/config", "cat {a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a32,a33,a34,a35,a36,a37,a38,a39,a40,a41,a42,a43,a44,a45,a46,a47,a48,a49,a50,a51,a52,a53,a54,a55,a56,a57,a58,a59,a60,a61,a62,a63,a64,out}/config", "cat {a,{a,{a,{a,{a,{a,{a,{a,out}}}}}}}}/config"]) assert.strictEqual(decide("Bash", { command: c }, join(tmp, "me")), "ask", `부정·확장 와일드카드: ${c}`);
+  } finally { rmSync(tmp, { recursive: true, force: true }); if (saved === undefined) delete process.env.MUSTARD_BOTS_DIR; else process.env.MUSTARD_BOTS_DIR = saved; }
+}
 
 // 실사용 오탐(#1100 라이브 테스트)
 assert.strictEqual(d("Bash", { command: `node -e "import('./math.js').then(m => { const r = m.add(2,3); console.log(r); })"` }), "ask", "node -e 인라인 코드는 사람(#1137 리뷰 — 무엇이든 실행 가능)");

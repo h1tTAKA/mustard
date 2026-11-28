@@ -4,8 +4,8 @@
 // 그 안에 숨긴 git push·API 호출을 못 봄 — 진짜 막는 건 OS 샌드박스·서버 쪽 인증(#1157 보류, Crew API 토큰은 #1161).
 // #1279 유저가 켠 항목(처음 보는 명령·코드 실행 등)은 경로 인자를 모름 — tar -C ~/x·unzip -d ~·node -e 조립 경로처럼 밖에 쓰는 것도 통과(한계, 설정 화면 문구에 명시).
 // 비밀 파일은 '이름·경로'로만 잡음 — 이름을 안 대는 내용 검색(grep -r PRIVATE . 이 id_rsa·credentials.json 안까지)은 못 막음.
-import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
-import { lstatSync, readlinkSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { lstatSync, readdirSync, readlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { timingSafeEqual } from "node:crypto";
 import type { CrewPermCat, CrewPerms } from "./crewTypes.ts";
@@ -58,9 +58,24 @@ let secretDirs: string[] | null = null; // 실제 경로 포함(~/.ssh가 링크
 const secrets = () => (secretDirs ??= [...new Set(SECRET_REL.flatMap((d) => [join(HOME, d), realish(join(HOME, d))]))]);
 const excepts = () => [...SECRET_EXCEPT, ...SECRET_EXCEPT.map((e) => realish(e))];
 const homes = () => [HOME, realish(HOME)];
-export function isSecretPath(p: string, base: string): boolean {
+// #1401 봇 대화(cwd = 봇 폴더 ~/.nunopi/bots/<id>)는 자기 봇 폴더 안(정체성·기억)을 비밀로 보지 않음. 다른 봇·~/.nunopi 나머지는 그대로 비밀.
+// 경로와 링크 푼 실제 경로가 둘 다 그 봇 폴더 안일 때만(봇 폴더 안 링크로 ~/.ssh를 가리켜도 예외 안 됨).
+// 봇 폴더 자체도 실제로 봇 폴더 모음 바로 아래여야 함(봇 폴더가 ~/.ssh를 가리키는 링크면 예외 안 됨, 리뷰).
+const botsRoot = () => process.env.MUSTARD_BOTS_DIR || join(HOME, ".nunopi", "bots");
+const inOwnBotHome = (a: string, base: string) => { const b = resolve(base); return dirname(b) === resolve(botsRoot()) && realish(b) === join(realish(botsRoot()), basename(b)) && under(a, b) && under(realish(a), realish(b)); };
+// 글자 검사(SECRET_TEXT)용 — 봇 대화면 글 속 자기 봇 폴더 절대·~ 경로를 "."로(경로 판정은 isSecretPath가 따로 다시 함: ../ 로 빠져나가면 그대로 비밀)
+const ownHomeText = (v: string, base: string) => {
+  const b = resolve(base);
+  if (dirname(b) !== resolve(botsRoot())) return v;
+  const forms = [b, ...(under(b, HOME) ? [`~${b.slice(HOME.length)}`, `$HOME${b.slice(HOME.length)}`, `\${HOME}${b.slice(HOME.length)}`] : [])];
+  return forms.reduce((t, f) => t.replace(new RegExp(`${esc(f)}(?=$|[/\\s"'])`, FOLD ? "gi" : "g"), "."), v);
+};
+// own = 자기 봇 폴더 예외를 쓸 봇 폴더(기본 = base, false = 안 씀). 셸 글자는 변수·명령 치환·.. 이 있으면 안 씀(shellSecret).
+// cd로 들어간 하위 폴더 기준 판정도 자기 봇 폴더(worktree)를 넘겨 예외를 이어 씀(리뷰 — 안 그러면 cd notes 가 늘 묻기).
+export function isSecretPath(p: string, base: string, own: string | false = base): boolean {
   const a = resolve(base, expandHome(p));
   if (realish(a) === sep && a !== sep) return true; // 링크 사슬 너무 김 = 판정 포기 → 비밀로(읽기도 막는 쪽, 리뷰)
+  if (own && inOwnBotHome(a, own)) return false;
   return [a, realish(a)].some((x) => secrets().some((d) => under(x, d)) && !excepts().some((e) => under(x, e)));
 }
 // 홈(또는 그 위)을 통째로 — grep -r ../../../../ 처럼 비밀 폴더까지 훑음(리뷰)
@@ -70,17 +85,70 @@ const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const SECRET_TEXT = new RegExp(`(?:~|\\$\\{?HOME\\}?|${esc(HOME)})/(?:${SECRET_REL.map((d) => esc(d) + (d === ".nunopi" ? "(?!/worktrees(?:/|$))" : "")).join("|")})(?=$|[/\\s"'])`, FOLD ? "i" : "");
 // 셸 명령 — 따옴표 걷은 글자를 빈칸·=·: 로 자른 조각 전부를 경로로 확인(따옴표 안·--opt=값·-f값도). cd 뒤 상대 경로(..)는 위치를 못 따라가 사람에게.
 function shellSecret(raw: string, worktree: string): boolean {
-  if (SECRET_TEXT.test(unquote(raw)) || SECRET_NAMES.test(unquote(raw)) || PROJECT_SECRET.test(unquote(raw))) return true; // 비밀 이름은 heredoc 본문까지
+  // #1401 봇 폴더 예외는 글자 그대로 읽히는 명령에만 — $PWD/../다른봇·$(pwd)·`…`·.. 은 검사기가 셸처럼 못 풀어 옆 봇 폴더로 새므로 예외 없이(리뷰).
+  // 따옴표 안 빈칸 경로가 쪼개져 상대 경로가 되는 것도 .. 없이는 자기 폴더 밖으로 못 나감.
+  const own = !/[`$]|\.\.|~[+-]/.test(unquote(raw)); // ~+ ~- = 지금·이전 폴더(셸이 풂)
+  // cd 대상 — 빗금 없는 이름(cd link)도 링크를 풀어 비밀인지(그 뒤 맨이름 cat MEMORY.md는 조각 검사에 안 걸림, 리뷰). 자기 봇 폴더 예외 없이.
+  // 대상은 ;&|) 또는 줄 끝까지 통째로. 평범한 글자(영문·숫자·. _ / ~ -)가 아니면(따옴표·\ 빈칸·변수 등) 셸이 어떻게 풀지 못 따라가니 사람에게(리뷰: "my link", my\ link, my" "link)
+  const bases = [worktree]; // 뒤 조각을 풀 기준 — cd 목적지들도(cd sub && cat link/config 의 link 는 sub 기준, 리뷰)
+  for (const m of raw.matchAll(/(?:^|[\s;&|(])cd(?=\s|$|[;&|)])(?:[ \t]+([^;&|)\n]*))?/g)) {
+    const arg = (m[1] ?? "").trim().replace(/^(?:-[A-Za-z]+\s+|--\s+)+/, "").replace(/^(?:-[A-Za-z]+|--)$/, ""); // 앞 옵션(-P -L --)은 떼고 목적지만
+    if (!arg) return true; // cd만 = 홈으로 — 그 뒤 맨이름(cat .zshrc 등)이 홈 기준이 되니 사람에게
+    if (!/^[\w./~-]+$/.test(arg) || isSecretPath(arg, worktree, own && worktree)) return true;
+    bases.push(resolve(worktree, expandHome(arg)));
+  }
+  if (SECRET_TEXT.test(own ? ownHomeText(unquote(raw), worktree) : unquote(raw)) || SECRET_NAMES.test(unquote(raw)) || PROJECT_SECRET.test(unquote(raw))) return true; // 비밀 이름은 heredoc 본문까지
   raw = dropHeredocs(raw).c; // 경로 조각 검사는 본문 빼고 — cat > f <<'EOF' 로 쓰는 코드의 // 주석이 "/"(홈 통째)로 걸림(앱 확인)
   const text = unquote(raw);
   if (/(^|[\s/])\.[^\s/]*[*?[{]/.test(unquote(globOff(raw))) || /\$'[^']*\\(x|u|U|[0-7])/.test(raw)) return true; // .en?·.[e]nv·~/.a?s — 점 이름 와일드카드, $'\x65' 숨긴 글자(리뷰)
   if (/(^|[\s;&|(])cd(\s|$)/.test(text) && /(^|[\s/=])\.\.(\/|\s|$)/.test(text)) return true;
-  for (let tok of text.split(/[\s=:,]+/)) {
-    tok = tok.replace(/^-[A-Za-z]+(?=[./~$])/, ""); // -f../x 처럼 붙은 짧은 옵션 값
-    if (!tok || tok.startsWith("-") || !/[/~]|^\.\.?$|^\$/.test(tok)) continue; // 경로처럼 생긴 것만
-    if (isSecretPath(tok, worktree) || coversHome(tok, worktree)) return true;
+  // 중괄호 펼치기({x,b}/config → x/config b/config)를 셸처럼 먼저 — 쉼표로 자르면 갈래가 쪼개져 b}/config 만 남음(리뷰). 갈래 64개까지
+  // 다 못 펼치면(갈래 64개 넘음·겹침 6단 넘음·{a..z} 범위) 자르지 않고 사람에게(리뷰 — 잘린 꼬리로 빠져나감)
+  const braces = (w: string, n = 0): string[] | null => {
+    const m = /\{([^{}]*,[^{}]*)\}/.exec(w);
+    if (!m) return [w];
+    if (n > 6) return null;
+    const out: string[] = [];
+    for (const alt of m[1].split(",")) { const r = braces(w.slice(0, m.index) + alt + w.slice(m.index + m[0].length), n + 1); if (!r) return null; out.push(...r); if (out.length > 64) return null; }
+    return out;
+  };
+  for (const word of text.split(/\s+/)) {
+    if (/\{[^{}]*\.\.[^{}]*\}/.test(word)) return true; // {a..b} {1..3} 범위 펼치기
+    const exps = braces(word);
+    if (!exps) return true;
+    for (const exp of exps) {
+    for (let tok of exp.split(/[=:,]+/)) {
+      tok = tok.replace(/^-[A-Za-z]+(?=[./~$])/, ""); // -f../x 처럼 붙은 짧은 옵션 값
+      if (!tok || tok.startsWith("-")) continue;
+      // 경로처럼 생긴 것 + 맨이름인데 그 자리에 링크가 있는 것(cat creds, creds → ~/.ssh/config, 리뷰). 맨이름을 다 보면 봇 폴더(~/.nunopi 아래)에서 낱말마다 걸림
+      // 와일드카드(cat *, cat */config, [!a]*, @(x)) — 셸이 실제로 펼칠 때 링크를 지나가면 사람에게(globHitsLink). 맞는 이름이 없으면 셸도 안 펼침
+      // → sed 's#.*#x#'·grep "^lib/.*//" 같은 식 조각은 맞는 파일이 없어 그대로 통과(명령 이름으로 가르지 않음, 리뷰)
+      if (/[*?[{]|[@+!]\(/.test(tok) && bases.some((b) => globHitsLink(tok, b))) return true;
+      const pathy = /[/~]|^\.\.?$|^\$/.test(tok) || bases.some((b) => { try { return lstatSync(join(b, tok)).isSymbolicLink(); } catch { return false; } });
+      if (!pathy) continue;
+      if (bases.some((b) => isSecretPath(tok, b, own && worktree) || coversHome(tok, b))) return true;
+    }
+    }
   }
   return false;
+}
+// 셸 와일드카드 조각이 펼쳐지며 링크를 지나가나 — 조각마다 실제 폴더를 읽어 맞는 이름만 따라감(#1401 리뷰).
+// 마지막 조각: 맞는 이름 중 링크가 있으면 참. 가운데 조각: 맞는 링크면 참, 맞는 폴더는 나머지로 내려감. 와일드카드 없는 나머지는 길 중간에 링크가 있으면 참.
+// 확장 와일드카드(@( +( !( )는 정규식으로 못 옮겨 그 폴더의 모든 이름을 맞는 것으로 봄(막는 쪽).
+function globHitsLink(tok: string, base: string, depth = 0): boolean {
+  if (depth > 8) return true;
+  const segs = expandHome(tok).split("/");
+  const i = segs.findIndex((x) => /[*?[{]|[@+!]\(/.test(x));
+  if (i < 0) { const p = resolve(base, segs.join("/")); return realish(p) !== p; }
+  const dir = resolve(base, segs.slice(0, i).join("/") || (tok.startsWith("/") ? "/" : "."));
+  let re: RegExp | null = null;
+  if (!/[@+!]\(/.test(segs[i])) { try { re = new RegExp(`^${globRe(segs[i])}$`); } catch { return true; } }
+  let ents: import("node:fs").Dirent[];
+  try { ents = readdirSync(dir, { withFileTypes: true }); } catch { return false; } // 폴더가 없음 = 펼칠 것 없음
+  const hit = ents.filter((d) => (!re || re.test(d.name)) && (segs[i].startsWith(".") || !d.name.startsWith(".")));
+  if (i === segs.length - 1) return hit.some((d) => d.isSymbolicLink());
+  const rest = segs.slice(i + 1).join("/");
+  return hit.some((d) => d.isSymbolicLink() || (d.isDirectory() && globHitsLink(rest, join(dir, d.name), depth + 1)));
 }
 // glob → 정규식(*·?·[..]·{a,b}) — 대표 비밀 파일 이름에 맞아떨어지는지 직접 시험(*.env·{.env,x}·.e[n]v·id_* 등, 리뷰)
 // credentials.json·service-account.json은 이름 그대로일 때만(PROJECT_SECRET) — 표본에 넣으면 **/*.json 이 전부 걸림(리뷰)
@@ -111,7 +179,7 @@ function toolSecret(tool: string, input: Record<string, unknown>, worktree: stri
   for (const k of READ_PATH_FIELDS[tool] ?? []) {
     const v = input[k];
     if (typeof v !== "string" || !v) continue;
-    if (SECRET_TEXT.test(v) || SECRET_NAMES.test(v) || PROJECT_SECRET.test(v) || globHitsSecret(v)) return true; // glob은 비밀 이름에 맞는지 직접(리뷰)
+    if (SECRET_TEXT.test(ownHomeText(v, worktree)) || SECRET_NAMES.test(v) || PROJECT_SECRET.test(v) || globHitsSecret(v)) return true; // glob은 비밀 이름에 맞는지 직접(리뷰)
     const head = v.replace(/[*?[{].*$/, "");
     const stat = head === v ? v : head.replace(/[^/]*$/, "") || "."; // 와일드카드 있으면 그 조각 앞 폴더까지만(/Users/x/.s*/ → /Users/x/)
     if (isSecretPath(stat, worktree) || coversHome(stat, worktree)) return true;
