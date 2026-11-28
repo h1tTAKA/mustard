@@ -23,10 +23,10 @@ export async function POST(request: Request): Promise<Response> {
     const item = applyItemOp(bot, b as unknown as ItemOp, by);
     if (by === "owner" && b.op === "comment") {
       // 봇의 Home Chat(봇 폴더의 열린 대화 중 최근 것)에 알림 — 없으면(대화 전) 다음에 bot_item_list로 봄. 실패해도 댓글은 저장됨(보내다 실패하면 대화에 오류 줄이 남음).
-      // 글 = 저장된 댓글(잘린 값), 제목 = 저장소가 한 줄로 만든 값(리뷰)
+      // 글 = 저장된 댓글(잘린 값), 제목 = 저장소가 한 줄로 만든 값을 JSON 따옴표로(제목 속 " 로 머리줄을 끝내지 못하게, 리뷰)
       const home = botHome(bot);
       const chat = listChats(home).sort((x, y) => y.updatedAt - x.updatedAt)[0];
-      if (chat) void sendChat(home, chat.id, `[Mustard: your owner commented on item #${item.n} "${item.title}":]\n${item.activity[item.activity.length - 1]?.text ?? ""}\n\nAnswer on the item with bot_item_comment (or change its status), then reply here in a line or two.`, [], new URL(request.url).origin).catch(() => {});
+      if (chat) void sendChat(home, chat.id, `[Mustard: your owner commented on item #${item.n} ${JSON.stringify(item.title)}:]\n${item.activity[item.activity.length - 1]?.text ?? ""}\n\nAnswer on the item with bot_item_comment (or change its status), then reply here in a line or two.`, [], new URL(request.url).origin).catch(() => {});
     }
     return Response.json({ ok: true, item });
   } catch (e) { return Response.json({ ok: false, error: String((e as Error)?.message ?? e) }, { status: 400 }); }
