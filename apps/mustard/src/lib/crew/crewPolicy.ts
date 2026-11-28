@@ -70,11 +70,12 @@ const ownHomeText = (v: string, base: string) => {
   const forms = [b, ...(under(b, HOME) ? [`~${b.slice(HOME.length)}`, `$HOME${b.slice(HOME.length)}`, `\${HOME}${b.slice(HOME.length)}`] : [])];
   return forms.reduce((t, f) => t.replace(new RegExp(`${esc(f)}(?=$|[/\\s"'])`, FOLD ? "gi" : "g"), "."), v);
 };
-// own = 자기 봇 폴더 예외를 쓸지 — 셸 글자는 변수·명령 치환·.. 이 있으면 안 씀(shellSecret)
-export function isSecretPath(p: string, base: string, own = true): boolean {
+// own = 자기 봇 폴더 예외를 쓸 봇 폴더(기본 = base, false = 안 씀). 셸 글자는 변수·명령 치환·.. 이 있으면 안 씀(shellSecret).
+// cd로 들어간 하위 폴더 기준 판정도 자기 봇 폴더(worktree)를 넘겨 예외를 이어 씀(리뷰 — 안 그러면 cd notes 가 늘 묻기).
+export function isSecretPath(p: string, base: string, own: string | false = base): boolean {
   const a = resolve(base, expandHome(p));
   if (realish(a) === sep && a !== sep) return true; // 링크 사슬 너무 김 = 판정 포기 → 비밀로(읽기도 막는 쪽, 리뷰)
-  if (own && inOwnBotHome(a, base)) return false;
+  if (own && inOwnBotHome(a, own)) return false;
   return [a, realish(a)].some((x) => secrets().some((d) => under(x, d)) && !excepts().some((e) => under(x, e)));
 }
 // 홈(또는 그 위)을 통째로 — grep -r ../../../../ 처럼 비밀 폴더까지 훑음(리뷰)
@@ -93,7 +94,7 @@ function shellSecret(raw: string, worktree: string): boolean {
   for (const m of raw.matchAll(/(?:^|[\s;&|(])cd(?=\s|$|[;&|)])(?:[ \t]+([^;&|)\n]*))?/g)) {
     const arg = (m[1] ?? "").trim().replace(/^(?:-[A-Za-z]+\s+|--\s+)+/, "").replace(/^(?:-[A-Za-z]+|--)$/, ""); // 앞 옵션(-P -L --)은 떼고 목적지만
     if (!arg) return true; // cd만 = 홈으로 — 그 뒤 맨이름(cat .zshrc 등)이 홈 기준이 되니 사람에게
-    if (!/^[\w./~-]+$/.test(arg) || isSecretPath(arg, worktree, false)) return true;
+    if (!/^[\w./~-]+$/.test(arg) || isSecretPath(arg, worktree, own && worktree)) return true;
     bases.push(resolve(worktree, expandHome(arg)));
   }
   if (SECRET_TEXT.test(own ? ownHomeText(unquote(raw), worktree) : unquote(raw)) || SECRET_NAMES.test(unquote(raw)) || PROJECT_SECRET.test(unquote(raw))) return true; // 비밀 이름은 heredoc 본문까지
@@ -103,8 +104,11 @@ function shellSecret(raw: string, worktree: string): boolean {
   if (/(^|[\s;&|(])cd(\s|$)/.test(text) && /(^|[\s/=])\.\.(\/|\s|$)/.test(text)) return true;
   for (let tok of text.split(/[\s=:,]+/)) {
     tok = tok.replace(/^-[A-Za-z]+(?=[./~$])/, ""); // -f../x 처럼 붙은 짧은 옵션 값
-    if (!tok || tok.startsWith("-") || !/[/~]|^\.\.?$|^\$/.test(tok)) continue; // 경로처럼 생긴 것만
-    if (bases.some((b) => isSecretPath(tok, b, own && b === worktree) || coversHome(tok, b))) return true;
+    if (!tok || tok.startsWith("-")) continue;
+    // 경로처럼 생긴 것 + 맨이름인데 그 자리에 링크가 있는 것(cat creds, creds → ~/.ssh/config, 리뷰). 맨이름을 다 보면 봇 폴더(~/.nunopi 아래)에서 낱말마다 걸림
+    const pathy = /[/~]|^\.\.?$|^\$/.test(tok) || bases.some((b) => { try { return lstatSync(join(b, tok)).isSymbolicLink(); } catch { return false; } });
+    if (!pathy) continue;
+    if (bases.some((b) => isSecretPath(tok, b, own && worktree) || coversHome(tok, b))) return true;
   }
   return false;
 }

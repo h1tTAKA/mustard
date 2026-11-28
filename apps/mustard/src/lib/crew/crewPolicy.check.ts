@@ -50,6 +50,8 @@ assert.strictEqual(d("SomethingNew", {}), "ask");
     assert.strictEqual(decide("Bash", { command: `cat ${B}/../b2/MEMORY.md` }, B), "ask", "셸로 옆 봇 폴더도 비밀");
     assert.strictEqual(decide("Bash", { command: "cat $PWD/../b2/MEMORY.md" }, B), "ask", "$PWD로 옆 봇 폴더(검사기는 변수를 못 풂, 리뷰)");
     assert.strictEqual(decide("Bash", { command: "cat `pwd`/../b2/MEMORY.md" }, B), "ask", "명령 치환으로 옆 봇 폴더");
+    assert.strictEqual(decide("Bash", { command: "cd memory && cat topic.md" }, B), "allow", "자기 봇 폴더 하위로 cd(실제 ~/.nunopi 아래)는 묻지 않음(리뷰)");
+    assert.strictEqual(decide("Bash", { command: "cat memory/topic.md" }, B), "allow", "자기 봇 폴더 하위 경로");
   } finally { if (saved === undefined) delete process.env.MUSTARD_BOTS_DIR; else process.env.MUSTARD_BOTS_DIR = saved; }
 }
 // 봇 폴더 자체가 밖(~/.ssh)을 가리키는 링크면 예외 없음(리뷰) — 임시 폴더에 링크만 만듦(대상은 읽지 않음)
@@ -72,6 +74,8 @@ assert.strictEqual(d("SomethingNew", {}), "ask");
     assert.strictEqual(decide("Bash", { command: "cd notes && ls" }, join(tmp, "me")), "allow", "평범한 하위 폴더 cd는 그대로");
     symlinkSync(join(homedir(), ".ssh"), join(tmp, "me", "notes", "link"));
     assert.strictEqual(decide("Bash", { command: "cd notes && cat link/config" }, join(tmp, "me")), "ask", "cd 뒤 상대 경로는 cd 목적지 기준으로도(리뷰)");
+    assert.strictEqual(decide("Bash", { command: "cat out" }, join(tmp, "me")), "ask", "맨이름 링크(밖)");
+    assert.strictEqual(decide("Bash", { command: "cd notes && cat link" }, join(tmp, "me")), "ask", "cd 뒤 맨이름 링크");
   } finally { rmSync(tmp, { recursive: true, force: true }); if (saved === undefined) delete process.env.MUSTARD_BOTS_DIR; else process.env.MUSTARD_BOTS_DIR = saved; }
 }
 
