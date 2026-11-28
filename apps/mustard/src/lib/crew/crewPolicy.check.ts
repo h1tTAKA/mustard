@@ -83,7 +83,7 @@ assert.strictEqual(d("SomethingNew", {}), "ask");
     mkdirSync(join(tmp, "me", "plain", "sub")); symlinkSync(join(homedir(), ".ssh", "config"), join(tmp, "me", "plain", "sub", "config"));
     assert.strictEqual(decide("Bash", { command: "cat plain/*/config" }, join(tmp, "me")), "ask", "가운데 조각 와일드카드가 링크로 펼쳐짐");
     assert.strictEqual(decide("Bash", { command: "ls plain/*" }, join(tmp, "me")), "allow", "하위가 폴더뿐이면 마지막 조각은 그대로");
-    for (const c of ["cat [!a]*/config", "cat @(plain)/config", "cat [!a]*", "cat */x#", "grep -r x . ; cat */x#", "grep x . | cat */x#"]) assert.strictEqual(decide("Bash", { command: c }, join(tmp, "me")), "ask", `부정·확장 와일드카드: ${c}`);
+    for (const c of ["cat [!a]*/config", "cat @(plain)/config", "cat [!a]*", "cat */x#", "grep -r x . ; cat */x#", "grep x . | cat */x#", "cat {x,out}/config", "cat {nope,notes/link}/config"]) assert.strictEqual(decide("Bash", { command: c }, join(tmp, "me")), "ask", `부정·확장 와일드카드: ${c}`);
   } finally { rmSync(tmp, { recursive: true, force: true }); if (saved === undefined) delete process.env.MUSTARD_BOTS_DIR; else process.env.MUSTARD_BOTS_DIR = saved; }
 }
 

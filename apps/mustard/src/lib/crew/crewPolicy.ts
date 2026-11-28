@@ -102,8 +102,10 @@ function shellSecret(raw: string, worktree: string): boolean {
   const text = unquote(raw);
   if (/(^|[\s/])\.[^\s/]*[*?[{]/.test(unquote(globOff(raw))) || /\$'[^']*\\(x|u|U|[0-7])/.test(raw)) return true; // .en?·.[e]nv·~/.a?s — 점 이름 와일드카드, $'\x65' 숨긴 글자(리뷰)
   if (/(^|[\s;&|(])cd(\s|$)/.test(text) && /(^|[\s/=])\.\.(\/|\s|$)/.test(text)) return true;
-  {
-    for (let tok of text.split(/[\s=:,]+/)) {
+  // 중괄호 펼치기({x,b}/config → x/config b/config)를 셸처럼 먼저 — 쉼표로 자르면 갈래가 쪼개져 b}/config 만 남음(리뷰). 갈래 64개까지
+  const braces = (w: string, n = 0): string[] => { const m = /\{([^{}]*,[^{}]*)\}/.exec(w); return !m || n > 6 ? [w] : m[1].split(",").flatMap((alt) => braces(w.slice(0, m.index) + alt + w.slice(m.index + m[0].length), n + 1)).slice(0, 64); };
+  for (const word of text.split(/\s+/)) for (const exp of braces(word)) {
+    for (let tok of exp.split(/[=:,]+/)) {
       tok = tok.replace(/^-[A-Za-z]+(?=[./~$])/, ""); // -f../x 처럼 붙은 짧은 옵션 값
       if (!tok || tok.startsWith("-")) continue;
       // 경로처럼 생긴 것 + 맨이름인데 그 자리에 링크가 있는 것(cat creds, creds → ~/.ssh/config, 리뷰). 맨이름을 다 보면 봇 폴더(~/.nunopi 아래)에서 낱말마다 걸림
