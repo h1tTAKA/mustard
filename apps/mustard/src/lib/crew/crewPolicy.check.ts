@@ -80,7 +80,7 @@ assert.strictEqual(d("SomethingNew", {}), "ask");
     mkdirSync(join(tmp, "me", "plain"));
     assert.strictEqual(decide("Bash", { command: "ls plain/*" }, join(tmp, "me")), "allow", "링크 없는 폴더 와일드카드는 그대로");
     assert.strictEqual(decide("Bash", { command: "cat plain/*/config" }, join(tmp, "me")), "ask", "가운데 조각 와일드카드");
-    for (const c of ["cat [!a]*/config", "cat @(plain)/config", "cat [!a]*"]) assert.strictEqual(decide("Bash", { command: c }, join(tmp, "me")), "ask", `부정·확장 와일드카드: ${c}`);
+    for (const c of ["cat [!a]*/config", "cat @(plain)/config", "cat [!a]*", "cat */x#"]) assert.strictEqual(decide("Bash", { command: c }, join(tmp, "me")), "ask", `부정·확장 와일드카드: ${c}`);
   } finally { rmSync(tmp, { recursive: true, force: true }); if (saved === undefined) delete process.env.MUSTARD_BOTS_DIR; else process.env.MUSTARD_BOTS_DIR = saved; }
 }
 
