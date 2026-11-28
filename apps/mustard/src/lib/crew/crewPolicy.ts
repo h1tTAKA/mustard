@@ -107,7 +107,9 @@ function shellSecret(raw: string, worktree: string): boolean {
     if (!tok || tok.startsWith("-")) continue;
     // 경로처럼 생긴 것 + 맨이름인데 그 자리에 링크가 있는 것(cat creds, creds → ~/.ssh/config, 리뷰). 맨이름을 다 보면 봇 폴더(~/.nunopi 아래)에서 낱말마다 걸림
     // 와일드카드(cat *, cat */config) — 셸이 펼치면 링크도 들어감. 펼칠 폴더(와일드카드 앞까지)에 링크가 하나라도 있으면 사람에게(리뷰)
-    if (/[*?[{]/.test(tok) && bases.some((b) => { const dir = resolve(b, expandHome(tok.replace(/[*?[{].*$/, "").replace(/[^/]*$/, "") || ".")); try { return readdirSync(dir, { withFileTypes: true }).some((d) => d.isSymbolicLink()); } catch { return false; } })) return true;
+    const globPath = /[*?[{]/.test(tok) && /^[\w./~*?[\]{},-]+$/.test(tok); // 경로 글자만으로 된 와일드카드(sed 's#.*#x#' 같은 식은 제외 — 앱 확인 오탐)
+    if (globPath && /[*?[{][^/]*\//.test(tok)) return true; // 가운데 조각 와일드카드(*/config, **/x) — 펼쳐질 하위 폴더들을 다 못 훑으니 사람에게(리뷰)
+    if (globPath && bases.some((b) => { const dir = resolve(b, expandHome(tok.replace(/[*?[{].*$/, "").replace(/[^/]*$/, "") || ".")); try { return readdirSync(dir, { withFileTypes: true }).some((d) => d.isSymbolicLink()); } catch { return false; } })) return true;
     const pathy = /[/~]|^\.\.?$|^\$/.test(tok) || bases.some((b) => { try { return lstatSync(join(b, tok)).isSymbolicLink(); } catch { return false; } });
     if (!pathy) continue;
     if (bases.some((b) => isSecretPath(tok, b, own && worktree) || coversHome(tok, b))) return true;
