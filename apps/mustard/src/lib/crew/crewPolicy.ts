@@ -88,7 +88,8 @@ function shellSecret(raw: string, worktree: string): boolean {
   // 따옴표 안 빈칸 경로가 쪼개져 상대 경로가 되는 것도 .. 없이는 자기 폴더 밖으로 못 나감.
   const own = !/[`$]|\.\.|~[+-]/.test(unquote(raw)); // ~+ ~- = 지금·이전 폴더(셸이 풂)
   // cd 대상 — 빗금 없는 이름(cd link)도 링크를 풀어 비밀인지(그 뒤 맨이름 cat MEMORY.md는 조각 검사에 안 걸림, 리뷰). 자기 봇 폴더 예외 없이.
-  for (const m of unquote(raw).matchAll(/(?:^|[\s;&|(])cd\s+([^\s;&|)]+)/g)) if (isSecretPath(m[1], worktree, false)) return true;
+  // 따옴표 대상("my link")은 통째로(빈칸에서 잘리면 앞 단어만 보게 됨, 리뷰)
+  for (const m of raw.matchAll(/(?:^|[\s;&|(])cd\s+("[^"]*"|'[^']*'|[^\s;&|)]+)/g)) if (isSecretPath(unquote(m[1]), worktree, false)) return true;
   if (SECRET_TEXT.test(own ? ownHomeText(unquote(raw), worktree) : unquote(raw)) || SECRET_NAMES.test(unquote(raw)) || PROJECT_SECRET.test(unquote(raw))) return true; // 비밀 이름은 heredoc 본문까지
   raw = dropHeredocs(raw).c; // 경로 조각 검사는 본문 빼고 — cat > f <<'EOF' 로 쓰는 코드의 // 주석이 "/"(홈 통째)로 걸림(앱 확인)
   const text = unquote(raw);

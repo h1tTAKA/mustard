@@ -64,6 +64,8 @@ assert.strictEqual(d("SomethingNew", {}), "ask");
     mkdirSync(join(tmp, "me"));
     symlinkSync(join(homedir(), ".ssh"), join(tmp, "me", "out"));
     assert.strictEqual(decide("Bash", { command: "cd out && cat config" }, join(tmp, "me")), "ask", "cd 링크(밖) 뒤 맨이름");
+    symlinkSync(join(homedir(), ".ssh"), join(tmp, "me", "my link"));
+    assert.strictEqual(decide("Bash", { command: 'cd "my link" && cat config' }, join(tmp, "me")), "ask", "빈칸 든 따옴표 cd 대상");
   } finally { rmSync(tmp, { recursive: true, force: true }); if (saved === undefined) delete process.env.MUSTARD_BOTS_DIR; else process.env.MUSTARD_BOTS_DIR = saved; }
 }
 
