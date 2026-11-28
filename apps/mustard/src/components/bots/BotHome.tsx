@@ -13,6 +13,14 @@ import BotDialog, { type BotFields, type CreateResult } from "./BotDialog";
 import { botDesc, botName, useBots } from "./useBots";
 
 const SEL_KEY = "nunopi:bots-selected";
+// 휴지통 부탁 중인 삭제 폴더 — 삭제 직후 부탁과 "남은 폴더 다시 부탁"이 같은 폴더를 겹쳐 부탁하면 뒤쪽이 실패로 보임(리뷰). 겹치면 건너뜀(null).
+const trashing = new Set<string>();
+function trashOnce(p: string): Promise<{ ok: boolean }> | null {
+  const ask = window.nunopiDesktop?.trashBotFolder;
+  if (!ask || trashing.has(p)) return null;
+  trashing.add(p);
+  return ask(p).finally(() => trashing.delete(p));
+}
 
 const TOGGLE = "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200";
 const LEFT_MIN = 560, RIGHT_MIN = 900;
@@ -28,15 +36,14 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
   // 설정 중 봇이 사라지면(다른 창 삭제) 설정 상태도 비움 — 안 비우면 Esc가 막히고, 같은 id로 다시 만든 봇에 창이 저절로 열림(리뷰)
   useEffect(() => { if (editing && bots && !bots.some((b) => b.id === editing)) setEditing(null); }, [bots, editing]); // eslint-disable-line react-hooks/set-state-in-effect -- 목록이 바뀐 결과로 닫음
   // 지난번에 휴지통에 못 보낸 삭제 폴더 — 봇 홈을 다시 읽을 때 조용히 다시 부탁(실패해도 알림 안 함, 다음에 또)
-  useEffect(() => { for (const p of trashLeft) void window.nunopiDesktop?.trashBotFolder?.(p).catch(() => {}); }, [trashLeft]);
+  useEffect(() => { for (const p of trashLeft) void trashOnce(p)?.catch(() => {}); }, [trashLeft]);
   const pick = (id: string | null) => { setPicked(id); try { if (id) localStorage.setItem(SEL_KEY, id); else localStorage.removeItem(SEL_KEY); } catch { /* ignore */ } };
   const bot = bots?.find((b) => b.id === picked) ?? bots?.[0] ?? null;
   // 삭제 → 서버가 비켜 둔 봇 폴더를 데스크톱에 휴지통으로 부탁(웹·실패면 봇 폴더 안 .deleted-* 로 남음 — 목록엔 안 보임)
   const remove = async (id: string): Promise<"ok" | "rejected" | "unknown"> => {
     const r = await op({ op: "delete", id });
     if (typeof r !== "object") return r;
-    if (r.trashed && window.nunopiDesktop?.trashBotFolder)
-      void window.nunopiDesktop.trashBotFolder(r.trashed).then((x) => { if (!x?.ok) toast(t("bots.trashFailed"), "error"); }, () => toast(t("bots.trashFailed"), "error"));
+    if (r.trashed) void trashOnce(r.trashed)?.then((x) => { if (!x?.ok) toast(t("bots.trashFailed"), "error"); }, () => toast(t("bots.trashFailed"), "error"));
     return "ok";
   };
   const save = async (id: string, b: BotFields): Promise<CreateResult> => { const r = await op({ op: "update", id, ...b }); return typeof r === "object" ? "ok" : r; };
