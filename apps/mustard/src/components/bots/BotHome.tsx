@@ -4,33 +4,54 @@
 // 빠진 칸은 헤더 토글로 가운데 위에 덮어 열고, 가운데를 누르면 닫힘. 붙박이 칸의 토글은 그냥 접기/펴기.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { IconPlus, IconLayoutSidebarLeftExpand, IconLayoutSidebarLeftCollapse, IconLayoutSidebarRightExpand, IconLayoutSidebarRightCollapse } from "@tabler/icons-react";
-import { useT } from "@mustard/core";
+import { useT, useToast } from "@mustard/core";
 import { useFullscreen } from "@mustard/nunopi";
 import BotSidebar, { type BotProject } from "./BotSidebar";
 import BotInfo from "./BotInfo";
 import BotAvatar from "./BotAvatar";
-import NewBotDialog, { type CreateResult } from "./NewBotDialog";
-import type { CrewProvider } from "@/lib/crew/crewRoleDefaults";
+import BotDialog, { type BotFields, type CreateResult } from "./BotDialog";
 import { botDesc, botName, useBots } from "./useBots";
 
 const SEL_KEY = "nunopi:bots-selected";
+// 휴지통 부탁 중인 삭제 폴더 — 삭제 직후 부탁과 "남은 폴더 다시 부탁"이 같은 폴더를 겹쳐 부탁하면 뒤쪽이 실패로 보임(리뷰).
+// 겹치면 진행 중인 부탁을 같이 기다림(새로 안 보냄) → 누가 불러도 진짜 결과를 받음. 데스크톱이 아니면 null.
+const trashing = new Map<string, Promise<{ ok: boolean }>>();
+function trashOnce(p: string): Promise<{ ok: boolean }> | null {
+  const ask = window.nunopiDesktop?.trashBotFolder;
+  if (!ask) return null;
+  let run = trashing.get(p);
+  if (!run) { run = ask(p).finally(() => trashing.delete(p)); trashing.set(p, run); }
+  return run;
+}
 
 const TOGGLE = "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200";
 const LEFT_MIN = 560, RIGHT_MIN = 900;
 
 export default function BotHome({ modeSwitch, active, projects, onOpenProject }: { modeSwitch: ReactNode; active: boolean; projects: BotProject[]; onOpenProject: (key: string) => void }) {
   const t = useT();
-  const { bots, error, reload, op } = useBots(active);
+  const { bots, error, reload, op, trashLeft } = useBots(active);
   // 고른 봇 — 기억해 두고, 없어졌으면(빼기·다른 창) 맨 위 봇.
   const [picked, setPicked] = useState<string | null>(() => { try { return localStorage.getItem(SEL_KEY); } catch { return null; } });
   const [creating, setCreating] = useState(false); // 새 봇 창 열림
+  const [editing, setEditing] = useState<string | null>(null); // 설정 창을 연 봇 id
+  const toast = useToast();
+  // 설정 중 봇이 사라지면(다른 창 삭제) 설정 상태도 비움 — 안 비우면 Esc가 막히고, 같은 id로 다시 만든 봇에 창이 저절로 열림(리뷰)
+  useEffect(() => { if (editing && bots && !bots.some((b) => b.id === editing)) setEditing(null); }, [bots, editing]); // eslint-disable-line react-hooks/set-state-in-effect -- 목록이 바뀐 결과로 닫음
+  // 지난번에 휴지통에 못 보낸 삭제 폴더 — 봇 홈을 다시 읽을 때 조용히 다시 부탁(실패해도 알림 안 함, 다음에 또)
+  useEffect(() => { for (const p of trashLeft) void trashOnce(p)?.catch(() => {}); }, [trashLeft]);
   const pick = (id: string | null) => { setPicked(id); try { if (id) localStorage.setItem(SEL_KEY, id); else localStorage.removeItem(SEL_KEY); } catch { /* ignore */ } };
   const bot = bots?.find((b) => b.id === picked) ?? bots?.[0] ?? null;
-  const uninstall = async (id: string): Promise<"ok" | "rejected" | "unknown"> => { const r = await op({ op: "uninstall", id }); return typeof r === "object" ? "ok" : r; };
-  // 맡길 일로 바로 만들기 → 서버가 알려 준 새 봇 id를 고름
+  // 삭제 → 서버가 비켜 둔 봇 폴더를 데스크톱에 휴지통으로 부탁(웹·실패면 봇 폴더 안 .deleted-* 로 남음 — 목록엔 안 보임)
+  const remove = async (id: string): Promise<"ok" | "rejected" | "unknown"> => {
+    const r = await op({ op: "delete", id });
+    if (typeof r !== "object") return r;
+    if (r.trashed) void trashOnce(r.trashed)?.then((x) => { if (!x?.ok) toast(t("bots.trashFailed"), "error"); }, () => toast(t("bots.trashFailed"), "error"));
+    return "ok";
+  };
+  const save = async (id: string, b: BotFields): Promise<CreateResult> => { const r = await op({ op: "update", id, ...b }); return typeof r === "object" ? "ok" : r; };
   // 새 봇 창에서 만들기 → 서버가 알려 준 새 봇 id를 고름
-  const create = async (b: { name: string; mission: string; provider: CrewProvider; model?: string; color: string }): Promise<CreateResult> => {
-    const r = await op({ op: "create", ...b });
+  const create = async (b: BotFields): Promise<CreateResult> => {
+    const r = await op({ op: "create", name: b.name ?? "", mission: b.mission ?? "", provider: b.provider, model: b.model, color: b.color });
     if (typeof r !== "object") return r;
     if (r.created) pick(r.created);
     return "ok";
@@ -55,7 +76,7 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
       </button>
     </div>
   ) : null; // 읽는 중·못 읽음
-  const right = bot ? <BotInfo bot={bot} onUninstall={uninstall} /> : error ? <BotInfo bot={null} onUninstall={uninstall} /> : null; // 읽는 중·봇 없음엔 비움
+  const right = bot ? <BotInfo bot={bot} onDelete={remove} onEdit={() => setEditing(bot.id)} /> : error ? <BotInfo bot={null} onDelete={remove} onEdit={() => {}} /> : null; // 읽는 중·봇 없음엔 비움
   const fullscreen = useFullscreen(); // 신호등 자리 좌측 패딩(레포 헤더와 같은 규칙)
   const bodyRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1440);
@@ -83,11 +104,11 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
   const over = "absolute inset-y-0 z-20 shadow-lg";
   // 덮어 연 칸은 Esc로 닫힘(리뷰)
   useEffect(() => {
-    if ((!leftOver && !rightOver) || creating) return; // 새 봇 창이 열려 있으면 Esc는 창 몫(같이 닫히지 않게, 리뷰)
+    if ((!leftOver && !rightOver) || creating || editing) return; // 새 봇·설정 창이 열려 있으면 Esc는 창 몫(같이 닫히지 않게, 리뷰)
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setLeftOver(false); setRightOver(false); } };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [leftOver, rightOver, creating]);
+  }, [leftOver, rightOver, creating, editing]);
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       <header className={`titlebar-drag flex h-10 shrink-0 items-center gap-2 border-b border-zinc-200 pr-2 dark:border-zinc-800 ${fullscreen ? "pl-2" : "pl-[78px]"}`}>
@@ -113,7 +134,9 @@ export default function BotHome({ modeSwitch, active, projects, onOpenProject }:
           </aside>
         )}
       </div>
-      {creating && <NewBotDialog onClose={() => setCreating(false)} create={create} />}
+      {creating && <BotDialog onClose={() => setCreating(false)} submit={create} />}
+      {(() => { const eb = editing ? bots?.find((b) => b.id === editing) : undefined; // 설정 중 봇이 사라지면(다른 창 삭제) 창도 닫힘
+        return eb && <BotDialog key={eb.id} bot={eb} nameHint={botName(t, eb)} onClose={() => setEditing(null)} submit={(f) => save(eb.id, f)} />; })()}
     </div>
   );
 }

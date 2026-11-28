@@ -1,14 +1,14 @@
 "use client";
 // 봇 홈 오른쪽 칸(#1397) — 고른 봇의 이름·설명·실행 AI·권한·봇 폴더·만든 때, 목록에서 빼기.
-// 빼기 = 목록에서만(역할·봇 폴더는 남음, H1 uninstall). 이름·색 바꾸기는 H3 설정 창에서.
-import { IconFolderOpen, IconTrash } from "@tabler/icons-react";
+// [설정] = 봇 설정 창(#1399). 삭제 = 직접 만든 봇은 역할까지, 기본 역할 봇은 목록에서만 — 봇 폴더는 휴지통으로(#1399).
+import { IconFolderOpen, IconSettings, IconTrash } from "@tabler/icons-react";
 import { useConfirm, useT, useToast } from "@mustard/core";
 import { PROVIDER_LABEL } from "@/components/workspace/crew/crewUi";
 import { fmtDateTime } from "@/lib/relTime";
 import BotAvatar from "./BotAvatar";
 import { botDesc, botName, type Bot } from "./useBots";
 
-export default function BotInfo({ bot, onUninstall }: { bot: Bot | null; onUninstall: (id: string) => Promise<"ok" | "rejected" | "unknown"> }) {
+export default function BotInfo({ bot, onDelete, onEdit }: { bot: Bot | null; onDelete: (id: string) => Promise<"ok" | "rejected" | "unknown">; onEdit: () => void }) {
   const t = useT();
   const confirm = useConfirm();
   const toast = useToast();
@@ -16,10 +16,10 @@ export default function BotInfo({ bot, onUninstall }: { bot: Bot | null; onUnins
   const name = botName(t, bot);
   const canOpen = typeof window !== "undefined" && !!window.nunopiDesktop?.openIn;
   const openFolder = () => void window.nunopiDesktop?.openIn?.("finder", bot.home).then((r) => { if (!r?.ok) toast(t("openIn.failed", { app: "Finder" }), "error"); }, () => toast(t("openIn.failed", { app: "Finder" }), "error"));
-  const uninstall = async () => {
-    if (!(await confirm({ title: name, message: t("bots.uninstallConfirm"), detail: t("bots.uninstallDetail"), confirmText: t("bots.uninstall"), tone: "warn" }))) return;
+  const remove = async () => {
+    if (!(await confirm({ title: name, message: t("bots.deleteConfirm"), detail: t("bots.deleteDetail"), confirmText: t("bots.delete"), tone: "danger" }))) return;
     // 응답이 늦음(unknown)은 실패로 단정 안 함 — 잠시 뒤 다시 읽은 목록이 결과를 보여 줌(리뷰)
-    if ((await onUninstall(bot.id)) === "rejected") toast(t("bots.uninstallFailed"), "error");
+    if ((await onDelete(bot.id)) === "rejected") toast(t("bots.deleteFailed"), "error");
   };
   const row = (label: string, value: React.ReactNode) => (
     <div className="flex flex-col gap-0.5">
@@ -31,10 +31,14 @@ export default function BotInfo({ bot, onUninstall }: { bot: Bot | null; onUnins
     <div className="nunopi-scroll flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-5">
       <div className="flex items-center gap-3">
         <BotAvatar name={name} color={bot.color} size={40} />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="truncate text-[14px] font-semibold text-zinc-900 dark:text-zinc-50">{name}</div>
           <div className="text-[11.5px] text-zinc-400 dark:text-zinc-500">{t("bots.info.created", { when: fmtDateTime(new Date(bot.createdAt).toISOString()) })}</div>
         </div>
+        <button type="button" onClick={onEdit} title={t("bots.settings.title")} aria-label={t("bots.settings.title")}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+          <IconSettings size={15} stroke={2} aria-hidden />
+        </button>
       </div>
       <p className="text-[12.5px] leading-relaxed text-zinc-600 dark:text-zinc-300">{botDesc(t, bot)}</p>
       <dl className="flex flex-col gap-3">
@@ -53,9 +57,9 @@ export default function BotInfo({ bot, onUninstall }: { bot: Bot | null; onUnins
         ))}
       </dl>
       <div className="flex-1" />
-      <button type="button" onClick={uninstall}
+      <button type="button" onClick={remove}
         className="inline-flex items-center justify-center gap-1.5 self-start rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-zinc-500 transition hover:bg-rose-500/10 hover:text-rose-600 dark:text-zinc-400 dark:hover:text-rose-400">
-        <IconTrash size={14} stroke={2} aria-hidden /> {t("bots.uninstall")}
+        <IconTrash size={14} stroke={2} aria-hidden /> {t("bots.delete")}
       </button>
     </div>
   );
