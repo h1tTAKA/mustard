@@ -83,15 +83,16 @@ function ItemDetail({ item, botName, onBack, post }: { item: BotItem; botName: s
   const t = useT();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const busy = useRef(false); // 다시 그리기 전에 Enter를 두 번 눌러도 한 번만 보냄(state는 그 사이 옛 값, 리뷰)
   const endRef = useRef<HTMLDivElement>(null);
   // 새 활동이 오면 맨 아래(최신)로 — 대화처럼 아래가 최신
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [item.n, item.activity.length]);
   const send = async () => {
     const text = draft.trim();
-    if (!text || sending) return;
-    setSending(true);
+    if (!text || busy.current) return;
+    busy.current = true; setSending(true);
     if (await post({ op: "comment", n: item.n, text })) setDraft("");
-    setSending(false);
+    busy.current = false; setSending(false);
   };
   const setStatus = (status: string) => { if (status !== item.status) void post({ op: "set", n: item.n, status }); };
   return (
@@ -127,6 +128,13 @@ function ItemDetail({ item, botName, onBack, post }: { item: BotItem; botName: s
             </div>
             {a.kind === "created" && <p className="text-[12px] text-zinc-500 dark:text-zinc-400">{t("bots.items.created")}</p>}
             {a.kind === "status" && a.status && <p className="text-[12px] text-zinc-500 dark:text-zinc-400">{t("bots.items.statusTo", { status: t(`bots.items.status.${a.status}`) })}</p>}
+            {a.kind === "edit" && (
+              <p className="text-[12px] text-zinc-500 [overflow-wrap:anywhere] dark:text-zinc-400">
+                {a.title !== undefined && t("bots.items.editTitle", { title: a.title })}
+                {a.title !== undefined && a.doneMeans !== undefined && " · "}
+                {a.doneMeans !== undefined && (a.doneMeans ? t("bots.items.editDone", { done: a.doneMeans }) : t("bots.items.editDoneCleared"))}
+              </p>
+            )}
             {a.text && <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-zinc-700 [overflow-wrap:anywhere] dark:text-zinc-200">{a.text}</p>}
           </li>
         ))}
