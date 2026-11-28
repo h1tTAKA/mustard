@@ -13,13 +13,15 @@ import BotDialog, { type BotFields, type CreateResult } from "./BotDialog";
 import { botDesc, botName, useBots } from "./useBots";
 
 const SEL_KEY = "nunopi:bots-selected";
-// 휴지통 부탁 중인 삭제 폴더 — 삭제 직후 부탁과 "남은 폴더 다시 부탁"이 같은 폴더를 겹쳐 부탁하면 뒤쪽이 실패로 보임(리뷰). 겹치면 건너뜀(null).
-const trashing = new Set<string>();
+// 휴지통 부탁 중인 삭제 폴더 — 삭제 직후 부탁과 "남은 폴더 다시 부탁"이 같은 폴더를 겹쳐 부탁하면 뒤쪽이 실패로 보임(리뷰).
+// 겹치면 진행 중인 부탁을 같이 기다림(새로 안 보냄) → 누가 불러도 진짜 결과를 받음. 데스크톱이 아니면 null.
+const trashing = new Map<string, Promise<{ ok: boolean }>>();
 function trashOnce(p: string): Promise<{ ok: boolean }> | null {
   const ask = window.nunopiDesktop?.trashBotFolder;
-  if (!ask || trashing.has(p)) return null;
-  trashing.add(p);
-  return ask(p).finally(() => trashing.delete(p));
+  if (!ask) return null;
+  let run = trashing.get(p);
+  if (!run) { run = ask(p).finally(() => trashing.delete(p)); trashing.set(p, run); }
+  return run;
 }
 
 const TOGGLE = "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200";
