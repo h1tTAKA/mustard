@@ -83,7 +83,7 @@ assert.strictEqual(d("SomethingNew", {}), "ask");
     mkdirSync(join(tmp, "me", "plain", "sub")); symlinkSync(join(homedir(), ".ssh", "config"), join(tmp, "me", "plain", "sub", "config"));
     assert.strictEqual(decide("Bash", { command: "cat plain/*/config" }, join(tmp, "me")), "ask", "가운데 조각 와일드카드가 링크로 펼쳐짐");
     assert.strictEqual(decide("Bash", { command: "ls plain/*" }, join(tmp, "me")), "allow", "하위가 폴더뿐이면 마지막 조각은 그대로");
-    for (const c of ["cat [!a]*/config", "cat @(plain)/config", "cat [!a]*", "cat */x#", "grep -r x . ; cat */x#", "grep x . | cat */x#", "cat {x,out}/config", "cat {nope,notes/link}/config"]) assert.strictEqual(decide("Bash", { command: c }, join(tmp, "me")), "ask", `부정·확장 와일드카드: ${c}`);
+    for (const c of ["cat [!a]*/config", "cat @(plain)/config", "cat [!a]*", "cat */x#", "grep -r x . ; cat */x#", "grep x . | cat */x#", "cat {x,out}/config", "cat {nope,notes/link}/config", "cat {a..b}/config", "cat {a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a32,a33,a34,a35,a36,a37,a38,a39,a40,a41,a42,a43,a44,a45,a46,a47,a48,a49,a50,a51,a52,a53,a54,a55,a56,a57,a58,a59,a60,a61,a62,a63,a64,out}/config", "cat {a,{a,{a,{a,{a,{a,{a,{a,out}}}}}}}}/config"]) assert.strictEqual(decide("Bash", { command: c }, join(tmp, "me")), "ask", `부정·확장 와일드카드: ${c}`);
   } finally { rmSync(tmp, { recursive: true, force: true }); if (saved === undefined) delete process.env.MUSTARD_BOTS_DIR; else process.env.MUSTARD_BOTS_DIR = saved; }
 }
 
